@@ -124,51 +124,51 @@ class metagraph(object):
         'cam_in%ts__diag_surf', 'flds':
         'cam_out%flwds__radiation_tend'}
 
-        with open('atmfiles.csv', 'r') as f:
+        with open('module-file-lists/atmfiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.atmFiles = set(list(reader)[0])
 
-        with open('csm_sharefiles.csv', 'r') as f:
+        with open('module-file-lists/csm_sharefiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.csm_shareFiles = set(list(reader)[0])
 
-        with open('dead_sharefiles.csv', 'r') as f:
+        with open('module-file-lists/dead_sharefiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.dead_shareFiles = set(list(reader)[0])
 
-        with open('drvfiles.csv', 'r') as f:
+        with open('module-file-lists/drvfiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.drvFiles = set(list(reader)[0])
 
-        with open('glcfiles.csv', 'r') as f:
+        with open('module-file-lists/glcfiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.glcFiles = set(list(reader)[0])
 
-        with open('icefiles.csv', 'r') as f:
+        with open('module-file-lists/icefiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.iceFiles = set(list(reader)[0])
 
-        with open('lndfiles.csv', 'r') as f:
+        with open('module-file-lists/lndfiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.lndFiles = set(list(reader)[0])
 
-        with open('ocnfiles.csv', 'r') as f:
+        with open('module-file-lists/ocnfiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.ocnFiles = set(list(reader)[0])
 
-        with open('roffiles.csv', 'r') as f:
+        with open('module-file-lists/roffiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.rofFiles = set(list(reader)[0])
 
-        with open('utilsfiles.csv', 'r') as f:
+        with open('module-file-lists/utilsfiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.utilsFiles = set(list(reader)[0])
 
-        with open('wavfiles.csv', 'r') as f:
+        with open('module-file-lists/wavfiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.wavFiles = set(list(reader)[0])
 
-        with open('onlycam.csv', 'r') as f:
+        with open('module-file-lists/onlycam.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.camFiles = set(list(reader)[0])
 
@@ -327,17 +327,6 @@ class metagraph(object):
 
             return parent
 
-    # def findHier(self, node):
-    #     where = []
-    #     if self.hasNode(node):
-    #         if self.graph.has_node(node):
-    #             where.append(self.name)
-    #         for sg in self.subGraphs:
-    #             if self.subGraphs[sg].hasNode(node):
-    #                 where.append(self.name)
-    #                 where.append(self.subGraphs[sg].findHier(node))
-
-    #     return where
 
     def hasLike(self, subString):
         where = []
@@ -346,33 +335,6 @@ class metagraph(object):
 
         return [var for var in nodes if subString in var]
 
-
-    # def getSubGraph(self, target, root):
-    #     lvl0 = root.getParent(target)
-
-    #     if lvl0 is None:
-
-    #         return None
-
-    #     depthStack = [lvl0]
-    #     parent = lvl0
-    #     while parent != root.name:
-    #         parent = root.getParent(depthStack[-1])
-    #         depthStack.append(parent)
-
-    #     depthStack.pop()
-    #     targetStack = [root]
-    #     for sg in reversed(depthStack):
-    #         prev = targetStack.pop()
-    #         targetStack.append(prev.subGraphs[sg])
-
-    #     try:
-
-    #         return targetStack.pop().subGraphs[target]
-
-    #     except:
-
-    #         return None
 
     def hasPath(self, source=None, target=None):
         return g.has_path(self.graph, source=source, target=target)
@@ -1150,14 +1112,6 @@ class metagraph(object):
         communities = None
         for comms in islice(gn, nComms):
             communities = tuple(sorted(c) for c in comms)
-        #for comms in islice(gn, nComms):
-        # bigComs = 0
-        # while bigComs < nComms:
-        #     bigComs = 0
-        #     communities = tuple(c for c in next(gn))
-        #     for c in communities:
-        #         if len(c) > minSize:
-        #             bigComs += 1
 
         if communities:
             comGraphs = []
@@ -1368,19 +1322,6 @@ class metagraph(object):
                         eigenNodes = {}
                         for n in inducedSgraph:
                             eigenNodes[n] = abs(ieigenNodes[n]) + abs(oeigenNodes[n])
-                        # tmpin = tmpout = []
-                        # for n in inducedSgraph:
-                        #     tmpin.append(ieigenNodes[n])
-                        #     tmpout.append(oeigenNodes[n])
-
-                        # tmpinNorm = np.array(tmpin, dtype=np.float64)/np.linalg.norm(tmpin)
-                        # tmpoutNorm = np.array(tmpout, dtype=np.float64)/np.linalg.norm(tmpout)
-                        # # since each centrality is normed to 1, norm sum to 1 by Cauchy-Schwartz:
-                        # sumNorm = (tmpinNorm + tmpoutNorm)/sqrt(2. + np.inner(tmpinNorm, tmpoutNorm) + np.inner(tmpoutNorm, tmpinNorm))
-
-                        # eigenNodes = {}
-                        # for idx, n in enumerate(inducedSgraph):
-                        #     eigenNodes[n] = sumNorm[idx]
 
                     elif outCentrality:
                         eigenNodes = g.eigenvector_centrality_numpy(inducedSgraph.reverse())
