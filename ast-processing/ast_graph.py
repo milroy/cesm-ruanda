@@ -422,7 +422,6 @@ for root, dirs, files in os.walk(srcdir):
     useFiles = [root + f for f in files]
     for file in files:
         if file.endswith('.F90') or file.endswith('.f90') or file.endswith('f.h'):
-
             try:
                 namestack.append(file)
                 tree = api.parse(os.path.join(root, file))#, source_only=useFiles)
@@ -438,63 +437,10 @@ for root, dirs, files in os.walk(srcdir):
 
 
 
-# atm = []
-# walk = readF(srcdir + '/atm_in')
-# for l in walk:
-#     if l.startswith('&'):
-#         name = l.strip().replace('&', '')
-#         new = next(walk, None)
-#         varys = []
-#         while new.strip() != '/':
-#             if '=' in new and '->' in new:
-#                 lproc = ''.join(new.translate(None, ''.join(["'", '"'])).strip().lower().split())
-#                 lbroken = lproc.strip().split('=')
-#                 lpoint = lbroken[1].strip().split('->')
-#                 varys.append([lbroken[0], [lpoint]])
-#             elif '=' in new:
-#                 lproc = ''.join(new.translate(None, ''.join(["'", '"'])).strip().lower().split())
-#                 lbroken = lproc.strip().split('=')
-#                 varys.append([lbroken[0], lbroken[1].strip().split(',')])
-#             elif '->' in new:
-#                 lpoint = ''.join(new.translate(None, ''.join(["'", ',', '"'])).strip().lower().split()).split('->')
-#                 varys[-1][-1].append(lpoint)
-#             else:
-#                 lproc = new.translate(None, ''.join(["'", ',', '"'])).strip().lower()
-#                 varys[-1][-1] += lproc.strip().split()
-#             new = next(walk, None)
-#     atm.append([name, varys])
-
 for i in Intrinsic_Procedures:
    if i not in CESM.functions:# and 'max' not in i and 'min' not in i:
        CESM.functions[i] = {'args': None, 'vars': None, 'location': ['CESM'], 
                             'output': i, 'isIface': False, 'isIntrinsic': True}
-
-# atmFuncs = {'aerosol_nl': {'aero_model_readnl': ['wetdep_list', 'drydep_list']}, 
-#             'wetdep_inparm': {'gas_wetdep_readnl': ['gas_wetdep_list']}}
-
-# for i in atm:
-
-#     func = i[0]
-#     if func in atmFuncs:
-#        for assigned in i[1]:
-#           for sg in atmFuncs[func]:
-
-#               varlist = filter(None, assigned[1])
-#               target = assigned[0].strip()
-
-#               try:
-
-#                   CESMtarget = [substring for substring in atmFuncs[func][sg] if substring in target][0]
-#                   ctargetname = CESMtarget + '__' + 'namelist'
-#                   ctargetattrs = {'location': [func, sg], 'cname': CESMtarget}
-
-#                   for var in varlist:
-#                       varname = var.strip() + '_srf' + '__' + 'namelist'
-#                       varattrs = {'location': ['namelist'], 'cname': var.strip() + '_srf'}
-#                       stack[0].addEdge(varname, ctargetname, attrs1=varattrs, attrs2=ctargetattrs)
-
-#               except:
-#                   pass
 
 
 CESM.processIfaces()
