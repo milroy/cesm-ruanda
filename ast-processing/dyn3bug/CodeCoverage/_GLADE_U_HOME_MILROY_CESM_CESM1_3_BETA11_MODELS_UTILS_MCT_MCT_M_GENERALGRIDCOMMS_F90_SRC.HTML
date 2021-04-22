@@ -1,0 +1,1567 @@
+<html>
+<head>
+<title>Listing of m_GeneralGridComms.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;m_GeneralGridComms.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 33.33&#160;%func&#160;&#160;&#160;&#160; 11.30&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+     2) <a name="l2" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+     3) <a name="l3" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">! CVS $Id$</a>
+     5) <a name="l5" style="background-color: #ffffff">! CVS $Name$ </a>
+     6) <a name="l6" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !MODULE: m_GeneralGridComms - Communications for the GeneralGrid type.</a>
+     9) <a name="l9" style="background-color: #ffffff">!</a>
+    10) <a name="l10" style="background-color: #ffffff">! !DESCRIPTION:</a>
+    11) <a name="l11" style="background-color: #ffffff">!</a>
+    12) <a name="l12" style="background-color: #ffffff">! In this module, we define communications methods specific to the </a>
+    13) <a name="l13" style="background-color: #ffffff">! {\tt GeneralGrid} class (see the module {\tt m\_GeneralGrid} for more </a>
+    14) <a name="l14" style="background-color: #ffffff">! information about this class and its methods).</a>
+    15) <a name="l15" style="background-color: #ffffff">!</a>
+    16) <a name="l16" style="background-color: #ffffff">! !INTERFACE:</a>
+    17) <a name="l17" style="background-color: #ffffff"> module m_GeneralGridComms</a>
+    18) <a name="l18" style="background-color: #ffffff">!</a>
+    19) <a name="l19" style="background-color: #ffffff">! !USES:</a>
+    20) <a name="l20" style="background-color: #ffffff">!</a>
+    21) <a name="l21" style="background-color: #ffffff">      use m_GeneralGrid ! GeneralGrid class and its methods</a>
+    22) <a name="l22" style="background-color: #ffffff"></a>
+    23) <a name="l23" style="background-color: #ffffff"></a>
+    24) <a name="l24" style="background-color: #ffffff">      implicit none</a>
+    25) <a name="l25" style="background-color: #ffffff"></a>
+    26) <a name="l26" style="background-color: #ffffff">      private   ! except</a>
+    27) <a name="l27" style="background-color: #ffffff"></a>
+    28) <a name="l28" style="background-color: #ffffff">      public :: gather          ! gather all local vectors to the root</a>
+    29) <a name="l29" style="background-color: #ffffff">      public :: scatter         ! scatter from the root to all PEs</a>
+    30) <a name="l30" style="background-color: #ffffff">      public :: bcast           ! bcast from root to all PEs</a>
+    31) <a name="l31" style="background-color: #ffffff">      public :: send            ! Blocking SEND</a>
+    32) <a name="l32" style="background-color: #ffffff">      public :: recv            ! Blocking RECEIVE</a>
+    33) <a name="l33" style="background-color: #ffffff"></a>
+    34) <a name="l34" style="background-color: #ffffff">    interface gather ; module procedure &amp;</a>
+    35) <a name="l35" style="background-color: #ffffff">              GM_gather_, &amp;</a>
+    36) <a name="l36" style="background-color: #ffffff">              GSM_gather_ </a>
+    37) <a name="l37" style="background-color: #ffffff">    end interface</a>
+    38) <a name="l38" style="background-color: #ffffff">    interface scatter ; module procedure &amp;</a>
+    39) <a name="l39" style="background-color: #ffffff">              GM_scatter_, &amp;</a>
+    40) <a name="l40" style="background-color: #ffffff">              GSM_scatter_ </a>
+    41) <a name="l41" style="background-color: #ffffff">    end interface</a>
+    42) <a name="l42" style="background-color: #ffffff">    interface bcast ; module procedure bcast_ ; end interface</a>
+    43) <a name="l43" style="background-color: #ffffff">    interface send  ; module procedure send_  ; end interface</a>
+    44) <a name="l44" style="background-color: #ffffff">    interface recv  ; module procedure recv_  ; end interface</a>
+    45) <a name="l45" style="background-color: #ffffff"></a>
+    46) <a name="l46" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    47) <a name="l47" style="background-color: #ffffff">!       27Apr01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initial module/APIs</a>
+    48) <a name="l48" style="background-color: #ffffff">!       07Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Added point-to-point</a>
+    49) <a name="l49" style="background-color: #ffffff">!       27Mar02 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Overhaul of error</a>
+    50) <a name="l50" style="background-color: #ffffff">!                 handling calls throughout this module.</a>
+    51) <a name="l51" style="background-color: #ffffff">!       05Aug02 - E. Ong &lt;eong@mcs.anl.gov&gt; - Added buffer association </a>
+    52) <a name="l52" style="background-color: #ffffff">!                 error checks to avoid making bad MPI calls</a>
+    53) <a name="l53" style="background-color: #ffffff">!EOP ___________________________________________________________________</a>
+    54) <a name="l54" style="background-color: #ffffff"></a>
+    55) <a name="l55" style="background-color: #ffffff">  character(len=*),parameter :: myname='MCT::m_GeneralGridComms'</a>
+    56) <a name="l56" style="background-color: #ffffff"></a>
+    57) <a name="l57" style="background-color: #ffffff"> contains</a>
+    58) <a name="l58" style="background-color: #ffffff"></a>
+    59) <a name="l59" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+    60) <a name="l60" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+    61) <a name="l61" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+    62) <a name="l62" style="background-color: #ffffff">!</a>
+    63) <a name="l63" style="background-color: #ffffff">! !IROUTINE: send_ - Point-to-point blocking send for the GeneralGrid.</a>
+    64) <a name="l64" style="background-color: #ffffff">!</a>
+    65) <a name="l65" style="background-color: #ffffff">! !DESCRIPTION:  The point-to-point send routine {\tt send\_()} sends </a>
+    66) <a name="l66" style="background-color: #ffffff">! the input {\tt GeneralGrid} argument {\tt iGGrid} to component </a>
+    67) <a name="l67" style="background-color: #ffffff">! {\tt comp\_id}.  </a>
+    68) <a name="l68" style="background-color: #ffffff">! The message is identified by the tag defined by the {\tt INTEGER} </a>
+    69) <a name="l69" style="background-color: #ffffff">! argument {\tt TagBase}.  The value of {\tt TagBase} must match the </a>
+    70) <a name="l70" style="background-color: #ffffff">! value used in the call to {\tt recv\_()} on process {\tt dest}.  The </a>
+    71) <a name="l71" style="background-color: #ffffff">! success (failure) of this operation corresponds to a zero (nonzero) </a>
+    72) <a name="l72" style="background-color: #ffffff">! value for the output {\tt INTEGER} flag {\tt status}. </a>
+    73) <a name="l73" style="background-color: #ffffff">! The argument will be sent to the local root of the component.</a>
+    74) <a name="l74" style="background-color: #ffffff">!</a>
+    75) <a name="l75" style="background-color: #ffffff">! {\bf N.B.}:  One must avoid assigning elsewhere the MPI tag values </a>
+    76) <a name="l76" style="background-color: #ffffff">! between {\tt TagBase} and {\tt TagBase+20}, inclusive.  This is </a>
+    77) <a name="l77" style="background-color: #ffffff">! because {\tt send\_()} performs one send operation set up the header</a>
+    78) <a name="l78" style="background-color: #ffffff">! transfer, up to five {\tt List\_send} operations (two {\tt MPI\_SEND} </a>
+    79) <a name="l79" style="background-color: #ffffff">! calls in each), two send operations to transfer {\tt iGGrid\%descend(:)},</a>
+    80) <a name="l80" style="background-color: #ffffff">! and finally the send of the {\tt AttrVect} component {\tt iGGrid\%data} </a>
+    81) <a name="l81" style="background-color: #ffffff">! (which comprises eight {\tt MPI\_SEND} operations).</a>
+    82) <a name="l82" style="background-color: #ffffff">!</a>
+    83) <a name="l83" style="background-color: #ffffff">! !INTERFACE:</a>
+    84) <a name="l84" style="background-color: #ffffff"></a>
+    85) <a name="l85" style="background-color: #ffffff"> subroutine </a><a style="background-color: #ffcccc">send_(iGGrid, comp_id, TagBase, status)</a>
+    86) <a name="l86" style="background-color: #ffcccc"></a>
+    87) <a name="l87" style="background-color: #ffcccc">!</a>
+    88) <a name="l88" style="background-color: #ffcccc">! !USES:</a>
+    89) <a name="l89" style="background-color: #ffcccc">!</a>
+    90) <a name="l90" style="background-color: #ffcccc">      use m_stdio</a>
+    91) <a name="l91" style="background-color: #ffcccc">      use m_die</a>
+    92) <a name="l92" style="background-color: #ffcccc">      use m_mpif90</a>
+    93) <a name="l93" style="background-color: #ffcccc"></a>
+    94) <a name="l94" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid</a>
+    95) <a name="l95" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid_init =&gt; init</a>
+    96) <a name="l96" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid_lsize =&gt; lsize</a>
+    97) <a name="l97" style="background-color: #ffcccc"></a>
+    98) <a name="l98" style="background-color: #ffcccc">      use m_MCTWorld, only : ComponentToWorldRank</a>
+    99) <a name="l99" style="background-color: #ffcccc">      use m_MCTWorld, only : ThisMCTWorld</a>
+   100) <a name="l100" style="background-color: #ffcccc"></a>
+   101) <a name="l101" style="background-color: #ffcccc">      use m_AttrVectComms,only : AttrVect_send =&gt; send</a>
+   102) <a name="l102" style="background-color: #ffcccc"></a>
+   103) <a name="l103" style="background-color: #ffcccc">      use m_List, only : List_send =&gt; send</a>
+   104) <a name="l104" style="background-color: #ffcccc">      use m_List, only : List_allocated =&gt; allocated</a>
+   105) <a name="l105" style="background-color: #ffcccc"></a>
+   106) <a name="l106" style="background-color: #ffcccc">      implicit none</a>
+   107) <a name="l107" style="background-color: #ffcccc"></a>
+   108) <a name="l108" style="background-color: #ffcccc">! !INPUT PARAMETERS: </a>
+   109) <a name="l109" style="background-color: #ffcccc">!</a>
+   110) <a name="l110" style="background-color: #ffcccc">      type(GeneralGrid), intent(in) :: iGGrid</a>
+   111) <a name="l111" style="background-color: #ffcccc">      integer,           intent(in) :: comp_id</a>
+   112) <a name="l112" style="background-color: #ffcccc">      integer,           intent(in) :: TagBase</a>
+   113) <a name="l113" style="background-color: #ffcccc"></a>
+   114) <a name="l114" style="background-color: #ffcccc">! !OUTPUT PARAMETERS: </a>
+   115) <a name="l115" style="background-color: #ffcccc">!</a>
+   116) <a name="l116" style="background-color: #ffcccc">      integer, optional, intent(out) :: status</a>
+   117) <a name="l117" style="background-color: #ffcccc"></a>
+   118) <a name="l118" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   119) <a name="l119" style="background-color: #ffcccc">!       04Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - API Specification.</a>
+   120) <a name="l120" style="background-color: #ffcccc">!       07Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initial version.</a>
+   121) <a name="l121" style="background-color: #ffcccc">!       10Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Bug fixes--now works.</a>
+   122) <a name="l122" style="background-color: #ffcccc">!       11Jun01 - R. Jacob &lt;jacob@mcs.anl.gov&gt; use component id as input</a>
+   123) <a name="l123" style="background-color: #ffcccc">!                 argument.</a>
+   124) <a name="l124" style="background-color: #ffcccc">!       13Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initialize status</a>
+   125) <a name="l125" style="background-color: #ffcccc">!                 (if present).</a>
+   126) <a name="l126" style="background-color: #ffcccc">!       15Feb02 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Made input argument</a>
+   127) <a name="l127" style="background-color: #ffcccc">!                 comm optional.</a>
+   128) <a name="l128" style="background-color: #ffcccc">!       13Jun02 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Removed the argument</a>
+   129) <a name="l129" style="background-color: #ffcccc">!                 comm.  This routine is now explicitly for intercomponent</a>
+   130) <a name="l130" style="background-color: #ffcccc">!                 communications only.</a>
+   131) <a name="l131" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+   132) <a name="l132" style="background-color: #ffcccc"></a>
+   133) <a name="l133" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::send_'</a>
+   134) <a name="l134" style="background-color: #ffcccc"></a>
+   135) <a name="l135" style="background-color: #ffcccc">  integer :: ierr</a>
+   136) <a name="l136" style="background-color: #ffcccc">  integer :: dest</a>
+   137) <a name="l137" style="background-color: #ffcccc">  logical :: HeaderAssoc(6)</a>
+   138) <a name="l138" style="background-color: #ffcccc"></a>
+   139) <a name="l139" style="background-color: #ffcccc">      ! Initialize status (if present)</a>
+   140) <a name="l140" style="background-color: #ffcccc"></a>
+   141) <a name="l141" style="background-color: #ffcccc">  if(present(status)) status = 0</a>
+   142) <a name="l142" style="background-color: #ffcccc"></a>
+   143) <a name="l143" style="background-color: #ffcccc">  dest = ComponentToWorldRank(0, comp_id, ThisMCTWorld)</a>
+   144) <a name="l144" style="background-color: #ffcccc"></a>
+   145) <a name="l145" style="background-color: #ffcccc">      ! Step 1. Check elements of the GeneralGrid header to see </a>
+   146) <a name="l146" style="background-color: #ffcccc">      ! which components of it are allocated.  Load the results</a>
+   147) <a name="l147" style="background-color: #ffcccc">      ! into HeaderAssoc(:), and send it to process dest.</a>
+   148) <a name="l148" style="background-color: #ffcccc"></a>
+   149) <a name="l149" style="background-color: #ffcccc">  HeaderAssoc(1) = List_allocated(iGGrid%coordinate_list)</a>
+   150) <a name="l150" style="background-color: #ffcccc">  HeaderAssoc(2) = List_allocated(iGGrid%coordinate_sort_order)</a>
+   151) <a name="l151" style="background-color: #ffcccc">  HeaderAssoc(3) = associated(iGGrid%descend)</a>
+   152) <a name="l152" style="background-color: #ffcccc">  HeaderAssoc(4) = List_allocated(iGGrid%weight_list)</a>
+   153) <a name="l153" style="background-color: #ffcccc">  HeaderAssoc(5) = List_allocated(iGGrid%other_list)</a>
+   154) <a name="l154" style="background-color: #ffcccc">  HeaderAssoc(6) = List_allocated(iGGrid%index_list)</a>
+   155) <a name="l155" style="background-color: #ffcccc"></a>
+   156) <a name="l156" style="background-color: #ffcccc">  call MPI_SEND(HeaderAssoc, 6, MP_LOGICAL, dest, TagBase, ThisMCTWorld%MCT_comm, ierr)</a>
+   157) <a name="l157" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+   158) <a name="l158" style="background-color: #ffcccc">     call MP_perr_die(myname_,':: MPI_SEND(HeaderAssoc...',ierr)</a>
+   159) <a name="l159" style="background-color: #ffcccc">  endif</a>
+   160) <a name="l160" style="background-color: #ffcccc"></a>
+   161) <a name="l161" style="background-color: #ffcccc">       ! Step 2.  If iGGrid%coordinate_list is defined, send it.</a>
+   162) <a name="l162" style="background-color: #ffcccc"></a>
+   163) <a name="l163" style="background-color: #ffcccc">  if(HeaderAssoc(1)) then</a>
+   164) <a name="l164" style="background-color: #ffcccc">    call List_send(iGGrid%coordinate_list, dest, TagBase+1, ThisMCTWorld%MCT_comm, ierr)</a>
+   165) <a name="l165" style="background-color: #ffcccc">    if(ierr /= 0) then</a>
+   166) <a name="l166" style="background-color: #ffcccc">       write(stderr,*) myname_,':: call List_send(iGGrid%coordinate_list...', &amp;</a>
+   167) <a name="l167" style="background-color: #ffcccc">	    'Error flag ierr = ',ierr</a>
+   168) <a name="l168" style="background-color: #ffcccc">       if(present(status)) then</a>
+   169) <a name="l169" style="background-color: #ffcccc">          status = ierr</a>
+   170) <a name="l170" style="background-color: #ffcccc">          return</a>
+   171) <a name="l171" style="background-color: #ffcccc">       else</a>
+   172) <a name="l172" style="background-color: #ffcccc">          call die(myname_,':: call List_send(iGGrid%coordinate_list...',ierr)</a>
+   173) <a name="l173" style="background-color: #ffcccc">       endif</a>
+   174) <a name="l174" style="background-color: #ffcccc">    endif</a>
+   175) <a name="l175" style="background-color: #ffcccc">  else  ! This constitutes an error, as a GeneralGrid must have coordinates</a>
+   176) <a name="l176" style="background-color: #ffcccc"></a>
+   177) <a name="l177" style="background-color: #ffcccc">     if(present(status)) then</a>
+   178) <a name="l178" style="background-color: #ffcccc">	write(stderr,*) myname_,':: Error.  GeneralGrid%coordinate_list undefined.'</a>
+   179) <a name="l179" style="background-color: #ffcccc">	status = -1</a>
+   180) <a name="l180" style="background-color: #ffcccc">	return</a>
+   181) <a name="l181" style="background-color: #ffcccc">     else</a>
+   182) <a name="l182" style="background-color: #ffcccc">	call die(myname_,'::  Error.  GeneralGrid%coordinate_list undefined.',-1)</a>
+   183) <a name="l183" style="background-color: #ffcccc">     endif</a>
+   184) <a name="l184" style="background-color: #ffcccc"></a>
+   185) <a name="l185" style="background-color: #ffcccc">  endif ! if(HeaderAssoc(1))...</a>
+   186) <a name="l186" style="background-color: #ffcccc"></a>
+   187) <a name="l187" style="background-color: #ffcccc">       ! Step 3.  If iGGrid%coordinate_sort_order is defined, send it.</a>
+   188) <a name="l188" style="background-color: #ffcccc"></a>
+   189) <a name="l189" style="background-color: #ffcccc">  if(HeaderAssoc(2)) then</a>
+   190) <a name="l190" style="background-color: #ffcccc">    call List_send(iGGrid%coordinate_sort_order, dest, TagBase+3, ThisMCTWorld%MCT_comm, ierr)</a>
+   191) <a name="l191" style="background-color: #ffcccc">    if(ierr /= 0) then</a>
+   192) <a name="l192" style="background-color: #ffcccc">       if(present(status)) then</a>
+   193) <a name="l193" style="background-color: #ffcccc">          write(stderr,*) myname_,':: call List_send(iGGrid%coordinate_sort_order...'</a>
+   194) <a name="l194" style="background-color: #ffcccc">          status = ierr</a>
+   195) <a name="l195" style="background-color: #ffcccc">          return</a>
+   196) <a name="l196" style="background-color: #ffcccc">       else</a>
+   197) <a name="l197" style="background-color: #ffcccc">          call die(myname_,':: call List_send(iGGrid%coordinate_sort_order...',ierr)</a>
+   198) <a name="l198" style="background-color: #ffcccc">       endif</a>
+   199) <a name="l199" style="background-color: #ffcccc">    endif</a>
+   200) <a name="l200" style="background-color: #ffcccc"></a>
+   201) <a name="l201" style="background-color: #ffcccc">  endif ! if(HeaderAssoc(2))...</a>
+   202) <a name="l202" style="background-color: #ffcccc"></a>
+   203) <a name="l203" style="background-color: #ffcccc">       ! Step 4.  If iGGrid%descend is allocated, determine its size,</a>
+   204) <a name="l204" style="background-color: #ffcccc">       ! send this size, and then send the elements of iGGrid%descend.</a>
+   205) <a name="l205" style="background-color: #ffcccc">     </a>
+   206) <a name="l206" style="background-color: #ffcccc">  if(HeaderAssoc(3)) then</a>
+   207) <a name="l207" style="background-color: #ffcccc"></a>
+   208) <a name="l208" style="background-color: #ffcccc">     if(size(iGGrid%descend)&lt;=0) call die(myname_,'size(iGGrid%descend)&lt;=0')</a>
+   209) <a name="l209" style="background-color: #ffcccc"></a>
+   210) <a name="l210" style="background-color: #ffcccc">     call MPI_SEND(size(iGGrid%descend), 1, MP_type(size(iGGrid%descend)), &amp;</a>
+   211) <a name="l211" style="background-color: #ffcccc">                   dest, TagBase+5, ThisMCTWorld%MCT_comm, ierr)</a>
+   212) <a name="l212" style="background-color: #ffcccc">     if(ierr /= 0) then</a>
+   213) <a name="l213" style="background-color: #ffcccc">	call MP_perr_die(myname_,':: call MPI_SEND(size(iGGrid%descend)...',ierr)</a>
+   214) <a name="l214" style="background-color: #ffcccc">     endif</a>
+   215) <a name="l215" style="background-color: #ffcccc"></a>
+   216) <a name="l216" style="background-color: #ffcccc">     call MPI_SEND(iGGrid%descend, size(iGGrid%descend), MP_type(iGGrid%descend(1)), &amp;</a>
+   217) <a name="l217" style="background-color: #ffcccc">                   dest, TagBase+6, ThisMCTWorld%MCT_comm, ierr)</a>
+   218) <a name="l218" style="background-color: #ffcccc">     if(ierr /= 0) then</a>
+   219) <a name="l219" style="background-color: #ffcccc">	call MP_perr_die(myname_,':: call MPI_SEND(iGGrid%descend...',ierr)</a>
+   220) <a name="l220" style="background-color: #ffcccc">     endif</a>
+   221) <a name="l221" style="background-color: #ffcccc"></a>
+   222) <a name="l222" style="background-color: #ffcccc">  endif ! if(HeaderAssoc(3))...</a>
+   223) <a name="l223" style="background-color: #ffcccc"></a>
+   224) <a name="l224" style="background-color: #ffcccc">       ! Step 5.  If iGGrid%weight_list is defined, send it.</a>
+   225) <a name="l225" style="background-color: #ffcccc"></a>
+   226) <a name="l226" style="background-color: #ffcccc">  if(HeaderAssoc(4)) then</a>
+   227) <a name="l227" style="background-color: #ffcccc"></a>
+   228) <a name="l228" style="background-color: #ffcccc">    call List_send(iGGrid%weight_list, dest, TagBase+7, ThisMCTWorld%MCT_comm, ierr)</a>
+   229) <a name="l229" style="background-color: #ffcccc">    if(ierr /= 0) then</a>
+   230) <a name="l230" style="background-color: #ffcccc">       if(present(status)) then</a>
+   231) <a name="l231" style="background-color: #ffcccc">          write(stderr,*) myname_,':: call List_send(iGGrid%weight_list...'</a>
+   232) <a name="l232" style="background-color: #ffcccc">          status = ierr</a>
+   233) <a name="l233" style="background-color: #ffcccc">          return</a>
+   234) <a name="l234" style="background-color: #ffcccc">       else</a>
+   235) <a name="l235" style="background-color: #ffcccc">          call die(myname_,':: call List_send(iGGrid%weight_list...',ierr)</a>
+   236) <a name="l236" style="background-color: #ffcccc">       endif</a>
+   237) <a name="l237" style="background-color: #ffcccc">    endif</a>
+   238) <a name="l238" style="background-color: #ffcccc"></a>
+   239) <a name="l239" style="background-color: #ffcccc">  endif ! if(HeaderAssoc(4))...</a>
+   240) <a name="l240" style="background-color: #ffcccc"></a>
+   241) <a name="l241" style="background-color: #ffcccc">       ! Step 6.  If iGGrid%other_list is defined, send it.</a>
+   242) <a name="l242" style="background-color: #ffcccc"></a>
+   243) <a name="l243" style="background-color: #ffcccc">  if(HeaderAssoc(5)) then</a>
+   244) <a name="l244" style="background-color: #ffcccc"></a>
+   245) <a name="l245" style="background-color: #ffcccc">    call List_send(iGGrid%other_list, dest, TagBase+9, ThisMCTWorld%MCT_comm, ierr)</a>
+   246) <a name="l246" style="background-color: #ffcccc">    if(ierr /= 0) then</a>
+   247) <a name="l247" style="background-color: #ffcccc">       if(present(status)) then</a>
+   248) <a name="l248" style="background-color: #ffcccc">          write(stderr,*) myname_,':: call List_send(iGGrid%other_list...'</a>
+   249) <a name="l249" style="background-color: #ffcccc">          status = ierr</a>
+   250) <a name="l250" style="background-color: #ffcccc">          return</a>
+   251) <a name="l251" style="background-color: #ffcccc">       else</a>
+   252) <a name="l252" style="background-color: #ffcccc">          call die(myname_,':: call List_send(iGGrid%other_list...',ierr)</a>
+   253) <a name="l253" style="background-color: #ffcccc">       endif</a>
+   254) <a name="l254" style="background-color: #ffcccc">    endif</a>
+   255) <a name="l255" style="background-color: #ffcccc"></a>
+   256) <a name="l256" style="background-color: #ffcccc">  endif ! if(HeaderAssoc(5))...</a>
+   257) <a name="l257" style="background-color: #ffcccc"></a>
+   258) <a name="l258" style="background-color: #ffcccc">       ! Step 7.  If iGGrid%index_list is defined, send it.</a>
+   259) <a name="l259" style="background-color: #ffcccc"></a>
+   260) <a name="l260" style="background-color: #ffcccc">  if(HeaderAssoc(6)) then</a>
+   261) <a name="l261" style="background-color: #ffcccc"></a>
+   262) <a name="l262" style="background-color: #ffcccc">    call List_send(iGGrid%index_list, dest, TagBase+11, ThisMCTWorld%MCT_comm, ierr)</a>
+   263) <a name="l263" style="background-color: #ffcccc">    if(ierr /= 0) then</a>
+   264) <a name="l264" style="background-color: #ffcccc">       if(present(status)) then</a>
+   265) <a name="l265" style="background-color: #ffcccc">          write(stderr,*) myname_,':: call List_send(iGGrid%index_list...'</a>
+   266) <a name="l266" style="background-color: #ffcccc">          status = ierr</a>
+   267) <a name="l267" style="background-color: #ffcccc">          return</a>
+   268) <a name="l268" style="background-color: #ffcccc">       else</a>
+   269) <a name="l269" style="background-color: #ffcccc">          call die(myname_,':: call List_send(iGGrid%index_list...',ierr)</a>
+   270) <a name="l270" style="background-color: #ffcccc">       endif</a>
+   271) <a name="l271" style="background-color: #ffcccc">    endif</a>
+   272) <a name="l272" style="background-color: #ffcccc"></a>
+   273) <a name="l273" style="background-color: #ffcccc">  else  ! This constitutes an error, as a GeneralGrid must at a minimum</a>
+   274) <a name="l274" style="background-color: #ffcccc">        ! contain the index GlobGridNum</a>
+   275) <a name="l275" style="background-color: #ffcccc"></a>
+   276) <a name="l276" style="background-color: #ffcccc">     if(present(status)) then</a>
+   277) <a name="l277" style="background-color: #ffcccc">	write(stderr,*) myname_,':: Error.  GeneralGrid%index_list undefined.'</a>
+   278) <a name="l278" style="background-color: #ffcccc">	status = -2</a>
+   279) <a name="l279" style="background-color: #ffcccc">	return</a>
+   280) <a name="l280" style="background-color: #ffcccc">     else</a>
+   281) <a name="l281" style="background-color: #ffcccc">	call die(myname_,'::  Error.  GeneralGrid%index_list undefined.',-2)</a>
+   282) <a name="l282" style="background-color: #ffcccc">     endif</a>
+   283) <a name="l283" style="background-color: #ffcccc"></a>
+   284) <a name="l284" style="background-color: #ffcccc">  endif ! if(HeaderAssoc(6))...</a>
+   285) <a name="l285" style="background-color: #ffcccc"></a>
+   286) <a name="l286" style="background-color: #ffcccc">       ! Step 8.  Finally, send the AttrVect iGGrid%data.</a>
+   287) <a name="l287" style="background-color: #ffcccc"></a>
+   288) <a name="l288" style="background-color: #ffcccc">  call AttrVect_send(iGGrid%data, dest, TagBase+13, ThisMCTWorld%MCT_comm, ierr)</a>
+   289) <a name="l289" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+   290) <a name="l290" style="background-color: #ffcccc">     if(present(status)) then</a>
+   291) <a name="l291" style="background-color: #ffcccc">	write(stderr,*) myname_,':: call AttrVect_send(iGGrid%data...'</a>
+   292) <a name="l292" style="background-color: #ffcccc">	status = ierr</a>
+   293) <a name="l293" style="background-color: #ffcccc">	return</a>
+   294) <a name="l294" style="background-color: #ffcccc">     else</a>
+   295) <a name="l295" style="background-color: #ffcccc">	call die(myname_,':: call AttrVect_send(iGGrid%data...',ierr)</a>
+   296) <a name="l296" style="background-color: #ffcccc">     endif</a>
+   297) <a name="l297" style="background-color: #ffcccc">  endif</a>
+   298) <a name="l298" style="background-color: #ffcccc"></a>
+   299) <a name="l299" style="background-color: #ffcccc">       ! The GeneralGrid send is now complete.</a>
+   300) <a name="l300" style="background-color: #ffcccc"></a>
+   301) <a name="l301" style="background-color: #ffcccc"> end subroutine send_</a>
+   302) <a name="l302" style="background-color: #ffffff"></a>
+   303) <a name="l303" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   304) <a name="l304" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+   305) <a name="l305" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   306) <a name="l306" style="background-color: #ffffff">!</a>
+   307) <a name="l307" style="background-color: #ffffff">! !IROUTINE: recv_ - Point-to-point blocking recv for the GeneralGrid.</a>
+   308) <a name="l308" style="background-color: #ffffff">!</a>
+   309) <a name="l309" style="background-color: #ffffff">! !DESCRIPTION:  The point-to-point receive routine {\tt recv\_()} </a>
+   310) <a name="l310" style="background-color: #ffffff">! receives the output {\tt GeneralGrid} argument {\tt oGGrid} from component</a>
+   311) <a name="l311" style="background-color: #ffffff">! {\tt comp\_id}.  The message is identified by the tag defined by the </a>
+   312) <a name="l312" style="background-color: #ffffff">! {\tt INTEGER} argument {\tt TagBase}.  The value of {\tt TagBase} must </a>
+   313) <a name="l313" style="background-color: #ffffff">! match the value used in the call to {\tt send\_()} on the other component.</a>
+   314) <a name="l314" style="background-color: #ffffff">! The success (failure) of this operation corresponds to a zero (nonzero) </a>
+   315) <a name="l315" style="background-color: #ffffff">! value for the output {\tt INTEGER} flag {\tt status}. </a>
+   316) <a name="l316" style="background-color: #ffffff">!</a>
+   317) <a name="l317" style="background-color: #ffffff">! {\bf N.B.}:  This routine assumes that the {\tt GeneralGrid} argument</a>
+   318) <a name="l318" style="background-color: #ffffff">! {\tt oGGrid} is uninitialized on input; that is, all the {\tt List} </a>
+   319) <a name="l319" style="background-color: #ffffff">! components are blank, the {\tt LOGICAL} array {\tt oGGrid\%descend} is</a>
+   320) <a name="l320" style="background-color: #ffffff">! unallocated, and the {\tt AttrVect} component {\tt oGGrid\%data} is</a>
+   321) <a name="l321" style="background-color: #ffffff">! uninitialized.  The {\tt GeneralGrid} {\tt oGGrid} represents allocated</a>
+   322) <a name="l322" style="background-color: #ffffff">! memory.  When the user no longer needs {\tt oGGrid}, it should be </a>
+   323) <a name="l323" style="background-color: #ffffff">! deallocated by invoking {\tt GeneralGrid\_clean()} (see </a>
+   324) <a name="l324" style="background-color: #ffffff">! {\tt m\_GeneralGrid} for further details).</a>
+   325) <a name="l325" style="background-color: #ffffff">!</a>
+   326) <a name="l326" style="background-color: #ffffff">! {\bf N.B.}:  One must avoid assigning elsewhere the MPI tag values </a>
+   327) <a name="l327" style="background-color: #ffffff">! between {\tt TagBase} and {\tt TagBase+20}, inclusive.  This is </a>
+   328) <a name="l328" style="background-color: #ffffff">! because {\tt recv\_()} performs one receive operation set up the header</a>
+   329) <a name="l329" style="background-color: #ffffff">! transfer, up to five {\tt List\_recv} operations (two {\tt MPI\_RECV} </a>
+   330) <a name="l330" style="background-color: #ffffff">! calls in each), two receive operations to transfer {\tt iGGrid\%descend(:)},</a>
+   331) <a name="l331" style="background-color: #ffffff">! and finally the receive of the {\tt AttrVect} component {\tt iGGrid\%data} </a>
+   332) <a name="l332" style="background-color: #ffffff">! (which comprises eight {\tt MPI\_RECV} operations).</a>
+   333) <a name="l333" style="background-color: #ffffff">!</a>
+   334) <a name="l334" style="background-color: #ffffff">! !INTERFACE:</a>
+   335) <a name="l335" style="background-color: #ffffff"></a>
+   336) <a name="l336" style="background-color: #ffffff"> subroutine </a><a style="background-color: #ffcccc">recv_(oGGrid, comp_id, TagBase, status)</a>
+   337) <a name="l337" style="background-color: #ffcccc"></a>
+   338) <a name="l338" style="background-color: #ffcccc">!</a>
+   339) <a name="l339" style="background-color: #ffcccc">! !USES:</a>
+   340) <a name="l340" style="background-color: #ffcccc">!</a>
+   341) <a name="l341" style="background-color: #ffcccc">      use m_stdio</a>
+   342) <a name="l342" style="background-color: #ffcccc">      use m_die</a>
+   343) <a name="l343" style="background-color: #ffcccc">      use m_mpif90</a>
+   344) <a name="l344" style="background-color: #ffcccc"></a>
+   345) <a name="l345" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid</a>
+   346) <a name="l346" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid_init =&gt; init</a>
+   347) <a name="l347" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid_lsize =&gt; lsize</a>
+   348) <a name="l348" style="background-color: #ffcccc"></a>
+   349) <a name="l349" style="background-color: #ffcccc">      use m_MCTWorld, only : ComponentToWorldRank</a>
+   350) <a name="l350" style="background-color: #ffcccc">      use m_MCTWorld, only : ThisMCTWorld</a>
+   351) <a name="l351" style="background-color: #ffcccc"></a>
+   352) <a name="l352" style="background-color: #ffcccc">      use m_AttrVectComms,only : AttrVect_recv =&gt; recv</a>
+   353) <a name="l353" style="background-color: #ffcccc"></a>
+   354) <a name="l354" style="background-color: #ffcccc">      use m_List,only : List_recv =&gt; recv</a>
+   355) <a name="l355" style="background-color: #ffcccc">      use m_List,only : List_nullify =&gt; nullify</a>
+   356) <a name="l356" style="background-color: #ffcccc"></a>
+   357) <a name="l357" style="background-color: #ffcccc">      implicit none</a>
+   358) <a name="l358" style="background-color: #ffcccc"></a>
+   359) <a name="l359" style="background-color: #ffcccc">! !INPUT PARAMETERS: </a>
+   360) <a name="l360" style="background-color: #ffcccc">!</a>
+   361) <a name="l361" style="background-color: #ffcccc">      integer,           intent(in) :: comp_id</a>
+   362) <a name="l362" style="background-color: #ffcccc">      integer,           intent(in) :: TagBase</a>
+   363) <a name="l363" style="background-color: #ffcccc"></a>
+   364) <a name="l364" style="background-color: #ffcccc">! !OUTPUT PARAMETERS: </a>
+   365) <a name="l365" style="background-color: #ffcccc">!</a>
+   366) <a name="l366" style="background-color: #ffcccc">      type(GeneralGrid), intent(out) :: oGGrid</a>
+   367) <a name="l367" style="background-color: #ffcccc">      integer, optional, intent(out) :: status</a>
+   368) <a name="l368" style="background-color: #ffcccc"></a>
+   369) <a name="l369" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   370) <a name="l370" style="background-color: #ffcccc">!       04Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - API Specification.</a>
+   371) <a name="l371" style="background-color: #ffcccc">!       07Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initial version.</a>
+   372) <a name="l372" style="background-color: #ffcccc">!       10Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Bug fixes--now works.</a>
+   373) <a name="l373" style="background-color: #ffcccc">!       11Jun01 - R. Jacob &lt;jacob@mcs.anl.gov&gt; use component id as input</a>
+   374) <a name="l374" style="background-color: #ffcccc">!                 argument.</a>
+   375) <a name="l375" style="background-color: #ffcccc">!       13Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initialize status</a>
+   376) <a name="l376" style="background-color: #ffcccc">!                 (if present).</a>
+   377) <a name="l377" style="background-color: #ffcccc">!       13Jun02 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Removed the argument</a>
+   378) <a name="l378" style="background-color: #ffcccc">!                 comm.  This routine is now explicitly for intercomponent</a>
+   379) <a name="l379" style="background-color: #ffcccc">!                 communications only.</a>
+   380) <a name="l380" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+   381) <a name="l381" style="background-color: #ffcccc"></a>
+   382) <a name="l382" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::recv_'</a>
+   383) <a name="l383" style="background-color: #ffcccc"></a>
+   384) <a name="l384" style="background-color: #ffcccc">  integer :: ierr</a>
+   385) <a name="l385" style="background-color: #ffcccc">  integer :: source</a>
+   386) <a name="l386" style="background-color: #ffcccc">  integer :: MPstatus(MP_STATUS_SIZE), DescendSize</a>
+   387) <a name="l387" style="background-color: #ffcccc">  logical :: HeaderAssoc(6)</a>
+   388) <a name="l388" style="background-color: #ffcccc"></a>
+   389) <a name="l389" style="background-color: #ffcccc">! for now, assume the components root is the source.</a>
+   390) <a name="l390" style="background-color: #ffcccc">  source = ComponentToWorldRank(0, comp_id, ThisMCTWorld)</a>
+   391) <a name="l391" style="background-color: #ffcccc"></a>
+   392) <a name="l392" style="background-color: #ffcccc">      ! Step 1. Receive the elements of the LOGICAL flag array</a>
+   393) <a name="l393" style="background-color: #ffcccc">      ! HeaderAssoc.  TRUE entries in this array correspond to</a>
+   394) <a name="l394" style="background-color: #ffcccc">      ! Check elements of the GeneralGrid header that are not</a>
+   395) <a name="l395" style="background-color: #ffcccc">      ! blank, and are being sent by process source.</a>
+   396) <a name="l396" style="background-color: #ffcccc">      !      </a>
+   397) <a name="l397" style="background-color: #ffcccc">      ! The significance of the entries of HeaderAssoc has been</a>
+   398) <a name="l398" style="background-color: #ffcccc">      ! defined in send_().  Here are the definitions of these</a>
+   399) <a name="l399" style="background-color: #ffcccc">      ! values:</a>
+   400) <a name="l400" style="background-color: #ffcccc">      !</a>
+   401) <a name="l401" style="background-color: #ffcccc">      !  HeaderAssoc(1) = List_allocated(oGGrid%coordinate_list)</a>
+   402) <a name="l402" style="background-color: #ffcccc">      !  HeaderAssoc(2) = List_allocated(oGGrid%coordinate_sort_order)</a>
+   403) <a name="l403" style="background-color: #ffcccc">      !  HeaderAssoc(3) = associated(oGGrid%descend)</a>
+   404) <a name="l404" style="background-color: #ffcccc">      !  HeaderAssoc(4) = List_allocated(oGGrid%weight_list)</a>
+   405) <a name="l405" style="background-color: #ffcccc">      !  HeaderAssoc(5) = List_allocated(oGGrid%other_list)</a>
+   406) <a name="l406" style="background-color: #ffcccc">      !  HeaderAssoc(6) = List_allocated(oGGrid%index_list)</a>
+   407) <a name="l407" style="background-color: #ffcccc"></a>
+   408) <a name="l408" style="background-color: #ffcccc">      ! Initialize status (if present)</a>
+   409) <a name="l409" style="background-color: #ffcccc"></a>
+   410) <a name="l410" style="background-color: #ffcccc">  if(present(status)) status = 0</a>
+   411) <a name="l411" style="background-color: #ffcccc"></a>
+   412) <a name="l412" style="background-color: #ffcccc">      ! Step 1.  Nullify oGGrid components, set HeaderAssoc(:) to .FALSE., </a>
+   413) <a name="l413" style="background-color: #ffcccc">      ! then receive incoming HeaderAssoc(:) data</a>
+   414) <a name="l414" style="background-color: #ffcccc"></a>
+   415) <a name="l415" style="background-color: #ffcccc">  call List_nullify(oGGrid%coordinate_list)</a>
+   416) <a name="l416" style="background-color: #ffcccc">  call List_nullify(oGGrid%coordinate_sort_order)</a>
+   417) <a name="l417" style="background-color: #ffcccc">  call List_nullify(oGGrid%weight_list)</a>
+   418) <a name="l418" style="background-color: #ffcccc">  call List_nullify(oGGrid%other_list)</a>
+   419) <a name="l419" style="background-color: #ffcccc">  call List_nullify(oGGrid%index_list)</a>
+   420) <a name="l420" style="background-color: #ffcccc">  nullify(oGGrid%descend)</a>
+   421) <a name="l421" style="background-color: #ffcccc"></a>
+   422) <a name="l422" style="background-color: #ffcccc">  HeaderAssoc = .FALSE.</a>
+   423) <a name="l423" style="background-color: #ffcccc"></a>
+   424) <a name="l424" style="background-color: #ffcccc">  call MPI_RECV(HeaderAssoc, 6, MP_LOGICAL, source, TagBase, ThisMCTWorld%MCT_comm, MPstatus, ierr)</a>
+   425) <a name="l425" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+   426) <a name="l426" style="background-color: #ffcccc">     call MP_perr_die(myname_,':: MPI_RECV(HeaderAssoc...',ierr)</a>
+   427) <a name="l427" style="background-color: #ffcccc">  endif</a>
+   428) <a name="l428" style="background-color: #ffcccc"></a>
+   429) <a name="l429" style="background-color: #ffcccc">       ! Step 2.  If oGGrid%coordinate_list is defined, receive it.</a>
+   430) <a name="l430" style="background-color: #ffcccc"></a>
+   431) <a name="l431" style="background-color: #ffcccc">  if(HeaderAssoc(1)) then</a>
+   432) <a name="l432" style="background-color: #ffcccc">    call List_recv(oGGrid%coordinate_list, source, TagBase+1, ThisMCTWorld%MCT_comm, ierr)</a>
+   433) <a name="l433" style="background-color: #ffcccc">    if(ierr /= 0) then</a>
+   434) <a name="l434" style="background-color: #ffcccc">       if(present(status)) then</a>
+   435) <a name="l435" style="background-color: #ffcccc">          write(stderr,*) myname_,':: call List_recv(oGGrid%coordinate_list...'</a>
+   436) <a name="l436" style="background-color: #ffcccc">          status = ierr</a>
+   437) <a name="l437" style="background-color: #ffcccc">          return</a>
+   438) <a name="l438" style="background-color: #ffcccc">       else</a>
+   439) <a name="l439" style="background-color: #ffcccc">          call die(myname_,':: call List_recv(oGGrid%coordinate_list...',ierr)</a>
+   440) <a name="l440" style="background-color: #ffcccc">       endif</a>
+   441) <a name="l441" style="background-color: #ffcccc">    endif</a>
+   442) <a name="l442" style="background-color: #ffcccc">  else  ! This constitutes an error, as a GeneralGrid must have coordinates</a>
+   443) <a name="l443" style="background-color: #ffcccc"></a>
+   444) <a name="l444" style="background-color: #ffcccc">     if(present(status)) then</a>
+   445) <a name="l445" style="background-color: #ffcccc">	write(stderr,*) myname_,':: Error.  GeneralGrid%coordinate_list undefined.'</a>
+   446) <a name="l446" style="background-color: #ffcccc">	status = -1</a>
+   447) <a name="l447" style="background-color: #ffcccc">	return</a>
+   448) <a name="l448" style="background-color: #ffcccc">     else</a>
+   449) <a name="l449" style="background-color: #ffcccc">	call die(myname_,'::  Error.  GeneralGrid%coordinate_list undefined.',-1)</a>
+   450) <a name="l450" style="background-color: #ffcccc">     endif</a>
+   451) <a name="l451" style="background-color: #ffcccc"></a>
+   452) <a name="l452" style="background-color: #ffcccc">  endif ! if(HeaderAssoc(1))...</a>
+   453) <a name="l453" style="background-color: #ffcccc"></a>
+   454) <a name="l454" style="background-color: #ffcccc">       ! Step 3.  If oGGrid%coordinate_sort_order is defined, receive it.</a>
+   455) <a name="l455" style="background-color: #ffcccc"></a>
+   456) <a name="l456" style="background-color: #ffcccc">  if(HeaderAssoc(2)) then</a>
+   457) <a name="l457" style="background-color: #ffcccc">     call List_recv(oGGrid%coordinate_sort_order, source, TagBase+3, ThisMCTWorld%MCT_comm, ierr)</a>
+   458) <a name="l458" style="background-color: #ffcccc">     if(ierr /= 0) then</a>
+   459) <a name="l459" style="background-color: #ffcccc">	if(present(status)) then</a>
+   460) <a name="l460" style="background-color: #ffcccc">	   write(stderr,*) myname_,':: Error calling ',&amp;</a>
+   461) <a name="l461" style="background-color: #ffcccc">		'List_recv(oGGrid%coordinate_sort_order...'</a>
+   462) <a name="l462" style="background-color: #ffcccc">	   status = ierr</a>
+   463) <a name="l463" style="background-color: #ffcccc">	   return</a>
+   464) <a name="l464" style="background-color: #ffcccc">	else</a>
+   465) <a name="l465" style="background-color: #ffcccc">	   call die(myname_,':: call List_recv(oGGrid%coordinate_sort_order...', ierr)</a>
+   466) <a name="l466" style="background-color: #ffcccc">	endif</a>
+   467) <a name="l467" style="background-color: #ffcccc">     endif</a>
+   468) <a name="l468" style="background-color: #ffcccc">  endif ! if(HeaderAssoc(2))...</a>
+   469) <a name="l469" style="background-color: #ffcccc"></a>
+   470) <a name="l470" style="background-color: #ffcccc">       ! Step 4.  If oGGrid%descend is allocated, determine its size,</a>
+   471) <a name="l471" style="background-color: #ffcccc">       ! receive this size, allocate oGGrid%descend, and then receive </a>
+   472) <a name="l472" style="background-color: #ffcccc">       ! the elements of oGGrid%descend.</a>
+   473) <a name="l473" style="background-color: #ffcccc">     </a>
+   474) <a name="l474" style="background-color: #ffcccc">  if(HeaderAssoc(3)) then</a>
+   475) <a name="l475" style="background-color: #ffcccc"></a>
+   476) <a name="l476" style="background-color: #ffcccc">     call MPI_RECV(DescendSize, 1, MP_type(DescendSize), &amp;</a>
+   477) <a name="l477" style="background-color: #ffcccc">                   source, TagBase+5, ThisMCTWorld%MCT_comm, MPstatus, ierr)</a>
+   478) <a name="l478" style="background-color: #ffcccc">     if(ierr /= 0) then</a>
+   479) <a name="l479" style="background-color: #ffcccc">	   call MP_perr_die(myname_,':: call MPI_RECV(size(oGGrid%descend)...',ierr)</a>
+   480) <a name="l480" style="background-color: #ffcccc">     endif</a>
+   481) <a name="l481" style="background-color: #ffcccc"></a>
+   482) <a name="l482" style="background-color: #ffcccc">     allocate(oGGrid%descend(DescendSize), stat=ierr)</a>
+   483) <a name="l483" style="background-color: #ffcccc">     if(ierr /= 0) then</a>
+   484) <a name="l484" style="background-color: #ffcccc">	if(present(status)) then</a>
+   485) <a name="l485" style="background-color: #ffcccc">	   write(stderr,*) myname_,':: allocate(oGGrid%descend...'</a>
+   486) <a name="l486" style="background-color: #ffcccc">	   status = ierr</a>
+   487) <a name="l487" style="background-color: #ffcccc">	   return</a>
+   488) <a name="l488" style="background-color: #ffcccc">	else</a>
+   489) <a name="l489" style="background-color: #ffcccc">	   call die(myname_,':: allocate(oGGrid%descend... failed.',ierr)</a>
+   490) <a name="l490" style="background-color: #ffcccc">	endif</a>
+   491) <a name="l491" style="background-color: #ffcccc">     endif</a>
+   492) <a name="l492" style="background-color: #ffcccc"></a>
+   493) <a name="l493" style="background-color: #ffcccc">     call MPI_RECV(oGGrid%descend, DescendSize, MP_type(oGGrid%descend(1)), &amp;</a>
+   494) <a name="l494" style="background-color: #ffcccc">                   source, TagBase+6, ThisMCTWorld%MCT_comm, MPstatus, ierr)</a>
+   495) <a name="l495" style="background-color: #ffcccc">     if(ierr /= 0) then</a>
+   496) <a name="l496" style="background-color: #ffcccc">	   call MP_perr_die(myname_,':: call MPI_RECV(oGGrid%descend...',ierr)</a>
+   497) <a name="l497" style="background-color: #ffcccc">     endif</a>
+   498) <a name="l498" style="background-color: #ffcccc"></a>
+   499) <a name="l499" style="background-color: #ffcccc">  endif ! if(HeaderAssoc(3))...</a>
+   500) <a name="l500" style="background-color: #ffcccc"></a>
+   501) <a name="l501" style="background-color: #ffcccc">       ! Step 5.  If oGGrid%weight_list is defined, receive it.</a>
+   502) <a name="l502" style="background-color: #ffcccc"></a>
+   503) <a name="l503" style="background-color: #ffcccc">  if(HeaderAssoc(4)) then</a>
+   504) <a name="l504" style="background-color: #ffcccc"></a>
+   505) <a name="l505" style="background-color: #ffcccc">    call List_recv(oGGrid%weight_list, source, TagBase+7, ThisMCTWorld%MCT_comm, ierr)</a>
+   506) <a name="l506" style="background-color: #ffcccc">    if(ierr /= 0) then</a>
+   507) <a name="l507" style="background-color: #ffcccc">       if(present(status)) then</a>
+   508) <a name="l508" style="background-color: #ffcccc">          write(stderr,*) myname_,':: call List_recv(oGGrid%weight_list...'</a>
+   509) <a name="l509" style="background-color: #ffcccc">          status = ierr</a>
+   510) <a name="l510" style="background-color: #ffcccc">          return</a>
+   511) <a name="l511" style="background-color: #ffcccc">       else</a>
+   512) <a name="l512" style="background-color: #ffcccc">          call die(myname_,':: call List_recv(oGGrid%weight_list...',ierr)</a>
+   513) <a name="l513" style="background-color: #ffcccc">       endif</a>
+   514) <a name="l514" style="background-color: #ffcccc">    endif</a>
+   515) <a name="l515" style="background-color: #ffcccc"></a>
+   516) <a name="l516" style="background-color: #ffcccc">  endif ! if(HeaderAssoc(4))...</a>
+   517) <a name="l517" style="background-color: #ffcccc"></a>
+   518) <a name="l518" style="background-color: #ffcccc">       ! Step 6.  If oGGrid%other_list is defined, receive it.</a>
+   519) <a name="l519" style="background-color: #ffcccc"></a>
+   520) <a name="l520" style="background-color: #ffcccc">  if(HeaderAssoc(5)) then</a>
+   521) <a name="l521" style="background-color: #ffcccc"></a>
+   522) <a name="l522" style="background-color: #ffcccc">    call List_recv(oGGrid%other_list, source, TagBase+9, ThisMCTWorld%MCT_comm, ierr)</a>
+   523) <a name="l523" style="background-color: #ffcccc">    if(ierr /= 0) then</a>
+   524) <a name="l524" style="background-color: #ffcccc">       if(present(status)) then</a>
+   525) <a name="l525" style="background-color: #ffcccc">          write(stderr,*) myname_,':: call List_recv(oGGrid%other_list...'</a>
+   526) <a name="l526" style="background-color: #ffcccc">          status = ierr</a>
+   527) <a name="l527" style="background-color: #ffcccc">          return</a>
+   528) <a name="l528" style="background-color: #ffcccc">       else</a>
+   529) <a name="l529" style="background-color: #ffcccc">          call die(myname_,':: call List_recv(oGGrid%other_list...',ierr)</a>
+   530) <a name="l530" style="background-color: #ffcccc">       endif</a>
+   531) <a name="l531" style="background-color: #ffcccc">    endif</a>
+   532) <a name="l532" style="background-color: #ffcccc"></a>
+   533) <a name="l533" style="background-color: #ffcccc">  endif ! if(HeaderAssoc(5))...</a>
+   534) <a name="l534" style="background-color: #ffcccc"></a>
+   535) <a name="l535" style="background-color: #ffcccc">       ! Step 7.  If oGGrid%index_list is defined, receive it.</a>
+   536) <a name="l536" style="background-color: #ffcccc"></a>
+   537) <a name="l537" style="background-color: #ffcccc">  if(HeaderAssoc(6)) then</a>
+   538) <a name="l538" style="background-color: #ffcccc"></a>
+   539) <a name="l539" style="background-color: #ffcccc">    call List_recv(oGGrid%index_list, source, TagBase+11, ThisMCTWorld%MCT_comm, ierr)</a>
+   540) <a name="l540" style="background-color: #ffcccc">    if(ierr /= 0) then</a>
+   541) <a name="l541" style="background-color: #ffcccc">       if(present(status)) then</a>
+   542) <a name="l542" style="background-color: #ffcccc">          write(stderr,*) myname_,':: call List_recv(oGGrid%index_list...'</a>
+   543) <a name="l543" style="background-color: #ffcccc">          status = ierr</a>
+   544) <a name="l544" style="background-color: #ffcccc">          return</a>
+   545) <a name="l545" style="background-color: #ffcccc">       else</a>
+   546) <a name="l546" style="background-color: #ffcccc">          call die(myname_,':: call List_recv(oGGrid%index_list...',ierr)</a>
+   547) <a name="l547" style="background-color: #ffcccc">       endif</a>
+   548) <a name="l548" style="background-color: #ffcccc">    endif</a>
+   549) <a name="l549" style="background-color: #ffcccc"></a>
+   550) <a name="l550" style="background-color: #ffcccc">  else  ! This constitutes an error, as a GeneralGrid must at a minimum</a>
+   551) <a name="l551" style="background-color: #ffcccc">        ! contain the index GlobGridNum</a>
+   552) <a name="l552" style="background-color: #ffcccc"></a>
+   553) <a name="l553" style="background-color: #ffcccc">     if(present(status)) then</a>
+   554) <a name="l554" style="background-color: #ffcccc">	write(stderr,*) myname_,':: Error.  GeneralGrid%index_list undefined.'</a>
+   555) <a name="l555" style="background-color: #ffcccc">	status = -2</a>
+   556) <a name="l556" style="background-color: #ffcccc">	return</a>
+   557) <a name="l557" style="background-color: #ffcccc">     else</a>
+   558) <a name="l558" style="background-color: #ffcccc">	call die(myname_,'::  Error.  GeneralGrid%index_list undefined.',-2)</a>
+   559) <a name="l559" style="background-color: #ffcccc">     endif</a>
+   560) <a name="l560" style="background-color: #ffcccc"></a>
+   561) <a name="l561" style="background-color: #ffcccc">  endif ! if(HeaderAssoc(6))...</a>
+   562) <a name="l562" style="background-color: #ffcccc"></a>
+   563) <a name="l563" style="background-color: #ffcccc">       ! Step 8.  Finally, receive the AttrVect oGGrid%data.</a>
+   564) <a name="l564" style="background-color: #ffcccc"></a>
+   565) <a name="l565" style="background-color: #ffcccc">  call AttrVect_recv(oGGrid%data, source, TagBase+13, ThisMCTWorld%MCT_comm, ierr)</a>
+   566) <a name="l566" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+   567) <a name="l567" style="background-color: #ffcccc">     if(present(status)) then</a>
+   568) <a name="l568" style="background-color: #ffcccc">	write(stderr,*) myname_,':: call AttrVect_recv(oGGrid%data...'</a>
+   569) <a name="l569" style="background-color: #ffcccc">	status = ierr</a>
+   570) <a name="l570" style="background-color: #ffcccc">	return</a>
+   571) <a name="l571" style="background-color: #ffcccc">     else</a>
+   572) <a name="l572" style="background-color: #ffcccc">	call die(myname_,':: call AttrVect_recv(oGGrid%data...',ierr)</a>
+   573) <a name="l573" style="background-color: #ffcccc">     endif</a>
+   574) <a name="l574" style="background-color: #ffcccc">  endif</a>
+   575) <a name="l575" style="background-color: #ffcccc"></a>
+   576) <a name="l576" style="background-color: #ffcccc">       ! The GeneralGrid receive is now complete.</a>
+   577) <a name="l577" style="background-color: #ffcccc"></a>
+   578) <a name="l578" style="background-color: #ffcccc"> end subroutine recv_</a>
+   579) <a name="l579" style="background-color: #ffffff"></a>
+   580) <a name="l580" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   581) <a name="l581" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+   582) <a name="l582" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   583) <a name="l583" style="background-color: #ffffff">!</a>
+   584) <a name="l584" style="background-color: #ffffff">! !IROUTINE: GM_gather_ - gather a GeneralGrid using input GlobalMap.</a>
+   585) <a name="l585" style="background-color: #ffffff">!</a>
+   586) <a name="l586" style="background-color: #ffffff">! !DESCRIPTION:  {\tt GM\_gather\_()} takes an input {\tt GeneralGrid} </a>
+   587) <a name="l587" style="background-color: #ffffff">! argument {\tt iG} whose decomposition on the communicator associated </a>
+   588) <a name="l588" style="background-color: #ffffff">! with the F90 handle {\tt comm} is described by the {\tt GlobalMap} </a>
+   589) <a name="l589" style="background-color: #ffffff">! argument {\tt GMap}, and gathers it to the {\tt GeneralGrid} output</a>
+   590) <a name="l590" style="background-color: #ffffff">! argument {\tt oG} on the {\tt root}.  The success (failure) of this </a>
+   591) <a name="l591" style="background-color: #ffffff">! operation is reported as a zero (nonzero) value in the optional </a>
+   592) <a name="l592" style="background-color: #ffffff">! {\tt INTEGER} output argument {\tt stat}.</a>
+   593) <a name="l593" style="background-color: #ffffff"></a>
+   594) <a name="l594" style="background-color: #ffffff">! {\bf N.B.}:  An important assumption made here is that the distributed</a>
+   595) <a name="l595" style="background-color: #ffffff">! {\tt GeneralGrid} {\tt iG} has been initialized with the same </a>
+   596) <a name="l596" style="background-color: #ffffff">! coordinate system, sort order, other real attributes, and the same </a>
+   597) <a name="l597" style="background-color: #ffffff">! indexing attributes for all processes on {\tt comm}.</a>
+   598) <a name="l598" style="background-color: #ffffff">!</a>
+   599) <a name="l599" style="background-color: #ffffff">! {\bf N.B.}:  Once the gridpoint data of the {\tt GeneralGrid} are assembled </a>
+   600) <a name="l600" style="background-color: #ffffff">! on the {\tt root}, they are stored in the order determined by the input </a>
+   601) <a name="l601" style="background-color: #ffffff">! {\tt GlobalMap} {\tt GMap}.  The user may need to sorted these gathered</a>
+   602) <a name="l602" style="background-color: #ffffff">! data to order them in  accordance with the {\tt coordinate\_sort\_order} </a>
+   603) <a name="l603" style="background-color: #ffffff">! attribute of {\tt iG}.</a>
+   604) <a name="l604" style="background-color: #ffffff">!</a>
+   605) <a name="l605" style="background-color: #ffffff">! {\bf N.B.}:  The output {\tt GeneralGrid} {\tt oG} represents allocated</a>
+   606) <a name="l606" style="background-color: #ffffff">! memory on the {\tt root}.  When the user no longer needs {\tt oG} it</a>
+   607) <a name="l607" style="background-color: #ffffff">! should be deallocated using {\tt GeneralGrid\_clean()} to avoid a memory</a>
+   608) <a name="l608" style="background-color: #ffffff">! leak</a>
+   609) <a name="l609" style="background-color: #ffffff">!</a>
+   610) <a name="l610" style="background-color: #ffffff">! !INTERFACE:</a>
+   611) <a name="l611" style="background-color: #ffffff">!</a>
+   612) <a name="l612" style="background-color: #ffffff"> subroutine </a><a style="background-color: #ffcccc">GM_gather_(iG, oG, GMap, root, comm, stat)</a>
+   613) <a name="l613" style="background-color: #ffcccc">!</a>
+   614) <a name="l614" style="background-color: #ffcccc">! !USES:</a>
+   615) <a name="l615" style="background-color: #ffcccc">!</a>
+   616) <a name="l616" style="background-color: #ffcccc">      use m_stdio</a>
+   617) <a name="l617" style="background-color: #ffcccc">      use m_die</a>
+   618) <a name="l618" style="background-color: #ffcccc">      use m_mpif90</a>
+   619) <a name="l619" style="background-color: #ffcccc"></a>
+   620) <a name="l620" style="background-color: #ffcccc">      use m_GlobalMap, only : GlobalMap</a>
+   621) <a name="l621" style="background-color: #ffcccc">      use m_GlobalMap, only : GlobalMap_gsize =&gt; gsize</a>
+   622) <a name="l622" style="background-color: #ffcccc"></a>
+   623) <a name="l623" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid</a>
+   624) <a name="l624" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid_init =&gt; init</a>
+   625) <a name="l625" style="background-color: #ffcccc"></a>
+   626) <a name="l626" style="background-color: #ffcccc">      use m_AttrVectComms,only : AttrVect_Gather =&gt; gather</a>
+   627) <a name="l627" style="background-color: #ffcccc"></a>
+   628) <a name="l628" style="background-color: #ffcccc">      implicit none</a>
+   629) <a name="l629" style="background-color: #ffcccc"></a>
+   630) <a name="l630" style="background-color: #ffcccc">! !INPUT PARAMETERS: </a>
+   631) <a name="l631" style="background-color: #ffcccc">!</a>
+   632) <a name="l632" style="background-color: #ffcccc">      type(GeneralGrid), intent(in)  :: iG</a>
+   633) <a name="l633" style="background-color: #ffcccc">      type(GlobalMap),   intent(in)  :: GMap</a>
+   634) <a name="l634" style="background-color: #ffcccc">      integer,           intent(in)  :: root</a>
+   635) <a name="l635" style="background-color: #ffcccc">      integer,           intent(in)  :: comm</a>
+   636) <a name="l636" style="background-color: #ffcccc"></a>
+   637) <a name="l637" style="background-color: #ffcccc">! !OUTPUT PARAMETERS: </a>
+   638) <a name="l638" style="background-color: #ffcccc">!</a>
+   639) <a name="l639" style="background-color: #ffcccc">      type(GeneralGrid), intent(out) :: oG</a>
+   640) <a name="l640" style="background-color: #ffcccc">      integer, optional, intent(out) :: stat</a>
+   641) <a name="l641" style="background-color: #ffcccc"></a>
+   642) <a name="l642" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   643) <a name="l643" style="background-color: #ffcccc">!       27Apr01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - API Specification.</a>
+   644) <a name="l644" style="background-color: #ffcccc">!       02May01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initial code.</a>
+   645) <a name="l645" style="background-color: #ffcccc">!       13Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initialize stat</a>
+   646) <a name="l646" style="background-color: #ffcccc">!                 (if present).</a>
+   647) <a name="l647" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+   648) <a name="l648" style="background-color: #ffcccc"></a>
+   649) <a name="l649" style="background-color: #ffcccc"> character(len=*),parameter :: myname_=myname//'::GM_gather_'</a>
+   650) <a name="l650" style="background-color: #ffcccc">!Process ID</a>
+   651) <a name="l651" style="background-color: #ffcccc"> integer :: myID</a>
+   652) <a name="l652" style="background-color: #ffcccc">!Error flag</a>
+   653) <a name="l653" style="background-color: #ffcccc"> integer :: ierr</a>
+   654) <a name="l654" style="background-color: #ffcccc">!Number of points on the _Gathered_ grid:</a>
+   655) <a name="l655" style="background-color: #ffcccc"> integer :: length</a>
+   656) <a name="l656" style="background-color: #ffcccc"></a>
+   657) <a name="l657" style="background-color: #ffcccc">      ! Initialize stat (if present)</a>
+   658) <a name="l658" style="background-color: #ffcccc"></a>
+   659) <a name="l659" style="background-color: #ffcccc">  if(present(stat)) stat = 0</a>
+   660) <a name="l660" style="background-color: #ffcccc"></a>
+   661) <a name="l661" style="background-color: #ffcccc">       ! Which process am I?</a>
+   662) <a name="l662" style="background-color: #ffcccc"></a>
+   663) <a name="l663" style="background-color: #ffcccc">  call MPI_COMM_RANK(comm, myID, ierr)</a>
+   664) <a name="l664" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+   665) <a name="l665" style="background-color: #ffcccc">    call MP_perr_die(myname_,'call MPI_COMM_RANK()',ierr)</a>
+   666) <a name="l666" style="background-color: #ffcccc">  endif</a>
+   667) <a name="l667" style="background-color: #ffcccc"></a>
+   668) <a name="l668" style="background-color: #ffcccc">  if(myID == root) then ! prepare oG:</a>
+   669) <a name="l669" style="background-color: #ffcccc"></a>
+   670) <a name="l670" style="background-color: #ffcccc">       ! The length of the _gathered_ GeneralGrid oG is determined by </a>
+   671) <a name="l671" style="background-color: #ffcccc">       ! the GlobalMap function GlobalMap_gsize()</a>
+   672) <a name="l672" style="background-color: #ffcccc"></a>
+   673) <a name="l673" style="background-color: #ffcccc">     length = GlobalMap_gsize(GMap)</a>
+   674) <a name="l674" style="background-color: #ffcccc"></a>
+   675) <a name="l675" style="background-color: #ffcccc">       ! Initialize attributes of oG from iG</a>
+   676) <a name="l676" style="background-color: #ffcccc">     call copyGeneralGridHeader_(iG,oG) </a>
+   677) <a name="l677" style="background-color: #ffcccc"></a>
+   678) <a name="l678" style="background-color: #ffcccc">  endif</a>
+   679) <a name="l679" style="background-color: #ffcccc"></a>
+   680) <a name="l680" style="background-color: #ffcccc">       ! Gather gridpoint data in iG%data to oG%data</a>
+   681) <a name="l681" style="background-color: #ffcccc"></a>
+   682) <a name="l682" style="background-color: #ffcccc">  call AttrVect_Gather(iG%data, oG%data, GMap, root, comm, ierr)</a>
+   683) <a name="l683" style="background-color: #ffcccc"></a>
+   684) <a name="l684" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+   685) <a name="l685" style="background-color: #ffcccc">     write(stderr,*) myname_,':: Error--call AttrVect_Gather() failed.', &amp;</a>
+   686) <a name="l686" style="background-color: #ffcccc">	  ' ierr = ',ierr</a>
+   687) <a name="l687" style="background-color: #ffcccc">     if(present(stat)) then</a>
+   688) <a name="l688" style="background-color: #ffcccc">	stat=ierr</a>
+   689) <a name="l689" style="background-color: #ffcccc">	return</a>
+   690) <a name="l690" style="background-color: #ffcccc">     else</a>
+   691) <a name="l691" style="background-color: #ffcccc">	call die(myname_,'call AttrVect_Gather(ig%data...',ierr)</a>
+   692) <a name="l692" style="background-color: #ffcccc">     endif</a>
+   693) <a name="l693" style="background-color: #ffcccc">  endif</a>
+   694) <a name="l694" style="background-color: #ffcccc"></a>
+   695) <a name="l695" style="background-color: #ffcccc"> end subroutine GM_gather_</a>
+   696) <a name="l696" style="background-color: #ffffff"></a>
+   697) <a name="l697" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   698) <a name="l698" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+   699) <a name="l699" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   700) <a name="l700" style="background-color: #ffffff">!</a>
+   701) <a name="l701" style="background-color: #ffffff">! !IROUTINE: GSM_gather_ - gather a GeneralGrid using input GlobalSegMap.</a>
+   702) <a name="l702" style="background-color: #ffffff">!</a>
+   703) <a name="l703" style="background-color: #ffffff">! !DESCRIPTION:  {\tt GMS\_gather\_()} takes an input {\tt GeneralGrid} </a>
+   704) <a name="l704" style="background-color: #ffffff">! argument {\tt iG} whose decomposition on the communicator associated </a>
+   705) <a name="l705" style="background-color: #ffffff">! with the F90 handle {\tt comm} is described by the {\tt GlobalSegMap} </a>
+   706) <a name="l706" style="background-color: #ffffff">! argument {\tt GSMap}, and gathers it to the {\tt GeneralGrid} output</a>
+   707) <a name="l707" style="background-color: #ffffff">! argument {\tt oG} on the {\tt root}.  The success (failure) of this </a>
+   708) <a name="l708" style="background-color: #ffffff">! operation is reported as a zero (nonzero) value in the optional </a>
+   709) <a name="l709" style="background-color: #ffffff">! {\tt INTEGER} output argument {\tt stat}.</a>
+   710) <a name="l710" style="background-color: #ffffff">!</a>
+   711) <a name="l711" style="background-color: #ffffff">! {\bf N.B.}:  An important assumption made here is that the distributed</a>
+   712) <a name="l712" style="background-color: #ffffff">! {\tt GeneralGrid} {\tt iG} has been initialized with the same </a>
+   713) <a name="l713" style="background-color: #ffffff">! coordinate system, sort order, other real attributes, and the same </a>
+   714) <a name="l714" style="background-color: #ffffff">! indexing attributes for all processes on {\tt comm}.</a>
+   715) <a name="l715" style="background-color: #ffffff">!</a>
+   716) <a name="l716" style="background-color: #ffffff">! {\bf N.B.}:  Once the gridpoint data of the {\tt GeneralGrid} are assembled </a>
+   717) <a name="l717" style="background-color: #ffffff">! on the {\tt root}, they are stored in the order determined by the input </a>
+   718) <a name="l718" style="background-color: #ffffff">! {\tt GlobalSegMap} {\tt GSMap}.  The user may need to sorted these gathered</a>
+   719) <a name="l719" style="background-color: #ffffff">! data to order them in  accordance with the {\tt coordinate\_sort\_order} </a>
+   720) <a name="l720" style="background-color: #ffffff">! attribute of {\tt iG}.</a>
+   721) <a name="l721" style="background-color: #ffffff">!</a>
+   722) <a name="l722" style="background-color: #ffffff">! {\bf N.B.}:  The output {\tt GeneralGrid} {\tt oG} represents allocated</a>
+   723) <a name="l723" style="background-color: #ffffff">! memory on the {\tt root}.  When the user no longer needs {\tt oG} it</a>
+   724) <a name="l724" style="background-color: #ffffff">! should be deallocated using {\tt GeneralGrid\_clean()} to avoid a memory</a>
+   725) <a name="l725" style="background-color: #ffffff">! leak</a>
+   726) <a name="l726" style="background-color: #ffffff">!</a>
+   727) <a name="l727" style="background-color: #ffffff">! !INTERFACE:</a>
+   728) <a name="l728" style="background-color: #ffffff"></a>
+   729) <a name="l729" style="background-color: #ffffff"> subroutine </a><a style="background-color: #ffcccc">GSM_gather_(iG, oG, GSMap, root, comm, stat)</a>
+   730) <a name="l730" style="background-color: #ffcccc">!</a>
+   731) <a name="l731" style="background-color: #ffcccc">! !USES:</a>
+   732) <a name="l732" style="background-color: #ffcccc">!</a>
+   733) <a name="l733" style="background-color: #ffcccc">      use m_stdio</a>
+   734) <a name="l734" style="background-color: #ffcccc">      use m_die</a>
+   735) <a name="l735" style="background-color: #ffcccc">      use m_mpif90</a>
+   736) <a name="l736" style="background-color: #ffcccc"></a>
+   737) <a name="l737" style="background-color: #ffcccc">      use m_GlobalSegMap, only : GlobalSegMap</a>
+   738) <a name="l738" style="background-color: #ffcccc">      use m_GlobalSegMap, only : GlobalSegMap_lsize =&gt; lsize</a>
+   739) <a name="l739" style="background-color: #ffcccc">      use m_GlobalSegMap, only : GlobalSegMap_gsize =&gt; gsize</a>
+   740) <a name="l740" style="background-color: #ffcccc"></a>
+   741) <a name="l741" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid</a>
+   742) <a name="l742" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid_init =&gt; init</a>
+   743) <a name="l743" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid_lsize =&gt; lsize</a>
+   744) <a name="l744" style="background-color: #ffcccc"></a>
+   745) <a name="l745" style="background-color: #ffcccc">      use m_AttrVectComms,only : AttrVect_Gather =&gt; gather</a>
+   746) <a name="l746" style="background-color: #ffcccc"></a>
+   747) <a name="l747" style="background-color: #ffcccc">      implicit none</a>
+   748) <a name="l748" style="background-color: #ffcccc"></a>
+   749) <a name="l749" style="background-color: #ffcccc">! !INPUT PARAMETERS: </a>
+   750) <a name="l750" style="background-color: #ffcccc">!</a>
+   751) <a name="l751" style="background-color: #ffcccc">      type(GeneralGrid),  intent(in)  :: iG</a>
+   752) <a name="l752" style="background-color: #ffcccc">      type(GlobalSegMap), intent(in)  :: GSMap</a>
+   753) <a name="l753" style="background-color: #ffcccc">      integer,            intent(in)  :: root</a>
+   754) <a name="l754" style="background-color: #ffcccc">      integer,            intent(in)  :: comm</a>
+   755) <a name="l755" style="background-color: #ffcccc"></a>
+   756) <a name="l756" style="background-color: #ffcccc">! !OUTPUT PARAMETERS: </a>
+   757) <a name="l757" style="background-color: #ffcccc">!</a>
+   758) <a name="l758" style="background-color: #ffcccc">      type(GeneralGrid),  intent(out) :: oG</a>
+   759) <a name="l759" style="background-color: #ffcccc">      integer, optional,  intent(out) :: stat</a>
+   760) <a name="l760" style="background-color: #ffcccc"></a>
+   761) <a name="l761" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   762) <a name="l762" style="background-color: #ffcccc">!       27Apr01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - API Specification.</a>
+   763) <a name="l763" style="background-color: #ffcccc">!       01May01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Working Version.</a>
+   764) <a name="l764" style="background-color: #ffcccc">!       13Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initialize stat</a>
+   765) <a name="l765" style="background-color: #ffcccc">!                 (if present).</a>
+   766) <a name="l766" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+   767) <a name="l767" style="background-color: #ffcccc"></a>
+   768) <a name="l768" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::GSM_gather_'</a>
+   769) <a name="l769" style="background-color: #ffcccc"></a>
+   770) <a name="l770" style="background-color: #ffcccc">!Process ID</a>
+   771) <a name="l771" style="background-color: #ffcccc"> integer :: myID</a>
+   772) <a name="l772" style="background-color: #ffcccc">!Error flag</a>
+   773) <a name="l773" style="background-color: #ffcccc"> integer :: ierr</a>
+   774) <a name="l774" style="background-color: #ffcccc">!Number of points on the _Gathered_ grid:</a>
+   775) <a name="l775" style="background-color: #ffcccc"> integer :: length</a>
+   776) <a name="l776" style="background-color: #ffcccc"></a>
+   777) <a name="l777" style="background-color: #ffcccc">      ! Initialize stat (if present)</a>
+   778) <a name="l778" style="background-color: #ffcccc"></a>
+   779) <a name="l779" style="background-color: #ffcccc">  if(present(stat)) stat = 0</a>
+   780) <a name="l780" style="background-color: #ffcccc"></a>
+   781) <a name="l781" style="background-color: #ffcccc">       ! Which process am I?</a>
+   782) <a name="l782" style="background-color: #ffcccc"></a>
+   783) <a name="l783" style="background-color: #ffcccc">  call MPI_COMM_RANK(comm, myID, ierr)</a>
+   784) <a name="l784" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+   785) <a name="l785" style="background-color: #ffcccc">    call MP_perr_die(myname_,'MPI_COMM_RANK()',ierr)</a>
+   786) <a name="l786" style="background-color: #ffcccc">  endif</a>
+   787) <a name="l787" style="background-color: #ffcccc"></a>
+   788) <a name="l788" style="background-color: #ffcccc">  if(myID == root) then ! prepare oG:</a>
+   789) <a name="l789" style="background-color: #ffcccc"></a>
+   790) <a name="l790" style="background-color: #ffcccc">       ! The length of the _gathered_ GeneralGrid oG is determined by </a>
+   791) <a name="l791" style="background-color: #ffcccc">       ! the GlobalMap function GlobalSegMap_gsize()</a>
+   792) <a name="l792" style="background-color: #ffcccc"></a>
+   793) <a name="l793" style="background-color: #ffcccc">     length = GlobalSegMap_gsize(GSMap)</a>
+   794) <a name="l794" style="background-color: #ffcccc"></a>
+   795) <a name="l795" style="background-color: #ffcccc">       ! Initialize attributes of oG from iG</a>
+   796) <a name="l796" style="background-color: #ffcccc">     call copyGeneralGridHeader_(iG,oG) </a>
+   797) <a name="l797" style="background-color: #ffcccc"></a>
+   798) <a name="l798" style="background-color: #ffcccc">  endif</a>
+   799) <a name="l799" style="background-color: #ffcccc"></a>
+   800) <a name="l800" style="background-color: #ffcccc">       ! Gather gridpoint data in iG%data to oG%data</a>
+   801) <a name="l801" style="background-color: #ffcccc"></a>
+   802) <a name="l802" style="background-color: #ffcccc">  call AttrVect_Gather(iG%data, oG%data, GSMap, root, comm, ierr)</a>
+   803) <a name="l803" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+   804) <a name="l804" style="background-color: #ffcccc">     write(stderr,*) myname_,':: ERROR--call AttrVect_Gather() failed.', &amp;</a>
+   805) <a name="l805" style="background-color: #ffcccc">	  ' ierr = ',ierr</a>
+   806) <a name="l806" style="background-color: #ffcccc">    if(present(stat)) then</a>
+   807) <a name="l807" style="background-color: #ffcccc">       stat=ierr</a>
+   808) <a name="l808" style="background-color: #ffcccc">       return</a>
+   809) <a name="l809" style="background-color: #ffcccc">    else</a>
+   810) <a name="l810" style="background-color: #ffcccc">       call die(myname_)</a>
+   811) <a name="l811" style="background-color: #ffcccc">    endif</a>
+   812) <a name="l812" style="background-color: #ffcccc">  endif</a>
+   813) <a name="l813" style="background-color: #ffcccc"></a>
+   814) <a name="l814" style="background-color: #ffcccc"> end subroutine GSM_gather_</a>
+   815) <a name="l815" style="background-color: #ffffff"></a>
+   816) <a name="l816" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   817) <a name="l817" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+   818) <a name="l818" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   819) <a name="l819" style="background-color: #ffffff">!</a>
+   820) <a name="l820" style="background-color: #ffffff">! !IROUTINE: GM_scatter_ - scatter a GeneralGrid using input GlobalMap.</a>
+   821) <a name="l821" style="background-color: #ffffff">!</a>
+   822) <a name="l822" style="background-color: #ffffff">! !DESCRIPTION:  {\tt GM\_scatter\_()} takes an input {\tt GeneralGrid} </a>
+   823) <a name="l823" style="background-color: #ffffff">! argument {\tt iG} (valid only on the {\tt root} process), and scatters </a>
+   824) <a name="l824" style="background-color: #ffffff">! it to the distributed {\tt GeneralGrid} variable {\tt oG}.  The </a>
+   825) <a name="l825" style="background-color: #ffffff">! {\tt GeneralGrid} {\tt oG} is distributed on the communicator </a>
+   826) <a name="l826" style="background-color: #ffffff">! associated with the F90  handle {\tt comm} using the domain </a>
+   827) <a name="l827" style="background-color: #ffffff">! decomposition described by the {\tt GlobalMap} argument {\tt GMap}.</a>
+   828) <a name="l828" style="background-color: #ffffff">! The success (failure) of this operation is reported as a zero (nonzero) </a>
+   829) <a name="l829" style="background-color: #ffffff">! value in the optional {\tt INTEGER} output argument {\tt stat}.</a>
+   830) <a name="l830" style="background-color: #ffffff">!</a>
+   831) <a name="l831" style="background-color: #ffffff">! {\bf N.B.}:  The output {\tt GeneralGrid} {\tt oG} represents allocated</a>
+   832) <a name="l832" style="background-color: #ffffff">! memory on the {\tt root}.  When the user no longer needs {\tt oG} it</a>
+   833) <a name="l833" style="background-color: #ffffff">! should be deallocated using {\tt GeneralGrid\_clean()} to avoid a memory</a>
+   834) <a name="l834" style="background-color: #ffffff">! leak.</a>
+   835) <a name="l835" style="background-color: #ffffff">!</a>
+   836) <a name="l836" style="background-color: #ffffff">! !INTERFACE:</a>
+   837) <a name="l837" style="background-color: #ffffff"></a>
+   838) <a name="l838" style="background-color: #ffffff"> subroutine </a><a style="background-color: #ffcccc">GM_scatter_(iG, oG, GMap, root, comm, stat)</a>
+   839) <a name="l839" style="background-color: #ffcccc">!</a>
+   840) <a name="l840" style="background-color: #ffcccc">! !USES:</a>
+   841) <a name="l841" style="background-color: #ffcccc">!</a>
+   842) <a name="l842" style="background-color: #ffcccc">      use m_stdio</a>
+   843) <a name="l843" style="background-color: #ffcccc">      use m_die</a>
+   844) <a name="l844" style="background-color: #ffcccc">      use m_mpif90</a>
+   845) <a name="l845" style="background-color: #ffcccc"></a>
+   846) <a name="l846" style="background-color: #ffcccc">      use m_GlobalMap, only : GlobalMap</a>
+   847) <a name="l847" style="background-color: #ffcccc">      use m_GlobalMap, only : GlobalMap_lsize =&gt; lsize</a>
+   848) <a name="l848" style="background-color: #ffcccc">      use m_GlobalMap, only : GlobalMap_gsize =&gt; gsize</a>
+   849) <a name="l849" style="background-color: #ffcccc"></a>
+   850) <a name="l850" style="background-color: #ffcccc">      use m_AttrVectComms, only : AttrVect_scatter =&gt; scatter</a>
+   851) <a name="l851" style="background-color: #ffcccc"></a>
+   852) <a name="l852" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid</a>
+   853) <a name="l853" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid_init =&gt; init</a>
+   854) <a name="l854" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid_lsize =&gt; lsize</a>
+   855) <a name="l855" style="background-color: #ffcccc"></a>
+   856) <a name="l856" style="background-color: #ffcccc">      implicit none</a>
+   857) <a name="l857" style="background-color: #ffcccc"></a>
+   858) <a name="l858" style="background-color: #ffcccc">! !INPUT PARAMETERS: </a>
+   859) <a name="l859" style="background-color: #ffcccc">!</a>
+   860) <a name="l860" style="background-color: #ffcccc">      type(GeneralGrid), intent(in)  :: iG</a>
+   861) <a name="l861" style="background-color: #ffcccc">      type(GlobalMap),   intent(in)  :: GMap</a>
+   862) <a name="l862" style="background-color: #ffcccc">      integer,           intent(in)  :: root</a>
+   863) <a name="l863" style="background-color: #ffcccc">      integer,           intent(in)  :: comm</a>
+   864) <a name="l864" style="background-color: #ffcccc"></a>
+   865) <a name="l865" style="background-color: #ffcccc">! !OUTPUT PARAMETERS: </a>
+   866) <a name="l866" style="background-color: #ffcccc">!</a>
+   867) <a name="l867" style="background-color: #ffcccc">      type(GeneralGrid), intent(out) :: oG</a>
+   868) <a name="l868" style="background-color: #ffcccc">      integer, optional, intent(out) :: stat</a>
+   869) <a name="l869" style="background-color: #ffcccc"></a>
+   870) <a name="l870" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   871) <a name="l871" style="background-color: #ffcccc">!       27Apr01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - API Specification.</a>
+   872) <a name="l872" style="background-color: #ffcccc">!       04Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Changed comms model</a>
+   873) <a name="l873" style="background-color: #ffcccc">!                 to MPI-style (i.e. iG valid on root only).</a>
+   874) <a name="l874" style="background-color: #ffcccc">!       13Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initialize stat</a>
+   875) <a name="l875" style="background-color: #ffcccc">!                 (if present).</a>
+   876) <a name="l876" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+   877) <a name="l877" style="background-color: #ffcccc"></a>
+   878) <a name="l878" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::GM_scatter_'</a>
+   879) <a name="l879" style="background-color: #ffcccc"></a>
+   880) <a name="l880" style="background-color: #ffcccc">  logical :: DescendAssoc</a>
+   881) <a name="l881" style="background-color: #ffcccc">  integer :: DescendSize</a>
+   882) <a name="l882" style="background-color: #ffcccc">  integer :: ierr, myID</a>
+   883) <a name="l883" style="background-color: #ffcccc"></a>
+   884) <a name="l884" style="background-color: #ffcccc">      ! Initialize status (if present)</a>
+   885) <a name="l885" style="background-color: #ffcccc"></a>
+   886) <a name="l886" style="background-color: #ffcccc">  if(present(stat)) stat = 0</a>
+   887) <a name="l887" style="background-color: #ffcccc"></a>
+   888) <a name="l888" style="background-color: #ffcccc">       ! Step 1.  Determine process ID number myID</a>
+   889) <a name="l889" style="background-color: #ffcccc"></a>
+   890) <a name="l890" style="background-color: #ffcccc">  call MPI_COMM_RANK(comm, myID, ierr)</a>
+   891) <a name="l891" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+   892) <a name="l892" style="background-color: #ffcccc">     call MP_perr_die(myname_,'MPI_COMM_RANK(comm...',ierr)</a>
+   893) <a name="l893" style="background-color: #ffcccc">  endif</a>
+   894) <a name="l894" style="background-color: #ffcccc"></a>
+   895) <a name="l895" style="background-color: #ffcccc">       ! Step 2.  On the root, initialize the List and LOGICAL </a>
+   896) <a name="l896" style="background-color: #ffcccc">       ! attributes of the GeneralGrid variable iG to oG.</a>
+   897) <a name="l897" style="background-color: #ffcccc"></a>
+   898) <a name="l898" style="background-color: #ffcccc">  if(myID == root) then</a>
+   899) <a name="l899" style="background-color: #ffcccc">     call copyGeneralGridHeader_(iG, oG)</a>
+   900) <a name="l900" style="background-color: #ffcccc">  endif</a>
+   901) <a name="l901" style="background-color: #ffcccc"></a>
+   902) <a name="l902" style="background-color: #ffcccc">       ! Step 3.  Broadcast from the root the List and LOGICAL </a>
+   903) <a name="l903" style="background-color: #ffcccc">       ! attributes of the GeneralGrid variable oG.</a>
+   904) <a name="l904" style="background-color: #ffcccc"></a>
+   905) <a name="l905" style="background-color: #ffcccc">  call bcastGeneralGridHeader_(oG, root, comm, ierr)</a>
+   906) <a name="l906" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+   907) <a name="l907" style="background-color: #ffcccc">     write(stderr,*) myname_,':: Error calling bcastGeneralGridHeader_().',&amp;</a>
+   908) <a name="l908" style="background-color: #ffcccc">	  ' ierr = ',ierr</a>
+   909) <a name="l909" style="background-color: #ffcccc">     if(present(stat)) then</a>
+   910) <a name="l910" style="background-color: #ffcccc">	stat = ierr</a>
+   911) <a name="l911" style="background-color: #ffcccc">	return</a>
+   912) <a name="l912" style="background-color: #ffcccc">     else</a>
+   913) <a name="l913" style="background-color: #ffcccc">	call die(myname_,'call bcastGeneralGridHeader_(oG...',ierr)</a>
+   914) <a name="l914" style="background-color: #ffcccc">     endif</a>
+   915) <a name="l915" style="background-color: #ffcccc">  endif</a>
+   916) <a name="l916" style="background-color: #ffcccc"></a>
+   917) <a name="l917" style="background-color: #ffcccc"></a>
+   918) <a name="l918" style="background-color: #ffcccc">       ! Step 4.  Using the GeneralMap GMap, scatter the AttrVect </a>
+   919) <a name="l919" style="background-color: #ffcccc">       ! portion of the input GeneralGrid iG to the GeneralGrid oG.</a>
+   920) <a name="l920" style="background-color: #ffcccc"></a>
+   921) <a name="l921" style="background-color: #ffcccc">  call AttrVect_scatter(iG%data, oG%data, GMap, root, comm, ierr)</a>
+   922) <a name="l922" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+   923) <a name="l923" style="background-color: #ffcccc">     write(stderr,*) myname_,':: Error calling AttrVect_scatter(iG%data...',&amp;</a>
+   924) <a name="l924" style="background-color: #ffcccc">	  ' ierr = ',ierr</a>
+   925) <a name="l925" style="background-color: #ffcccc">     if(present(stat)) then</a>
+   926) <a name="l926" style="background-color: #ffcccc">	stat = ierr</a>
+   927) <a name="l927" style="background-color: #ffcccc">	return</a>
+   928) <a name="l928" style="background-color: #ffcccc">     else</a>
+   929) <a name="l929" style="background-color: #ffcccc">	call die(myname_,'call AttrVect_scatter(iG%data...',ierr)</a>
+   930) <a name="l930" style="background-color: #ffcccc">     endif</a>
+   931) <a name="l931" style="background-color: #ffcccc">  endif</a>
+   932) <a name="l932" style="background-color: #ffcccc"></a>
+   933) <a name="l933" style="background-color: #ffcccc">       ! The GeneralGrid scatter is now complete.</a>
+   934) <a name="l934" style="background-color: #ffcccc"></a>
+   935) <a name="l935" style="background-color: #ffcccc"> end subroutine GM_scatter_</a>
+   936) <a name="l936" style="background-color: #ffffff"></a>
+   937) <a name="l937" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   938) <a name="l938" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+   939) <a name="l939" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   940) <a name="l940" style="background-color: #ffffff">!</a>
+   941) <a name="l941" style="background-color: #ffffff">! !IROUTINE: GSM_scatter_ - scatter a GeneralGrid using input GlobalSegMap.</a>
+   942) <a name="l942" style="background-color: #ffffff">!</a>
+   943) <a name="l943" style="background-color: #ffffff">! !DESCRIPTION:  {\tt GM\_scatter\_()} takes an input {\tt GeneralGrid} </a>
+   944) <a name="l944" style="background-color: #ffffff">! argument {\tt iG} (valid only on the {\tt root} process), and scatters </a>
+   945) <a name="l945" style="background-color: #ffffff">! it to the distributed {\tt GeneralGrid} variable {\tt oG}.  The </a>
+   946) <a name="l946" style="background-color: #ffffff">! {\tt GeneralGrid} {\tt oG} is distributed on the communicator </a>
+   947) <a name="l947" style="background-color: #ffffff">! associated with the F90  handle {\tt comm} using the domain </a>
+   948) <a name="l948" style="background-color: #ffffff">! decomposition described by the {\tt GlobalSegMap} argument {\tt GSMap}.</a>
+   949) <a name="l949" style="background-color: #ffffff">! The success (failure) of this operation is reported as a zero (nonzero) </a>
+   950) <a name="l950" style="background-color: #ffffff">! value in the optional {\tt INTEGER} output argument {\tt stat}.</a>
+   951) <a name="l951" style="background-color: #ffffff">!</a>
+   952) <a name="l952" style="background-color: #ffffff">! {\bf N.B.}:  The output {\tt GeneralGrid} {\tt oG} represents allocated</a>
+   953) <a name="l953" style="background-color: #ffffff">! memory on the {\tt root}.  When the user no longer needs {\tt oG} it</a>
+   954) <a name="l954" style="background-color: #ffffff">! should be deallocated using {\tt GeneralGrid\_clean()} to avoid a memory</a>
+   955) <a name="l955" style="background-color: #ffffff">! leak.</a>
+   956) <a name="l956" style="background-color: #ffffff">!</a>
+   957) <a name="l957" style="background-color: #ffffff">! !INTERFACE:</a>
+   958) <a name="l958" style="background-color: #ffffff"></a>
+   959) <a name="l959" style="background-color: #ffffff"> subroutine GSM_scatter_(iG, oG, GSMap, root, comm, stat)</a>
+   960) <a name="l960" style="background-color: #ffffff">!</a>
+   961) <a name="l961" style="background-color: #ffffff">! !USES:</a>
+   962) <a name="l962" style="background-color: #ffffff">!</a>
+   963) <a name="l963" style="background-color: #ffffff">      use m_stdio</a>
+   964) <a name="l964" style="background-color: #ffffff">      use m_die</a>
+   965) <a name="l965" style="background-color: #ffffff">      use m_mpif90</a>
+   966) <a name="l966" style="background-color: #ffffff"></a>
+   967) <a name="l967" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap</a>
+   968) <a name="l968" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_lsize =&gt; lsize</a>
+   969) <a name="l969" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_gsize =&gt; gsize</a>
+   970) <a name="l970" style="background-color: #ffffff"></a>
+   971) <a name="l971" style="background-color: #ffffff">      use m_AttrVectComms, only : AttrVect_scatter =&gt; scatter</a>
+   972) <a name="l972" style="background-color: #ffffff"></a>
+   973) <a name="l973" style="background-color: #ffffff">      use m_GeneralGrid, only : GeneralGrid</a>
+   974) <a name="l974" style="background-color: #ffffff">      use m_GeneralGrid, only : GeneralGrid_init =&gt; init</a>
+   975) <a name="l975" style="background-color: #ffffff">      use m_GeneralGrid, only : GeneralGrid_lsize =&gt; lsize</a>
+   976) <a name="l976" style="background-color: #ffffff"></a>
+   977) <a name="l977" style="background-color: #ffffff">      implicit none</a>
+   978) <a name="l978" style="background-color: #ffffff"></a>
+   979) <a name="l979" style="background-color: #ffffff">! !INPUT PARAMETERS: </a>
+   980) <a name="l980" style="background-color: #ffffff">!</a>
+   981) <a name="l981" style="background-color: #ffffff">      type(GeneralGrid),  intent(in)  :: iG</a>
+   982) <a name="l982" style="background-color: #ffffff">      type(GlobalSegMap), intent(in)  :: GSMap</a>
+   983) <a name="l983" style="background-color: #ffffff">      integer,            intent(in)  :: root</a>
+   984) <a name="l984" style="background-color: #ffffff">      integer,            intent(in)  :: comm</a>
+   985) <a name="l985" style="background-color: #ffffff"></a>
+   986) <a name="l986" style="background-color: #ffffff">! !OUTPUT PARAMETERS: </a>
+   987) <a name="l987" style="background-color: #ffffff">!</a>
+   988) <a name="l988" style="background-color: #ffffff">      type(GeneralGrid),  intent(out) :: oG</a>
+   989) <a name="l989" style="background-color: #ffffff">      integer, optional,  intent(out) :: stat</a>
+   990) <a name="l990" style="background-color: #ffffff"></a>
+   991) <a name="l991" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   992) <a name="l992" style="background-color: #ffffff">!       27Apr01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - API Specification.</a>
+   993) <a name="l993" style="background-color: #ffffff">!       04Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initial code.</a>
+   994) <a name="l994" style="background-color: #ffffff">!       13Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initialize stat</a>
+   995) <a name="l995" style="background-color: #ffffff">!                 (if present).</a>
+   996) <a name="l996" style="background-color: #ffffff">!EOP ___________________________________________________________________</a>
+   997) <a name="l997" style="background-color: #ffffff"></a>
+   998) <a name="l998" style="background-color: #ffffff">  character(len=*),parameter :: myname_=myname//'::GSM_scatter_'</a>
+   999) <a name="l999" style="background-color: #ffffff"></a>
+  1000) <a name="l1000" style="background-color: #ffffff">  integer :: ierr, myID</a>
+  1001) <a name="l1001" style="background-color: #ffffff"></a>
+  1002) <a name="l1002" style="background-color: #ffffff">      ! Initialize stat (if present)</a>
+  1003) <a name="l1003" style="background-color: #ffffff"></a>
+  1004) <a name="l1004" style="background-color: #ffffff">  if(</a><a style="background-color: #fafad2">present(stat)) </a><a style="background-color: #ffff99">stat = 0</a>
+  1005) <a name="l1005" style="background-color: #ffff99"></a>
+  1006) <a name="l1006" style="background-color: #ffff99">       ! Step 1.  Determine process ID number myID</a>
+  1007) <a name="l1007" style="background-color: #ffff99"></a>
+  1008) <a name="l1008" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">MPI_COMM_RANK(comm, myID, ierr)</a>
+  1009) <a name="l1009" style="background-color: #ffffff">  if(ierr /= 0) then</a>
+  1010) <a name="l1010" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">MP_perr_die(myname_,'MPI_COMM_RANK(comm...',ierr)</a>
+  1011) <a name="l1011" style="background-color: #ffff99">  endif</a>
+  1012) <a name="l1012" style="background-color: #ffff99"></a>
+  1013) <a name="l1013" style="background-color: #ffff99">       ! Step 2.  On the root, initialize the List and LOGICAL </a>
+  1014) <a name="l1014" style="background-color: #ffff99">       ! attributes of the GeneralGrid variable iG to oG.</a>
+  1015) <a name="l1015" style="background-color: #ffff99"></a>
+  1016) <a name="l1016" style="background-color: #ffffff">  if(myID == root) then</a>
+  1017) <a name="l1017" style="background-color: #ffffff">     call copyGeneralGridHeader_(iG, oG)</a>
+  1018) <a name="l1018" style="background-color: #ffffff">  endif</a>
+  1019) <a name="l1019" style="background-color: #ffffff"></a>
+  1020) <a name="l1020" style="background-color: #ffffff">       ! Step 3.  Broadcast from the root the List and LOGICAL </a>
+  1021) <a name="l1021" style="background-color: #ffffff">       ! attributes of the GeneralGrid variable oG.</a>
+  1022) <a name="l1022" style="background-color: #ffffff"></a>
+  1023) <a name="l1023" style="background-color: #ffffff">  call bcastGeneralGridHeader_(oG, root, comm, ierr)</a>
+  1024) <a name="l1024" style="background-color: #ffffff">  if(ierr /= 0) then</a>
+  1025) <a name="l1025" style="background-color: #ffff99">     write(stderr,*) myname_,':: Error calling bcastGeneralGridHeader_(...',&amp;</a>
+  1026) <a name="l1026" style="background-color: #ffff99">	  ' ierr = ',ierr</a>
+  1027) <a name="l1027" style="background-color: #ffff99">     if(present(stat)) then</a>
+  1028) <a name="l1028" style="background-color: #ffff99">	stat = ierr</a>
+  1029) <a name="l1029" style="background-color: #ffff99">	return</a>
+  1030) <a name="l1030" style="background-color: #ffff99">     else</a>
+  1031) <a name="l1031" style="background-color: #ffff99">	call die(myname_,'bcastGeneralGridHeader_(oG...',ierr)</a>
+  1032) <a name="l1032" style="background-color: #ffff99">     endif</a>
+  1033) <a name="l1033" style="background-color: #ffff99">  endif</a>
+  1034) <a name="l1034" style="background-color: #ffff99"></a>
+  1035) <a name="l1035" style="background-color: #ffff99">       ! Step 4.  Using the GeneralSegMap GSMap, scatter the AttrVect </a>
+  1036) <a name="l1036" style="background-color: #ffff99">       ! portion of the input GeneralGrid iG to the GeneralGrid oG.</a>
+  1037) <a name="l1037" style="background-color: #ffff99"></a>
+  1038) <a name="l1038" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">AttrVect_scatter(iG%data, oG%data, GSMap, root, comm, ierr)</a>
+  1039) <a name="l1039" style="background-color: #ffffff">  if(ierr /= 0) then</a>
+  1040) <a name="l1040" style="background-color: #ffff99">     write(stderr,*) myname_,':: Error calling AttrVect_scatter(iG%data...',&amp;</a>
+  1041) <a name="l1041" style="background-color: #ffff99">	  ' ierr = ',ierr</a>
+  1042) <a name="l1042" style="background-color: #ffff99">     if(present(stat)) then</a>
+  1043) <a name="l1043" style="background-color: #ffff99">	stat = ierr</a>
+  1044) <a name="l1044" style="background-color: #ffff99">	return</a>
+  1045) <a name="l1045" style="background-color: #ffff99">     else</a>
+  1046) <a name="l1046" style="background-color: #ffff99">	call die(myname_,'call AttrVect_scatter(iG%data...',ierr)</a>
+  1047) <a name="l1047" style="background-color: #ffff99">     endif</a>
+  1048) <a name="l1048" style="background-color: #ffff99">  endif</a>
+  1049) <a name="l1049" style="background-color: #ffff99"></a>
+  1050) <a name="l1050" style="background-color: #ffff99">       ! The GeneralGrid scatter is now complete.</a>
+  1051) <a name="l1051" style="background-color: #ffff99"></a>
+  1052) <a name="l1052" style="background-color: #ffffff"> end subroutine GSM_scatter_</a>
+  1053) <a name="l1053" style="background-color: #ffffff"></a>
+  1054) <a name="l1054" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+  1055) <a name="l1055" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+  1056) <a name="l1056" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+  1057) <a name="l1057" style="background-color: #ffffff">!</a>
+  1058) <a name="l1058" style="background-color: #ffffff">! !IROUTINE: bcast_ - Broadcast a GeneralGrid.</a>
+  1059) <a name="l1059" style="background-color: #ffffff">!</a>
+  1060) <a name="l1060" style="background-color: #ffffff">! !DESCRIPTION:  {\tt bcast\_()} takes an input {\tt GeneralGrid} </a>
+  1061) <a name="l1061" style="background-color: #ffffff">! argument {\tt ioG} (valid only on the {\tt root} process), and </a>
+  1062) <a name="l1062" style="background-color: #ffffff">! broadcasts it to all processes on the communicator associated with the </a>
+  1063) <a name="l1063" style="background-color: #ffffff">! F90  handle {\tt comm}.  The success (failure) of this operation is </a>
+  1064) <a name="l1064" style="background-color: #ffffff">! reported as a zero (nonzero) value in the optional {\tt INTEGER} </a>
+  1065) <a name="l1065" style="background-color: #ffffff">! output argument {\tt stat}.</a>
+  1066) <a name="l1066" style="background-color: #ffffff">!</a>
+  1067) <a name="l1067" style="background-color: #ffffff">! {\bf N.B.}:  On the non-root processes, the output {\tt GeneralGrid} </a>
+  1068) <a name="l1068" style="background-color: #ffffff">! {\tt ioG} represents allocated memory.  When the user no longer needs </a>
+  1069) <a name="l1069" style="background-color: #ffffff">! {\tt ioG} it should be deallocated by invoking {\tt GeneralGrid\_clean()}. </a>
+  1070) <a name="l1070" style="background-color: #ffffff">! Failure to do so risks a memory leak.</a>
+  1071) <a name="l1071" style="background-color: #ffffff">!</a>
+  1072) <a name="l1072" style="background-color: #ffffff">! !INTERFACE:</a>
+  1073) <a name="l1073" style="background-color: #ffffff"></a>
+  1074) <a name="l1074" style="background-color: #ffffff"> subroutine </a><a style="background-color: #ffcccc">bcast_(ioG, root, comm, stat)</a>
+  1075) <a name="l1075" style="background-color: #ffcccc">!</a>
+  1076) <a name="l1076" style="background-color: #ffcccc">! !USES:</a>
+  1077) <a name="l1077" style="background-color: #ffcccc">!</a>
+  1078) <a name="l1078" style="background-color: #ffcccc">      use m_stdio</a>
+  1079) <a name="l1079" style="background-color: #ffcccc">      use m_die</a>
+  1080) <a name="l1080" style="background-color: #ffcccc">      use m_mpif90</a>
+  1081) <a name="l1081" style="background-color: #ffcccc"></a>
+  1082) <a name="l1082" style="background-color: #ffcccc">      use m_GlobalSegMap, only : GlobalSegMap</a>
+  1083) <a name="l1083" style="background-color: #ffcccc">      use m_GlobalSegMap, only : GlobalSegMap_lsize =&gt; lsize</a>
+  1084) <a name="l1084" style="background-color: #ffcccc">      use m_GlobalSegMap, only : GlobalSegMap_gsize =&gt; gsize</a>
+  1085) <a name="l1085" style="background-color: #ffcccc"></a>
+  1086) <a name="l1086" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid</a>
+  1087) <a name="l1087" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid_init =&gt; init</a>
+  1088) <a name="l1088" style="background-color: #ffcccc">      use m_GeneralGrid, only : GeneralGrid_lsize =&gt; lsize</a>
+  1089) <a name="l1089" style="background-color: #ffcccc"></a>
+  1090) <a name="l1090" style="background-color: #ffcccc">      use m_AttrVectComms,only : AttrVect_bcast =&gt; bcast</a>
+  1091) <a name="l1091" style="background-color: #ffcccc"></a>
+  1092) <a name="l1092" style="background-color: #ffcccc">      implicit none</a>
+  1093) <a name="l1093" style="background-color: #ffcccc"></a>
+  1094) <a name="l1094" style="background-color: #ffcccc">! !INPUT PARAMETERS: </a>
+  1095) <a name="l1095" style="background-color: #ffcccc">!</a>
+  1096) <a name="l1096" style="background-color: #ffcccc">      integer,           intent(in)    :: root</a>
+  1097) <a name="l1097" style="background-color: #ffcccc">      integer,           intent(in)    :: comm</a>
+  1098) <a name="l1098" style="background-color: #ffcccc"></a>
+  1099) <a name="l1099" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS: </a>
+  1100) <a name="l1100" style="background-color: #ffcccc">!</a>
+  1101) <a name="l1101" style="background-color: #ffcccc">      type(GeneralGrid), intent(inout) :: ioG</a>
+  1102) <a name="l1102" style="background-color: #ffcccc"></a>
+  1103) <a name="l1103" style="background-color: #ffcccc">! !OUTPUT PARAMETERS: </a>
+  1104) <a name="l1104" style="background-color: #ffcccc">!</a>
+  1105) <a name="l1105" style="background-color: #ffcccc">      integer, optional, intent(out)   :: stat</a>
+  1106) <a name="l1106" style="background-color: #ffcccc"></a>
+  1107) <a name="l1107" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+  1108) <a name="l1108" style="background-color: #ffcccc">!       27Apr01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - API Specification.</a>
+  1109) <a name="l1109" style="background-color: #ffcccc">!       02May01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initial version.</a>
+  1110) <a name="l1110" style="background-color: #ffcccc">!       13Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initialize stat</a>
+  1111) <a name="l1111" style="background-color: #ffcccc">!                 (if present).</a>
+  1112) <a name="l1112" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+  1113) <a name="l1113" style="background-color: #ffcccc"></a>
+  1114) <a name="l1114" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::bcast_'</a>
+  1115) <a name="l1115" style="background-color: #ffcccc"></a>
+  1116) <a name="l1116" style="background-color: #ffcccc">  integer :: ierr, myID</a>
+  1117) <a name="l1117" style="background-color: #ffcccc"></a>
+  1118) <a name="l1118" style="background-color: #ffcccc">      ! Initialize status (if present)</a>
+  1119) <a name="l1119" style="background-color: #ffcccc"></a>
+  1120) <a name="l1120" style="background-color: #ffcccc">  if(present(stat)) stat = 0</a>
+  1121) <a name="l1121" style="background-color: #ffcccc"></a>
+  1122) <a name="l1122" style="background-color: #ffcccc">       ! Step 1.  Determine process ID number myID</a>
+  1123) <a name="l1123" style="background-color: #ffcccc"></a>
+  1124) <a name="l1124" style="background-color: #ffcccc">  call MPI_COMM_RANK(comm, myID, ierr)</a>
+  1125) <a name="l1125" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+  1126) <a name="l1126" style="background-color: #ffcccc">     call MP_perr_die(myname_,'MPI_COMM_RANK(comm...',ierr)</a>
+  1127) <a name="l1127" style="background-color: #ffcccc">  endif</a>
+  1128) <a name="l1128" style="background-color: #ffcccc"></a>
+  1129) <a name="l1129" style="background-color: #ffcccc">       ! Step 2.  Broadcast from the root the List and LOGICAL </a>
+  1130) <a name="l1130" style="background-color: #ffcccc">       ! attributes of the GeneralGrid variable ioG.</a>
+  1131) <a name="l1131" style="background-color: #ffcccc"></a>
+  1132) <a name="l1132" style="background-color: #ffcccc">  call bcastGeneralGridHeader_(ioG, root, comm, ierr)</a>
+  1133) <a name="l1133" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+  1134) <a name="l1134" style="background-color: #ffcccc">     write(stderr,*) myname_,':: Error calling bcastGeneralGridHeader_(...',&amp;</a>
+  1135) <a name="l1135" style="background-color: #ffcccc">	  ' ierr = ',ierr</a>
+  1136) <a name="l1136" style="background-color: #ffcccc">     if(present(stat)) then</a>
+  1137) <a name="l1137" style="background-color: #ffcccc">	stat = ierr</a>
+  1138) <a name="l1138" style="background-color: #ffcccc">	return</a>
+  1139) <a name="l1139" style="background-color: #ffcccc">     else</a>
+  1140) <a name="l1140" style="background-color: #ffcccc">	call die(myname_)</a>
+  1141) <a name="l1141" style="background-color: #ffcccc">     endif</a>
+  1142) <a name="l1142" style="background-color: #ffcccc">  endif</a>
+  1143) <a name="l1143" style="background-color: #ffcccc"></a>
+  1144) <a name="l1144" style="background-color: #ffcccc">       ! Step 3.  Broadcast ioG%data from the root.</a>
+  1145) <a name="l1145" style="background-color: #ffcccc"></a>
+  1146) <a name="l1146" style="background-color: #ffcccc">  call AttrVect_bcast(ioG%data, root, comm, ierr)</a>
+  1147) <a name="l1147" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+  1148) <a name="l1148" style="background-color: #ffcccc">     write(stderr,*) myname_,':: Error calling AttrVect_scatter(iG%data...',&amp;</a>
+  1149) <a name="l1149" style="background-color: #ffcccc">	  ' ierr = ',ierr</a>
+  1150) <a name="l1150" style="background-color: #ffcccc">     if(present(stat)) then</a>
+  1151) <a name="l1151" style="background-color: #ffcccc">	stat = ierr</a>
+  1152) <a name="l1152" style="background-color: #ffcccc">	return</a>
+  1153) <a name="l1153" style="background-color: #ffcccc">     else</a>
+  1154) <a name="l1154" style="background-color: #ffcccc">	call die(myname_)</a>
+  1155) <a name="l1155" style="background-color: #ffcccc">     endif</a>
+  1156) <a name="l1156" style="background-color: #ffcccc">  endif</a>
+  1157) <a name="l1157" style="background-color: #ffcccc"></a>
+  1158) <a name="l1158" style="background-color: #ffcccc">       ! The GeneralGrid broadcast is now complete.</a>
+  1159) <a name="l1159" style="background-color: #ffcccc"></a>
+  1160) <a name="l1160" style="background-color: #ffcccc"> end subroutine bcast_</a>
+  1161) <a name="l1161" style="background-color: #ffffff"></a>
+  1162) <a name="l1162" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+  1163) <a name="l1163" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+  1164) <a name="l1164" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+  1165) <a name="l1165" style="background-color: #ffffff">!</a>
+  1166) <a name="l1166" style="background-color: #ffffff">! !IROUTINE: bcastGeneralGridHeader_ - Broadcast the GeneralGrid Header.</a>
+  1167) <a name="l1167" style="background-color: #ffffff">!</a>
+  1168) <a name="l1168" style="background-color: #ffffff">! !DESCRIPTION:  This routine broadcasts the header information from </a>
+  1169) <a name="l1169" style="background-color: #ffffff">! the input {\tt GeneralGrid} argument {\tt ioGGrid} (on input valid </a>
+  1170) <a name="l1170" style="background-color: #ffffff">! on the {\tt root} only).  This broadcast is from the {\tt root} to </a>
+  1171) <a name="l1171" style="background-color: #ffffff">! all processes on the communicator associated with the fortran 90 </a>
+  1172) <a name="l1172" style="background-color: #ffffff">! {\tt INTEGER} handle {\tt comm}.  The success (failure) of this operation </a>
+  1173) <a name="l1173" style="background-color: #ffffff">! corresponds to a zero (nonzero) value for the output {\tt INTEGER} flag </a>
+  1174) <a name="l1174" style="background-color: #ffffff">! {\tt stat}. </a>
+  1175) <a name="l1175" style="background-color: #ffffff">!</a>
+  1176) <a name="l1176" style="background-color: #ffffff">! The {\em header information} in a {\tt GeneralGrid} variable comprises </a>
+  1177) <a name="l1177" style="background-color: #ffffff">! all the non-{\tt AttrVect} components of the {\tt GeneralGrid}; that </a>
+  1178) <a name="l1178" style="background-color: #ffffff">! is, everything except the gridpoint coordinate, geometry, and index </a>
+  1179) <a name="l1179" style="background-color: #ffffff">! data stored in {\tt iGGrid\%data}.  This information includes:</a>
+  1180) <a name="l1180" style="background-color: #ffffff">! \begin{enumerate}</a>
+  1181) <a name="l1181" style="background-color: #ffffff">! \item The coordinates in {\tt iGGrid\%coordinate\_list}</a>
+  1182) <a name="l1182" style="background-color: #ffffff">! \item The coordinate sort order in {\tt iGGrid\%coordinate\_sort\_order}</a>
+  1183) <a name="l1183" style="background-color: #ffffff">! \item The area/volume weights in {\tt iGGrid\%weight\_list}</a>
+  1184) <a name="l1184" style="background-color: #ffffff">! \item Other {\tt REAL} geometric information in {\tt iGGrid\%other\_list}</a>
+  1185) <a name="l1185" style="background-color: #ffffff">! \item Indexing information in {\tt iGGrid\%index\_list}</a>
+  1186) <a name="l1186" style="background-color: #ffffff">! \item The {\tt LOGICAL} descending/ascending order sort flags in </a>
+  1187) <a name="l1187" style="background-color: #ffffff">! {\tt iGGrid\%descend(:)}.</a>
+  1188) <a name="l1188" style="background-color: #ffffff">! \end{enumerate}</a>
+  1189) <a name="l1189" style="background-color: #ffffff">!</a>
+  1190) <a name="l1190" style="background-color: #ffffff">! !INTERFACE:</a>
+  1191) <a name="l1191" style="background-color: #ffffff"></a>
+  1192) <a name="l1192" style="background-color: #ffffff"> subroutine bcastGeneralGridHeader_(ioGGrid, root, comm, stat)</a>
+  1193) <a name="l1193" style="background-color: #ffffff">!</a>
+  1194) <a name="l1194" style="background-color: #ffffff">! !USES:</a>
+  1195) <a name="l1195" style="background-color: #ffffff">!</a>
+  1196) <a name="l1196" style="background-color: #ffffff">      use m_stdio</a>
+  1197) <a name="l1197" style="background-color: #ffffff">      use m_die</a>
+  1198) <a name="l1198" style="background-color: #ffffff">      use m_mpif90</a>
+  1199) <a name="l1199" style="background-color: #ffffff"></a>
+  1200) <a name="l1200" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap</a>
+  1201) <a name="l1201" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_lsize =&gt; lsize</a>
+  1202) <a name="l1202" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_gsize =&gt; gsize</a>
+  1203) <a name="l1203" style="background-color: #ffffff"></a>
+  1204) <a name="l1204" style="background-color: #ffffff">      use m_GeneralGrid, only : GeneralGrid</a>
+  1205) <a name="l1205" style="background-color: #ffffff">      use m_GeneralGrid, only : GeneralGrid_init =&gt; init</a>
+  1206) <a name="l1206" style="background-color: #ffffff">      use m_GeneralGrid, only : GeneralGrid_lsize =&gt; lsize</a>
+  1207) <a name="l1207" style="background-color: #ffffff"></a>
+  1208) <a name="l1208" style="background-color: #ffffff">      use m_List, only : List</a>
+  1209) <a name="l1209" style="background-color: #ffffff">      use m_List, only : List_allocated =&gt; allocated</a>
+  1210) <a name="l1210" style="background-color: #ffffff">      use m_List, only : List_nullify =&gt; nullify</a>
+  1211) <a name="l1211" style="background-color: #ffffff">      use m_List, only : List_bcast =&gt; bcast</a>
+  1212) <a name="l1212" style="background-color: #ffffff"></a>
+  1213) <a name="l1213" style="background-color: #ffffff">      implicit none</a>
+  1214) <a name="l1214" style="background-color: #ffffff"></a>
+  1215) <a name="l1215" style="background-color: #ffffff">! !INPUT PARAMETERS: </a>
+  1216) <a name="l1216" style="background-color: #ffffff">!</a>
+  1217) <a name="l1217" style="background-color: #ffffff">      integer,           intent(in)    :: root</a>
+  1218) <a name="l1218" style="background-color: #ffffff">      integer,           intent(in)    :: comm</a>
+  1219) <a name="l1219" style="background-color: #ffffff"></a>
+  1220) <a name="l1220" style="background-color: #ffffff">! !INPUT/OUTPUT PARAMETERS: </a>
+  1221) <a name="l1221" style="background-color: #ffffff">!</a>
+  1222) <a name="l1222" style="background-color: #ffffff">      type(GeneralGrid), intent(inout) :: ioGGrid</a>
+  1223) <a name="l1223" style="background-color: #ffffff"></a>
+  1224) <a name="l1224" style="background-color: #ffffff">! !OUTPUT PARAMETERS: </a>
+  1225) <a name="l1225" style="background-color: #ffffff">!</a>
+  1226) <a name="l1226" style="background-color: #ffffff">      integer, optional, intent(out)   :: stat</a>
+  1227) <a name="l1227" style="background-color: #ffffff"></a>
+  1228) <a name="l1228" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+  1229) <a name="l1229" style="background-color: #ffffff">!       05Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initial code.</a>
+  1230) <a name="l1230" style="background-color: #ffffff">!       13Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initialize stat</a>
+  1231) <a name="l1231" style="background-color: #ffffff">!                 (if present).</a>
+  1232) <a name="l1232" style="background-color: #ffffff">!       05Aug02 - E. Ong &lt;eong@mcs.anl.gov&gt; - added association checking</a>
+  1233) <a name="l1233" style="background-color: #ffffff">!EOP ___________________________________________________________________</a>
+  1234) <a name="l1234" style="background-color: #ffffff"></a>
+  1235) <a name="l1235" style="background-color: #ffffff">  character(len=*),parameter :: myname_=myname//'::bcastGeneralGridHeader_'</a>
+  1236) <a name="l1236" style="background-color: #ffffff"></a>
+  1237) <a name="l1237" style="background-color: #ffffff">! Process ID</a>
+  1238) <a name="l1238" style="background-color: #ffffff">  integer :: myID</a>
+  1239) <a name="l1239" style="background-color: #ffffff">! Error flag</a>
+  1240) <a name="l1240" style="background-color: #ffffff">  integer :: ierr</a>
+  1241) <a name="l1241" style="background-color: #ffffff">! Size of array ioGGrid%descend(:)</a>
+  1242) <a name="l1242" style="background-color: #ffffff">  integer :: DescendSize</a>
+  1243) <a name="l1243" style="background-color: #ffffff">! Header-Assocation array</a>
+  1244) <a name="l1244" style="background-color: #ffffff">  logical :: HeaderAssoc(6)</a>
+  1245) <a name="l1245" style="background-color: #ffffff"></a>
+  1246) <a name="l1246" style="background-color: #ffffff">      ! Initialize stat (if present)</a>
+  1247) <a name="l1247" style="background-color: #ffffff"></a>
+  1248) <a name="l1248" style="background-color: #ffffff">  if(</a><a style="background-color: #fafad2">present(stat)) </a><a style="background-color: #ffffff">stat = 0</a>
+  1249) <a name="l1249" style="background-color: #ffffff"></a>
+  1250) <a name="l1250" style="background-color: #ffffff">       ! Determine process ID number myID</a>
+  1251) <a name="l1251" style="background-color: #ffffff"></a>
+  1252) <a name="l1252" style="background-color: #ffffff">  call MPI_COMM_RANK(comm, myID, ierr)</a>
+  1253) <a name="l1253" style="background-color: #ffffff">  if(ierr /= 0) then</a>
+  1254) <a name="l1254" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">MP_perr_die(myname_,'MPI_COMM_RANK(comm...',ierr)</a>
+  1255) <a name="l1255" style="background-color: #ffff99">  endif</a>
+  1256) <a name="l1256" style="background-color: #ffff99"></a>
+  1257) <a name="l1257" style="background-color: #ffff99">       ! Step 0.5. Check elements of the GeneralGrid header to see </a>
+  1258) <a name="l1258" style="background-color: #ffff99">       ! which components of it are allocated.  Load the results</a>
+  1259) <a name="l1259" style="background-color: #ffff99">       ! into HeaderAssoc(:), and broadcast it.</a>
+  1260) <a name="l1260" style="background-color: #ffff99"></a>
+  1261) <a name="l1261" style="background-color: #ffffff">  if(myID == root) then</a>
+  1262) <a name="l1262" style="background-color: #ffffff"></a>
+  1263) <a name="l1263" style="background-color: #ffffff">     HeaderAssoc(1) = List_allocated(ioGGrid%coordinate_list)</a>
+  1264) <a name="l1264" style="background-color: #ffffff">     HeaderAssoc(2) = List_allocated(ioGGrid%coordinate_sort_order)</a>
+  1265) <a name="l1265" style="background-color: #ffffff">     HeaderAssoc(3) = List_allocated(ioGGrid%weight_list)</a>
+  1266) <a name="l1266" style="background-color: #ffffff">     HeaderAssoc(4) = List_allocated(ioGGrid%other_list)</a>
+  1267) <a name="l1267" style="background-color: #ffffff">     HeaderAssoc(5) = List_allocated(ioGGrid%index_list)</a>
+  1268) <a name="l1268" style="background-color: #fafad2">     HeaderAssoc(6) = associated(ioGGrid%descend)</a>
+  1269) <a name="l1269" style="background-color: #fafad2"></a>
+  1270) <a name="l1270" style="background-color: #fafad2">  else</a>
+  1271) <a name="l1271" style="background-color: #fafad2"></a>
+  1272) <a name="l1272" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">List_nullify(ioGGrid%coordinate_list)</a>
+  1273) <a name="l1273" style="background-color: #ffffff">     call List_nullify(ioGGrid%coordinate_sort_order)</a>
+  1274) <a name="l1274" style="background-color: #ffffff">     call List_nullify(ioGGrid%weight_list)</a>
+  1275) <a name="l1275" style="background-color: #ffffff">     call List_nullify(ioGGrid%other_list)</a>
+  1276) <a name="l1276" style="background-color: #ffffff">     call List_nullify(ioGGrid%index_list)</a>
+  1277) <a name="l1277" style="background-color: #ffffff">     nullify(ioGGrid%descend) </a>
+  1278) <a name="l1278" style="background-color: #ffffff"></a>
+  1279) <a name="l1279" style="background-color: #ffffff">  endif</a>
+  1280) <a name="l1280" style="background-color: #ffffff"></a>
+  1281) <a name="l1281" style="background-color: #ffffff">  call MPI_BCAST(HeaderAssoc,6,MP_LOGICAL,root,comm,ierr)</a>
+  1282) <a name="l1282" style="background-color: #ffffff"></a>
+  1283) <a name="l1283" style="background-color: #ffffff">       ! Step 1. Broadcast List attributes of the GeneralGrid.</a>
+  1284) <a name="l1284" style="background-color: #ffffff"></a>
+  1285) <a name="l1285" style="background-color: #ffffff">  if(HeaderAssoc(1)) then</a>
+  1286) <a name="l1286" style="background-color: #ffffff">     call List_bcast(ioGGrid%coordinate_list, root, comm, ierr)</a>
+  1287) <a name="l1287" style="background-color: #ffffff">     if(ierr /= 0) then</a>
+  1288) <a name="l1288" style="background-color: #ffff99">        write(stderr,*) myname_,'List_bcast(ioGGrid%coordinate_list... failed.',&amp;</a>
+  1289) <a name="l1289" style="background-color: #ffff99">             ' ierr = ',ierr</a>
+  1290) <a name="l1290" style="background-color: #ffff99">        if(present(stat)) then</a>
+  1291) <a name="l1291" style="background-color: #ffff99">           stat = ierr</a>
+  1292) <a name="l1292" style="background-color: #ffff99">           return</a>
+  1293) <a name="l1293" style="background-color: #ffff99">        else</a>
+  1294) <a name="l1294" style="background-color: #ffff99">           call die(myname_)</a>
+  1295) <a name="l1295" style="background-color: #ffff99">        endif</a>
+  1296) <a name="l1296" style="background-color: #ffff99">     endif</a>
+  1297) <a name="l1297" style="background-color: #ffff99">  endif</a>
+  1298) <a name="l1298" style="background-color: #ffff99"></a>
+  1299) <a name="l1299" style="background-color: #ffffff">  if(HeaderAssoc(2)) then</a>
+  1300) <a name="l1300" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">List_bcast(ioGGrid%coordinate_sort_order, root, comm, ierr)</a>
+  1301) <a name="l1301" style="background-color: #ffff99">     if(ierr /= 0) then</a>
+  1302) <a name="l1302" style="background-color: #ffff99">        write(stderr,*) myname_,'List_bcast(ioGGrid%coordinate_sort_order... failed', &amp;</a>
+  1303) <a name="l1303" style="background-color: #ffff99">             ' ierr = ',ierr</a>
+  1304) <a name="l1304" style="background-color: #ffff99">        if(present(stat)) then</a>
+  1305) <a name="l1305" style="background-color: #ffff99">           stat = ierr</a>
+  1306) <a name="l1306" style="background-color: #ffff99">           return</a>
+  1307) <a name="l1307" style="background-color: #ffff99">        else</a>
+  1308) <a name="l1308" style="background-color: #ffff99">           call die(myname_)</a>
+  1309) <a name="l1309" style="background-color: #ffff99">        endif</a>
+  1310) <a name="l1310" style="background-color: #ffff99">     endif</a>
+  1311) <a name="l1311" style="background-color: #ffff99">  endif</a>
+  1312) <a name="l1312" style="background-color: #ffff99"></a>
+  1313) <a name="l1313" style="background-color: #ffffff">  if(HeaderAssoc(3)) then</a>
+  1314) <a name="l1314" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">List_bcast(ioGGrid%weight_list, root, comm, ierr)</a>
+  1315) <a name="l1315" style="background-color: #ffff99">     if(ierr /= 0) then</a>
+  1316) <a name="l1316" style="background-color: #ffff99">        write(stderr,*) myname_,'List_bcast(ioGGrid%weight_list... failed',&amp;</a>
+  1317) <a name="l1317" style="background-color: #ffff99">             ' ierr = ',ierr</a>
+  1318) <a name="l1318" style="background-color: #ffff99">        if(present(stat)) then</a>
+  1319) <a name="l1319" style="background-color: #ffff99">           stat = ierr</a>
+  1320) <a name="l1320" style="background-color: #ffff99">           return</a>
+  1321) <a name="l1321" style="background-color: #ffff99">        else</a>
+  1322) <a name="l1322" style="background-color: #ffff99">           call die(myname_)</a>
+  1323) <a name="l1323" style="background-color: #ffff99">        endif</a>
+  1324) <a name="l1324" style="background-color: #ffff99">     endif</a>
+  1325) <a name="l1325" style="background-color: #ffff99">  endif</a>
+  1326) <a name="l1326" style="background-color: #ffff99"></a>
+  1327) <a name="l1327" style="background-color: #ffffff">  if(HeaderAssoc(4)) then</a>
+  1328) <a name="l1328" style="background-color: #ffffff">     call List_bcast(ioGGrid%other_list, root, comm, ierr)</a>
+  1329) <a name="l1329" style="background-color: #ffffff">     if(ierr /= 0) then</a>
+  1330) <a name="l1330" style="background-color: #ffff99">        write(stderr,*) myname_,'List_bcast(ioGGrid%other_list... failed',&amp;</a>
+  1331) <a name="l1331" style="background-color: #ffff99">             ' ierr = ',ierr</a>
+  1332) <a name="l1332" style="background-color: #ffff99">        if(present(stat)) then</a>
+  1333) <a name="l1333" style="background-color: #ffff99">           stat = ierr</a>
+  1334) <a name="l1334" style="background-color: #ffff99">           return</a>
+  1335) <a name="l1335" style="background-color: #ffff99">        else</a>
+  1336) <a name="l1336" style="background-color: #ffff99">           call die(myname_)</a>
+  1337) <a name="l1337" style="background-color: #ffff99">        endif</a>
+  1338) <a name="l1338" style="background-color: #ffff99">     endif</a>
+  1339) <a name="l1339" style="background-color: #ffff99">  endif</a>
+  1340) <a name="l1340" style="background-color: #ffff99"></a>
+  1341) <a name="l1341" style="background-color: #ffffff">  if(HeaderAssoc(5)) then</a>
+  1342) <a name="l1342" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">List_bcast(ioGGrid%index_list, root, comm, ierr)</a>
+  1343) <a name="l1343" style="background-color: #ffff99">     if(ierr /= 0) then</a>
+  1344) <a name="l1344" style="background-color: #ffff99">        write(stderr,*) myname_,'List_bcast(ioGGrid%index_list... failed',&amp;</a>
+  1345) <a name="l1345" style="background-color: #ffff99">             ' ierr = ',ierr</a>
+  1346) <a name="l1346" style="background-color: #ffff99">        if(present(stat)) then</a>
+  1347) <a name="l1347" style="background-color: #ffff99">           stat = ierr</a>
+  1348) <a name="l1348" style="background-color: #ffff99">           return</a>
+  1349) <a name="l1349" style="background-color: #ffff99">        else</a>
+  1350) <a name="l1350" style="background-color: #ffff99">           call die(myname_)</a>
+  1351) <a name="l1351" style="background-color: #ffff99">        endif</a>
+  1352) <a name="l1352" style="background-color: #ffff99">     endif</a>
+  1353) <a name="l1353" style="background-color: #ffff99">  endif</a>
+  1354) <a name="l1354" style="background-color: #ffff99"></a>
+  1355) <a name="l1355" style="background-color: #ffff99">       ! If ioGGrid%descend is associated on the root, prepare and</a>
+  1356) <a name="l1356" style="background-color: #ffff99">       ! execute its broadcast</a>
+  1357) <a name="l1357" style="background-color: #ffff99"></a>
+  1358) <a name="l1358" style="background-color: #ffffff">  if(HeaderAssoc(6)) then</a>
+  1359) <a name="l1359" style="background-color: #ffffff"></a>
+  1360) <a name="l1360" style="background-color: #ffffff">       ! On the root, get the size of ioGGrid%descend(:)</a>
+  1361) <a name="l1361" style="background-color: #ffffff"></a>
+  1362) <a name="l1362" style="background-color: #ffff99">     if(myID == root) then</a>
+  1363) <a name="l1363" style="background-color: #ffff99">        DescendSize = size(ioGGrid%descend)</a>
+  1364) <a name="l1364" style="background-color: #ffff99">        if(DescendSize&lt;=0) call die(myname_,'size(ioGGrid%descend)&lt;=0')</a>
+  1365) <a name="l1365" style="background-color: #ffff99">     endif</a>
+  1366) <a name="l1366" style="background-color: #ffff99"></a>
+  1367) <a name="l1367" style="background-color: #ffff99">       ! Broadcast the size of ioGGrid%descend(:) from the root.</a>
+  1368) <a name="l1368" style="background-color: #ffff99"></a>
+  1369) <a name="l1369" style="background-color: #ffff99">     call MPI_BCAST(DescendSize, 1, MP_INTEGER, root, comm, ierr)</a>
+  1370) <a name="l1370" style="background-color: #ffff99">     if(ierr /= 0) then</a>
+  1371) <a name="l1371" style="background-color: #ffff99">        call MP_perr_die(myname_,'MPI_BCAST(DescendSize...',ierr)</a>
+  1372) <a name="l1372" style="background-color: #ffff99">     endif</a>
+  1373) <a name="l1373" style="background-color: #ffff99"></a>
+  1374) <a name="l1374" style="background-color: #ffff99">       ! Off the root, allocate ioGGrid%descend(:)</a>
+  1375) <a name="l1375" style="background-color: #ffff99"></a>
+  1376) <a name="l1376" style="background-color: #ffff99">     if(myID /= root) then</a>
+  1377) <a name="l1377" style="background-color: #ffff99">        allocate(ioGGrid%descend(DescendSize), stat=ierr)</a>
+  1378) <a name="l1378" style="background-color: #ffff99">        if(ierr /= 0) then</a>
+  1379) <a name="l1379" style="background-color: #ffff99">           write(stderr,*) myname_,':: ERROR in allocate(ioGGrid%descend...',&amp;</a>
+  1380) <a name="l1380" style="background-color: #ffff99">                ' ierr = ',ierr</a>
+  1381) <a name="l1381" style="background-color: #ffff99">           call die(myname_)</a>
+  1382) <a name="l1382" style="background-color: #ffff99">        endif</a>
+  1383) <a name="l1383" style="background-color: #ffff99">     endif</a>
+  1384) <a name="l1384" style="background-color: #ffff99"> </a>
+  1385) <a name="l1385" style="background-color: #ffff99">      ! Finally, broadcast ioGGrid%descend(:) from the root</a>
+  1386) <a name="l1386" style="background-color: #ffff99"></a>
+  1387) <a name="l1387" style="background-color: #ffff99">     call MPI_BCAST(ioGGrid%descend, DescendSize, MP_LOGICAL, root, &amp;</a>
+  1388) <a name="l1388" style="background-color: #ffff99">                    comm, ierr)</a>
+  1389) <a name="l1389" style="background-color: #ffff99">     if(ierr /= 0) then</a>
+  1390) <a name="l1390" style="background-color: #ffff99">        call MP_perr_die(myname_,'MPI_BCAST(ioGGrid%descend...',ierr)</a>
+  1391) <a name="l1391" style="background-color: #ffff99">     endif</a>
+  1392) <a name="l1392" style="background-color: #ffff99"></a>
+  1393) <a name="l1393" style="background-color: #ffff99">  endif</a>
+  1394) <a name="l1394" style="background-color: #ffff99"></a>
+  1395) <a name="l1395" style="background-color: #ffff99">       ! The broadcast of the GeneralGrid Header from the &amp;</a>
+  1396) <a name="l1396" style="background-color: #ffff99">       ! root is complete.</a>
+  1397) <a name="l1397" style="background-color: #ffff99"></a>
+  1398) <a name="l1398" style="background-color: #ffff99"></a>
+  1399) <a name="l1399" style="background-color: #ffffff"> end subroutine bcastGeneralGridHeader_</a>
+  1400) <a name="l1400" style="background-color: #ffffff"></a>
+  1401) <a name="l1401" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+  1402) <a name="l1402" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+  1403) <a name="l1403" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+  1404) <a name="l1404" style="background-color: #ffffff">!</a>
+  1405) <a name="l1405" style="background-color: #ffffff">! !IROUTINE: copyGeneralGridHeader_ - Copy the GeneralGrid Header.</a>
+  1406) <a name="l1406" style="background-color: #ffffff">!</a>
+  1407) <a name="l1407" style="background-color: #ffffff">! !DESCRIPTION:  This routine copies the header information from the </a>
+  1408) <a name="l1408" style="background-color: #ffffff">! input {\tt GeneralGrid} argument {\tt iGGrid} to the output </a>
+  1409) <a name="l1409" style="background-color: #ffffff">! {\tt GeneralGrid} argument {\tt oGGrid}.  The {\em header information} </a>
+  1410) <a name="l1410" style="background-color: #ffffff">! in a {\tt GeneralGrid} variable comprises all the non-{\tt AttrVect} </a>
+  1411) <a name="l1411" style="background-color: #ffffff">! components of the {\tt GeneralGrid}; that is, everything except the </a>
+  1412) <a name="l1412" style="background-color: #ffffff">! gridpoint coordinate, geometry, and index data stored in </a>
+  1413) <a name="l1413" style="background-color: #ffffff">! {\tt iGGrid\%data}.  This information includes:</a>
+  1414) <a name="l1414" style="background-color: #ffffff">! \begin{enumerate}</a>
+  1415) <a name="l1415" style="background-color: #ffffff">! \item The coordinates in {\tt iGGrid\%coordinate\_list}</a>
+  1416) <a name="l1416" style="background-color: #ffffff">! \item The coordinate sort order in {\tt iGGrid\%coordinate\_sort\_order}</a>
+  1417) <a name="l1417" style="background-color: #ffffff">! \item The area/volume weights in {\tt iGGrid\%weight\_list}</a>
+  1418) <a name="l1418" style="background-color: #ffffff">! \item Other {\tt REAL} geometric information in {\tt iGGrid\%other\_list}</a>
+  1419) <a name="l1419" style="background-color: #ffffff">! \item Indexing information in {\tt iGGrid\%index\_list}</a>
+  1420) <a name="l1420" style="background-color: #ffffff">! \item The {\tt LOGICAL} descending/ascending order sort flags in </a>
+  1421) <a name="l1421" style="background-color: #ffffff">! {\tt iGGrid\%descend(:)}.</a>
+  1422) <a name="l1422" style="background-color: #ffffff">! \end{enumerate}</a>
+  1423) <a name="l1423" style="background-color: #ffffff">!</a>
+  1424) <a name="l1424" style="background-color: #ffffff">! !INTERFACE:</a>
+  1425) <a name="l1425" style="background-color: #ffffff"></a>
+  1426) <a name="l1426" style="background-color: #ffffff"> subroutine copyGeneralGridHeader_(iGGrid, oGGrid)</a>
+  1427) <a name="l1427" style="background-color: #ffffff">!</a>
+  1428) <a name="l1428" style="background-color: #ffffff">! !USES:</a>
+  1429) <a name="l1429" style="background-color: #ffffff">!</a>
+  1430) <a name="l1430" style="background-color: #ffffff">      use m_stdio</a>
+  1431) <a name="l1431" style="background-color: #ffffff">      use m_die</a>
+  1432) <a name="l1432" style="background-color: #ffffff"></a>
+  1433) <a name="l1433" style="background-color: #ffffff">      use m_List, only : List</a>
+  1434) <a name="l1434" style="background-color: #ffffff">      use m_List, only : List_copy =&gt; copy</a>
+  1435) <a name="l1435" style="background-color: #ffffff">      use m_List, only : List_allocated =&gt; allocated</a>
+  1436) <a name="l1436" style="background-color: #ffffff">      use m_List, only : List_nullify =&gt; nullify</a>
+  1437) <a name="l1437" style="background-color: #ffffff"></a>
+  1438) <a name="l1438" style="background-color: #ffffff">      use m_GeneralGrid, only : GeneralGrid</a>
+  1439) <a name="l1439" style="background-color: #ffffff"></a>
+  1440) <a name="l1440" style="background-color: #ffffff">      implicit none</a>
+  1441) <a name="l1441" style="background-color: #ffffff"></a>
+  1442) <a name="l1442" style="background-color: #ffffff">! !INPUT PARAMETERS: </a>
+  1443) <a name="l1443" style="background-color: #ffffff">!</a>
+  1444) <a name="l1444" style="background-color: #ffffff">      type(GeneralGrid), intent(in)  :: iGGrid</a>
+  1445) <a name="l1445" style="background-color: #ffffff"></a>
+  1446) <a name="l1446" style="background-color: #ffffff">! !OUTPUT PARAMETERS: </a>
+  1447) <a name="l1447" style="background-color: #ffffff">!</a>
+  1448) <a name="l1448" style="background-color: #ffffff">      type(GeneralGrid), intent(out) :: oGGrid</a>
+  1449) <a name="l1449" style="background-color: #ffffff"></a>
+  1450) <a name="l1450" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+  1451) <a name="l1451" style="background-color: #ffffff">!       05Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initial code.</a>
+  1452) <a name="l1452" style="background-color: #ffffff">!       08Aug01 - E.T. Ong &lt;eong@mcs.anl.gov&gt; - changed list assignments(=)</a>
+  1453) <a name="l1453" style="background-color: #ffffff">!                 to list copy.</a>
+  1454) <a name="l1454" style="background-color: #ffffff">!       05Aug02 - E. Ong &lt;eong@mcs.anl.gov&gt; - added association checking</a>
+  1455) <a name="l1455" style="background-color: #ffffff">!EOP ___________________________________________________________________</a>
+  1456) <a name="l1456" style="background-color: #ffffff"></a>
+  1457) <a name="l1457" style="background-color: #ffffff">  character(len=*),parameter :: myname_=myname//'::copyGeneralGridHeader_'</a>
+  1458) <a name="l1458" style="background-color: #ffffff"></a>
+  1459) <a name="l1459" style="background-color: #ffffff">  logical :: DescendAssoc</a>
+  1460) <a name="l1460" style="background-color: #ffffff">  integer :: DescendSize, i, ierr</a>
+  1461) <a name="l1461" style="background-color: #ffffff"></a>
+  1462) <a name="l1462" style="background-color: #ffffff">       ! Step 1. Copy GeneralGrid List attributes from iGGrid </a>
+  1463) <a name="l1463" style="background-color: #ffffff">       ! to oGGrid.</a>
+  1464) <a name="l1464" style="background-color: #ffffff"></a>
+  1465) <a name="l1465" style="background-color: #ffffff">  call List_nullify(oGGrid%coordinate_list)</a>
+  1466) <a name="l1466" style="background-color: #ffffff">  call List_nullify(oGGrid%coordinate_sort_order)</a>
+  1467) <a name="l1467" style="background-color: #ffffff">  call List_nullify(oGGrid%weight_list)</a>
+  1468) <a name="l1468" style="background-color: #ffffff">  call List_nullify(oGGrid%other_list)</a>
+  1469) <a name="l1469" style="background-color: #ffffff">  call List_nullify(oGGrid%index_list)</a>
+  1470) <a name="l1470" style="background-color: #ffffff">  nullify(oGGrid%descend)</a>
+  1471) <a name="l1471" style="background-color: #ffffff"></a>
+  1472) <a name="l1472" style="background-color: #ffffff">  if(List_allocated(iGGrid%coordinate_list)) then</a>
+  1473) <a name="l1473" style="background-color: #ffffff">     call List_copy(oGGrid%coordinate_list,iGGrid%coordinate_list)</a>
+  1474) <a name="l1474" style="background-color: #ffffff">  endif</a>
+  1475) <a name="l1475" style="background-color: #ffffff"></a>
+  1476) <a name="l1476" style="background-color: #ffffff">  if(List_allocated(iGGrid%coordinate_sort_order)) then</a>
+  1477) <a name="l1477" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">List_copy(oGGrid%coordinate_sort_order,iGGrid%coordinate_sort_order)</a>
+  1478) <a name="l1478" style="background-color: #ffff99">  endif</a>
+  1479) <a name="l1479" style="background-color: #ffff99"></a>
+  1480) <a name="l1480" style="background-color: #ffff99">  if(</a><a style="background-color: #ffffff">List_allocated(iGGrid%weight_list)) then</a>
+  1481) <a name="l1481" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">List_copy(oGGrid%weight_list,iGGrid%weight_list)</a>
+  1482) <a name="l1482" style="background-color: #ffff99">  endif</a>
+  1483) <a name="l1483" style="background-color: #ffff99"></a>
+  1484) <a name="l1484" style="background-color: #ffff99">  if(</a><a style="background-color: #ffffff">List_allocated(iGGrid%other_list)) then</a>
+  1485) <a name="l1485" style="background-color: #ffffff">     call List_copy(oGGrid%other_list,iGGrid%other_list)</a>
+  1486) <a name="l1486" style="background-color: #ffffff">  endif</a>
+  1487) <a name="l1487" style="background-color: #ffffff"></a>
+  1488) <a name="l1488" style="background-color: #ffffff">  if(List_allocated(iGGrid%index_list)) then</a>
+  1489) <a name="l1489" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">List_copy(oGGrid%index_list,iGGrid%index_list)</a>
+  1490) <a name="l1490" style="background-color: #ffff99">  endif</a>
+  1491) <a name="l1491" style="background-color: #ffff99"></a>
+  1492) <a name="l1492" style="background-color: #fafad2">  DescendAssoc = associated(iGGrid%descend) </a>
+  1493) <a name="l1493" style="background-color: #fafad2">  if(DescendAssoc) then</a>
+  1494) <a name="l1494" style="background-color: #fafad2"></a>
+  1495) <a name="l1495" style="background-color: #ffff99">     DescendSize = size(iGGrid%descend)</a>
+  1496) <a name="l1496" style="background-color: #ffff99">     allocate(oGGrid%descend(DescendSize), stat=ierr)</a>
+  1497) <a name="l1497" style="background-color: #ffff99">     if(ierr /= 0) then </a>
+  1498) <a name="l1498" style="background-color: #ffff99">	write(stderr,*) myname_,':: ERROR--allocate(iGGrid%descend(... failed.',&amp;</a>
+  1499) <a name="l1499" style="background-color: #ffff99">	     ' ierr = ', ierr, 'DescendSize = ', DescendSize</a>
+  1500) <a name="l1500" style="background-color: #ffff99">        call die(myname_)</a>
+  1501) <a name="l1501" style="background-color: #ffff99">     endif</a>
+  1502) <a name="l1502" style="background-color: #ffff99">     do i=1,DescendSize</a>
+  1503) <a name="l1503" style="background-color: #ffff99">	oGGrid%descend(i) = iGGrid%descend(i)</a>
+  1504) <a name="l1504" style="background-color: #ffff99">     end do</a>
+  1505) <a name="l1505" style="background-color: #ffff99"></a>
+  1506) <a name="l1506" style="background-color: #ffff99">  endif</a>
+  1507) <a name="l1507" style="background-color: #ffff99"></a>
+  1508) <a name="l1508" style="background-color: #ffff99">       ! The GeneralGrid header copy is now complete.</a>
+  1509) <a name="l1509" style="background-color: #ffff99"></a>
+  1510) <a name="l1510" style="background-color: #ffffff"> end subroutine copyGeneralGridHeader_</a>
+  1511) <a name="l1511" style="background-color: #ffffff"></a>
+  1512) <a name="l1512" style="background-color: #ffffff"> end module m_GeneralGridComms</a>
+  1513) <a name="l1513" style="background-color: #ffffff"></a>
+  1514) <a name="l1514" style="background-color: #ffffff"></a>
+  1515) <a name="l1515" style="background-color: #ffffff"></a>
+  1516) <a name="l1516" style="background-color: #ffffff"></a>
+  1517) <a name="l1517" style="background-color: #ffffff"></a>
+  1518) <a name="l1518" style="background-color: #ffffff"></a>
+  1519) <a name="l1519" style="background-color: #ffffff"></a>
+  1520) <a name="l1520" style="background-color: #ffffff"></a>
+  1521) <a name="l1521" style="background-color: #ffffff"></a>
+  1522) <a name="l1522" style="background-color: #ffffff"></a>
+  1523) <a name="l1523" style="background-color: #ffffff"></a>
+  1524) <a name="l1524" style="background-color: #ffffff"></a>
+  1525) <a name="l1525" style="background-color: #ffffff"></a>
+  1526) <a name="l1526" style="background-color: #ffffff"></a>
+  1527) <a name="l1527" style="background-color: #ffffff"></a>
+  1528) <a name="l1528" style="background-color: #ffffff"></a>
+  1529) <a name="l1529" style="background-color: #ffffff"></a>
+  1530) <a name="l1530" style="background-color: #ffffff"></a>
+  1531) <a name="l1531" style="background-color: #ffffff"></a>
+  1532) <a name="l1532" style="background-color: #ffffff"></a>
+  1533) <a name="l1533" style="background-color: #ffffff"></a>
+  1534) <a name="l1534" style="background-color: #ffffff"></a>
+  1535) <a name="l1535" style="background-color: #ffffff"></a>
+  1536) <a name="l1536" style="background-color: #ffffff"></a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

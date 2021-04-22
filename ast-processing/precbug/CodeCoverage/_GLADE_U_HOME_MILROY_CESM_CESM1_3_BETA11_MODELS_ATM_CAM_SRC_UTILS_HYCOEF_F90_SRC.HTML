@@ -1,0 +1,352 @@
+<html>
+<head>
+<title>Listing of hycoef.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;hycoef.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 50.00&#160;%func&#160;&#160;&#160;&#160; 63.21&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module hycoef</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">use shr_kind_mod, only: r8 =&gt; shr_kind_r8</a>
+     4) <a name="l4" style="background-color: #ffffff">use spmd_utils,   only: masterproc</a>
+     5) <a name="l5" style="background-color: #ffffff">use pmgrid,       only: plev, plevp</a>
+     6) <a name="l6" style="background-color: #ffffff">use cam_logfile,  only: iulog</a>
+     7) <a name="l7" style="background-color: #ffffff">use abortutils,   only: endrun</a>
+     8) <a name="l8" style="background-color: #ffffff">use pio,          only: file_desc_t, var_desc_t, &amp;</a>
+     9) <a name="l9" style="background-color: #ffffff">                        pio_inq_dimid, pio_inq_dimlen, pio_inq_varid, &amp;</a>
+    10) <a name="l10" style="background-color: #ffffff">                        pio_double, pio_def_dim, pio_def_var, &amp;</a>
+    11) <a name="l11" style="background-color: #ffffff">                        pio_put_var, pio_get_var</a>
+    12) <a name="l12" style="background-color: #ffffff"></a>
+    13) <a name="l13" style="background-color: #ffffff">implicit none</a>
+    14) <a name="l14" style="background-color: #ffffff">private</a>
+    15) <a name="l15" style="background-color: #ffffff">save</a>
+    16) <a name="l16" style="background-color: #ffffff"></a>
+    17) <a name="l17" style="background-color: #ffffff">!----------------------------------------------------------------------- </a>
+    18) <a name="l18" style="background-color: #ffffff">! </a>
+    19) <a name="l19" style="background-color: #ffffff">! Purpose: Hybrid level definitions: p = a*p0 + b*ps</a>
+    20) <a name="l20" style="background-color: #ffffff">!          interfaces   p(k) = hyai(k)*ps0 + hybi(k)*ps</a>
+    21) <a name="l21" style="background-color: #ffffff">!          midpoints    p(k) = hyam(k)*ps0 + hybm(k)*ps</a>
+    22) <a name="l22" style="background-color: #ffffff">! </a>
+    23) <a name="l23" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    24) <a name="l24" style="background-color: #ffffff"></a>
+    25) <a name="l25" style="background-color: #ffffff">real(r8), public, target :: hyai(plevp) ! ps0 component of hybrid coordinate - interfaces</a>
+    26) <a name="l26" style="background-color: #ffffff">real(r8), public, target :: hyam(plev)  ! ps0 component of hybrid coordinate - midpoints</a>
+    27) <a name="l27" style="background-color: #ffffff">real(r8), public, target :: hybi(plevp) ! ps component of hybrid coordinate - interfaces</a>
+    28) <a name="l28" style="background-color: #ffffff">real(r8), public, target :: hybm(plev)  ! ps component of hybrid coordinate - midpoints</a>
+    29) <a name="l29" style="background-color: #ffffff"></a>
+    30) <a name="l30" style="background-color: #ffffff">real(r8), public :: etamid(plev)      ! hybrid coordinate - midpoints</a>
+    31) <a name="l31" style="background-color: #ffffff"></a>
+    32) <a name="l32" style="background-color: #ffffff">real(r8), public :: hybd(plev)        ! difference  in b (hybi) across layers</a>
+    33) <a name="l33" style="background-color: #ffffff">real(r8), public :: hypi(plevp)       ! reference pressures at interfaces</a>
+    34) <a name="l34" style="background-color: #ffffff">real(r8), public :: hypm(plev)        ! reference pressures at midpoints</a>
+    35) <a name="l35" style="background-color: #ffffff">real(r8), public :: hypd(plev)        ! reference pressure layer thickness</a>
+    36) <a name="l36" style="background-color: #ffffff"></a>
+    37) <a name="l37" style="background-color: #ffffff">real(r8), public, parameter :: ps0 = 1.0e5_r8    ! Base state surface pressure (pascals)</a>
+    38) <a name="l38" style="background-color: #ffffff">real(r8), public, parameter :: psr = 1.0e5_r8    ! Reference surface pressure (pascals)</a>
+    39) <a name="l39" style="background-color: #ffffff"></a>
+    40) <a name="l40" style="background-color: #ffffff">real(r8), target :: alev(plev)    ! level values (pascals) for 'lev' coord</a>
+    41) <a name="l41" style="background-color: #ffffff">real(r8), target :: ailev(plevp)  ! interface level values for 'ilev' coord</a>
+    42) <a name="l42" style="background-color: #ffffff"></a>
+    43) <a name="l43" style="background-color: #ffffff">integer, public :: nprlev       ! number of pure pressure levels at top</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">public hycoef_init</a>
+    46) <a name="l46" style="background-color: #ffffff"></a>
+    47) <a name="l47" style="background-color: #ffffff">type(var_desc_t) :: hyam_desc, hyai_desc, hybm_desc, hybi_desc</a>
+    48) <a name="l48" style="background-color: #ffffff">public init_restart_hycoef, write_restart_hycoef</a>
+    49) <a name="l49" style="background-color: #ffffff"></a>
+    50) <a name="l50" style="background-color: #ffffff">!=======================================================================</a>
+    51) <a name="l51" style="background-color: #ffffff">contains</a>
+    52) <a name="l52" style="background-color: #ffffff">!=======================================================================</a>
+    53) <a name="l53" style="background-color: #ffffff"></a>
+    54) <a name="l54" style="background-color: #ffffff">subroutine hycoef_init(file)</a>
+    55) <a name="l55" style="background-color: #ffffff">   use cam_history_support, only: add_vert_coord, formula_terms_t</a>
+    56) <a name="l56" style="background-color: #ffffff"></a>
+    57) <a name="l57" style="background-color: #ffffff">   !----------------------------------------------------------------------- </a>
+    58) <a name="l58" style="background-color: #ffffff">   ! </a>
+    59) <a name="l59" style="background-color: #ffffff">   ! Purpose: </a>
+    60) <a name="l60" style="background-color: #ffffff">   ! Defines the locations of model interfaces from input data in the</a>
+    61) <a name="l61" style="background-color: #ffffff">   ! hybrid coordinate scheme.  Actual pressure values of model level</a>
+    62) <a name="l62" style="background-color: #ffffff">   ! interfaces are determined elsewhere from the fields set here.</a>
+    63) <a name="l63" style="background-color: #ffffff">   ! </a>
+    64) <a name="l64" style="background-color: #ffffff">   ! Method: </a>
+    65) <a name="l65" style="background-color: #ffffff">   ! the following fields are set:</a>
+    66) <a name="l66" style="background-color: #ffffff">   ! hyai     fraction of reference pressure used for interface pressures</a>
+    67) <a name="l67" style="background-color: #ffffff">   ! hyam     fraction of reference pressure used for midpoint pressures</a>
+    68) <a name="l68" style="background-color: #ffffff">   ! hybi     fraction of surface pressure used for interface pressures</a>
+    69) <a name="l69" style="background-color: #ffffff">   ! hybm     fraction of surface pressure used for midpoint pressures</a>
+    70) <a name="l70" style="background-color: #ffffff">   ! hybd     difference of hybi's</a>
+    71) <a name="l71" style="background-color: #ffffff">   ! hypi     reference state interface pressures</a>
+    72) <a name="l72" style="background-color: #ffffff">   ! hypm     reference state midpoint pressures</a>
+    73) <a name="l73" style="background-color: #ffffff">   ! hypd     reference state layer thicknesses</a>
+    74) <a name="l74" style="background-color: #ffffff">   ! hypdln   reference state layer thicknesses (log p)</a>
+    75) <a name="l75" style="background-color: #ffffff">   ! hyalph   distance from interface to level (used in integrals)</a>
+    76) <a name="l76" style="background-color: #ffffff">   ! prsfac   log pressure extrapolation factor (used to compute psl)</a>
+    77) <a name="l77" style="background-color: #ffffff">   ! </a>
+    78) <a name="l78" style="background-color: #ffffff">   ! Author: B. Boville</a>
+    79) <a name="l79" style="background-color: #ffffff">   ! </a>
+    80) <a name="l80" style="background-color: #ffffff">   !-----------------------------------------------------------------------</a>
+    81) <a name="l81" style="background-color: #ffffff"></a>
+    82) <a name="l82" style="background-color: #ffffff">   ! arguments</a>
+    83) <a name="l83" style="background-color: #ffffff">   type(file_desc_t), intent(in) :: file</a>
+    84) <a name="l84" style="background-color: #ffffff"></a>
+    85) <a name="l85" style="background-color: #ffffff">   ! local variables</a>
+    86) <a name="l86" style="background-color: #ffffff">   integer  :: k        ! Level index</a>
+    87) <a name="l87" style="background-color: #ffffff">   real(r8) :: amean, bmean, atest, btest, eps</a>
+    88) <a name="l88" style="background-color: #ffffff">   type(formula_terms_t) :: formula_terms ! For the 'lev' and 'ilev' coords</a>
+    89) <a name="l89" style="background-color: #ffffff">   !-----------------------------------------------------------------------</a>
+    90) <a name="l90" style="background-color: #ffffff"></a>
+    91) <a name="l91" style="background-color: #ffffff"></a>
+    92) <a name="l92" style="background-color: #ffffff">   ! read hybrid coeficients</a>
+    93) <a name="l93" style="background-color: #ffffff">   call hycoef_read(file)</a>
+    94) <a name="l94" style="background-color: #ffffff"></a>
+    95) <a name="l95" style="background-color: #ffffff">   ! Set layer locations</a>
+    96) <a name="l96" style="background-color: #ffffff">   nprlev = 0</a>
+    97) <a name="l97" style="background-color: #ffffff">   do k=1,plev</a>
+    98) <a name="l98" style="background-color: #ffffff"></a>
+    99) <a name="l99" style="background-color: #ffffff">      ! Interfaces. Set nprlev to the interface above, the first time a </a>
+   100) <a name="l100" style="background-color: #ffffff">      ! nonzero surface pressure contribution is found. &quot;nprlev&quot; </a>
+   101) <a name="l101" style="background-color: #ffffff">      ! identifies the lowest pure pressure interface.</a>
+   102) <a name="l102" style="background-color: #ffffff"></a>
+   103) <a name="l103" style="background-color: #ffffff">      if (nprlev==0 .and. hybi(k).ne.0.0_r8) nprlev = k - 1</a>
+   104) <a name="l104" style="background-color: #ffffff">   end do</a>
+   105) <a name="l105" style="background-color: #ffffff"></a>
+   106) <a name="l106" style="background-color: #ffffff">   ! Set nprlev if no nonzero b's have been found. All interfaces are </a>
+   107) <a name="l107" style="background-color: #ffffff">   ! pure pressure. A pure pressure model requires other changes as well. </a>
+   108) <a name="l108" style="background-color: #ffffff">   if (nprlev==0) </a><a style="background-color: #ffff99">nprlev = plev + 2</a>
+   109) <a name="l109" style="background-color: #ffff99"></a>
+   110) <a name="l110" style="background-color: #ffff99">   ! Set delta sigma part of layer thickness and reference state midpoint </a>
+   111) <a name="l111" style="background-color: #ffff99">   ! pressures</a>
+   112) <a name="l112" style="background-color: #ffffff">   do k=1,plev</a>
+   113) <a name="l113" style="background-color: #ffffff">      hybd(k) = hybi(k+1) - hybi(k)</a>
+   114) <a name="l114" style="background-color: #ffffff">      hypm(k) = hyam(k)*ps0 + hybm(k)*psr</a>
+   115) <a name="l115" style="background-color: #ffffff">      etamid(k) = hyam(k) + hybm(k)</a>
+   116) <a name="l116" style="background-color: #ffffff">   end do</a>
+   117) <a name="l117" style="background-color: #ffffff"></a>
+   118) <a name="l118" style="background-color: #ffffff">   ! Reference state interface pressures</a>
+   119) <a name="l119" style="background-color: #ffffff">   do k=1,plevp</a>
+   120) <a name="l120" style="background-color: #ffffff">      hypi(k) = hyai(k)*ps0 + hybi(k)*psr</a>
+   121) <a name="l121" style="background-color: #ffffff">   end do</a>
+   122) <a name="l122" style="background-color: #ffffff"></a>
+   123) <a name="l123" style="background-color: #ffffff">   ! Reference state layer thicknesses</a>
+   124) <a name="l124" style="background-color: #ffffff">   do k=1,plev</a>
+   125) <a name="l125" style="background-color: #ffffff">      hypd(k) = hypi(k+1) - hypi(k)</a>
+   126) <a name="l126" style="background-color: #ffffff">   end do</a>
+   127) <a name="l127" style="background-color: #ffffff"></a>
+   128) <a name="l128" style="background-color: #ffffff">   ! Test that A's and B's at full levels are arithmetic means of A's and</a>
+   129) <a name="l129" style="background-color: #ffffff">   ! B's at interfaces</a>
+   130) <a name="l130" style="background-color: #ffffff">   eps    = 1.e-05_r8</a>
+   131) <a name="l131" style="background-color: #ffffff">   do k = 1,plev</a>
+   132) <a name="l132" style="background-color: #ffffff">      amean = ( hyai(k+1) + hyai(k) )*0.5_r8</a>
+   133) <a name="l133" style="background-color: #ffffff">      bmean = ( hybi(k+1) + hybi(k) )*0.5_r8</a>
+   134) <a name="l134" style="background-color: #ffffff">      if(amean == 0._r8 .and. hyam(k) == 0._r8) then</a>
+   135) <a name="l135" style="background-color: #ffffff">         atest = 0._r8</a>
+   136) <a name="l136" style="background-color: #ffffff">      else</a>
+   137) <a name="l137" style="background-color: #ffffff">         atest = abs( amean - hyam(k) )/ ( 0.5_r8*( abs(amean + hyam(k)) ) )</a>
+   138) <a name="l138" style="background-color: #ffffff">      endif</a>
+   139) <a name="l139" style="background-color: #ffffff">      if(bmean == 0._r8 .and. hybm(k) == 0._r8) then</a>
+   140) <a name="l140" style="background-color: #ffffff">         btest = 0._r8</a>
+   141) <a name="l141" style="background-color: #ffffff">      else</a>
+   142) <a name="l142" style="background-color: #ffffff">         btest = abs( bmean - hybm(k) )/ ( 0.5_r8*( abs(bmean + hybm(k)) ) )</a>
+   143) <a name="l143" style="background-color: #ffffff">      endif</a>
+   144) <a name="l144" style="background-color: #ffffff">      if (atest &gt; eps) then</a>
+   145) <a name="l145" style="background-color: #ffff99">         if (masterproc) then</a>
+   146) <a name="l146" style="background-color: #ffff99">            write(iulog,9850)</a>
+   147) <a name="l147" style="background-color: #ffff99">            write(iulog,*)'k,atest,eps=',k,atest,eps</a>
+   148) <a name="l148" style="background-color: #ffff99">         end if</a>
+   149) <a name="l149" style="background-color: #ffff99">      end if</a>
+   150) <a name="l150" style="background-color: #ffff99">      </a>
+   151) <a name="l151" style="background-color: #ffffff">      if (btest &gt; eps) then</a>
+   152) <a name="l152" style="background-color: #ffff99">         if (masterproc) then</a>
+   153) <a name="l153" style="background-color: #ffff99">            write(iulog,9850)</a>
+   154) <a name="l154" style="background-color: #ffff99">            write(iulog,*)'k,btest,eps=',k,btest,eps</a>
+   155) <a name="l155" style="background-color: #ffff99">         end if</a>
+   156) <a name="l156" style="background-color: #ffff99">      end if</a>
+   157) <a name="l157" style="background-color: #ffff99">   end do</a>
+   158) <a name="l158" style="background-color: #ffff99"></a>
+   159) <a name="l159" style="background-color: #ffff99">   ! Add the information for the 'lev' and 'ilev' mdim history coordinates</a>
+   160) <a name="l160" style="background-color: #ffff99">   ! Note that this must be after hycoef_init and before any addfld calls</a>
+   161) <a name="l161" style="background-color: #ffff99">   !</a>
+   162) <a name="l162" style="background-color: #ffff99">   ! 0.01 converts Pascals to millibars</a>
+   163) <a name="l163" style="background-color: #ffff99">   !</a>
+   164) <a name="l164" style="background-color: #ffffff">   alev(:plev) = 0.01_r8*ps0*(hyam(:plev) + hybm(:plev))</a>
+   165) <a name="l165" style="background-color: #ffffff">   ailev(:plevp) = 0.01_r8*ps0*(hyai(:plevp) + hybi(:plevp))</a>
+   166) <a name="l166" style="background-color: #ffffff"></a>
+   167) <a name="l167" style="background-color: #ffffff">   formula_terms%a_name       =  'hyam'</a>
+   168) <a name="l168" style="background-color: #ffffff">   formula_terms%a_long_name  =  'hybrid A coefficient at layer midpoints'</a>
+   169) <a name="l169" style="background-color: #ffffff">   formula_terms%a_values     =&gt; hyam</a>
+   170) <a name="l170" style="background-color: #ffffff">   formula_terms%b_name       =  'hybm'</a>
+   171) <a name="l171" style="background-color: #ffffff">   formula_terms%b_long_name  =  'hybrid B coefficient at layer midpoints'</a>
+   172) <a name="l172" style="background-color: #ffffff">   formula_terms%b_values     =&gt; hybm</a>
+   173) <a name="l173" style="background-color: #ffffff">   formula_terms%p0_name      =  'P0'</a>
+   174) <a name="l174" style="background-color: #ffffff">   formula_terms%p0_long_name = 'reference pressure'</a>
+   175) <a name="l175" style="background-color: #ffffff">   formula_terms%p0_units     =  'Pa'</a>
+   176) <a name="l176" style="background-color: #ffffff">   formula_terms%p0_value     =  ps0</a>
+   177) <a name="l177" style="background-color: #ffffff">   formula_terms%ps_name      =  'PS'</a>
+   178) <a name="l178" style="background-color: #ffffff"></a>
+   179) <a name="l179" style="background-color: #ffffff">   call add_vert_coord('lev', plev,                                         &amp;</a>
+   180) <a name="l180" style="background-color: #ffffff">        'hybrid level at midpoints (1000*(A+B))', 'hPa', alev,              &amp;</a>
+   181) <a name="l181" style="background-color: #ffffff">        positive='down',                                                    &amp;</a>
+   182) <a name="l182" style="background-color: #ffffff">        standard_name='atmosphere_hybrid_sigma_pressure_coordinate',        &amp;</a>
+   183) <a name="l183" style="background-color: #ffffff">        formula_terms=formula_terms)</a>
+   184) <a name="l184" style="background-color: #ffffff"></a>
+   185) <a name="l185" style="background-color: #ffffff">   formula_terms%a_name       =  'hyai'</a>
+   186) <a name="l186" style="background-color: #ffffff">   formula_terms%a_long_name  =  'hybrid A coefficient at layer interfaces'</a>
+   187) <a name="l187" style="background-color: #ffffff">   formula_terms%a_values     =&gt; hyai</a>
+   188) <a name="l188" style="background-color: #ffffff">   formula_terms%b_name       =  'hybi'</a>
+   189) <a name="l189" style="background-color: #ffffff">   formula_terms%b_long_name  =  'hybrid B coefficient at layer interfaces'</a>
+   190) <a name="l190" style="background-color: #ffffff">   formula_terms%b_values     =&gt; hybi</a>
+   191) <a name="l191" style="background-color: #ffffff">   formula_terms%p0_name      =  'P0'</a>
+   192) <a name="l192" style="background-color: #ffffff">   formula_terms%p0_long_name = 'reference pressure'</a>
+   193) <a name="l193" style="background-color: #ffffff">   formula_terms%p0_units     =  'Pa'</a>
+   194) <a name="l194" style="background-color: #ffffff">   formula_terms%p0_value     =  ps0</a>
+   195) <a name="l195" style="background-color: #ffffff">   formula_terms%ps_name      =  'PS'</a>
+   196) <a name="l196" style="background-color: #ffffff"></a>
+   197) <a name="l197" style="background-color: #ffffff">   call add_vert_coord('ilev', plevp,                                       &amp;</a>
+   198) <a name="l198" style="background-color: #ffffff">        'hybrid level at interfaces (1000*(A+B))', 'hPa', ailev,            &amp;</a>
+   199) <a name="l199" style="background-color: #ffffff">        positive='down',                                                    &amp;</a>
+   200) <a name="l200" style="background-color: #ffffff">        standard_name='atmosphere_hybrid_sigma_pressure_coordinate',        &amp;</a>
+   201) <a name="l201" style="background-color: #ffffff">        formula_terms=formula_terms)</a>
+   202) <a name="l202" style="background-color: #ffffff"></a>
+   203) <a name="l203" style="background-color: #ffffff">   if (masterproc) then</a>
+   204) <a name="l204" style="background-color: #ffffff">      write(iulog,'(a)')' Layer Locations (*1000) '</a>
+   205) <a name="l205" style="background-color: #ffffff">      do k=1,plev</a>
+   206) <a name="l206" style="background-color: #ffffff">         write(iulog,9800)k,hyai(k),hybi(k),hyai(k)+hybi(k)</a>
+   207) <a name="l207" style="background-color: #ffffff">         write(iulog,9810) hyam(k), hybm(k), hyam(k)+hybm(k)</a>
+   208) <a name="l208" style="background-color: #ffffff">      end do</a>
+   209) <a name="l209" style="background-color: #ffffff"></a>
+   210) <a name="l210" style="background-color: #ffffff">      write(iulog,9800)plevp,hyai(plevp),hybi(plevp),hyai(plevp)+hybi(plevp)</a>
+   211) <a name="l211" style="background-color: #ffffff">      write(iulog,9820)</a>
+   212) <a name="l212" style="background-color: #ffffff">      do k=1,plev</a>
+   213) <a name="l213" style="background-color: #ffffff">         write(iulog,9830) k, hypi(k)</a>
+   214) <a name="l214" style="background-color: #ffffff">         write(iulog,9840) hypm(k), hypd(k)</a>
+   215) <a name="l215" style="background-color: #ffffff">      end do</a>
+   216) <a name="l216" style="background-color: #ffffff">      write(iulog,9830) plevp, hypi(plevp)</a>
+   217) <a name="l217" style="background-color: #ffffff">    end if</a>
+   218) <a name="l218" style="background-color: #ffffff"></a>
+   219) <a name="l219" style="background-color: #ffffff">9800 format( 1x, i3, 3p, 3(f10.4,10x) )</a>
+   220) <a name="l220" style="background-color: #ffffff">9810 format( 1x, 3x, 3p, 3(10x,f10.4) )</a>
+   221) <a name="l221" style="background-color: #ffffff">9820 format(1x,'reference pressures (Pa)')</a>
+   222) <a name="l222" style="background-color: #ffffff">9830 format(1x,i3,f15.4)</a>
+   223) <a name="l223" style="background-color: #ffffff">9840 format(1x,3x,15x,2f15.4)</a>
+   224) <a name="l224" style="background-color: #ffffff">9850 format('HYCOEF: A and/or B vertical level coefficients at full',/, &amp;</a>
+   225) <a name="l225" style="background-color: #ffffff">         ' levels are not the arithmetic mean of half-level values')</a>
+   226) <a name="l226" style="background-color: #ffffff"></a>
+   227) <a name="l227" style="background-color: #ffffff">end subroutine hycoef_init</a>
+   228) <a name="l228" style="background-color: #ffffff"></a>
+   229) <a name="l229" style="background-color: #ffffff">!=======================================================================</a>
+   230) <a name="l230" style="background-color: #ffffff"></a>
+   231) <a name="l231" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">init_restart_hycoef(File, vdimids)    </a>
+   232) <a name="l232" style="background-color: #ffcccc">    </a>
+   233) <a name="l233" style="background-color: #ffcccc">   type(file_desc_t), intent(inout) :: File</a>
+   234) <a name="l234" style="background-color: #ffcccc">   integer,           intent(out)   :: vdimids(:)</a>
+   235) <a name="l235" style="background-color: #ffcccc"></a>
+   236) <a name="l236" style="background-color: #ffcccc">   ! PIO traps errors internally, no need to check ierr</a>
+   237) <a name="l237" style="background-color: #ffcccc"></a>
+   238) <a name="l238" style="background-color: #ffcccc">   integer :: ierr</a>
+   239) <a name="l239" style="background-color: #ffcccc"></a>
+   240) <a name="l240" style="background-color: #ffcccc">   ierr = PIO_Def_Dim(File, 'lev',  plev,  vdimids(1))</a>
+   241) <a name="l241" style="background-color: #ffcccc">   ierr = PIO_Def_Dim(File, 'ilev', plevp, vdimids(2))</a>
+   242) <a name="l242" style="background-color: #ffcccc">    </a>
+   243) <a name="l243" style="background-color: #ffcccc">   ierr = pio_def_var(File, 'hyai', pio_double, vdimids(2:2), hyai_desc)</a>
+   244) <a name="l244" style="background-color: #ffcccc">   ierr = pio_def_var(File, 'hyam', pio_double, vdimids(1:1), hyam_desc)</a>
+   245) <a name="l245" style="background-color: #ffcccc">   ierr = pio_def_var(File, 'hybi', pio_double, vdimids(2:2), hybi_desc)</a>
+   246) <a name="l246" style="background-color: #ffcccc">   ierr = pio_def_var(File, 'hybm', pio_double, vdimids(1:1), hybm_desc)</a>
+   247) <a name="l247" style="background-color: #ffcccc"></a>
+   248) <a name="l248" style="background-color: #ffcccc">end subroutine init_restart_hycoef</a>
+   249) <a name="l249" style="background-color: #ffffff"></a>
+   250) <a name="l250" style="background-color: #ffffff">!=======================================================================</a>
+   251) <a name="l251" style="background-color: #ffffff"></a>
+   252) <a name="l252" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">write_restart_hycoef(file)</a>
+   253) <a name="l253" style="background-color: #ffcccc"></a>
+   254) <a name="l254" style="background-color: #ffcccc">   type(file_desc_t), intent(inout) :: File</a>
+   255) <a name="l255" style="background-color: #ffcccc"></a>
+   256) <a name="l256" style="background-color: #ffcccc">   ! PIO traps errors internally, no need to check ierr</a>
+   257) <a name="l257" style="background-color: #ffcccc"></a>
+   258) <a name="l258" style="background-color: #ffcccc">   integer :: ierr</a>
+   259) <a name="l259" style="background-color: #ffcccc">    </a>
+   260) <a name="l260" style="background-color: #ffcccc">   ierr = pio_put_var(File, hyai_desc, hyai)</a>
+   261) <a name="l261" style="background-color: #ffcccc">   ierr = pio_put_var(File, hyam_desc, hyam)</a>
+   262) <a name="l262" style="background-color: #ffcccc">   ierr = pio_put_var(File, hybi_desc, hybi)</a>
+   263) <a name="l263" style="background-color: #ffcccc">   ierr = pio_put_var(File, hybm_desc, hybm)</a>
+   264) <a name="l264" style="background-color: #ffcccc"></a>
+   265) <a name="l265" style="background-color: #ffcccc">end subroutine write_restart_hycoef</a>
+   266) <a name="l266" style="background-color: #ffffff"></a>
+   267) <a name="l267" style="background-color: #ffffff">!=======================================================================</a>
+   268) <a name="l268" style="background-color: #ffffff"></a>
+   269) <a name="l269" style="background-color: #ffffff">subroutine hycoef_read(File)</a>
+   270) <a name="l270" style="background-color: #ffffff"></a>
+   271) <a name="l271" style="background-color: #ffffff">   ! This code is used both for initial and restart reading.</a>
+   272) <a name="l272" style="background-color: #ffffff"></a>
+   273) <a name="l273" style="background-color: #ffffff">   type(file_desc_t), intent(in) :: File</a>
+   274) <a name="l274" style="background-color: #ffffff"></a>
+   275) <a name="l275" style="background-color: #ffffff">   integer :: flev, filev, lev_dimid, ierr</a>
+   276) <a name="l276" style="background-color: #ffffff">   character(len=*), parameter :: routine = 'hycoef_read'</a>
+   277) <a name="l277" style="background-color: #ffffff"></a>
+   278) <a name="l278" style="background-color: #ffffff">   ! PIO traps errors internally, no need to check ierr</a>
+   279) <a name="l279" style="background-color: #ffffff"></a>
+   280) <a name="l280" style="background-color: #ffffff">   ierr = PIO_Inq_DimID(File, 'lev', lev_dimid)</a>
+   281) <a name="l281" style="background-color: #ffffff">   ierr = PIO_Inq_dimlen(File, lev_dimid, flev)</a>
+   282) <a name="l282" style="background-color: #ffffff">   if (plev /= flev) then</a>
+   283) <a name="l283" style="background-color: #ffff99">      write(iulog,*) routine//': ERROR: file lev does not match model. lev (file, model):',flev, plev</a>
+   284) <a name="l284" style="background-color: #ffff99">      call endrun(routine//': ERROR: file lev does not match model.')</a>
+   285) <a name="l285" style="background-color: #ffff99">   end if</a>
+   286) <a name="l286" style="background-color: #ffff99"></a>
+   287) <a name="l287" style="background-color: #ffffff">   ierr = PIO_Inq_DimID(File, 'ilev', lev_dimid)</a>
+   288) <a name="l288" style="background-color: #ffffff">   ierr = PIO_Inq_dimlen(File, lev_dimid, filev)</a>
+   289) <a name="l289" style="background-color: #ffffff">   if (plevp /= filev) then</a>
+   290) <a name="l290" style="background-color: #ffff99">      write(iulog,*) routine//':ERROR: file ilev does not match model plevp (file, model):',filev, plevp</a>
+   291) <a name="l291" style="background-color: #ffff99">      call endrun(routine//':ERROR: file ilev does not match model.')</a>
+   292) <a name="l292" style="background-color: #ffff99">   end if</a>
+   293) <a name="l293" style="background-color: #ffff99"></a>
+   294) <a name="l294" style="background-color: #ffffff">   ierr = pio_inq_varid(File, 'hyai', hyai_desc)</a>
+   295) <a name="l295" style="background-color: #ffffff">   ierr = pio_inq_varid(File, 'hyam', hyam_desc)</a>
+   296) <a name="l296" style="background-color: #ffffff">   ierr = pio_inq_varid(File, 'hybi', hybi_desc)</a>
+   297) <a name="l297" style="background-color: #ffffff">   ierr = pio_inq_varid(File, 'hybm', hybm_desc)</a>
+   298) <a name="l298" style="background-color: #ffffff"></a>
+   299) <a name="l299" style="background-color: #ffffff">   ierr = pio_get_var(File, hyai_desc, hyai)</a>
+   300) <a name="l300" style="background-color: #ffffff">   ierr = pio_get_var(File, hybi_desc, hybi)</a>
+   301) <a name="l301" style="background-color: #ffffff">   ierr = pio_get_var(File, hyam_desc, hyam)</a>
+   302) <a name="l302" style="background-color: #ffffff">   ierr = pio_get_var(File, hybm_desc, hybm)</a>
+   303) <a name="l303" style="background-color: #ffffff"></a>
+   304) <a name="l304" style="background-color: #ffffff">#if ( defined OFFLINE_DYN )</a>
+   305) <a name="l305" style="background-color: #ffffff">   ! make sure top interface is non zero for fv dycore</a>
+   306) <a name="l306" style="background-color: #ffffff">   if (hyai(1) .eq. 0._r8) then</a>
+   307) <a name="l307" style="background-color: #ffffff">      if (hybm(1) .ne. 0.0_r8) then</a>
+   308) <a name="l308" style="background-color: #ffffff">         hyai(1) = hybm(1)*1.e-2_r8</a>
+   309) <a name="l309" style="background-color: #ffffff">      else if (hyam(1) .ne. 0.0_r8) then</a>
+   310) <a name="l310" style="background-color: #ffffff">         hyai(1) = hyam(1)*1.e-2_r8</a>
+   311) <a name="l311" style="background-color: #ffffff">      else</a>
+   312) <a name="l312" style="background-color: #ffffff">         call endrun('Not able to set hyai(1) to non-zero.')</a>
+   313) <a name="l313" style="background-color: #ffffff">      end if</a>
+   314) <a name="l314" style="background-color: #ffffff">   end if</a>
+   315) <a name="l315" style="background-color: #ffffff">#endif</a>
+   316) <a name="l316" style="background-color: #ffffff"></a>
+   317) <a name="l317" style="background-color: #ffffff">end subroutine hycoef_read</a>
+   318) <a name="l318" style="background-color: #ffffff"></a>
+   319) <a name="l319" style="background-color: #ffffff">!=======================================================================</a>
+   320) <a name="l320" style="background-color: #ffffff"></a>
+   321) <a name="l321" style="background-color: #ffffff">end module hycoef</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

@@ -1,0 +1,116 @@
+<html>
+<head>
+<title>Listing of carma_model_flags_mod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;carma_model_flags_mod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 100.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!! This module handles reading the namelist and provides access to some other flags</a>
+     2) <a name="l2" style="background-color: #ffffff">!! that control a specific CARMA model's behavior.</a>
+     3) <a name="l3" style="background-color: #ffffff">!!</a>
+     4) <a name="l4" style="background-color: #ffffff">!! By default the specific CARMA model does not have any unique namelist values. If</a>
+     5) <a name="l5" style="background-color: #ffffff">!! a CARMA model wishes to have its own namelist, then this file needs to be copied</a>
+     6) <a name="l6" style="background-color: #ffffff">!! from physics/cam to physics/model/&lt;model_name&gt; and the code needed to read in the</a>
+     7) <a name="l7" style="background-color: #ffffff">!! namelist values added there. This file will take the place of the one in</a>
+     8) <a name="l8" style="background-color: #ffffff">!! physics/cam. </a>
+     9) <a name="l9" style="background-color: #ffffff">!!</a>
+    10) <a name="l10" style="background-color: #ffffff">!! It needs to be in its own file to resolve some circular dependencies.</a>
+    11) <a name="l11" style="background-color: #ffffff">!!</a>
+    12) <a name="l12" style="background-color: #ffffff">!! @author  Chuck Bardeen</a>
+    13) <a name="l13" style="background-color: #ffffff">!! @version Mar-2011</a>
+    14) <a name="l14" style="background-color: #ffffff">module carma_model_flags_mod</a>
+    15) <a name="l15" style="background-color: #ffffff"></a>
+    16) <a name="l16" style="background-color: #ffffff">  use shr_kind_mod,   only: r8 =&gt; shr_kind_r8</a>
+    17) <a name="l17" style="background-color: #ffffff">  use spmd_utils,     only: masterproc</a>
+    18) <a name="l18" style="background-color: #ffffff"></a>
+    19) <a name="l19" style="background-color: #ffffff">  ! Flags for integration with CAM Microphysics</a>
+    20) <a name="l20" style="background-color: #ffffff">  public carma_model_readnl                   ! read the carma model namelist</a>
+    21) <a name="l21" style="background-color: #ffffff">  </a>
+    22) <a name="l22" style="background-color: #ffffff"></a>
+    23) <a name="l23" style="background-color: #ffffff">  ! Namelist flags</a>
+    24) <a name="l24" style="background-color: #ffffff">  !</a>
+    25) <a name="l25" style="background-color: #ffffff">  ! Create a public definition of any new namelist variables that you wish to have,</a>
+    26) <a name="l26" style="background-color: #ffffff">  ! and default them to an inital value.</a>
+    27) <a name="l27" style="background-color: #ffffff">  logical, public                :: carma_flag        = .false.   ! If .true. then turn on CARMA microphysics in CAM</a>
+    28) <a name="l28" style="background-color: #ffffff">  real(r8), public               :: carma_vf_const    = 0.0_r8    ! If specified and non-zero, constant fall velocity for all particles [cm/s]</a>
+    29) <a name="l29" style="background-color: #ffffff">  character(len=256), public     :: carma_reftfile    = 'carma_reft.nc'  ! path to the file containing the reference temperature profile</a>
+    30) <a name="l30" style="background-color: #ffffff"></a>
+    31) <a name="l31" style="background-color: #ffffff">contains</a>
+    32) <a name="l32" style="background-color: #ffffff"></a>
+    33) <a name="l33" style="background-color: #ffffff"></a>
+    34) <a name="l34" style="background-color: #ffffff">  !! Read the CARMA model runtime options from the namelist</a>
+    35) <a name="l35" style="background-color: #ffffff">  !!</a>
+    36) <a name="l36" style="background-color: #ffffff">  !! @author  Chuck Bardeen</a>
+    37) <a name="l37" style="background-color: #ffffff">  !! @version Mar-2011</a>
+    38) <a name="l38" style="background-color: #ffffff">  subroutine carma_model_readnl(nlfile)</a>
+    39) <a name="l39" style="background-color: #ffffff">  </a>
+    40) <a name="l40" style="background-color: #ffffff">    ! Read carma namelist group.</a>
+    41) <a name="l41" style="background-color: #ffffff">  </a>
+    42) <a name="l42" style="background-color: #ffffff">    use abortutils,      only: endrun</a>
+    43) <a name="l43" style="background-color: #ffffff">    use namelist_utils,  only: find_group_name</a>
+    44) <a name="l44" style="background-color: #ffffff">    use units,           only: getunit, freeunit</a>
+    45) <a name="l45" style="background-color: #ffffff">    use mpishorthand</a>
+    46) <a name="l46" style="background-color: #ffffff">  </a>
+    47) <a name="l47" style="background-color: #ffffff">    ! args</a>
+    48) <a name="l48" style="background-color: #ffffff">  </a>
+    49) <a name="l49" style="background-color: #ffffff">    character(len=*), intent(in) :: nlfile  ! filepath for file containing namelist input</a>
+    50) <a name="l50" style="background-color: #ffffff">  </a>
+    51) <a name="l51" style="background-color: #ffffff">    ! local vars</a>
+    52) <a name="l52" style="background-color: #ffffff">  </a>
+    53) <a name="l53" style="background-color: #ffffff">    integer :: unitn, ierr</a>
+    54) <a name="l54" style="background-color: #ffffff">  </a>
+    55) <a name="l55" style="background-color: #ffffff">    ! read namelist for CARMA</a>
+    56) <a name="l56" style="background-color: #ffffff">!    namelist /carma_model_nl/ &amp;</a>
+    57) <a name="l57" style="background-color: #ffffff">!      carma_flag, &amp;</a>
+    58) <a name="l58" style="background-color: #ffffff">!      carma_maxretries, &amp;</a>
+    59) <a name="l59" style="background-color: #ffffff">!      carma_conmax, &amp;</a>
+    60) <a name="l60" style="background-color: #ffffff">!      carma_reftfile</a>
+    61) <a name="l61" style="background-color: #ffffff">  </a>
+    62) <a name="l62" style="background-color: #ffffff">!    if (masterproc) then</a>
+    63) <a name="l63" style="background-color: #ffffff">!       unitn = getunit()</a>
+    64) <a name="l64" style="background-color: #ffffff">!       open( unitn, file=trim(nlfile), status='old' )</a>
+    65) <a name="l65" style="background-color: #ffffff">!       call find_group_name(unitn, 'carma_model_nl', status=ierr)</a>
+    66) <a name="l66" style="background-color: #ffffff">!       if (ierr == 0) then</a>
+    67) <a name="l67" style="background-color: #ffffff">!          read(unitn, carma_model_nl, iostat=ierr)</a>
+    68) <a name="l68" style="background-color: #ffffff">!          if (ierr /= 0) then</a>
+    69) <a name="l69" style="background-color: #ffffff">!             call endrun('carma_model_readnl: ERROR reading namelist')</a>
+    70) <a name="l70" style="background-color: #ffffff">!          end if</a>
+    71) <a name="l71" style="background-color: #ffffff">!       end if</a>
+    72) <a name="l72" style="background-color: #ffffff">!       close(unitn)</a>
+    73) <a name="l73" style="background-color: #ffffff">!       call freeunit(unitn)</a>
+    74) <a name="l74" style="background-color: #ffffff">!    end if</a>
+    75) <a name="l75" style="background-color: #ffffff">  </a>
+    76) <a name="l76" style="background-color: #ffffff">#ifdef SPMD</a>
+    77) <a name="l77" style="background-color: #ffffff">!    call mpibcast (carma_flag,            1 ,mpilog, 0,mpicom)</a>
+    78) <a name="l78" style="background-color: #ffffff">!    call mpibcast (carma_maxretries,      1 ,mpiint, 0,mpicom)</a>
+    79) <a name="l79" style="background-color: #ffffff">!    call mpibcast (carma_conmax,          1 ,mpir8,  0,mpicom)</a>
+    80) <a name="l80" style="background-color: #ffffff">!    call mpibcast (carma_reftfile, len(carma_reftfile), mpichar, 0, mpicom)</a>
+    81) <a name="l81" style="background-color: #ffffff">#endif</a>
+    82) <a name="l82" style="background-color: #ffffff">  </a>
+    83) <a name="l83" style="background-color: #ffffff">  end subroutine carma_model_readnl</a>
+    84) <a name="l84" style="background-color: #ffffff"></a>
+    85) <a name="l85" style="background-color: #ffffff">end module carma_model_flags_mod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

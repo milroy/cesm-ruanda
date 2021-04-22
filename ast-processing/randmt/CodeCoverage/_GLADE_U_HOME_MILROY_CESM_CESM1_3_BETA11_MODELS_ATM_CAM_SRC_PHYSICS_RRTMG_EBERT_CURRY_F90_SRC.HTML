@@ -1,0 +1,439 @@
+<html>
+<head>
+<title>Listing of ebert_curry.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;ebert_curry.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 20.00&#160;%func&#160;&#160;&#160;&#160;  6.67&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module ebert_curry</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!------------------------------------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">!------------------------------------------------------------------------------------------------</a>
+     5) <a name="l5" style="background-color: #ffffff"></a>
+     6) <a name="l6" style="background-color: #ffffff">use shr_kind_mod,     only: r8 =&gt; shr_kind_r8</a>
+     7) <a name="l7" style="background-color: #ffffff">use ppgrid,           only: pcols, pver, pverp</a>
+     8) <a name="l8" style="background-color: #ffffff">use physics_types,    only: physics_state</a>
+     9) <a name="l9" style="background-color: #ffffff">use physics_buffer,   only: physics_buffer_desc, pbuf_get_index, pbuf_get_field, pbuf_old_tim_idx</a>
+    10) <a name="l10" style="background-color: #ffffff">use radconstants,     only: nswbands, nlwbands, idx_sw_diag, ot_length, idx_lw_diag, get_sw_spectral_boundaries</a>
+    11) <a name="l11" style="background-color: #ffffff">use abortutils,       only: endrun</a>
+    12) <a name="l12" style="background-color: #ffffff">use cam_history,      only: outfld</a>
+    13) <a name="l13" style="background-color: #ffffff"></a>
+    14) <a name="l14" style="background-color: #ffffff">implicit none</a>
+    15) <a name="l15" style="background-color: #ffffff">private</a>
+    16) <a name="l16" style="background-color: #ffffff">save</a>
+    17) <a name="l17" style="background-color: #ffffff"></a>
+    18) <a name="l18" style="background-color: #ffffff">public :: &amp;</a>
+    19) <a name="l19" style="background-color: #ffffff">   ec_rad_props_init,        &amp;</a>
+    20) <a name="l20" style="background-color: #ffffff">   cloud_rad_props_get_sw, &amp; ! return SW optical props of total bulk aerosols</a>
+    21) <a name="l21" style="background-color: #ffffff">   cloud_rad_props_get_lw, &amp; ! return LW optical props of total bulk aerosols</a>
+    22) <a name="l22" style="background-color: #ffffff">   ec_ice_optics_sw,       &amp;</a>
+    23) <a name="l23" style="background-color: #ffffff">   ec_ice_get_rad_props_lw</a>
+    24) <a name="l24" style="background-color: #ffffff"></a>
+    25) <a name="l25" style="background-color: #ffffff"></a>
+    26) <a name="l26" style="background-color: #ffffff">real, public, parameter:: scalefactor = 1._r8 !500._r8/917._r8</a>
+    27) <a name="l27" style="background-color: #ffffff"></a>
+    28) <a name="l28" style="background-color: #ffffff">! Minimum cloud amount (as a fraction of the grid-box area) to </a>
+    29) <a name="l29" style="background-color: #ffffff">! distinguish from clear sky</a>
+    30) <a name="l30" style="background-color: #ffffff">! </a>
+    31) <a name="l31" style="background-color: #ffffff">   real(r8) cldmin</a>
+    32) <a name="l32" style="background-color: #ffffff">   parameter (cldmin = 1.0e-80_r8)</a>
+    33) <a name="l33" style="background-color: #ffffff">!</a>
+    34) <a name="l34" style="background-color: #ffffff">! Decimal precision of cloud amount (0 -&gt; preserve full resolution;</a>
+    35) <a name="l35" style="background-color: #ffffff">! 10^-n -&gt; preserve n digits of cloud amount)</a>
+    36) <a name="l36" style="background-color: #ffffff">! </a>
+    37) <a name="l37" style="background-color: #ffffff">   real(r8) cldeps</a>
+    38) <a name="l38" style="background-color: #ffffff">   parameter (cldeps = 0.0_r8)</a>
+    39) <a name="l39" style="background-color: #ffffff"></a>
+    40) <a name="l40" style="background-color: #ffffff">! </a>
+    41) <a name="l41" style="background-color: #ffffff">! indexes into pbuf for optical parameters of MG clouds</a>
+    42) <a name="l42" style="background-color: #ffffff">! </a>
+    43) <a name="l43" style="background-color: #ffffff">   integer :: dei_idx     = 0 </a>
+    44) <a name="l44" style="background-color: #ffffff">   integer :: mu_idx      = 0</a>
+    45) <a name="l45" style="background-color: #ffffff">   integer :: lambda_idx  = 0 </a>
+    46) <a name="l46" style="background-color: #ffffff">   integer :: iciwp_idx   = 0 </a>
+    47) <a name="l47" style="background-color: #ffffff">   integer :: iclwp_idx   = 0 </a>
+    48) <a name="l48" style="background-color: #ffffff">   integer :: cld_idx     = 0  </a>
+    49) <a name="l49" style="background-color: #ffffff">   integer :: rei_idx     = 0  </a>
+    50) <a name="l50" style="background-color: #ffffff"></a>
+    51) <a name="l51" style="background-color: #ffffff">! indexes into constituents for old optics</a>
+    52) <a name="l52" style="background-color: #ffffff">   integer :: &amp;</a>
+    53) <a name="l53" style="background-color: #ffffff">        ixcldice,           &amp; ! cloud ice water index</a>
+    54) <a name="l54" style="background-color: #ffffff">        ixcldliq              ! cloud liquid water index</a>
+    55) <a name="l55" style="background-color: #ffffff"></a>
+    56) <a name="l56" style="background-color: #ffffff"></a>
+    57) <a name="l57" style="background-color: #ffffff">!==============================================================================</a>
+    58) <a name="l58" style="background-color: #ffffff">contains</a>
+    59) <a name="l59" style="background-color: #ffffff">!==============================================================================</a>
+    60) <a name="l60" style="background-color: #ffffff"></a>
+    61) <a name="l61" style="background-color: #ffffff">subroutine ec_rad_props_init()</a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">   use cam_history, only: addfld, phys_decomp</a>
+    64) <a name="l64" style="background-color: #ffffff">   use netcdf</a>
+    65) <a name="l65" style="background-color: #ffffff">   use spmd_utils,     only: masterproc</a>
+    66) <a name="l66" style="background-color: #ffffff">   use ioFileMod,      only: getfil</a>
+    67) <a name="l67" style="background-color: #ffffff">   use cam_logfile,    only: iulog</a>
+    68) <a name="l68" style="background-color: #ffffff">   use error_messages, only: handle_ncerr</a>
+    69) <a name="l69" style="background-color: #ffffff">#if ( defined SPMD )</a>
+    70) <a name="l70" style="background-color: #ffffff">   use mpishorthand</a>
+    71) <a name="l71" style="background-color: #ffffff">#endif</a>
+    72) <a name="l72" style="background-color: #ffffff">   use constituents,   only: cnst_get_ind</a>
+    73) <a name="l73" style="background-color: #ffffff"></a>
+    74) <a name="l74" style="background-color: #ffffff">   integer :: err</a>
+    75) <a name="l75" style="background-color: #ffffff"></a>
+    76) <a name="l76" style="background-color: #ffffff">   iciwp_idx  = pbuf_get_index('ICIWP',errcode=err)</a>
+    77) <a name="l77" style="background-color: #ffffff">   iclwp_idx  = pbuf_get_index('ICLWP',errcode=err)</a>
+    78) <a name="l78" style="background-color: #ffffff">   cld_idx    = pbuf_get_index('CLD')</a>
+    79) <a name="l79" style="background-color: #ffffff">   rei_idx    = pbuf_get_index('REI')</a>
+    80) <a name="l80" style="background-color: #ffffff"></a>
+    81) <a name="l81" style="background-color: #ffffff">   ! old optics</a>
+    82) <a name="l82" style="background-color: #ffffff">   call cnst_get_ind('CLDICE', ixcldice)</a>
+    83) <a name="l83" style="background-color: #ffffff">   call cnst_get_ind('CLDLIQ', ixcldliq)</a>
+    84) <a name="l84" style="background-color: #ffffff"></a>
+    85) <a name="l85" style="background-color: #ffffff">   !call addfld ('CLWPTH_OLD','Kg/m2   ',pver, 'I','old In Cloud Liquid Water Path',phys_decomp, sampling_seq='rad_lwsw')</a>
+    86) <a name="l86" style="background-color: #ffffff">   !call addfld ('KEXT_OLD','m^2/kg',pver,'I','old extinction',phys_decomp)</a>
+    87) <a name="l87" style="background-color: #ffffff">   !call addfld ('CLDOD_OLD','1',pver,'I','old liquid OD',phys_decomp)</a>
+    88) <a name="l88" style="background-color: #ffffff">   !call addfld ('REL_OLD','1',pver,'I','old liquid effective radius (liquid)',phys_decomp)</a>
+    89) <a name="l89" style="background-color: #ffffff"></a>
+    90) <a name="l90" style="background-color: #ffffff">   !call addfld ('CLWPTH_NEW','Kg/m2   ',pver, 'I','In Cloud Liquid Water Path',phys_decomp, sampling_seq='rad_lwsw')</a>
+    91) <a name="l91" style="background-color: #ffffff">   !call addfld ('KEXT_NEW','m^2/kg',pver,'I','extinction',phys_decomp)</a>
+    92) <a name="l92" style="background-color: #ffffff">   !call addfld ('CLDOD_NEW','1',pver,'I','liquid OD',phys_decomp)</a>
+    93) <a name="l93" style="background-color: #ffffff"></a>
+    94) <a name="l94" style="background-color: #ffffff">   !call addfld('CIWPTH_NEW','Kg/m2   ',pver, 'I','In Cloud Ice Water Path',phys_decomp, sampling_seq='rad_lwsw')</a>
+    95) <a name="l95" style="background-color: #ffffff">   !call addfld('CIWPTH_OLD','Kg/m2   ',pver, 'I','In Cloud Ice Water Path (old)',phys_decomp, sampling_seq='rad_lwsw')</a>
+    96) <a name="l96" style="background-color: #ffffff"></a>
+    97) <a name="l97" style="background-color: #ffffff">    return</a>
+    98) <a name="l98" style="background-color: #ffffff"></a>
+    99) <a name="l99" style="background-color: #ffffff">end subroutine ec_rad_props_init</a>
+   100) <a name="l100" style="background-color: #ffffff"></a>
+   101) <a name="l101" style="background-color: #ffffff">!==============================================================================</a>
+   102) <a name="l102" style="background-color: #ffffff"></a>
+   103) <a name="l103" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">cloud_rad_props_get_sw(state, pbuf, &amp;</a>
+   104) <a name="l104" style="background-color: #ffcccc">                                  tau, tau_w, tau_w_g, tau_w_f,&amp;</a>
+   105) <a name="l105" style="background-color: #ffcccc">                                  diagnosticindex, oldliq, oldice)</a>
+   106) <a name="l106" style="background-color: #ffcccc"></a>
+   107) <a name="l107" style="background-color: #ffcccc">! return totaled (across all species) layer tau, omega, g, f </a>
+   108) <a name="l108" style="background-color: #ffcccc">! for all spectral interval for aerosols affecting the climate</a>
+   109) <a name="l109" style="background-color: #ffcccc"></a>
+   110) <a name="l110" style="background-color: #ffcccc">   ! Arguments</a>
+   111) <a name="l111" style="background-color: #ffcccc">   type(physics_state), intent(in) :: state</a>
+   112) <a name="l112" style="background-color: #ffcccc">   type(physics_buffer_desc),  pointer :: pbuf(:)</a>
+   113) <a name="l113" style="background-color: #ffcccc">   integer, optional,   intent(in) :: diagnosticindex      ! index (if present) to radiation diagnostic information</a>
+   114) <a name="l114" style="background-color: #ffcccc"></a>
+   115) <a name="l115" style="background-color: #ffcccc">   real(r8), intent(out) :: tau    (nswbands,pcols,pver) ! aerosol extinction optical depth</a>
+   116) <a name="l116" style="background-color: #ffcccc">   real(r8), intent(out) :: tau_w  (nswbands,pcols,pver) ! aerosol single scattering albedo * tau</a>
+   117) <a name="l117" style="background-color: #ffcccc">   real(r8), intent(out) :: tau_w_g(nswbands,pcols,pver) ! aerosol assymetry parameter * tau * w</a>
+   118) <a name="l118" style="background-color: #ffcccc">   real(r8), intent(out) :: tau_w_f(nswbands,pcols,pver) ! aerosol forward scattered fraction * tau * w</a>
+   119) <a name="l119" style="background-color: #ffcccc"></a>
+   120) <a name="l120" style="background-color: #ffcccc">   logical, optional, intent(in) :: oldliq,oldice</a>
+   121) <a name="l121" style="background-color: #ffcccc"></a>
+   122) <a name="l122" style="background-color: #ffcccc">   ! Local variables</a>
+   123) <a name="l123" style="background-color: #ffcccc"></a>
+   124) <a name="l124" style="background-color: #ffcccc">   integer :: ncol</a>
+   125) <a name="l125" style="background-color: #ffcccc">   integer :: lchnk</a>
+   126) <a name="l126" style="background-color: #ffcccc">   integer :: k, i    ! lev and daycolumn indices</a>
+   127) <a name="l127" style="background-color: #ffcccc">   integer :: iswband ! sw band indices</a>
+   128) <a name="l128" style="background-color: #ffcccc"></a>
+   129) <a name="l129" style="background-color: #ffcccc">   !-----------------------------------------------------------------------------</a>
+   130) <a name="l130" style="background-color: #ffcccc"></a>
+   131) <a name="l131" style="background-color: #ffcccc">   ncol  = state%ncol</a>
+   132) <a name="l132" style="background-color: #ffcccc">   lchnk = state%lchnk</a>
+   133) <a name="l133" style="background-color: #ffcccc"></a>
+   134) <a name="l134" style="background-color: #ffcccc">   ! initialize to conditions that would cause failure</a>
+   135) <a name="l135" style="background-color: #ffcccc">   tau     (:,:,:) = -100._r8</a>
+   136) <a name="l136" style="background-color: #ffcccc">   tau_w   (:,:,:) = -100._r8</a>
+   137) <a name="l137" style="background-color: #ffcccc">   tau_w_g (:,:,:) = -100._r8</a>
+   138) <a name="l138" style="background-color: #ffcccc">   tau_w_f (:,:,:) = -100._r8</a>
+   139) <a name="l139" style="background-color: #ffcccc"></a>
+   140) <a name="l140" style="background-color: #ffcccc">   ! initialize layers to accumulate od's</a>
+   141) <a name="l141" style="background-color: #ffcccc">   tau    (:,1:ncol,:) = 0._r8</a>
+   142) <a name="l142" style="background-color: #ffcccc">   tau_w  (:,1:ncol,:) = 0._r8</a>
+   143) <a name="l143" style="background-color: #ffcccc">   tau_w_g(:,1:ncol,:) = 0._r8</a>
+   144) <a name="l144" style="background-color: #ffcccc">   tau_w_f(:,1:ncol,:) = 0._r8</a>
+   145) <a name="l145" style="background-color: #ffcccc"></a>
+   146) <a name="l146" style="background-color: #ffcccc"></a>
+   147) <a name="l147" style="background-color: #ffcccc">   call ec_ice_optics_sw   (state, pbuf, tau, tau_w, tau_w_g, tau_w_f, oldicewp=.true.)</a>
+   148) <a name="l148" style="background-color: #ffcccc">!  call outfld ('CI_OD_SW_OLD', ice_tau(idx_sw_diag,:,:), pcols, lchnk)</a>
+   149) <a name="l149" style="background-color: #ffcccc"></a>
+   150) <a name="l150" style="background-color: #ffcccc"></a>
+   151) <a name="l151" style="background-color: #ffcccc">end subroutine cloud_rad_props_get_sw</a>
+   152) <a name="l152" style="background-color: #ffffff">!==============================================================================</a>
+   153) <a name="l153" style="background-color: #ffffff"></a>
+   154) <a name="l154" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">cloud_rad_props_get_lw(state, pbuf, cld_abs_od, diagnosticindex, oldliq, oldice, oldcloud)</a>
+   155) <a name="l155" style="background-color: #ffcccc"></a>
+   156) <a name="l156" style="background-color: #ffcccc">! Purpose: Compute cloud longwave absorption optical depth</a>
+   157) <a name="l157" style="background-color: #ffcccc">!    cloud_rad_props_get_lw() is called by radlw() </a>
+   158) <a name="l158" style="background-color: #ffcccc"></a>
+   159) <a name="l159" style="background-color: #ffcccc">   ! Arguments</a>
+   160) <a name="l160" style="background-color: #ffcccc">   type(physics_state), intent(in)  :: state</a>
+   161) <a name="l161" style="background-color: #ffcccc">   type(physics_buffer_desc), pointer  :: pbuf(:)</a>
+   162) <a name="l162" style="background-color: #ffcccc">   real(r8),            intent(out) :: cld_abs_od(nlwbands,pcols,pver) ! [fraction] absorption optical depth, per layer</a>
+   163) <a name="l163" style="background-color: #ffcccc">   integer, optional,   intent(in)  :: diagnosticindex</a>
+   164) <a name="l164" style="background-color: #ffcccc">   logical, optional,   intent(in)  :: oldliq  ! use old liquid optics</a>
+   165) <a name="l165" style="background-color: #ffcccc">   logical, optional,   intent(in)  :: oldice  ! use old ice optics</a>
+   166) <a name="l166" style="background-color: #ffcccc">   logical, optional,   intent(in)  :: oldcloud  ! use old optics for both (b4b)</a>
+   167) <a name="l167" style="background-color: #ffcccc"></a>
+   168) <a name="l168" style="background-color: #ffcccc">   ! Local variables</a>
+   169) <a name="l169" style="background-color: #ffcccc"></a>
+   170) <a name="l170" style="background-color: #ffcccc">   integer :: bnd_idx     ! LW band index</a>
+   171) <a name="l171" style="background-color: #ffcccc">   integer :: i           ! column index</a>
+   172) <a name="l172" style="background-color: #ffcccc">   integer :: k           ! lev index</a>
+   173) <a name="l173" style="background-color: #ffcccc">   integer :: ncol        ! number of columns</a>
+   174) <a name="l174" style="background-color: #ffcccc">   integer :: lchnk</a>
+   175) <a name="l175" style="background-color: #ffcccc"></a>
+   176) <a name="l176" style="background-color: #ffcccc">   !-----------------------------------------------------------------------------</a>
+   177) <a name="l177" style="background-color: #ffcccc"></a>
+   178) <a name="l178" style="background-color: #ffcccc">   ncol = state%ncol</a>
+   179) <a name="l179" style="background-color: #ffcccc">   lchnk = state%lchnk</a>
+   180) <a name="l180" style="background-color: #ffcccc"></a>
+   181) <a name="l181" style="background-color: #ffcccc">   ! compute optical depths cld_absod </a>
+   182) <a name="l182" style="background-color: #ffcccc">   cld_abs_od = 0._r8</a>
+   183) <a name="l183" style="background-color: #ffcccc"></a>
+   184) <a name="l184" style="background-color: #ffcccc">   call ec_ice_get_rad_props_lw(state, pbuf, cld_abs_od, oldicewp=.true.)</a>
+   185) <a name="l185" style="background-color: #ffcccc">   !call outfld('CI_OD_LW_OLD', ice_tau_abs_od(idx_lw_diag ,:,:), pcols, lchnk)</a>
+   186) <a name="l186" style="background-color: #ffcccc">      </a>
+   187) <a name="l187" style="background-color: #ffcccc">end subroutine cloud_rad_props_get_lw</a>
+   188) <a name="l188" style="background-color: #ffffff"></a>
+   189) <a name="l189" style="background-color: #ffffff">!==============================================================================</a>
+   190) <a name="l190" style="background-color: #ffffff">! Private methods</a>
+   191) <a name="l191" style="background-color: #ffffff">!==============================================================================</a>
+   192) <a name="l192" style="background-color: #ffffff"></a>
+   193) <a name="l193" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">ec_ice_optics_sw   (state, pbuf, ice_tau, ice_tau_w, ice_tau_w_g, ice_tau_w_f, oldicewp)</a>
+   194) <a name="l194" style="background-color: #ffcccc"></a>
+   195) <a name="l195" style="background-color: #ffcccc">   use physconst,      only: gravit</a>
+   196) <a name="l196" style="background-color: #ffcccc"></a>
+   197) <a name="l197" style="background-color: #ffcccc">   type(physics_state), intent(in) :: state</a>
+   198) <a name="l198" style="background-color: #ffcccc">   type(physics_buffer_desc), pointer :: pbuf(:)</a>
+   199) <a name="l199" style="background-color: #ffcccc"></a>
+   200) <a name="l200" style="background-color: #ffcccc">   real(r8),intent(out) :: ice_tau    (nswbands,pcols,pver) ! extinction optical depth</a>
+   201) <a name="l201" style="background-color: #ffcccc">   real(r8),intent(out) :: ice_tau_w  (nswbands,pcols,pver) ! single scattering albedo * tau</a>
+   202) <a name="l202" style="background-color: #ffcccc">   real(r8),intent(out) :: ice_tau_w_g(nswbands,pcols,pver) ! assymetry parameter * tau * w</a>
+   203) <a name="l203" style="background-color: #ffcccc">   real(r8),intent(out) :: ice_tau_w_f(nswbands,pcols,pver) ! forward scattered fraction * tau * w</a>
+   204) <a name="l204" style="background-color: #ffcccc">   logical, intent(in) :: oldicewp</a>
+   205) <a name="l205" style="background-color: #ffcccc"></a>
+   206) <a name="l206" style="background-color: #ffcccc">   real(r8), pointer, dimension(:,:) :: rei</a>
+   207) <a name="l207" style="background-color: #ffcccc">   real(r8), pointer, dimension(:,:) :: cldn</a>
+   208) <a name="l208" style="background-color: #ffcccc">   real(r8), pointer, dimension(:,:) :: tmpptr</a>
+   209) <a name="l209" style="background-color: #ffcccc">   real(r8), dimension(pcols,pver) :: cicewp</a>
+   210) <a name="l210" style="background-color: #ffcccc">   real(r8), dimension(nswbands) :: wavmin</a>
+   211) <a name="l211" style="background-color: #ffcccc">   real(r8), dimension(nswbands) :: wavmax</a>
+   212) <a name="l212" style="background-color: #ffcccc">   !</a>
+   213) <a name="l213" style="background-color: #ffcccc">   ! ice water coefficients (Ebert and Curry,1992, JGR, 97, 3831-3836)</a>
+   214) <a name="l214" style="background-color: #ffcccc">   real(r8) :: abari(4) = &amp;     ! a coefficient for extinction optical depth</a>
+   215) <a name="l215" style="background-color: #ffcccc">      (/ 3.448e-03_r8, 3.448e-03_r8,3.448e-03_r8,3.448e-03_r8/)</a>
+   216) <a name="l216" style="background-color: #ffcccc">   real(r8) :: bbari(4) = &amp;     ! b coefficient for extinction optical depth</a>
+   217) <a name="l217" style="background-color: #ffcccc">      (/ 2.431_r8    , 2.431_r8    ,2.431_r8    ,2.431_r8    /)</a>
+   218) <a name="l218" style="background-color: #ffcccc">   real(r8) :: cbari(4) = &amp;     ! c coefficient for single scat albedo</a>
+   219) <a name="l219" style="background-color: #ffcccc">      (/ 1.00e-05_r8 , 1.10e-04_r8 ,1.861e-02_r8,.46658_r8   /)</a>
+   220) <a name="l220" style="background-color: #ffcccc">   real(r8) :: dbari(4) = &amp;     ! d coefficient for single scat albedo</a>
+   221) <a name="l221" style="background-color: #ffcccc">      (/ 0.0_r8      , 1.405e-05_r8,8.328e-04_r8,2.05e-05_r8 /)</a>
+   222) <a name="l222" style="background-color: #ffcccc">   real(r8) :: ebari(4) = &amp;     ! e coefficient for asymmetry parameter</a>
+   223) <a name="l223" style="background-color: #ffcccc">      (/ 0.7661_r8   , 0.7730_r8   ,0.794_r8    ,0.9595_r8   /)</a>
+   224) <a name="l224" style="background-color: #ffcccc">   real(r8) :: fbari(4) = &amp;     ! f coefficient for asymmetry parameter</a>
+   225) <a name="l225" style="background-color: #ffcccc">      (/ 5.851e-04_r8, 5.665e-04_r8,7.267e-04_r8,1.076e-04_r8/)</a>
+   226) <a name="l226" style="background-color: #ffcccc"></a>
+   227) <a name="l227" style="background-color: #ffcccc">   real(r8) :: abarii           ! A coefficient for current spectral band</a>
+   228) <a name="l228" style="background-color: #ffcccc">   real(r8) :: bbarii           ! B coefficient for current spectral band</a>
+   229) <a name="l229" style="background-color: #ffcccc">   real(r8) :: cbarii           ! C coefficient for current spectral band</a>
+   230) <a name="l230" style="background-color: #ffcccc">   real(r8) :: dbarii           ! D coefficient for current spectral band</a>
+   231) <a name="l231" style="background-color: #ffcccc">   real(r8) :: ebarii           ! E coefficient for current spectral band</a>
+   232) <a name="l232" style="background-color: #ffcccc">   real(r8) :: fbarii           ! F coefficient for current spectral band</a>
+   233) <a name="l233" style="background-color: #ffcccc"></a>
+   234) <a name="l234" style="background-color: #ffcccc">   ! Minimum cloud amount (as a fraction of the grid-box area) to </a>
+   235) <a name="l235" style="background-color: #ffcccc">   ! distinguish from clear sky</a>
+   236) <a name="l236" style="background-color: #ffcccc">   real(r8), parameter :: cldmin = 1.0e-80_r8</a>
+   237) <a name="l237" style="background-color: #ffcccc"></a>
+   238) <a name="l238" style="background-color: #ffcccc">   ! Decimal precision of cloud amount (0 -&gt; preserve full resolution;</a>
+   239) <a name="l239" style="background-color: #ffcccc">   ! 10^-n -&gt; preserve n digits of cloud amount)</a>
+   240) <a name="l240" style="background-color: #ffcccc">   real(r8), parameter :: cldeps = 0.0_r8</a>
+   241) <a name="l241" style="background-color: #ffcccc"></a>
+   242) <a name="l242" style="background-color: #ffcccc">   integer :: ns, i, k, indxsl, lchnk, Nday</a>
+   243) <a name="l243" style="background-color: #ffcccc">   integer :: itim_old</a>
+   244) <a name="l244" style="background-color: #ffcccc">   real(r8) :: tmp1i, tmp2i, tmp3i, g</a>
+   245) <a name="l245" style="background-color: #ffcccc"></a>
+   246) <a name="l246" style="background-color: #ffcccc">   Nday = state%ncol</a>
+   247) <a name="l247" style="background-color: #ffcccc">   lchnk = state%lchnk</a>
+   248) <a name="l248" style="background-color: #ffcccc"></a>
+   249) <a name="l249" style="background-color: #ffcccc">   itim_old = pbuf_old_tim_idx()</a>
+   250) <a name="l250" style="background-color: #ffcccc">   call pbuf_get_field(pbuf, cld_idx,cldn, start=(/1,1,itim_old/), kount=(/pcols,pver,1/))</a>
+   251) <a name="l251" style="background-color: #ffcccc">   call pbuf_get_field(pbuf, rei_idx,rei)</a>
+   252) <a name="l252" style="background-color: #ffcccc"></a>
+   253) <a name="l253" style="background-color: #ffcccc">   if(oldicewp) then</a>
+   254) <a name="l254" style="background-color: #ffcccc">     do k=1,pver</a>
+   255) <a name="l255" style="background-color: #ffcccc">        do i = 1,Nday</a>
+   256) <a name="l256" style="background-color: #ffcccc">           cicewp(i,k) = 1000.0_r8*state%q(i,k,ixcldice)*state%pdel(i,k) /(gravit* max(0.01_r8,cldn(i,k)))</a>
+   257) <a name="l257" style="background-color: #ffcccc">        end do</a>
+   258) <a name="l258" style="background-color: #ffcccc">     end do</a>
+   259) <a name="l259" style="background-color: #ffcccc">   else</a>
+   260) <a name="l260" style="background-color: #ffcccc">     if (iciwp_idx&lt;=0) then </a>
+   261) <a name="l261" style="background-color: #ffcccc">        call endrun('ec_ice_optics_sw: oldicewp must be set to true since ICIWP was not found in pbuf')</a>
+   262) <a name="l262" style="background-color: #ffcccc">     endif</a>
+   263) <a name="l263" style="background-color: #ffcccc">     call pbuf_get_field(pbuf, iciwp_idx, tmpptr)</a>
+   264) <a name="l264" style="background-color: #ffcccc">     cicewp(1:pcols,1:pver) =  1000.0_r8*tmpptr(1:pcols,1:pver)</a>
+   265) <a name="l265" style="background-color: #ffcccc">   endif</a>
+   266) <a name="l266" style="background-color: #ffcccc">   </a>
+   267) <a name="l267" style="background-color: #ffcccc">   call get_sw_spectral_boundaries(wavmin,wavmax,'microns')</a>
+   268) <a name="l268" style="background-color: #ffcccc"></a>
+   269) <a name="l269" style="background-color: #ffcccc">   do ns = 1, nswbands</a>
+   270) <a name="l270" style="background-color: #ffcccc"></a>
+   271) <a name="l271" style="background-color: #ffcccc">      if(wavmax(ns) &lt;= 0.7_r8) then</a>
+   272) <a name="l272" style="background-color: #ffcccc">         indxsl = 1</a>
+   273) <a name="l273" style="background-color: #ffcccc">      else if(wavmax(ns) &lt;= 1.25_r8) then</a>
+   274) <a name="l274" style="background-color: #ffcccc">         indxsl = 2</a>
+   275) <a name="l275" style="background-color: #ffcccc">      else if(wavmax(ns) &lt;= 2.38_r8) then</a>
+   276) <a name="l276" style="background-color: #ffcccc">         indxsl = 3</a>
+   277) <a name="l277" style="background-color: #ffcccc">      else if(wavmax(ns) &gt; 2.38_r8) then</a>
+   278) <a name="l278" style="background-color: #ffcccc">         indxsl = 4</a>
+   279) <a name="l279" style="background-color: #ffcccc">      end if</a>
+   280) <a name="l280" style="background-color: #ffcccc"></a>
+   281) <a name="l281" style="background-color: #ffcccc">      abarii = abari(indxsl)</a>
+   282) <a name="l282" style="background-color: #ffcccc">      bbarii = bbari(indxsl)</a>
+   283) <a name="l283" style="background-color: #ffcccc">      cbarii = cbari(indxsl)</a>
+   284) <a name="l284" style="background-color: #ffcccc">      dbarii = dbari(indxsl)</a>
+   285) <a name="l285" style="background-color: #ffcccc">      ebarii = ebari(indxsl)</a>
+   286) <a name="l286" style="background-color: #ffcccc">      fbarii = fbari(indxsl)</a>
+   287) <a name="l287" style="background-color: #ffcccc"></a>
+   288) <a name="l288" style="background-color: #ffcccc">      do k=1,pver</a>
+   289) <a name="l289" style="background-color: #ffcccc">         do i=1,Nday</a>
+   290) <a name="l290" style="background-color: #ffcccc"></a>
+   291) <a name="l291" style="background-color: #ffcccc">            ! note that optical properties for ice valid only</a>
+   292) <a name="l292" style="background-color: #ffcccc">            ! in range of 13 &gt; rei &gt; 130 micron (Ebert and Curry 92)</a>
+   293) <a name="l293" style="background-color: #ffcccc">            if (cldn(i,k) &gt;= cldmin .and. cldn(i,k) &gt;= cldeps) then</a>
+   294) <a name="l294" style="background-color: #ffcccc">               tmp1i = abarii + bbarii/max(13._r8,min(scalefactor*rei(i,k),130._r8))</a>
+   295) <a name="l295" style="background-color: #ffcccc">               ice_tau(ns,i,k) = cicewp(i,k)*tmp1i</a>
+   296) <a name="l296" style="background-color: #ffcccc">            else</a>
+   297) <a name="l297" style="background-color: #ffcccc">               ice_tau(ns,i,k) = 0.0_r8</a>
+   298) <a name="l298" style="background-color: #ffcccc">            endif</a>
+   299) <a name="l299" style="background-color: #ffcccc"></a>
+   300) <a name="l300" style="background-color: #ffcccc">            tmp2i = 1._r8 - cbarii - dbarii*min(max(13._r8,scalefactor*rei(i,k)),130._r8)</a>
+   301) <a name="l301" style="background-color: #ffcccc">            tmp3i = fbarii*min(max(13._r8,scalefactor*rei(i,k)),130._r8)</a>
+   302) <a name="l302" style="background-color: #ffcccc">            ! Do not let single scatter albedo be 1.  Delta-eddington solution</a>
+   303) <a name="l303" style="background-color: #ffcccc">            ! for non-conservative case has different analytic form from solution</a>
+   304) <a name="l304" style="background-color: #ffcccc">            ! for conservative case, and raddedmx is written for non-conservative case.</a>
+   305) <a name="l305" style="background-color: #ffcccc">            ice_tau_w(ns,i,k) = ice_tau(ns,i,k) * min(tmp2i,.999999_r8)</a>
+   306) <a name="l306" style="background-color: #ffcccc">            g = ebarii + tmp3i</a>
+   307) <a name="l307" style="background-color: #ffcccc">            ice_tau_w_g(ns,i,k) = ice_tau_w(ns,i,k) * g</a>
+   308) <a name="l308" style="background-color: #ffcccc">            ice_tau_w_f(ns,i,k) = ice_tau_w(ns,i,k) * g * g</a>
+   309) <a name="l309" style="background-color: #ffcccc"></a>
+   310) <a name="l310" style="background-color: #ffcccc">         end do ! End do i=1,Nday</a>
+   311) <a name="l311" style="background-color: #ffcccc">      end do    ! End do k=1,pver</a>
+   312) <a name="l312" style="background-color: #ffcccc">   end do ! nswbands</a>
+   313) <a name="l313" style="background-color: #ffcccc"></a>
+   314) <a name="l314" style="background-color: #ffcccc">end subroutine ec_ice_optics_sw</a>
+   315) <a name="l315" style="background-color: #ffffff">!==============================================================================</a>
+   316) <a name="l316" style="background-color: #ffffff"></a>
+   317) <a name="l317" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">ec_ice_get_rad_props_lw(state, pbuf, abs_od, oldicewp)</a>
+   318) <a name="l318" style="background-color: #ffcccc">   use physconst,      only: gravit</a>
+   319) <a name="l319" style="background-color: #ffcccc"></a>
+   320) <a name="l320" style="background-color: #ffcccc">   type(physics_state), intent(in)   :: state</a>
+   321) <a name="l321" style="background-color: #ffcccc">   type(physics_buffer_desc),pointer :: pbuf(:)</a>
+   322) <a name="l322" style="background-color: #ffcccc">    real(r8), intent(out) :: abs_od(nlwbands,pcols,pver)</a>
+   323) <a name="l323" style="background-color: #ffcccc">   logical, intent(in) :: oldicewp</a>
+   324) <a name="l324" style="background-color: #ffcccc"></a>
+   325) <a name="l325" style="background-color: #ffcccc">   real(r8) :: gicewp(pcols,pver)</a>
+   326) <a name="l326" style="background-color: #ffcccc">   real(r8) :: gliqwp(pcols,pver)</a>
+   327) <a name="l327" style="background-color: #ffcccc">   real(r8) :: cicewp(pcols,pver)</a>
+   328) <a name="l328" style="background-color: #ffcccc">   real(r8) :: cliqwp(pcols,pver)</a>
+   329) <a name="l329" style="background-color: #ffcccc">   real(r8) :: ficemr(pcols,pver)</a>
+   330) <a name="l330" style="background-color: #ffcccc">   real(r8) :: cwp(pcols,pver)</a>
+   331) <a name="l331" style="background-color: #ffcccc">   real(r8) :: cldtau(pcols,pver)</a>
+   332) <a name="l332" style="background-color: #ffcccc"></a>
+   333) <a name="l333" style="background-color: #ffcccc">   real(r8), pointer, dimension(:,:) :: cldn</a>
+   334) <a name="l334" style="background-color: #ffcccc">   real(r8), pointer, dimension(:,:) :: rei</a>
+   335) <a name="l335" style="background-color: #ffcccc">   integer :: ncol, itim_old, lwband, i, k, lchnk</a>
+   336) <a name="l336" style="background-color: #ffcccc"></a>
+   337) <a name="l337" style="background-color: #ffcccc">    real(r8) :: kabs, kabsi</a>
+   338) <a name="l338" style="background-color: #ffcccc"></a>
+   339) <a name="l339" style="background-color: #ffcccc">    real(r8) kabsl                  ! longwave liquid absorption coeff (m**2/g)</a>
+   340) <a name="l340" style="background-color: #ffcccc">    parameter (kabsl = 0.090361_r8)</a>
+   341) <a name="l341" style="background-color: #ffcccc"></a>
+   342) <a name="l342" style="background-color: #ffcccc">   real(r8), pointer, dimension(:,:) :: iclwpth, iciwpth</a>
+   343) <a name="l343" style="background-color: #ffcccc"></a>
+   344) <a name="l344" style="background-color: #ffcccc"></a>
+   345) <a name="l345" style="background-color: #ffcccc">   ncol = state%ncol</a>
+   346) <a name="l346" style="background-color: #ffcccc">   lchnk = state%lchnk</a>
+   347) <a name="l347" style="background-color: #ffcccc"></a>
+   348) <a name="l348" style="background-color: #ffcccc">   itim_old  =  pbuf_old_tim_idx()</a>
+   349) <a name="l349" style="background-color: #ffcccc">   call pbuf_get_field(pbuf, rei_idx,   rei)</a>
+   350) <a name="l350" style="background-color: #ffcccc">   call pbuf_get_field(pbuf, cld_idx,   cldn, start=(/1,1,itim_old/), kount=(/pcols,pver,1/))</a>
+   351) <a name="l351" style="background-color: #ffcccc"></a>
+   352) <a name="l352" style="background-color: #ffcccc"></a>
+   353) <a name="l353" style="background-color: #ffcccc">   if(oldicewp) then</a>
+   354) <a name="l354" style="background-color: #ffcccc">     do k=1,pver</a>
+   355) <a name="l355" style="background-color: #ffcccc">         do i = 1,ncol</a>
+   356) <a name="l356" style="background-color: #ffcccc">            gicewp(i,k) = state%q(i,k,ixcldice)*state%pdel(i,k)/gravit*1000.0_r8  ! Grid box ice water path.</a>
+   357) <a name="l357" style="background-color: #ffcccc">            gliqwp(i,k) = state%q(i,k,ixcldliq)*state%pdel(i,k)/gravit*1000.0_r8  ! Grid box liquid water path.</a>
+   358) <a name="l358" style="background-color: #ffcccc">            cicewp(i,k) = gicewp(i,k) / max(0.01_r8,cldn(i,k))                 ! In-cloud ice water path.</a>
+   359) <a name="l359" style="background-color: #ffcccc">            cliqwp(i,k) = gliqwp(i,k) / max(0.01_r8,cldn(i,k))                 ! In-cloud liquid water path.</a>
+   360) <a name="l360" style="background-color: #ffcccc">            ficemr(i,k) = state%q(i,k,ixcldice) /                 &amp;</a>
+   361) <a name="l361" style="background-color: #ffcccc">                 max(1.e-10_r8,(state%q(i,k,ixcldice)+state%q(i,k,ixcldliq)))</a>
+   362) <a name="l362" style="background-color: #ffcccc">         end do</a>
+   363) <a name="l363" style="background-color: #ffcccc">     end do</a>
+   364) <a name="l364" style="background-color: #ffcccc">     cwp(:ncol,:pver) = cicewp(:ncol,:pver) + cliqwp(:ncol,:pver)</a>
+   365) <a name="l365" style="background-color: #ffcccc">   else</a>
+   366) <a name="l366" style="background-color: #ffcccc">      if (iclwp_idx&lt;=0 .or. iciwp_idx&lt;=0) then </a>
+   367) <a name="l367" style="background-color: #ffcccc">         call endrun('ec_ice_get_rad_props_lw: oldicewp must be set to true since ICIWP and/or ICLWP were not found in pbuf')</a>
+   368) <a name="l368" style="background-color: #ffcccc">      endif</a>
+   369) <a name="l369" style="background-color: #ffcccc">      call pbuf_get_field(pbuf, iclwp_idx, iclwpth)</a>
+   370) <a name="l370" style="background-color: #ffcccc">      call pbuf_get_field(pbuf, iciwp_idx, iciwpth)</a>
+   371) <a name="l371" style="background-color: #ffcccc">      do k=1,pver</a>
+   372) <a name="l372" style="background-color: #ffcccc">         do i = 1,ncol</a>
+   373) <a name="l373" style="background-color: #ffcccc">            cwp(i,k) = 1000.0_r8 *iciwpth(i,k) + 1000.0_r8 *iclwpth(i,k)</a>
+   374) <a name="l374" style="background-color: #ffcccc">            ficemr(i,k) = 1000.0_r8*iciwpth(i,k)/(max(1.e-18_r8,cwp(i,k)))</a>
+   375) <a name="l375" style="background-color: #ffcccc">         end do</a>
+   376) <a name="l376" style="background-color: #ffcccc">      end do</a>
+   377) <a name="l377" style="background-color: #ffcccc">   endif</a>
+   378) <a name="l378" style="background-color: #ffcccc"></a>
+   379) <a name="l379" style="background-color: #ffcccc">   do k=1,pver</a>
+   380) <a name="l380" style="background-color: #ffcccc">       do i=1,ncol</a>
+   381) <a name="l381" style="background-color: #ffcccc"></a>
+   382) <a name="l382" style="background-color: #ffcccc">          ! Note from Andrew Conley:</a>
+   383) <a name="l383" style="background-color: #ffcccc">          !  Optics for RK no longer supported, This is constructed to get</a>
+   384) <a name="l384" style="background-color: #ffcccc">          !  close to bit for bit.  Otherwise we could simply use ice water path</a>
+   385) <a name="l385" style="background-color: #ffcccc">          !note that optical properties for ice valid only</a>
+   386) <a name="l386" style="background-color: #ffcccc">          !in range of 13 &gt; rei &gt; 130 micron (Ebert and Curry 92)</a>
+   387) <a name="l387" style="background-color: #ffcccc">          kabsi = 0.005_r8 + 1._r8/min(max(13._r8,scalefactor*rei(i,k)),130._r8)</a>
+   388) <a name="l388" style="background-color: #ffcccc">          kabs =  kabsi*ficemr(i,k) ! kabsl*(1._r8-ficemr(i,k)) + kabsi*ficemr(i,k)</a>
+   389) <a name="l389" style="background-color: #ffcccc">          !emis(i,k) = 1._r8 - exp(-1.66_r8*kabs*clwp(i,k))</a>
+   390) <a name="l390" style="background-color: #ffcccc">          cldtau(i,k) = kabs*cwp(i,k)</a>
+   391) <a name="l391" style="background-color: #ffcccc">       end do</a>
+   392) <a name="l392" style="background-color: #ffcccc">   end do</a>
+   393) <a name="l393" style="background-color: #ffcccc">!</a>
+   394) <a name="l394" style="background-color: #ffcccc">   do lwband = 1,nlwbands</a>
+   395) <a name="l395" style="background-color: #ffcccc">      abs_od(lwband,1:ncol,1:pver)=cldtau(1:ncol,1:pver)</a>
+   396) <a name="l396" style="background-color: #ffcccc">   enddo</a>
+   397) <a name="l397" style="background-color: #ffcccc"></a>
+   398) <a name="l398" style="background-color: #ffcccc">   !if(oldicewp) then</a>
+   399) <a name="l399" style="background-color: #ffcccc">   !  call outfld('CIWPTH_OLD',cicewp(:,:)/1000,pcols,lchnk)</a>
+   400) <a name="l400" style="background-color: #ffcccc">   !else</a>
+   401) <a name="l401" style="background-color: #ffcccc">   !  call outfld('CIWPTH_OLD',iciwpth(:,:),pcols,lchnk)</a>
+   402) <a name="l402" style="background-color: #ffcccc">   !endif</a>
+   403) <a name="l403" style="background-color: #ffcccc">   !call outfld('CI_OD_LW_OLD',cldtau(:,:),pcols,lchnk)</a>
+   404) <a name="l404" style="background-color: #ffcccc"></a>
+   405) <a name="l405" style="background-color: #ffcccc">end subroutine ec_ice_get_rad_props_lw</a>
+   406) <a name="l406" style="background-color: #ffffff">!==============================================================================</a>
+   407) <a name="l407" style="background-color: #ffffff"></a>
+   408) <a name="l408" style="background-color: #ffffff">end module ebert_curry</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

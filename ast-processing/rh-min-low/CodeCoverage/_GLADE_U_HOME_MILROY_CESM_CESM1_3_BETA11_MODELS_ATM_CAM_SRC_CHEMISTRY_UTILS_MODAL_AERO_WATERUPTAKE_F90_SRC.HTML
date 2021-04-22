@@ -1,0 +1,773 @@
+<html>
+<head>
+<title>Listing of modal_aero_wateruptake.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;modal_aero_wateruptake.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 85.71&#160;%func&#160;&#160;&#160;&#160; 61.09&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module modal_aero_wateruptake</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!   RCE 07.04.13:  Adapted from MIRAGE2 code</a>
+     4) <a name="l4" style="background-color: #ffffff"></a>
+     5) <a name="l5" style="background-color: #ffffff">use shr_kind_mod,     only: r8 =&gt; shr_kind_r8</a>
+     6) <a name="l6" style="background-color: #ffffff">use physconst,        only: pi, rhoh2o</a>
+     7) <a name="l7" style="background-color: #ffffff">use ppgrid,           only: pcols, pver</a>
+     8) <a name="l8" style="background-color: #ffffff">use physics_types,    only: physics_state</a>
+     9) <a name="l9" style="background-color: #ffffff">use physics_buffer,   only: physics_buffer_desc, pbuf_get_index, pbuf_old_tim_idx, pbuf_get_field</a>
+    10) <a name="l10" style="background-color: #ffffff"></a>
+    11) <a name="l11" style="background-color: #ffffff">use wv_saturation,    only: qsat_water</a>
+    12) <a name="l12" style="background-color: #ffffff">use rad_constituents, only: rad_cnst_get_info, rad_cnst_get_aer_mmr, rad_cnst_get_aer_props, &amp;</a>
+    13) <a name="l13" style="background-color: #ffffff">                            rad_cnst_get_mode_props, rad_cnst_get_mode_num</a>
+    14) <a name="l14" style="background-color: #ffffff">use cam_history,      only: addfld, add_default, phys_decomp, outfld</a>
+    15) <a name="l15" style="background-color: #ffffff">use cam_logfile,      only: iulog</a>
+    16) <a name="l16" style="background-color: #ffffff">use ref_pres,         only: top_lev =&gt; clim_modal_aero_top_lev</a>
+    17) <a name="l17" style="background-color: #ffffff">use phys_control,     only: phys_getopts</a>
+    18) <a name="l18" style="background-color: #ffffff">use abortutils,       only: endrun</a>
+    19) <a name="l19" style="background-color: #ffffff"></a>
+    20) <a name="l20" style="background-color: #ffffff">implicit none</a>
+    21) <a name="l21" style="background-color: #ffffff">private</a>
+    22) <a name="l22" style="background-color: #ffffff">save</a>
+    23) <a name="l23" style="background-color: #ffffff"></a>
+    24) <a name="l24" style="background-color: #ffffff">public :: &amp;</a>
+    25) <a name="l25" style="background-color: #ffffff">   modal_aero_wateruptake_init, &amp;</a>
+    26) <a name="l26" style="background-color: #ffffff">   modal_aero_wateruptake_dr</a>
+    27) <a name="l27" style="background-color: #ffffff"></a>
+    28) <a name="l28" style="background-color: #ffffff">public :: modal_aero_wateruptake_reg</a>
+    29) <a name="l29" style="background-color: #ffffff"></a>
+    30) <a name="l30" style="background-color: #ffffff">real(r8), parameter :: third = 1._r8/3._r8</a>
+    31) <a name="l31" style="background-color: #ffffff">real(r8), parameter :: pi43  = pi*4.0_r8/3.0_r8</a>
+    32) <a name="l32" style="background-color: #ffffff"></a>
+    33) <a name="l33" style="background-color: #ffffff"></a>
+    34) <a name="l34" style="background-color: #ffffff">! Physics buffer indices</a>
+    35) <a name="l35" style="background-color: #ffffff">integer :: cld_idx        = 0</a>
+    36) <a name="l36" style="background-color: #ffffff">integer :: dgnum_idx      = 0</a>
+    37) <a name="l37" style="background-color: #ffffff">integer :: dgnumwet_idx   = 0</a>
+    38) <a name="l38" style="background-color: #ffffff">integer :: wetdens_ap_idx = 0</a>
+    39) <a name="l39" style="background-color: #ffffff">integer :: qaerwat_idx    = 0</a>
+    40) <a name="l40" style="background-color: #ffffff"></a>
+    41) <a name="l41" style="background-color: #ffffff">!===============================================================================</a>
+    42) <a name="l42" style="background-color: #ffffff">contains</a>
+    43) <a name="l43" style="background-color: #ffffff">!===============================================================================</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">subroutine modal_aero_wateruptake_reg()</a>
+    46) <a name="l46" style="background-color: #ffffff"></a>
+    47) <a name="l47" style="background-color: #ffffff">  use physics_buffer,   only: pbuf_add_field, dtype_r8</a>
+    48) <a name="l48" style="background-color: #ffffff">  use rad_constituents, only: rad_cnst_get_info</a>
+    49) <a name="l49" style="background-color: #ffffff"></a>
+    50) <a name="l50" style="background-color: #ffffff">   integer :: nmodes</a>
+    51) <a name="l51" style="background-color: #ffffff">   </a>
+    52) <a name="l52" style="background-color: #ffffff">   call rad_cnst_get_info(0, nmodes=nmodes)</a>
+    53) <a name="l53" style="background-color: #ffffff">   call pbuf_add_field('DGNUMWET',   'global',  dtype_r8, (/pcols, pver, nmodes/), dgnumwet_idx)</a>
+    54) <a name="l54" style="background-color: #ffffff">   call pbuf_add_field('WETDENS_AP', 'physpkg', dtype_r8, (/pcols, pver, nmodes/), wetdens_ap_idx)</a>
+    55) <a name="l55" style="background-color: #ffffff"></a>
+    56) <a name="l56" style="background-color: #ffffff">   ! 1st order rate for direct conversion of strat. cloud water to precip (1/s)</a>
+    57) <a name="l57" style="background-color: #ffffff">   call pbuf_add_field('QAERWAT',    'physpkg', dtype_r8, (/pcols, pver, nmodes/), qaerwat_idx)  </a>
+    58) <a name="l58" style="background-color: #ffffff"></a>
+    59) <a name="l59" style="background-color: #ffffff">end subroutine modal_aero_wateruptake_reg</a>
+    60) <a name="l60" style="background-color: #ffffff"></a>
+    61) <a name="l61" style="background-color: #ffffff">!===============================================================================</a>
+    62) <a name="l62" style="background-color: #ffffff">!===============================================================================</a>
+    63) <a name="l63" style="background-color: #ffffff"></a>
+    64) <a name="l64" style="background-color: #ffffff">subroutine modal_aero_wateruptake_init(pbuf2d)</a>
+    65) <a name="l65" style="background-color: #ffffff">   use time_manager,  only: is_first_step</a>
+    66) <a name="l66" style="background-color: #ffffff">   use physics_buffer,only: pbuf_set_field</a>
+    67) <a name="l67" style="background-color: #ffffff"></a>
+    68) <a name="l68" style="background-color: #ffffff">   type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+    69) <a name="l69" style="background-color: #ffffff"></a>
+    70) <a name="l70" style="background-color: #ffffff">   integer :: m, nmodes</a>
+    71) <a name="l71" style="background-color: #ffffff">   logical :: history_aerosol      ! Output the MAM aerosol variables and tendencies</a>
+    72) <a name="l72" style="background-color: #ffffff"></a>
+    73) <a name="l73" style="background-color: #ffffff">   character(len=3) :: trnum       ! used to hold mode number (as characters)</a>
+    74) <a name="l74" style="background-color: #ffffff">   !----------------------------------------------------------------------------</a>
+    75) <a name="l75" style="background-color: #ffffff"></a>
+    76) <a name="l76" style="background-color: #ffffff">   cld_idx        = pbuf_get_index('CLD')    </a>
+    77) <a name="l77" style="background-color: #ffffff">   dgnum_idx      = pbuf_get_index('DGNUM')    </a>
+    78) <a name="l78" style="background-color: #ffffff"></a>
+    79) <a name="l79" style="background-color: #ffffff">   ! assume for now that will compute wateruptake for climate list modes only</a>
+    80) <a name="l80" style="background-color: #ffffff"></a>
+    81) <a name="l81" style="background-color: #ffffff">   call rad_cnst_get_info(0, nmodes=nmodes)</a>
+    82) <a name="l82" style="background-color: #ffffff"></a>
+    83) <a name="l83" style="background-color: #ffffff">   do m = 1, nmodes</a>
+    84) <a name="l84" style="background-color: #ffffff">      write(trnum, '(i3.3)') m</a>
+    85) <a name="l85" style="background-color: #ffffff">      call addfld('dgnd_a'//trnum(2:3), 'm', pver, 'A', &amp;</a>
+    86) <a name="l86" style="background-color: #ffffff">         'dry dgnum, interstitial, mode '//trnum(2:3), phys_decomp)</a>
+    87) <a name="l87" style="background-color: #ffffff">      call addfld('dgnw_a'//trnum(2:3), 'm', pver, 'A', &amp;</a>
+    88) <a name="l88" style="background-color: #ffffff">         'wet dgnum, interstitial, mode '//trnum(2:3), phys_decomp)</a>
+    89) <a name="l89" style="background-color: #ffffff">      call addfld('wat_a'//trnum(3:3), 'm', pver, 'A', &amp;</a>
+    90) <a name="l90" style="background-color: #ffffff">         'aerosol water, interstitial, mode '//trnum(2:3), phys_decomp)</a>
+    91) <a name="l91" style="background-color: #ffffff">      </a>
+    92) <a name="l92" style="background-color: #ffffff">      ! determine default variables</a>
+    93) <a name="l93" style="background-color: #ffffff">      call phys_getopts(history_aerosol_out = history_aerosol)</a>
+    94) <a name="l94" style="background-color: #ffffff"></a>
+    95) <a name="l95" style="background-color: #ffffff">      if (history_aerosol) then  </a>
+    96) <a name="l96" style="background-color: #ffffff">         call </a><a style="background-color: #ffff99">add_default('dgnd_a'//trnum(2:3), 1, ' ')</a>
+    97) <a name="l97" style="background-color: #ffff99">         call add_default('dgnw_a'//trnum(2:3), 1, ' ')</a>
+    98) <a name="l98" style="background-color: #ffff99">         call add_default('wat_a'//trnum(3:3),  1, ' ')</a>
+    99) <a name="l99" style="background-color: #ffff99">      endif</a>
+   100) <a name="l100" style="background-color: #ffff99"></a>
+   101) <a name="l101" style="background-color: #ffff99">   end do</a>
+   102) <a name="l102" style="background-color: #ffff99">   </a>
+   103) <a name="l103" style="background-color: #ffff99">   if (</a><a style="background-color: #ffffff">is_first_step()) then</a>
+   104) <a name="l104" style="background-color: #ffffff">      ! initialize fields in physics buffer</a>
+   105) <a name="l105" style="background-color: #ffffff">      call pbuf_set_field(pbuf2d, dgnumwet_idx, 0.0_r8)</a>
+   106) <a name="l106" style="background-color: #ffffff">   endif</a>
+   107) <a name="l107" style="background-color: #ffffff"></a>
+   108) <a name="l108" style="background-color: #ffffff">end subroutine modal_aero_wateruptake_init</a>
+   109) <a name="l109" style="background-color: #ffffff"></a>
+   110) <a name="l110" style="background-color: #ffffff">!===============================================================================</a>
+   111) <a name="l111" style="background-color: #ffffff"></a>
+   112) <a name="l112" style="background-color: #ffffff"></a>
+   113) <a name="l113" style="background-color: #ffffff">subroutine modal_aero_wateruptake_dr(state, pbuf, list_idx_in, dgnumdry_m, dgnumwet_m, &amp;</a>
+   114) <a name="l114" style="background-color: #ffffff">                                     qaerwat_m, wetdens_m)</a>
+   115) <a name="l115" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   116) <a name="l116" style="background-color: #ffffff">!</a>
+   117) <a name="l117" style="background-color: #ffffff">! CAM specific driver for modal aerosol water uptake code.</a>
+   118) <a name="l118" style="background-color: #ffffff">!</a>
+   119) <a name="l119" style="background-color: #ffffff">! *** N.B. *** The calculation has been enabled for diagnostic mode lists</a>
+   120) <a name="l120" style="background-color: #ffffff">!              via optional arguments.  If the list_idx arg is present then</a>
+   121) <a name="l121" style="background-color: #ffffff">!              all the optional args must be present.</a>
+   122) <a name="l122" style="background-color: #ffffff">!</a>
+   123) <a name="l123" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   124) <a name="l124" style="background-color: #ffffff"></a>
+   125) <a name="l125" style="background-color: #ffffff">   ! Arguments</a>
+   126) <a name="l126" style="background-color: #ffffff">   type(physics_state), target, intent(in)    :: state          ! Physics state variables</a>
+   127) <a name="l127" style="background-color: #ffffff">   type(physics_buffer_desc),   pointer       :: pbuf(:)        ! physics buffer</a>
+   128) <a name="l128" style="background-color: #ffffff"></a>
+   129) <a name="l129" style="background-color: #ffffff">   integer,  optional,          intent(in)    :: list_idx_in</a>
+   130) <a name="l130" style="background-color: #ffffff">   real(r8), optional, target,  intent(in)    :: dgnumdry_m(:,:,:)</a>
+   131) <a name="l131" style="background-color: #ffffff">   real(r8), optional,          pointer       :: dgnumwet_m(:,:,:)</a>
+   132) <a name="l132" style="background-color: #ffffff">   real(r8), optional,          pointer       :: qaerwat_m(:,:,:)</a>
+   133) <a name="l133" style="background-color: #ffffff">   real(r8), optional,          pointer       :: wetdens_m(:,:,:)</a>
+   134) <a name="l134" style="background-color: #ffffff"></a>
+   135) <a name="l135" style="background-color: #ffffff">   ! local variables</a>
+   136) <a name="l136" style="background-color: #ffffff"></a>
+   137) <a name="l137" style="background-color: #ffffff">   integer  :: lchnk              ! chunk index</a>
+   138) <a name="l138" style="background-color: #ffffff">   integer  :: ncol               ! number of columns</a>
+   139) <a name="l139" style="background-color: #ffffff">   integer  :: list_idx           ! radiative constituents list index</a>
+   140) <a name="l140" style="background-color: #ffffff">   integer  :: stat</a>
+   141) <a name="l141" style="background-color: #ffffff"></a>
+   142) <a name="l142" style="background-color: #ffffff">   integer :: i, k, l, m</a>
+   143) <a name="l143" style="background-color: #ffffff">   integer :: itim_old</a>
+   144) <a name="l144" style="background-color: #ffffff">   integer :: nmodes</a>
+   145) <a name="l145" style="background-color: #ffffff">   integer :: nspec</a>
+   146) <a name="l146" style="background-color: #ffffff"></a>
+   147) <a name="l147" style="background-color: #ffffff">   real(r8), pointer :: h2ommr(:,:) ! specific humidity</a>
+   148) <a name="l148" style="background-color: #ffffff">   real(r8), pointer :: t(:,:)      ! temperatures (K)</a>
+   149) <a name="l149" style="background-color: #ffffff">   real(r8), pointer :: pmid(:,:)   ! layer pressure (Pa)</a>
+   150) <a name="l150" style="background-color: #ffffff">   real(r8), pointer :: raer(:,:)   ! aerosol species MRs (kg/kg and #/kg)</a>
+   151) <a name="l151" style="background-color: #ffffff"></a>
+   152) <a name="l152" style="background-color: #ffffff">   real(r8), pointer :: cldn(:,:)      ! layer cloud fraction (0-1)</a>
+   153) <a name="l153" style="background-color: #ffffff">   real(r8), pointer :: dgncur_a(:,:,:)</a>
+   154) <a name="l154" style="background-color: #ffffff">   real(r8), pointer :: dgncur_awet(:,:,:)</a>
+   155) <a name="l155" style="background-color: #ffffff">   real(r8), pointer :: wetdens(:,:,:)</a>
+   156) <a name="l156" style="background-color: #ffffff">   real(r8), pointer :: qaerwat(:,:,:)</a>
+   157) <a name="l157" style="background-color: #ffffff"></a>
+   158) <a name="l158" style="background-color: #ffffff">   real(r8), allocatable :: maer(:,:,:)      ! aerosol wet mass MR (including water) (kg/kg-air)</a>
+   159) <a name="l159" style="background-color: #ffffff">   real(r8), allocatable :: hygro(:,:,:)     ! volume-weighted mean hygroscopicity (--)</a>
+   160) <a name="l160" style="background-color: #ffffff">   real(r8), allocatable :: naer(:,:,:)      ! aerosol number MR (bounded!) (#/kg-air)</a>
+   161) <a name="l161" style="background-color: #ffffff">   real(r8), allocatable :: dryvol(:,:,:)    ! single-particle-mean dry volume (m3)</a>
+   162) <a name="l162" style="background-color: #ffffff">   real(r8), allocatable :: drymass(:,:,:)   ! single-particle-mean dry mass  (kg)</a>
+   163) <a name="l163" style="background-color: #ffffff">   real(r8), allocatable :: dryrad(:,:,:)    ! dry volume mean radius of aerosol (m)</a>
+   164) <a name="l164" style="background-color: #ffffff"></a>
+   165) <a name="l165" style="background-color: #ffffff">   real(r8), allocatable :: wetrad(:,:,:)    ! wet radius of aerosol (m)</a>
+   166) <a name="l166" style="background-color: #ffffff">   real(r8), allocatable :: wetvol(:,:,:)    ! single-particle-mean wet volume (m3)</a>
+   167) <a name="l167" style="background-color: #ffffff">   real(r8), allocatable :: wtrvol(:,:,:)    ! single-particle-mean water volume in wet aerosol (m3)</a>
+   168) <a name="l168" style="background-color: #ffffff"></a>
+   169) <a name="l169" style="background-color: #ffffff">   real(r8), allocatable :: rhcrystal(:)</a>
+   170) <a name="l170" style="background-color: #ffffff">   real(r8), allocatable :: rhdeliques(:)</a>
+   171) <a name="l171" style="background-color: #ffffff">   real(r8), allocatable :: specdens_1(:)</a>
+   172) <a name="l172" style="background-color: #ffffff"></a>
+   173) <a name="l173" style="background-color: #ffffff">   real(r8) :: dryvolmr(pcols,pver)          ! volume MR for aerosol mode (m3/kg)</a>
+   174) <a name="l174" style="background-color: #ffffff">   real(r8) :: specdens</a>
+   175) <a name="l175" style="background-color: #ffffff">   real(r8) :: spechygro, spechygro_1</a>
+   176) <a name="l176" style="background-color: #ffffff">   real(r8) :: duma, dumb</a>
+   177) <a name="l177" style="background-color: #ffffff">   real(r8) :: sigmag</a>
+   178) <a name="l178" style="background-color: #ffffff">   real(r8) :: alnsg</a>
+   179) <a name="l179" style="background-color: #ffffff">   real(r8) :: v2ncur_a</a>
+   180) <a name="l180" style="background-color: #ffffff">   real(r8) :: drydens               ! dry particle density  (kg/m^3)</a>
+   181) <a name="l181" style="background-color: #ffffff">   real(r8) :: rh(pcols,pver)        ! relative humidity (0-1)</a>
+   182) <a name="l182" style="background-color: #ffffff"></a>
+   183) <a name="l183" style="background-color: #ffffff">   real(r8) :: es(pcols)             ! saturation vapor pressure</a>
+   184) <a name="l184" style="background-color: #ffffff">   real(r8) :: qs(pcols)             ! saturation specific humidity</a>
+   185) <a name="l185" style="background-color: #ffffff"></a>
+   186) <a name="l186" style="background-color: #ffffff">   character(len=3) :: trnum       ! used to hold mode number (as characters)</a>
+   187) <a name="l187" style="background-color: #ffffff">   !-----------------------------------------------------------------------</a>
+   188) <a name="l188" style="background-color: #ffffff"></a>
+   189) <a name="l189" style="background-color: #ffffff">   lchnk = state%lchnk</a>
+   190) <a name="l190" style="background-color: #ffffff">   ncol = state%ncol</a>
+   191) <a name="l191" style="background-color: #ffffff"></a>
+   192) <a name="l192" style="background-color: #ffffff">   list_idx = 0</a>
+   193) <a name="l193" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(list_idx_in)) then</a>
+   194) <a name="l194" style="background-color: #ffff99">      list_idx = list_idx_in</a>
+   195) <a name="l195" style="background-color: #ffff99"></a>
+   196) <a name="l196" style="background-color: #ffff99">      ! check that all optional args are present</a>
+   197) <a name="l197" style="background-color: #ffff99">      if (.not. present(dgnumdry_m)   .or. .not. present(dgnumwet_m) .or. &amp;</a>
+   198) <a name="l198" style="background-color: #ffff99">          .not. present(qaerwat_m) .or. .not. present(wetdens_m)) then</a>
+   199) <a name="l199" style="background-color: #ffff99">         call endrun('modal_aero_wateruptake_dr called for'// &amp;</a>
+   200) <a name="l200" style="background-color: #ffff99">                     'diagnostic list but required args not present')</a>
+   201) <a name="l201" style="background-color: #ffff99">      end if</a>
+   202) <a name="l202" style="background-color: #ffff99">   end if</a>
+   203) <a name="l203" style="background-color: #ffff99"></a>
+   204) <a name="l204" style="background-color: #ffff99">   ! loop over all aerosol modes</a>
+   205) <a name="l205" style="background-color: #ffff99">   call </a><a style="background-color: #ffffff">rad_cnst_get_info(list_idx, nmodes=nmodes)</a>
+   206) <a name="l206" style="background-color: #ffffff"></a>
+   207) <a name="l207" style="background-color: #fafad2">   allocate( &amp;</a>
+   208) <a name="l208" style="background-color: #fafad2">      maer(pcols,pver,nmodes),     &amp;</a>
+   209) <a name="l209" style="background-color: #fafad2">      hygro(pcols,pver,nmodes),    &amp;</a>
+   210) <a name="l210" style="background-color: #fafad2">      naer(pcols,pver,nmodes),     &amp;</a>
+   211) <a name="l211" style="background-color: #fafad2">      dryvol(pcols,pver,nmodes),   &amp;</a>
+   212) <a name="l212" style="background-color: #fafad2">      drymass(pcols,pver,nmodes),  &amp;</a>
+   213) <a name="l213" style="background-color: #fafad2">      dryrad(pcols,pver,nmodes),   &amp;</a>
+   214) <a name="l214" style="background-color: #fafad2">      wetrad(pcols,pver,nmodes),   &amp;</a>
+   215) <a name="l215" style="background-color: #fafad2">      wetvol(pcols,pver,nmodes),   &amp;</a>
+   216) <a name="l216" style="background-color: #fafad2">      wtrvol(pcols,pver,nmodes),   &amp;</a>
+   217) <a name="l217" style="background-color: #fafad2">      rhcrystal(nmodes),           &amp;</a>
+   218) <a name="l218" style="background-color: #fafad2">      rhdeliques(nmodes),          &amp;</a>
+   219) <a name="l219" style="background-color: #fafad2">      specdens_1(nmodes)           )</a>
+   220) <a name="l220" style="background-color: #fafad2"></a>
+   221) <a name="l221" style="background-color: #ffffff">   maer(:,:,:)     = 0._r8</a>
+   222) <a name="l222" style="background-color: #ffffff">   hygro(:,:,:)    = 0._r8</a>
+   223) <a name="l223" style="background-color: #ffffff"></a>
+   224) <a name="l224" style="background-color: #ffffff"></a>
+   225) <a name="l225" style="background-color: #ffffff">   if (list_idx == 0) then</a>
+   226) <a name="l226" style="background-color: #ffffff">      call pbuf_get_field(pbuf, dgnum_idx, dgncur_a)</a>
+   227) <a name="l227" style="background-color: #ffffff">   else</a>
+   228) <a name="l228" style="background-color: #ffff99">      dgncur_a =&gt; dgnumdry_m</a>
+   229) <a name="l229" style="background-color: #ffff99">   end if</a>
+   230) <a name="l230" style="background-color: #ffff99"></a>
+   231) <a name="l231" style="background-color: #ffffff">   do m = 1, nmodes</a>
+   232) <a name="l232" style="background-color: #ffffff"></a>
+   233) <a name="l233" style="background-color: #ffffff">      dryvolmr(:,:) = 0._r8</a>
+   234) <a name="l234" style="background-color: #ffffff"></a>
+   235) <a name="l235" style="background-color: #ffffff">      ! get mode properties</a>
+   236) <a name="l236" style="background-color: #ffffff">      call rad_cnst_get_mode_props(list_idx, m, sigmag=sigmag,  &amp;</a>
+   237) <a name="l237" style="background-color: #ffffff">         rhcrystal=rhcrystal(m), rhdeliques=rhdeliques(m))</a>
+   238) <a name="l238" style="background-color: #ffffff"></a>
+   239) <a name="l239" style="background-color: #ffffff">      ! get mode info</a>
+   240) <a name="l240" style="background-color: #ffffff">      call rad_cnst_get_info(list_idx, m, nspec=nspec)</a>
+   241) <a name="l241" style="background-color: #ffffff"></a>
+   242) <a name="l242" style="background-color: #ffffff">      do l = 1, nspec</a>
+   243) <a name="l243" style="background-color: #ffffff"></a>
+   244) <a name="l244" style="background-color: #ffffff">         ! get species interstitial mixing ratio ('a')</a>
+   245) <a name="l245" style="background-color: #ffffff">         call rad_cnst_get_aer_mmr(list_idx, m, l, 'a', state, pbuf, raer)</a>
+   246) <a name="l246" style="background-color: #ffffff">         call rad_cnst_get_aer_props(list_idx, m, l, density_aer=specdens, hygro_aer=spechygro)</a>
+   247) <a name="l247" style="background-color: #ffffff"></a>
+   248) <a name="l248" style="background-color: #ffffff">         if (l == 1) then</a>
+   249) <a name="l249" style="background-color: #ffffff">            ! save off these values to be used as defaults</a>
+   250) <a name="l250" style="background-color: #ffffff">            specdens_1(m)  = specdens</a>
+   251) <a name="l251" style="background-color: #ffffff">            spechygro_1    = spechygro</a>
+   252) <a name="l252" style="background-color: #ffffff">         end if</a>
+   253) <a name="l253" style="background-color: #ffffff"></a>
+   254) <a name="l254" style="background-color: #ffffff">         do k = top_lev, pver</a>
+   255) <a name="l255" style="background-color: #ffffff">            do i = 1, ncol</a>
+   256) <a name="l256" style="background-color: #ffffff">               duma          = raer(i,k)</a>
+   257) <a name="l257" style="background-color: #ffffff">               maer(i,k,m)   = maer(i,k,m) + duma</a>
+   258) <a name="l258" style="background-color: #ffffff">               dumb          = duma/specdens</a>
+   259) <a name="l259" style="background-color: #ffffff">               dryvolmr(i,k) = dryvolmr(i,k) + dumb</a>
+   260) <a name="l260" style="background-color: #ffffff">               hygro(i,k,m)  = hygro(i,k,m) + dumb*spechygro</a>
+   261) <a name="l261" style="background-color: #ffffff">            end do</a>
+   262) <a name="l262" style="background-color: #ffffff">         end do</a>
+   263) <a name="l263" style="background-color: #ffffff">      end do</a>
+   264) <a name="l264" style="background-color: #ffffff"></a>
+   265) <a name="l265" style="background-color: #ffffff">      alnsg = log(sigmag)</a>
+   266) <a name="l266" style="background-color: #ffffff"></a>
+   267) <a name="l267" style="background-color: #ffffff">      do k = top_lev, pver</a>
+   268) <a name="l268" style="background-color: #ffffff">         do i = 1, ncol</a>
+   269) <a name="l269" style="background-color: #ffffff"></a>
+   270) <a name="l270" style="background-color: #ffffff">            if (dryvolmr(i,k) &gt; 1.0e-30_r8) then</a>
+   271) <a name="l271" style="background-color: #ffffff">               hygro(i,k,m) = hygro(i,k,m)/dryvolmr(i,k)</a>
+   272) <a name="l272" style="background-color: #ffffff">            else</a>
+   273) <a name="l273" style="background-color: #ffff99">               hygro(i,k,m) = spechygro_1</a>
+   274) <a name="l274" style="background-color: #ffff99">            end if</a>
+   275) <a name="l275" style="background-color: #ffff99"></a>
+   276) <a name="l276" style="background-color: #ffff99">            ! dry aerosol properties</a>
+   277) <a name="l277" style="background-color: #ffff99"></a>
+   278) <a name="l278" style="background-color: #ffffff">            v2ncur_a = 1._r8 / ( (pi/6._r8)*(dgncur_a(i,k,m)**3._r8)*exp(4.5_r8*alnsg**2._r8) )</a>
+   279) <a name="l279" style="background-color: #ffffff">            ! naer = aerosol number (#/kg)</a>
+   280) <a name="l280" style="background-color: #ffffff">            naer(i,k,m) = dryvolmr(i,k)*v2ncur_a</a>
+   281) <a name="l281" style="background-color: #ffffff"></a>
+   282) <a name="l282" style="background-color: #ffffff">            ! compute mean (1 particle) dry volume and mass for each mode</a>
+   283) <a name="l283" style="background-color: #ffffff">            ! old coding is replaced because the new (1/v2ncur_a) is equal to</a>
+   284) <a name="l284" style="background-color: #ffffff">            ! the mean particle volume</a>
+   285) <a name="l285" style="background-color: #ffffff">            ! also moletomass forces maer &gt;= 1.0e-30, so (maer/dryvolmr)</a>
+   286) <a name="l286" style="background-color: #ffffff">            ! should never cause problems (but check for maer &lt; 1.0e-31 anyway)</a>
+   287) <a name="l287" style="background-color: #ffffff">            if (maer(i,k,m) .gt. 1.0e-31_r8) then</a>
+   288) <a name="l288" style="background-color: #ffffff">               drydens = maer(i,k,m)/dryvolmr(i,k)</a>
+   289) <a name="l289" style="background-color: #ffffff">            else</a>
+   290) <a name="l290" style="background-color: #ffff99">               drydens = 1.0_r8</a>
+   291) <a name="l291" style="background-color: #ffff99">            end if</a>
+   292) <a name="l292" style="background-color: #ffffff">            dryvol(i,k,m)   = 1.0_r8/v2ncur_a</a>
+   293) <a name="l293" style="background-color: #ffffff">            drymass(i,k,m)  = drydens*dryvol(i,k,m)</a>
+   294) <a name="l294" style="background-color: #ffffff">            dryrad(i,k,m)   = (dryvol(i,k,m)/pi43)**third</a>
+   295) <a name="l295" style="background-color: #ffffff"></a>
+   296) <a name="l296" style="background-color: #ffffff">         end do</a>
+   297) <a name="l297" style="background-color: #ffffff">      end do</a>
+   298) <a name="l298" style="background-color: #ffffff"></a>
+   299) <a name="l299" style="background-color: #ffffff">   end do    ! modes</a>
+   300) <a name="l300" style="background-color: #ffffff"></a>
+   301) <a name="l301" style="background-color: #ffffff">   ! relative humidity calc</a>
+   302) <a name="l302" style="background-color: #ffffff"></a>
+   303) <a name="l303" style="background-color: #ffffff">   h2ommr =&gt; state%q(:,:,1)</a>
+   304) <a name="l304" style="background-color: #ffffff">   t      =&gt; state%t</a>
+   305) <a name="l305" style="background-color: #ffffff">   pmid   =&gt; state%pmid</a>
+   306) <a name="l306" style="background-color: #ffffff"></a>
+   307) <a name="l307" style="background-color: #ffffff">   itim_old    =  pbuf_old_tim_idx()</a>
+   308) <a name="l308" style="background-color: #ffffff">   call pbuf_get_field(pbuf, cld_idx, cldn, start=(/1,1,itim_old/), kount=(/pcols,pver,1/) )</a>
+   309) <a name="l309" style="background-color: #ffffff"></a>
+   310) <a name="l310" style="background-color: #ffffff">   do k = top_lev, pver</a>
+   311) <a name="l311" style="background-color: #ffffff">      call qsat_water(t(:ncol,k), pmid(:ncol,k), es(:ncol), qs(:ncol))</a>
+   312) <a name="l312" style="background-color: #ffffff">      do i = 1, ncol</a>
+   313) <a name="l313" style="background-color: #ffffff">         if (qs(i) &gt; h2ommr(i,k)) then</a>
+   314) <a name="l314" style="background-color: #ffffff">            rh(i,k) = h2ommr(i,k)/qs(i)</a>
+   315) <a name="l315" style="background-color: #ffffff">         else</a>
+   316) <a name="l316" style="background-color: #ffffff">            rh(i,k) = 0.98_r8</a>
+   317) <a name="l317" style="background-color: #ffffff">         endif</a>
+   318) <a name="l318" style="background-color: #ffffff">         rh(i,k) = max(rh(i,k), 0.0_r8)</a>
+   319) <a name="l319" style="background-color: #ffffff">         rh(i,k) = min(rh(i,k), 0.98_r8)</a>
+   320) <a name="l320" style="background-color: #ffffff">         if (cldn(i,k) .lt. 1.0_r8) then</a>
+   321) <a name="l321" style="background-color: #ffffff">            rh(i,k) = (rh(i,k) - cldn(i,k)) / (1.0_r8 - cldn(i,k))  ! clear portion</a>
+   322) <a name="l322" style="background-color: #ffffff">         end if</a>
+   323) <a name="l323" style="background-color: #ffffff">         rh(i,k) = max(rh(i,k), 0.0_r8)</a>
+   324) <a name="l324" style="background-color: #ffffff">      end do</a>
+   325) <a name="l325" style="background-color: #ffffff">   end do</a>
+   326) <a name="l326" style="background-color: #ffffff"></a>
+   327) <a name="l327" style="background-color: #ffffff">   call modal_aero_wateruptake_sub( &amp;</a>
+   328) <a name="l328" style="background-color: #ffffff">      ncol, nmodes, rhcrystal, rhdeliques, dryrad, &amp;</a>
+   329) <a name="l329" style="background-color: #ffffff">      hygro, rh, dryvol, wetrad, wetvol,           &amp;</a>
+   330) <a name="l330" style="background-color: #ffffff">      wtrvol)</a>
+   331) <a name="l331" style="background-color: #ffffff"></a>
+   332) <a name="l332" style="background-color: #ffffff">   if (list_idx == 0) then</a>
+   333) <a name="l333" style="background-color: #ffffff">      call pbuf_get_field(pbuf, dgnumwet_idx,   dgncur_awet)</a>
+   334) <a name="l334" style="background-color: #ffffff">      call pbuf_get_field(pbuf, wetdens_ap_idx, wetdens)</a>
+   335) <a name="l335" style="background-color: #ffffff">      call pbuf_get_field(pbuf, qaerwat_idx,    qaerwat)</a>
+   336) <a name="l336" style="background-color: #ffffff">   else</a>
+   337) <a name="l337" style="background-color: #ffff99">      allocate(dgncur_awet(pcols,pver,nmodes), wetdens(pcols,pver,nmodes), &amp;</a>
+   338) <a name="l338" style="background-color: #ffff99">               qaerwat(pcols,pver,nmodes), stat=stat)</a>
+   339) <a name="l339" style="background-color: #ffff99">      if (stat &gt; 0) then</a>
+   340) <a name="l340" style="background-color: #ffff99">         call endrun('modal_aero_wateruptake_dr: allocation FAILURE')</a>
+   341) <a name="l341" style="background-color: #ffff99">      end if</a>
+   342) <a name="l342" style="background-color: #ffff99"></a>
+   343) <a name="l343" style="background-color: #ffff99">   end if</a>
+   344) <a name="l344" style="background-color: #ffff99"></a>
+   345) <a name="l345" style="background-color: #ffffff">   do m = 1, nmodes</a>
+   346) <a name="l346" style="background-color: #ffffff"></a>
+   347) <a name="l347" style="background-color: #ffffff">      do k = top_lev, pver</a>
+   348) <a name="l348" style="background-color: #ffffff">         do i = 1, ncol</a>
+   349) <a name="l349" style="background-color: #ffffff"></a>
+   350) <a name="l350" style="background-color: #ffffff">            dgncur_awet(i,k,m) = dgncur_a(i,k,m) * (wetrad(i,k,m)/dryrad(i,k,m))</a>
+   351) <a name="l351" style="background-color: #ffffff">            qaerwat(i,k,m)     = rhoh2o*naer(i,k,m)*wtrvol(i,k,m)</a>
+   352) <a name="l352" style="background-color: #ffffff"></a>
+   353) <a name="l353" style="background-color: #ffffff">            ! compute aerosol wet density (kg/m3)</a>
+   354) <a name="l354" style="background-color: #ffffff">            if (wetvol(i,k,m) &gt; 1.0e-30_r8) then</a>
+   355) <a name="l355" style="background-color: #ffffff">               wetdens(i,k,m) = (drymass(i,k,m) + rhoh2o*wtrvol(i,k,m))/wetvol(i,k,m)</a>
+   356) <a name="l356" style="background-color: #ffffff">            else</a>
+   357) <a name="l357" style="background-color: #ffff99">               wetdens(i,k,m) = specdens_1(m)</a>
+   358) <a name="l358" style="background-color: #ffff99">            end if</a>
+   359) <a name="l359" style="background-color: #ffff99">         end do</a>
+   360) <a name="l360" style="background-color: #ffff99">      end do</a>
+   361) <a name="l361" style="background-color: #ffff99"></a>
+   362) <a name="l362" style="background-color: #ffff99">   end do    ! modes</a>
+   363) <a name="l363" style="background-color: #ffff99"></a>
+   364) <a name="l364" style="background-color: #ffffff">   if (list_idx == 0) then</a>
+   365) <a name="l365" style="background-color: #ffffff"></a>
+   366) <a name="l366" style="background-color: #ffffff">      do m = 1, nmodes</a>
+   367) <a name="l367" style="background-color: #ffffff">         ! output to history</a>
+   368) <a name="l368" style="background-color: #ffffff">         write( trnum, '(i3.3)' ) m</a>
+   369) <a name="l369" style="background-color: #ffffff">         call </a><a style="background-color: #fafad2">outfld( </a><a style="background-color: #ffffff">'wat_a'//trnum(3:3),  qaerwat(:,:,m),     pcols, lchnk)</a>
+   370) <a name="l370" style="background-color: #ffffff">         call </a><a style="background-color: #fafad2">outfld( </a><a style="background-color: #ffffff">'dgnd_a'//trnum(2:3), dgncur_a(:,:,m),    pcols, lchnk)</a>
+   371) <a name="l371" style="background-color: #ffffff">         call </a><a style="background-color: #fafad2">outfld( </a><a style="background-color: #ffffff">'dgnw_a'//trnum(2:3), dgncur_awet(:,:,m), pcols, lchnk)</a>
+   372) <a name="l372" style="background-color: #ffffff">      end do</a>
+   373) <a name="l373" style="background-color: #ffffff"></a>
+   374) <a name="l374" style="background-color: #ffffff">   else</a>
+   375) <a name="l375" style="background-color: #ffffff"></a>
+   376) <a name="l376" style="background-color: #ffffff">      ! for diagnostic calcs just return results</a>
+   377) <a name="l377" style="background-color: #ffff99">      dgnumwet_m =&gt; dgncur_awet</a>
+   378) <a name="l378" style="background-color: #ffff99">      qaerwat_m  =&gt; qaerwat</a>
+   379) <a name="l379" style="background-color: #ffff99">      wetdens_m  =&gt; wetdens</a>
+   380) <a name="l380" style="background-color: #ffff99"></a>
+   381) <a name="l381" style="background-color: #ffff99">   end if</a>
+   382) <a name="l382" style="background-color: #ffff99"></a>
+   383) <a name="l383" style="background-color: #ffffff">   deallocate( &amp;</a>
+   384) <a name="l384" style="background-color: #ffffff">      maer,   hygro,  naer,   dryvol,    drymass,    dryrad, &amp;</a>
+   385) <a name="l385" style="background-color: #ffffff">      wetrad, wetvol, wtrvol, rhcrystal, rhdeliques, specdens_1)</a>
+   386) <a name="l386" style="background-color: #ffffff"></a>
+   387) <a name="l387" style="background-color: #fafad2">end subroutine modal_aero_wateruptake_dr</a>
+   388) <a name="l388" style="background-color: #ffffff"></a>
+   389) <a name="l389" style="background-color: #ffffff">!===============================================================================</a>
+   390) <a name="l390" style="background-color: #ffffff"></a>
+   391) <a name="l391" style="background-color: #ffffff">subroutine modal_aero_wateruptake_sub( &amp;</a>
+   392) <a name="l392" style="background-color: #ffffff">   ncol, nmodes, rhcrystal, rhdeliques, dryrad, &amp;</a>
+   393) <a name="l393" style="background-color: #ffffff">   hygro, rh, dryvol, wetrad, wetvol,           &amp;</a>
+   394) <a name="l394" style="background-color: #ffffff">   wtrvol)</a>
+   395) <a name="l395" style="background-color: #ffffff"></a>
+   396) <a name="l396" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   397) <a name="l397" style="background-color: #ffffff">!</a>
+   398) <a name="l398" style="background-color: #ffffff">! Purpose: Compute aerosol wet radius</a>
+   399) <a name="l399" style="background-color: #ffffff">!</a>
+   400) <a name="l400" style="background-color: #ffffff">! Method:  Kohler theory</a>
+   401) <a name="l401" style="background-color: #ffffff">!</a>
+   402) <a name="l402" style="background-color: #ffffff">! Author:  S. Ghan</a>
+   403) <a name="l403" style="background-color: #ffffff">!</a>
+   404) <a name="l404" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   405) <a name="l405" style="background-color: #ffffff"></a>
+   406) <a name="l406" style="background-color: #ffffff">   ! Arguments</a>
+   407) <a name="l407" style="background-color: #ffffff">   integer, intent(in)  :: ncol                    ! number of columns</a>
+   408) <a name="l408" style="background-color: #ffffff">   integer, intent(in)  :: nmodes</a>
+   409) <a name="l409" style="background-color: #ffffff"></a>
+   410) <a name="l410" style="background-color: #ffffff">   real(r8), intent(in) :: rhcrystal(:)</a>
+   411) <a name="l411" style="background-color: #ffffff">   real(r8), intent(in) :: rhdeliques(:)</a>
+   412) <a name="l412" style="background-color: #ffffff">   real(r8), intent(in) :: dryrad(:,:,:)         ! dry volume mean radius of aerosol (m)</a>
+   413) <a name="l413" style="background-color: #ffffff">   real(r8), intent(in) :: hygro(:,:,:)          ! volume-weighted mean hygroscopicity (--)</a>
+   414) <a name="l414" style="background-color: #ffffff">   real(r8), intent(in) :: rh(:,:)               ! relative humidity (0-1)</a>
+   415) <a name="l415" style="background-color: #ffffff">   real(r8), intent(in) :: dryvol(:,:,:)</a>
+   416) <a name="l416" style="background-color: #ffffff"></a>
+   417) <a name="l417" style="background-color: #ffffff">   real(r8), intent(out) :: wetrad(:,:,:)        ! wet radius of aerosol (m)</a>
+   418) <a name="l418" style="background-color: #ffffff">   real(r8), intent(out) :: wetvol(:,:,:)        ! single-particle-mean wet volume (m3)</a>
+   419) <a name="l419" style="background-color: #ffffff">   real(r8), intent(out) :: wtrvol(:,:,:)        ! single-particle-mean water volume in wet aerosol (m3)</a>
+   420) <a name="l420" style="background-color: #ffffff"></a>
+   421) <a name="l421" style="background-color: #ffffff">   ! local variables</a>
+   422) <a name="l422" style="background-color: #ffffff"></a>
+   423) <a name="l423" style="background-color: #ffffff">   integer :: i, k, m</a>
+   424) <a name="l424" style="background-color: #ffffff"></a>
+   425) <a name="l425" style="background-color: #ffffff">   real(r8) :: hystfac                ! working variable for hysteresis</a>
+   426) <a name="l426" style="background-color: #ffffff">   !-----------------------------------------------------------------------</a>
+   427) <a name="l427" style="background-color: #ffffff"></a>
+   428) <a name="l428" style="background-color: #ffffff"></a>
+   429) <a name="l429" style="background-color: #ffffff">   ! loop over all aerosol modes</a>
+   430) <a name="l430" style="background-color: #ffffff">   do m = 1, nmodes</a>
+   431) <a name="l431" style="background-color: #ffffff"></a>
+   432) <a name="l432" style="background-color: #ffffff">      hystfac = 1.0_r8 / max(1.0e-5_r8, (rhdeliques(m) - rhcrystal(m)))</a>
+   433) <a name="l433" style="background-color: #ffffff"></a>
+   434) <a name="l434" style="background-color: #ffffff">      do k = top_lev, pver</a>
+   435) <a name="l435" style="background-color: #ffffff">         do i = 1, ncol</a>
+   436) <a name="l436" style="background-color: #ffffff"></a>
+   437) <a name="l437" style="background-color: #ffffff">            ! compute wet radius for each mode</a>
+   438) <a name="l438" style="background-color: #ffffff">            call modal_aero_kohler(dryrad(i:i,k,m), hygro(i:i,k,m), rh(i:i,k), wetrad(i:i,k,m), 1)</a>
+   439) <a name="l439" style="background-color: #ffffff"></a>
+   440) <a name="l440" style="background-color: #ffffff">            wetrad(i,k,m) = max(wetrad(i,k,m), dryrad(i,k,m))</a>
+   441) <a name="l441" style="background-color: #ffffff">            wetvol(i,k,m) = pi43*wetrad(i,k,m)**3</a>
+   442) <a name="l442" style="background-color: #ffffff">            wetvol(i,k,m) = max(wetvol(i,k,m), dryvol(i,k,m))</a>
+   443) <a name="l443" style="background-color: #ffffff">            wtrvol(i,k,m) = wetvol(i,k,m) - dryvol(i,k,m)</a>
+   444) <a name="l444" style="background-color: #ffffff">            wtrvol(i,k,m) = max(wtrvol(i,k,m), 0.0_r8)</a>
+   445) <a name="l445" style="background-color: #ffffff"></a>
+   446) <a name="l446" style="background-color: #ffffff">            ! apply simple treatment of deliquesence/crystallization hysteresis</a>
+   447) <a name="l447" style="background-color: #ffffff">            ! for rhcrystal &lt; rh &lt; rhdeliques, aerosol water is a fraction of</a>
+   448) <a name="l448" style="background-color: #ffffff">            ! the &quot;upper curve&quot; value, and the fraction is a linear function of rh</a>
+   449) <a name="l449" style="background-color: #ffffff">            if (rh(i,k) &lt; rhcrystal(m)) then</a>
+   450) <a name="l450" style="background-color: #ffffff">               wetrad(i,k,m) = dryrad(i,k,m)</a>
+   451) <a name="l451" style="background-color: #ffffff">               wetvol(i,k,m) = dryvol(i,k,m)</a>
+   452) <a name="l452" style="background-color: #ffffff">               wtrvol(i,k,m) = 0.0_r8</a>
+   453) <a name="l453" style="background-color: #ffffff">            else if (rh(i,k) &lt; rhdeliques(m)) then</a>
+   454) <a name="l454" style="background-color: #ffffff">               wtrvol(i,k,m) = wtrvol(i,k,m)*hystfac*(rh(i,k) - rhcrystal(m))</a>
+   455) <a name="l455" style="background-color: #ffffff">               wtrvol(i,k,m) = max(wtrvol(i,k,m), 0.0_r8)</a>
+   456) <a name="l456" style="background-color: #ffffff">               wetvol(i,k,m) = dryvol(i,k,m) + wtrvol(i,k,m)</a>
+   457) <a name="l457" style="background-color: #ffffff">               wetrad(i,k,m) = (wetvol(i,k,m)/pi43)**third</a>
+   458) <a name="l458" style="background-color: #ffffff">            end if</a>
+   459) <a name="l459" style="background-color: #ffffff"></a>
+   460) <a name="l460" style="background-color: #ffffff">         end do  ! columns</a>
+   461) <a name="l461" style="background-color: #ffffff">      end do     ! levels</a>
+   462) <a name="l462" style="background-color: #ffffff"></a>
+   463) <a name="l463" style="background-color: #ffffff">   end do ! modes</a>
+   464) <a name="l464" style="background-color: #ffffff"></a>
+   465) <a name="l465" style="background-color: #ffffff">end subroutine modal_aero_wateruptake_sub</a>
+   466) <a name="l466" style="background-color: #ffffff"></a>
+   467) <a name="l467" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   468) <a name="l468" style="background-color: #ffffff">      subroutine modal_aero_kohler(   &amp;</a>
+   469) <a name="l469" style="background-color: #ffffff">          rdry_in, hygro, s, rwet_out, im )</a>
+   470) <a name="l470" style="background-color: #ffffff"></a>
+   471) <a name="l471" style="background-color: #ffffff">! calculates equlibrium radius r of haze droplets as function of</a>
+   472) <a name="l472" style="background-color: #ffffff">! dry particle mass and relative humidity s using kohler solution</a>
+   473) <a name="l473" style="background-color: #ffffff">! given in pruppacher and klett (eqn 6-35)</a>
+   474) <a name="l474" style="background-color: #ffffff"></a>
+   475) <a name="l475" style="background-color: #ffffff">! for multiple aerosol types, assumes an internal mixture of aerosols</a>
+   476) <a name="l476" style="background-color: #ffffff"></a>
+   477) <a name="l477" style="background-color: #ffffff">      implicit none</a>
+   478) <a name="l478" style="background-color: #ffffff"></a>
+   479) <a name="l479" style="background-color: #ffffff">! arguments</a>
+   480) <a name="l480" style="background-color: #ffffff">      integer :: im         ! number of grid points to be processed</a>
+   481) <a name="l481" style="background-color: #ffffff">      real(r8) :: rdry_in(:)    ! aerosol dry radius (m)</a>
+   482) <a name="l482" style="background-color: #ffffff">      real(r8) :: hygro(:)      ! aerosol volume-mean hygroscopicity (--)</a>
+   483) <a name="l483" style="background-color: #ffffff">      real(r8) :: s(:)          ! relative humidity (1 = saturated)</a>
+   484) <a name="l484" style="background-color: #ffffff">      real(r8) :: rwet_out(:)   ! aerosol wet radius (m)</a>
+   485) <a name="l485" style="background-color: #ffffff"></a>
+   486) <a name="l486" style="background-color: #ffffff">! local variables</a>
+   487) <a name="l487" style="background-color: #ffffff">      integer, parameter :: imax=200</a>
+   488) <a name="l488" style="background-color: #ffffff">      integer :: i, n, nsol</a>
+   489) <a name="l489" style="background-color: #ffffff"></a>
+   490) <a name="l490" style="background-color: #ffffff">      real(r8) :: a, b</a>
+   491) <a name="l491" style="background-color: #ffffff">      real(r8) :: p40(imax),p41(imax),p42(imax),p43(imax) ! coefficients of polynomial</a>
+   492) <a name="l492" style="background-color: #ffffff">      real(r8) :: p30(imax),p31(imax),p32(imax) ! coefficients of polynomial</a>
+   493) <a name="l493" style="background-color: #ffffff">      real(r8) :: p</a>
+   494) <a name="l494" style="background-color: #ffffff">      real(r8) :: r3, r4</a>
+   495) <a name="l495" style="background-color: #ffffff">      real(r8) :: r(im)         ! wet radius (microns)</a>
+   496) <a name="l496" style="background-color: #ffffff">      real(r8) :: rdry(imax)    ! radius of dry particle (microns)</a>
+   497) <a name="l497" style="background-color: #ffffff">      real(r8) :: ss            ! relative humidity (1 = saturated)</a>
+   498) <a name="l498" style="background-color: #ffffff">      real(r8) :: slog(imax)    ! log relative humidity</a>
+   499) <a name="l499" style="background-color: #ffffff">      real(r8) :: vol(imax)     ! total volume of particle (microns**3)</a>
+   500) <a name="l500" style="background-color: #ffffff">      real(r8) :: xi, xr</a>
+   501) <a name="l501" style="background-color: #ffffff"></a>
+   502) <a name="l502" style="background-color: #ffffff">      complex(r8) :: cx4(4,imax),cx3(3,imax)</a>
+   503) <a name="l503" style="background-color: #ffffff"></a>
+   504) <a name="l504" style="background-color: #ffffff">      real(r8), parameter :: eps = 1.e-4_r8</a>
+   505) <a name="l505" style="background-color: #ffffff">      real(r8), parameter :: mw = 18._r8</a>
+   506) <a name="l506" style="background-color: #ffffff">      real(r8), parameter :: pi = 3.14159_r8</a>
+   507) <a name="l507" style="background-color: #ffffff">      real(r8), parameter :: rhow = 1._r8</a>
+   508) <a name="l508" style="background-color: #ffffff">      real(r8), parameter :: surften = 76._r8</a>
+   509) <a name="l509" style="background-color: #ffffff">      real(r8), parameter :: tair = 273._r8</a>
+   510) <a name="l510" style="background-color: #ffffff">      real(r8), parameter :: third = 1._r8/3._r8</a>
+   511) <a name="l511" style="background-color: #ffffff">      real(r8), parameter :: ugascon = 8.3e7_r8</a>
+   512) <a name="l512" style="background-color: #ffffff"></a>
+   513) <a name="l513" style="background-color: #ffffff"></a>
+   514) <a name="l514" style="background-color: #ffffff">!     effect of organics on surface tension is neglected</a>
+   515) <a name="l515" style="background-color: #ffffff">      a=2.e4_r8*mw*surften/(ugascon*tair*rhow)</a>
+   516) <a name="l516" style="background-color: #ffffff"></a>
+   517) <a name="l517" style="background-color: #ffffff">      do i=1,im</a>
+   518) <a name="l518" style="background-color: #ffffff">           rdry(i) = rdry_in(i)*1.0e6_r8   ! convert (m) to (microns)</a>
+   519) <a name="l519" style="background-color: #ffffff">           vol(i) = rdry(i)**3          ! vol is r**3, not volume</a>
+   520) <a name="l520" style="background-color: #ffffff">           b = vol(i)*hygro(i)</a>
+   521) <a name="l521" style="background-color: #ffffff"></a>
+   522) <a name="l522" style="background-color: #ffffff">!          quartic</a>
+   523) <a name="l523" style="background-color: #ffffff">           ss=min(s(i),1._r8-eps)</a>
+   524) <a name="l524" style="background-color: #ffffff">           ss=max(ss,1.e-10_r8)</a>
+   525) <a name="l525" style="background-color: #ffffff">           slog(i)=log(ss)</a>
+   526) <a name="l526" style="background-color: #ffffff">           p43(i)=-a/slog(i)</a>
+   527) <a name="l527" style="background-color: #ffffff">           p42(i)=0._r8</a>
+   528) <a name="l528" style="background-color: #ffffff">           p41(i)=b/slog(i)-vol(i)</a>
+   529) <a name="l529" style="background-color: #ffffff">           p40(i)=a*vol(i)/slog(i)</a>
+   530) <a name="l530" style="background-color: #ffffff">!          cubic for rh=1</a>
+   531) <a name="l531" style="background-color: #ffffff">           p32(i)=0._r8</a>
+   532) <a name="l532" style="background-color: #ffffff">           p31(i)=-b/a</a>
+   533) <a name="l533" style="background-color: #ffffff">           p30(i)=-vol(i)</a>
+   534) <a name="l534" style="background-color: #ffffff">      end do</a>
+   535) <a name="l535" style="background-color: #ffffff"></a>
+   536) <a name="l536" style="background-color: #ffffff"></a>
+   537) <a name="l537" style="background-color: #ffffff">       do 100 i=1,im</a>
+   538) <a name="l538" style="background-color: #ffffff"></a>
+   539) <a name="l539" style="background-color: #ffffff">!       if(vol(i).le.1.e-20)then</a>
+   540) <a name="l540" style="background-color: #ffffff">        if(vol(i).le.1.e-12_r8)then</a>
+   541) <a name="l541" style="background-color: #ffff99">           r(i)=rdry(i)</a>
+   542) <a name="l542" style="background-color: #ffff99">           go to 100</a>
+   543) <a name="l543" style="background-color: #ffff99">        endif</a>
+   544) <a name="l544" style="background-color: #ffff99"></a>
+   545) <a name="l545" style="background-color: #ffffff">        p=abs(p31(i))/(rdry(i)*rdry(i))</a>
+   546) <a name="l546" style="background-color: #ffffff">        if(p.lt.eps)then</a>
+   547) <a name="l547" style="background-color: #ffffff">!          approximate solution for small particles</a>
+   548) <a name="l548" style="background-color: #ffff99">           r(i)=rdry(i)*(1._r8+p*third/(1._r8-slog(i)*rdry(i)/a))</a>
+   549) <a name="l549" style="background-color: #ffff99">        else</a>
+   550) <a name="l550" style="background-color: #ffff99">           call </a><a style="background-color: #ffffff">makoh_quartic(cx4(1,i),p43(i),p42(i),p41(i),p40(i),1)</a>
+   551) <a name="l551" style="background-color: #ffffff">!          find smallest real(r8) solution</a>
+   552) <a name="l552" style="background-color: #ffffff">           r(i)=1000._r8*rdry(i)</a>
+   553) <a name="l553" style="background-color: #ffffff">           nsol=0</a>
+   554) <a name="l554" style="background-color: #ffffff">           do n=1,4</a>
+   555) <a name="l555" style="background-color: #ffffff">              xr=real(cx4(n,i))</a>
+   556) <a name="l556" style="background-color: #ffffff">              xi=aimag(cx4(n,i))</a>
+   557) <a name="l557" style="background-color: #ffffff">              if(abs(xi).gt.abs(xr)*eps) cycle  </a>
+   558) <a name="l558" style="background-color: #ffffff">              if(xr.gt.r(i)) cycle  </a>
+   559) <a name="l559" style="background-color: #ffffff">              if(xr.lt.rdry(i)*(1._r8-eps)) cycle  </a>
+   560) <a name="l560" style="background-color: #ffffff">              if(xr.ne.xr) cycle  </a>
+   561) <a name="l561" style="background-color: #ffffff">              r(i)=xr</a>
+   562) <a name="l562" style="background-color: #ffffff">              nsol=n</a>
+   563) <a name="l563" style="background-color: #ffffff">           end do  </a>
+   564) <a name="l564" style="background-color: #ffffff">           if(nsol.eq.0)then</a>
+   565) <a name="l565" style="background-color: #ffff99">              write(iulog,*)   &amp;</a>
+   566) <a name="l566" style="background-color: #ffff99">               'ccm kohlerc - no real(r8) solution found (quartic)'</a>
+   567) <a name="l567" style="background-color: #ffff99">              write(iulog,*)'roots =', (cx4(n,i),n=1,4)</a>
+   568) <a name="l568" style="background-color: #ffff99">              write(iulog,*)'p0-p3 =', p40(i), p41(i), p42(i), p43(i)</a>
+   569) <a name="l569" style="background-color: #ffff99">              write(iulog,*)'rh=',s(i)</a>
+   570) <a name="l570" style="background-color: #ffff99">              write(iulog,*)'setting radius to dry radius=',rdry(i)</a>
+   571) <a name="l571" style="background-color: #ffff99">              r(i)=rdry(i)</a>
+   572) <a name="l572" style="background-color: #ffff99">!             stop</a>
+   573) <a name="l573" style="background-color: #ffff99">           endif</a>
+   574) <a name="l574" style="background-color: #ffff99">        endif</a>
+   575) <a name="l575" style="background-color: #ffff99"></a>
+   576) <a name="l576" style="background-color: #ffffff">        if(s(i).gt.1._r8-eps)then</a>
+   577) <a name="l577" style="background-color: #ffffff">!          save quartic solution at s=1-eps</a>
+   578) <a name="l578" style="background-color: #ffff99">           r4=r(i)</a>
+   579) <a name="l579" style="background-color: #ffff99">!          cubic for rh=1</a>
+   580) <a name="l580" style="background-color: #ffff99">           p=abs(p31(i))/(rdry(i)*rdry(i))</a>
+   581) <a name="l581" style="background-color: #ffff99">           if(p.lt.eps)then</a>
+   582) <a name="l582" style="background-color: #ffff99">              r(i)=rdry(i)*(1._r8+p*third)</a>
+   583) <a name="l583" style="background-color: #ffff99">           else</a>
+   584) <a name="l584" style="background-color: #ffff99">              call makoh_cubic(cx3,p32,p31,p30,im)</a>
+   585) <a name="l585" style="background-color: #ffff99">!             find smallest real(r8) solution</a>
+   586) <a name="l586" style="background-color: #ffff99">              r(i)=1000._r8*rdry(i)</a>
+   587) <a name="l587" style="background-color: #ffff99">              nsol=0</a>
+   588) <a name="l588" style="background-color: #ffff99">              do n=1,3</a>
+   589) <a name="l589" style="background-color: #ffff99">                 xr=real(cx3(n,i))</a>
+   590) <a name="l590" style="background-color: #ffff99">                 xi=aimag(cx3(n,i))</a>
+   591) <a name="l591" style="background-color: #ffff99">                 if(abs(xi).gt.abs(xr)*eps) cycle  </a>
+   592) <a name="l592" style="background-color: #ffff99">                 if(xr.gt.r(i)) cycle  </a>
+   593) <a name="l593" style="background-color: #ffff99">                 if(xr.lt.rdry(i)*(1._r8-eps)) cycle  </a>
+   594) <a name="l594" style="background-color: #ffff99">                 if(xr.ne.xr) cycle  </a>
+   595) <a name="l595" style="background-color: #ffff99">                 r(i)=xr</a>
+   596) <a name="l596" style="background-color: #ffff99">                 nsol=n</a>
+   597) <a name="l597" style="background-color: #ffff99">              end do  </a>
+   598) <a name="l598" style="background-color: #ffff99">              if(nsol.eq.0)then</a>
+   599) <a name="l599" style="background-color: #ffff99">                 write(iulog,*)   &amp;</a>
+   600) <a name="l600" style="background-color: #ffff99">                  'ccm kohlerc - no real(r8) solution found (cubic)'</a>
+   601) <a name="l601" style="background-color: #ffff99">                 write(iulog,*)'roots =', (cx3(n,i),n=1,3)</a>
+   602) <a name="l602" style="background-color: #ffff99">                 write(iulog,*)'p0-p2 =', p30(i), p31(i), p32(i)</a>
+   603) <a name="l603" style="background-color: #ffff99">                 write(iulog,*)'rh=',s(i)</a>
+   604) <a name="l604" style="background-color: #ffff99">                 write(iulog,*)'setting radius to dry radius=',rdry(i)</a>
+   605) <a name="l605" style="background-color: #ffff99">                 r(i)=rdry(i)</a>
+   606) <a name="l606" style="background-color: #ffff99">!                stop</a>
+   607) <a name="l607" style="background-color: #ffff99">              endif</a>
+   608) <a name="l608" style="background-color: #ffff99">           endif</a>
+   609) <a name="l609" style="background-color: #ffff99">           r3=r(i)</a>
+   610) <a name="l610" style="background-color: #ffff99">!          now interpolate between quartic, cubic solutions</a>
+   611) <a name="l611" style="background-color: #ffff99">           r(i)=(r4*(1._r8-s(i))+r3*(s(i)-1._r8+eps))/eps</a>
+   612) <a name="l612" style="background-color: #ffff99">        endif</a>
+   613) <a name="l613" style="background-color: #ffff99"></a>
+   614) <a name="l614" style="background-color: #ffff99">  100 continue</a>
+   615) <a name="l615" style="background-color: #ffff99"></a>
+   616) <a name="l616" style="background-color: #ffff99">! bound and convert from microns to m</a>
+   617) <a name="l617" style="background-color: #ffffff">      do i=1,im</a>
+   618) <a name="l618" style="background-color: #ffffff">         r(i) = min(r(i),30._r8) ! upper bound based on 1 day lifetime</a>
+   619) <a name="l619" style="background-color: #ffffff">         rwet_out(i) = r(i)*1.e-6_r8</a>
+   620) <a name="l620" style="background-color: #ffffff">      end do</a>
+   621) <a name="l621" style="background-color: #ffffff"></a>
+   622) <a name="l622" style="background-color: #ffffff">      return</a>
+   623) <a name="l623" style="background-color: #ffffff">      end subroutine modal_aero_kohler</a>
+   624) <a name="l624" style="background-color: #ffffff"></a>
+   625) <a name="l625" style="background-color: #ffffff"></a>
+   626) <a name="l626" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   627) <a name="l627" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">makoh_cubic( cx, p2, p1, p0, im )</a>
+   628) <a name="l628" style="background-color: #ffcccc">!</a>
+   629) <a name="l629" style="background-color: #ffcccc">!     solves  x**3 + p2 x**2 + p1 x + p0 = 0</a>
+   630) <a name="l630" style="background-color: #ffcccc">!     where p0, p1, p2 are real</a>
+   631) <a name="l631" style="background-color: #ffcccc">!</a>
+   632) <a name="l632" style="background-color: #ffcccc">      integer, parameter :: imx=200</a>
+   633) <a name="l633" style="background-color: #ffcccc">      integer :: im</a>
+   634) <a name="l634" style="background-color: #ffcccc">      real(r8) :: p0(imx), p1(imx), p2(imx)</a>
+   635) <a name="l635" style="background-color: #ffcccc">      complex(r8) :: cx(3,imx)</a>
+   636) <a name="l636" style="background-color: #ffcccc"></a>
+   637) <a name="l637" style="background-color: #ffcccc">      integer :: i</a>
+   638) <a name="l638" style="background-color: #ffcccc">      real(r8) :: eps, q(imx), r(imx), sqrt3, third</a>
+   639) <a name="l639" style="background-color: #ffcccc">      complex(r8) :: ci, cq, crad(imx), cw, cwsq, cy(imx), cz(imx)</a>
+   640) <a name="l640" style="background-color: #ffcccc"></a>
+   641) <a name="l641" style="background-color: #ffcccc">      save eps</a>
+   642) <a name="l642" style="background-color: #ffcccc">      data eps/1.e-20_r8/</a>
+   643) <a name="l643" style="background-color: #ffcccc"></a>
+   644) <a name="l644" style="background-color: #ffcccc">      third=1._r8/3._r8</a>
+   645) <a name="l645" style="background-color: #ffcccc">      ci=cmplx(0._r8,1._r8,r8)</a>
+   646) <a name="l646" style="background-color: #ffcccc">      sqrt3=sqrt(3._r8)</a>
+   647) <a name="l647" style="background-color: #ffcccc">      cw=0.5_r8*(-1+ci*sqrt3)</a>
+   648) <a name="l648" style="background-color: #ffcccc">      cwsq=0.5_r8*(-1-ci*sqrt3)</a>
+   649) <a name="l649" style="background-color: #ffcccc"></a>
+   650) <a name="l650" style="background-color: #ffcccc">      do i=1,im</a>
+   651) <a name="l651" style="background-color: #ffcccc">      if(p1(i).eq.0._r8)then</a>
+   652) <a name="l652" style="background-color: #ffcccc">!        completely insoluble particle</a>
+   653) <a name="l653" style="background-color: #ffcccc">         cx(1,i)=(-p0(i))**third</a>
+   654) <a name="l654" style="background-color: #ffcccc">         cx(2,i)=cx(1,i)</a>
+   655) <a name="l655" style="background-color: #ffcccc">         cx(3,i)=cx(1,i)</a>
+   656) <a name="l656" style="background-color: #ffcccc">      else</a>
+   657) <a name="l657" style="background-color: #ffcccc">         q(i)=p1(i)/3._r8</a>
+   658) <a name="l658" style="background-color: #ffcccc">         r(i)=p0(i)/2._r8</a>
+   659) <a name="l659" style="background-color: #ffcccc">         crad(i)=r(i)*r(i)+q(i)*q(i)*q(i)</a>
+   660) <a name="l660" style="background-color: #ffcccc">         crad(i)=sqrt(crad(i))</a>
+   661) <a name="l661" style="background-color: #ffcccc"></a>
+   662) <a name="l662" style="background-color: #ffcccc">         cy(i)=r(i)-crad(i)</a>
+   663) <a name="l663" style="background-color: #ffcccc">         if (abs(cy(i)).gt.eps) cy(i)=cy(i)**third</a>
+   664) <a name="l664" style="background-color: #ffcccc">         cq=q(i)</a>
+   665) <a name="l665" style="background-color: #ffcccc">         cz(i)=-cq/cy(i)</a>
+   666) <a name="l666" style="background-color: #ffcccc"></a>
+   667) <a name="l667" style="background-color: #ffcccc">         cx(1,i)=-cy(i)-cz(i)</a>
+   668) <a name="l668" style="background-color: #ffcccc">         cx(2,i)=-cw*cy(i)-cwsq*cz(i)</a>
+   669) <a name="l669" style="background-color: #ffcccc">         cx(3,i)=-cwsq*cy(i)-cw*cz(i)</a>
+   670) <a name="l670" style="background-color: #ffcccc">      endif</a>
+   671) <a name="l671" style="background-color: #ffcccc">      enddo</a>
+   672) <a name="l672" style="background-color: #ffcccc"></a>
+   673) <a name="l673" style="background-color: #ffcccc">      return</a>
+   674) <a name="l674" style="background-color: #ffcccc">      end subroutine makoh_cubic</a>
+   675) <a name="l675" style="background-color: #ffffff"></a>
+   676) <a name="l676" style="background-color: #ffffff"></a>
+   677) <a name="l677" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   678) <a name="l678" style="background-color: #ffffff">      subroutine makoh_quartic( cx, p3, p2, p1, p0, im )</a>
+   679) <a name="l679" style="background-color: #ffffff"></a>
+   680) <a name="l680" style="background-color: #ffffff">!     solves x**4 + p3 x**3 + p2 x**2 + p1 x + p0 = 0</a>
+   681) <a name="l681" style="background-color: #ffffff">!     where p0, p1, p2, p3 are real</a>
+   682) <a name="l682" style="background-color: #ffffff">!</a>
+   683) <a name="l683" style="background-color: #ffffff">      integer, parameter :: imx=200</a>
+   684) <a name="l684" style="background-color: #ffffff">      integer :: im</a>
+   685) <a name="l685" style="background-color: #ffffff">      real(r8) :: p0(imx), p1(imx), p2(imx), p3(imx)</a>
+   686) <a name="l686" style="background-color: #ffffff">      complex(r8) :: cx(4,imx)</a>
+   687) <a name="l687" style="background-color: #ffffff"></a>
+   688) <a name="l688" style="background-color: #ffffff">      integer :: i</a>
+   689) <a name="l689" style="background-color: #ffffff">      real(r8) :: third, q(imx), r(imx)</a>
+   690) <a name="l690" style="background-color: #ffffff">      complex(r8) :: cb(imx), cb0(imx), cb1(imx),   &amp;</a>
+   691) <a name="l691" style="background-color: #ffffff">                     crad(imx), cy(imx), czero</a>
+   692) <a name="l692" style="background-color: #ffffff"></a>
+   693) <a name="l693" style="background-color: #ffffff"></a>
+   694) <a name="l694" style="background-color: #ffffff">      czero=cmplx(0.0_r8,0.0_r8,r8)</a>
+   695) <a name="l695" style="background-color: #ffffff">      third=1._r8/3._r8</a>
+   696) <a name="l696" style="background-color: #ffffff"></a>
+   697) <a name="l697" style="background-color: #ffffff">      do 10 i=1,im</a>
+   698) <a name="l698" style="background-color: #ffffff"></a>
+   699) <a name="l699" style="background-color: #ffffff">      q(i)=-p2(i)*p2(i)/36._r8+(p3(i)*p1(i)-4*p0(i))/12._r8</a>
+   700) <a name="l700" style="background-color: #ffffff">      r(i)=-(p2(i)/6)**3+p2(i)*(p3(i)*p1(i)-4*p0(i))/48._r8   &amp;</a>
+   701) <a name="l701" style="background-color: #ffffff">       +(4*p0(i)*p2(i)-p0(i)*p3(i)*p3(i)-p1(i)*p1(i))/16</a>
+   702) <a name="l702" style="background-color: #ffffff"></a>
+   703) <a name="l703" style="background-color: #ffffff">      crad(i)=r(i)*r(i)+q(i)*q(i)*q(i)</a>
+   704) <a name="l704" style="background-color: #ffffff">      crad(i)=sqrt(crad(i))</a>
+   705) <a name="l705" style="background-color: #ffffff"></a>
+   706) <a name="l706" style="background-color: #ffffff">      cb(i)=r(i)-crad(i)</a>
+   707) <a name="l707" style="background-color: #ffffff">      if(cb(i).eq.czero)then</a>
+   708) <a name="l708" style="background-color: #ffffff">!        insoluble particle</a>
+   709) <a name="l709" style="background-color: #ffff99">         cx(1,i)=(-p1(i))**third</a>
+   710) <a name="l710" style="background-color: #ffff99">         cx(2,i)=cx(1,i)</a>
+   711) <a name="l711" style="background-color: #ffff99">         cx(3,i)=cx(1,i)</a>
+   712) <a name="l712" style="background-color: #ffff99">         cx(4,i)=cx(1,i)</a>
+   713) <a name="l713" style="background-color: #ffff99">      else</a>
+   714) <a name="l714" style="background-color: #ffffff">         cb(i)=cb(i)**third</a>
+   715) <a name="l715" style="background-color: #ffffff"></a>
+   716) <a name="l716" style="background-color: #ffffff">         cy(i)=-cb(i)+q(i)/cb(i)+p2(i)/6</a>
+   717) <a name="l717" style="background-color: #ffffff"></a>
+   718) <a name="l718" style="background-color: #ffffff">         cb0(i)=sqrt(cy(i)*cy(i)-p0(i))</a>
+   719) <a name="l719" style="background-color: #ffffff">         cb1(i)=(p3(i)*cy(i)-p1(i))/(2*cb0(i))</a>
+   720) <a name="l720" style="background-color: #ffffff"></a>
+   721) <a name="l721" style="background-color: #ffffff">         cb(i)=p3(i)/2+cb1(i)</a>
+   722) <a name="l722" style="background-color: #ffffff">         crad(i)=cb(i)*cb(i)-4*(cy(i)+cb0(i))</a>
+   723) <a name="l723" style="background-color: #ffffff">         crad(i)=sqrt(crad(i))</a>
+   724) <a name="l724" style="background-color: #ffffff">         cx(1,i)=(-cb(i)+crad(i))/2._r8</a>
+   725) <a name="l725" style="background-color: #ffffff">         cx(2,i)=(-cb(i)-crad(i))/2._r8</a>
+   726) <a name="l726" style="background-color: #ffffff"></a>
+   727) <a name="l727" style="background-color: #ffffff">         cb(i)=p3(i)/2-cb1(i)</a>
+   728) <a name="l728" style="background-color: #ffffff">         crad(i)=cb(i)*cb(i)-4*(cy(i)-cb0(i))</a>
+   729) <a name="l729" style="background-color: #ffffff">         crad(i)=sqrt(crad(i))</a>
+   730) <a name="l730" style="background-color: #ffffff">         cx(3,i)=(-cb(i)+crad(i))/2._r8</a>
+   731) <a name="l731" style="background-color: #ffffff">         cx(4,i)=(-cb(i)-crad(i))/2._r8</a>
+   732) <a name="l732" style="background-color: #ffffff">      endif</a>
+   733) <a name="l733" style="background-color: #ffffff">   10 continue</a>
+   734) <a name="l734" style="background-color: #ffffff"></a>
+   735) <a name="l735" style="background-color: #ffffff">      return</a>
+   736) <a name="l736" style="background-color: #ffffff">      end subroutine makoh_quartic</a>
+   737) <a name="l737" style="background-color: #ffffff"></a>
+   738) <a name="l738" style="background-color: #ffffff">!----------------------------------------------------------------------</a>
+   739) <a name="l739" style="background-color: #ffffff"></a>
+   740) <a name="l740" style="background-color: #ffffff">   end module modal_aero_wateruptake</a>
+   741) <a name="l741" style="background-color: #ffffff"></a>
+   742) <a name="l742" style="background-color: #ffffff"></a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

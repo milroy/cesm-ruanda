@@ -1,0 +1,933 @@
+<html>
+<head>
+<title>Listing of CNAllocationMod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;CNAllocationMod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module CNAllocationMod</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">!BOP</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !MODULE: CNAllocationMod</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     9) <a name="l9" style="background-color: #ffffff">! Module holding routines used in allocation model for coupled carbon</a>
+    10) <a name="l10" style="background-color: #ffffff">! nitrogen code.</a>
+    11) <a name="l11" style="background-color: #ffffff">!</a>
+    12) <a name="l12" style="background-color: #ffffff">! !USES:</a>
+    13) <a name="l13" style="background-color: #ffffff">  use shr_kind_mod, only: r8 =&gt; shr_kind_r8</a>
+    14) <a name="l14" style="background-color: #ffffff">  use abortutils  , only: endrun</a>
+    15) <a name="l15" style="background-color: #ffffff">  implicit none</a>
+    16) <a name="l16" style="background-color: #ffffff">  save</a>
+    17) <a name="l17" style="background-color: #ffffff">  private</a>
+    18) <a name="l18" style="background-color: #ffffff">! !PUBLIC MEMBER FUNCTIONS:</a>
+    19) <a name="l19" style="background-color: #ffffff">  public :: CNAllocationInit    ! Initialization</a>
+    20) <a name="l20" style="background-color: #ffffff">  public :: CNAllocation        ! run method</a>
+    21) <a name="l21" style="background-color: #ffffff"></a>
+    22) <a name="l22" style="background-color: #ffffff">! !PUBLIC DATA MEMBERS:</a>
+    23) <a name="l23" style="background-color: #ffffff">   character(len=*), parameter, public :: suplnAll=&amp; ! Supplemental Nitrogen for all PFT's</a>
+    24) <a name="l24" style="background-color: #ffffff">                     'ALL'</a>
+    25) <a name="l25" style="background-color: #ffffff">   character(len=*), parameter, public :: suplnCrp=&amp; ! Supplemental Nitrogen for prognostic Crop</a>
+    26) <a name="l26" style="background-color: #ffffff">                     'PROG_CROP_ONLY'</a>
+    27) <a name="l27" style="background-color: #ffffff">   character(len=*), parameter, public :: suplnNon=&amp; ! No supplemental Nitrogen</a>
+    28) <a name="l28" style="background-color: #ffffff">                     'NONE'</a>
+    29) <a name="l29" style="background-color: #ffffff">   character(len=15), public :: suplnitro = suplnNon ! Supplemental Nitrogen mode</a>
+    30) <a name="l30" style="background-color: #ffffff">! !PRIVATE DATA MEMBERS:</a>
+    31) <a name="l31" style="background-color: #ffffff">   real(r8):: dt                            !decomp timestep (seconds)</a>
+    32) <a name="l32" style="background-color: #ffffff">   real(r8):: bdnr                          !bulk denitrification rate (1/s)</a>
+    33) <a name="l33" style="background-color: #ffffff">   real(r8):: dayscrecover                  !number of days to recover negative cpool</a>
+    34) <a name="l34" style="background-color: #ffffff">   real(r8), pointer :: arepr(:)            !reproduction allocation coefficient</a>
+    35) <a name="l35" style="background-color: #ffffff">   real(r8), pointer :: aroot(:)            !root allocation coefficient</a>
+    36) <a name="l36" style="background-color: #ffffff">   real(r8), pointer:: col_plant_ndemand(:) !column-level plant N demand</a>
+    37) <a name="l37" style="background-color: #ffffff">   logical :: Carbon_only = .false.         ! Carbon only mode </a>
+    38) <a name="l38" style="background-color: #ffffff">                                            ! (Nitrogen is prescribed NOT prognostic)</a>
+    39) <a name="l39" style="background-color: #ffffff">   logical :: crop_supln  = .false.         ! Prognostic crop receives supplemental Nitrogen</a>
+    40) <a name="l40" style="background-color: #ffffff">!</a>
+    41) <a name="l41" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    42) <a name="l42" style="background-color: #ffffff">! 8/5/03: Created by Peter Thornton</a>
+    43) <a name="l43" style="background-color: #ffffff">!</a>
+    44) <a name="l44" style="background-color: #ffffff">!EOP</a>
+    45) <a name="l45" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    46) <a name="l46" style="background-color: #ffffff"></a>
+    47) <a name="l47" style="background-color: #ffffff">contains</a>
+    48) <a name="l48" style="background-color: #ffffff"></a>
+    49) <a name="l49" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    50) <a name="l50" style="background-color: #ffffff">!BOP</a>
+    51) <a name="l51" style="background-color: #ffffff">!</a>
+    52) <a name="l52" style="background-color: #ffffff">! !IROUTINE: CNAllocationInit</a>
+    53) <a name="l53" style="background-color: #ffffff">!</a>
+    54) <a name="l54" style="background-color: #ffffff">! !INTERFACE:</a>
+    55) <a name="l55" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">CNAllocationInit ( lbc, ubc, lbp, ubp )</a>
+    56) <a name="l56" style="background-color: #ffcccc">!</a>
+    57) <a name="l57" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+    58) <a name="l58" style="background-color: #ffcccc">!</a>
+    59) <a name="l59" style="background-color: #ffcccc">! !USES:</a>
+    60) <a name="l60" style="background-color: #ffcccc">   use clm_varcon      , only: secspday</a>
+    61) <a name="l61" style="background-color: #ffcccc">   use clm_time_manager, only: get_step_size</a>
+    62) <a name="l62" style="background-color: #ffcccc">   use surfrdMod       , only: crop_prog</a>
+    63) <a name="l63" style="background-color: #ffcccc">   use clm_varctl      , only: iulog, use_c13</a>
+    64) <a name="l64" style="background-color: #ffcccc">   use shr_infnan_mod  , only: nan =&gt; shr_infnan_nan, assignment(=)</a>
+    65) <a name="l65" style="background-color: #ffcccc">! !ARGUMENTS:</a>
+    66) <a name="l66" style="background-color: #ffcccc">   implicit none</a>
+    67) <a name="l67" style="background-color: #ffcccc">   integer, intent(in) :: lbc, ubc        ! column-index bounds</a>
+    68) <a name="l68" style="background-color: #ffcccc">   integer, intent(in) :: lbp, ubp        ! pft-index bounds</a>
+    69) <a name="l69" style="background-color: #ffcccc">!</a>
+    70) <a name="l70" style="background-color: #ffcccc">! !CALLED FROM:</a>
+    71) <a name="l71" style="background-color: #ffcccc">!</a>
+    72) <a name="l72" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+    73) <a name="l73" style="background-color: #ffcccc">! 4/6/11: Created by Erik Kluzek</a>
+    74) <a name="l74" style="background-color: #ffcccc">!</a>
+    75) <a name="l75" style="background-color: #ffcccc">! !LOCAL VARIABLES:</a>
+    76) <a name="l76" style="background-color: #ffcccc">    character(len=32) :: subname = 'CNAllocationInit'</a>
+    77) <a name="l77" style="background-color: #ffcccc">!EOP</a>
+    78) <a name="l78" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+    79) <a name="l79" style="background-color: #ffcccc">   if ( crop_prog )then</a>
+    80) <a name="l80" style="background-color: #ffcccc">      allocate(arepr(lbp:ubp))</a>
+    81) <a name="l81" style="background-color: #ffcccc">      allocate(aroot(lbp:ubp))</a>
+    82) <a name="l82" style="background-color: #ffcccc">      arepr(:) = nan</a>
+    83) <a name="l83" style="background-color: #ffcccc">      aroot(:) = nan</a>
+    84) <a name="l84" style="background-color: #ffcccc">   end if</a>
+    85) <a name="l85" style="background-color: #ffcccc">   allocate(col_plant_ndemand(lbc:ubc))</a>
+    86) <a name="l86" style="background-color: #ffcccc">   col_plant_ndemand(:) = nan</a>
+    87) <a name="l87" style="background-color: #ffcccc"></a>
+    88) <a name="l88" style="background-color: #ffcccc">   ! set time steps</a>
+    89) <a name="l89" style="background-color: #ffcccc">   dt = real( get_step_size(), r8 )</a>
+    90) <a name="l90" style="background-color: #ffcccc"></a>
+    91) <a name="l91" style="background-color: #ffcccc">   ! set some space-and-time constant parameters </a>
+    92) <a name="l92" style="background-color: #ffcccc">   bdnr         = 0.5_r8 * (dt/secspday)</a>
+    93) <a name="l93" style="background-color: #ffcccc">   dayscrecover = 30.0_r8</a>
+    94) <a name="l94" style="background-color: #ffcccc"></a>
+    95) <a name="l95" style="background-color: #ffcccc">   ! Change namelist settings into private logical variables</a>
+    96) <a name="l96" style="background-color: #ffcccc">   select case(suplnitro)</a>
+    97) <a name="l97" style="background-color: #ffcccc">      case(suplnNon)</a>
+    98) <a name="l98" style="background-color: #ffcccc">         Carbon_only = .false.</a>
+    99) <a name="l99" style="background-color: #ffcccc">         crop_supln  = .false.</a>
+   100) <a name="l100" style="background-color: #ffcccc">      case(suplnCrp)</a>
+   101) <a name="l101" style="background-color: #ffcccc">         Carbon_only = .false.</a>
+   102) <a name="l102" style="background-color: #ffcccc">         crop_supln  = .true.</a>
+   103) <a name="l103" style="background-color: #ffcccc">         if ( .not. crop_prog )then</a>
+   104) <a name="l104" style="background-color: #ffcccc">            call endrun( trim(subname)//'ERROR: '//trim(suplnCrp)// &amp;</a>
+   105) <a name="l105" style="background-color: #ffcccc">                         ' can NOT be on when crop is NOT' )</a>
+   106) <a name="l106" style="background-color: #ffcccc">         end if</a>
+   107) <a name="l107" style="background-color: #ffcccc">      case(suplnAll)</a>
+   108) <a name="l108" style="background-color: #ffcccc">         Carbon_only = .true.</a>
+   109) <a name="l109" style="background-color: #ffcccc">         crop_supln  = .false.</a>
+   110) <a name="l110" style="background-color: #ffcccc">      case default</a>
+   111) <a name="l111" style="background-color: #ffcccc">         write(iulog,*) 'Supplemental Nitrogen flag (suplnitro) can only be: ', &amp;</a>
+   112) <a name="l112" style="background-color: #ffcccc">                        suplnNon, &quot;,&quot;, suplnCrp, ', or ', suplnAll</a>
+   113) <a name="l113" style="background-color: #ffcccc">         call endrun( trim(subname)//'ERROR: supplemental Nitrogen flag is not correct' )</a>
+   114) <a name="l114" style="background-color: #ffcccc">   end select</a>
+   115) <a name="l115" style="background-color: #ffcccc"></a>
+   116) <a name="l116" style="background-color: #ffcccc">end subroutine CNAllocationInit</a>
+   117) <a name="l117" style="background-color: #ffffff"></a>
+   118) <a name="l118" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   119) <a name="l119" style="background-color: #ffffff"></a>
+   120) <a name="l120" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   121) <a name="l121" style="background-color: #ffffff">!BOP</a>
+   122) <a name="l122" style="background-color: #ffffff">!</a>
+   123) <a name="l123" style="background-color: #ffffff">! !IROUTINE: CNAllocation</a>
+   124) <a name="l124" style="background-color: #ffffff">!</a>
+   125) <a name="l125" style="background-color: #ffffff">! !INTERFACE:</a>
+   126) <a name="l126" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">CNAllocation (lbp, ubp, lbc, ubc, &amp;</a>
+   127) <a name="l127" style="background-color: #ffcccc">       num_soilc, filter_soilc, num_soilp, filter_soilp, &amp;</a>
+   128) <a name="l128" style="background-color: #ffcccc">       num_pcropp )</a>
+   129) <a name="l129" style="background-color: #ffcccc">!</a>
+   130) <a name="l130" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+   131) <a name="l131" style="background-color: #ffcccc">!</a>
+   132) <a name="l132" style="background-color: #ffcccc">! !USES:</a>
+   133) <a name="l133" style="background-color: #ffcccc">   use clmtype</a>
+   134) <a name="l134" style="background-color: #ffcccc">   use clm_varctl, only: iulog, use_c13</a>
+   135) <a name="l135" style="background-color: #ffcccc">   use shr_sys_mod, only: shr_sys_flush</a>
+   136) <a name="l136" style="background-color: #ffcccc">   use pft2colMod, only: p2c</a>
+   137) <a name="l137" style="background-color: #ffcccc">   use pftvarcon , only: npcropmin, declfact, bfact, aleaff, arootf, astemf, &amp;</a>
+   138) <a name="l138" style="background-color: #ffcccc">                         arooti, fleafi, allconsl, allconss, grperc, grpnow</a>
+   139) <a name="l139" style="background-color: #ffcccc">   use clm_varcon, only: secspday, istsoil, istcrop</a>
+   140) <a name="l140" style="background-color: #ffcccc">   use clm_varpar, only: max_pft_per_col</a>
+   141) <a name="l141" style="background-color: #ffcccc">!</a>
+   142) <a name="l142" style="background-color: #ffcccc">! !ARGUMENTS:</a>
+   143) <a name="l143" style="background-color: #ffcccc">   implicit none</a>
+   144) <a name="l144" style="background-color: #ffcccc">   integer, intent(in) :: lbp, ubp        ! pft-index bounds</a>
+   145) <a name="l145" style="background-color: #ffcccc">   integer, intent(in) :: lbc, ubc        ! column-index bounds</a>
+   146) <a name="l146" style="background-color: #ffcccc">   integer, intent(in) :: num_soilc       ! number of soil columns in filter</a>
+   147) <a name="l147" style="background-color: #ffcccc">   integer, intent(in) :: filter_soilc(:) ! filter for soil columns</a>
+   148) <a name="l148" style="background-color: #ffcccc">   integer, intent(in) :: num_soilp       ! number of soil pfts in filter</a>
+   149) <a name="l149" style="background-color: #ffcccc">   integer, intent(in) :: filter_soilp(:) ! filter for soil pfts</a>
+   150) <a name="l150" style="background-color: #ffcccc">   integer, intent(in) :: num_pcropp      ! number of pfts in prognostic crop filter</a>
+   151) <a name="l151" style="background-color: #ffcccc">!</a>
+   152) <a name="l152" style="background-color: #ffcccc">! !CALLED FROM:</a>
+   153) <a name="l153" style="background-color: #ffcccc">! subroutine CNdecompAlloc in module CNdecompMod.F90</a>
+   154) <a name="l154" style="background-color: #ffcccc">!</a>
+   155) <a name="l155" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   156) <a name="l156" style="background-color: #ffcccc">! 8/5/03: Created by Peter Thornton</a>
+   157) <a name="l157" style="background-color: #ffcccc">! 10/23/03, Peter Thornton: migrated to vector data structures</a>
+   158) <a name="l158" style="background-color: #ffcccc">!</a>
+   159) <a name="l159" style="background-color: #ffcccc">! !LOCAL VARIABLES:</a>
+   160) <a name="l160" style="background-color: #ffcccc">! local pointers to implicit in arrays</a>
+   161) <a name="l161" style="background-color: #ffcccc">!</a>
+   162) <a name="l162" style="background-color: #ffcccc">   ! pft level</a>
+   163) <a name="l163" style="background-color: #ffcccc">   integer , pointer :: ivt(:)        ! pft vegetation type</a>
+   164) <a name="l164" style="background-color: #ffcccc">   integer , pointer :: pcolumn(:)    ! pft's column index</a>
+   165) <a name="l165" style="background-color: #ffcccc">   integer , pointer :: pfti(:)       ! initial pft index in landunit</a>
+   166) <a name="l166" style="background-color: #ffcccc">   real(r8), pointer :: lgsf(:)       ! long growing season factor [0-1]</a>
+   167) <a name="l167" style="background-color: #ffcccc">   real(r8), pointer :: xsmrpool(:)   ! (gC/m2) temporary photosynthate C pool</a>
+   168) <a name="l168" style="background-color: #ffcccc">   real(r8), pointer :: retransn(:)   ! (gN/m2) plant pool of retranslocated N</a>
+   169) <a name="l169" style="background-color: #ffcccc">   real(r8), pointer :: psnsun(:)     ! sunlit leaf-level photosynthesis (umol CO2 /m**2/ s)</a>
+   170) <a name="l170" style="background-color: #ffcccc">   real(r8), pointer :: psnsha(:)     ! shaded leaf-level photosynthesis (umol CO2 /m**2/ s)</a>
+   171) <a name="l171" style="background-color: #ffcccc"></a>
+   172) <a name="l172" style="background-color: #ffcccc">   real(r8), pointer :: c13_psnsun(:) ! C13 sunlit leaf-level photosynthesis (umol CO2 /m**2/ s)</a>
+   173) <a name="l173" style="background-color: #ffcccc">   real(r8), pointer :: c13_psnsha(:) ! C13 shaded leaf-level photosynthesis (umol CO2 /m**2/ s)</a>
+   174) <a name="l174" style="background-color: #ffcccc"></a>
+   175) <a name="l175" style="background-color: #ffcccc">   real(r8), pointer :: laisun(:)     ! sunlit projected leaf area index</a>
+   176) <a name="l176" style="background-color: #ffcccc">   real(r8), pointer :: laisha(:)     ! shaded projected leaf area index</a>
+   177) <a name="l177" style="background-color: #ffcccc">   real(r8), pointer :: leaf_mr(:)</a>
+   178) <a name="l178" style="background-color: #ffcccc">   real(r8), pointer :: froot_mr(:)</a>
+   179) <a name="l179" style="background-color: #ffcccc">   real(r8), pointer :: livestem_mr(:)</a>
+   180) <a name="l180" style="background-color: #ffcccc">   real(r8), pointer :: livecroot_mr(:)</a>
+   181) <a name="l181" style="background-color: #ffcccc">   real(r8), pointer :: leaf_curmr(:)</a>
+   182) <a name="l182" style="background-color: #ffcccc">   real(r8), pointer :: froot_curmr(:)</a>
+   183) <a name="l183" style="background-color: #ffcccc">   real(r8), pointer :: livestem_curmr(:)</a>
+   184) <a name="l184" style="background-color: #ffcccc">   real(r8), pointer :: livecroot_curmr(:)</a>
+   185) <a name="l185" style="background-color: #ffcccc">   real(r8), pointer :: leaf_xsmr(:)</a>
+   186) <a name="l186" style="background-color: #ffcccc">   real(r8), pointer :: froot_xsmr(:)</a>
+   187) <a name="l187" style="background-color: #ffcccc">   real(r8), pointer :: livestem_xsmr(:)</a>
+   188) <a name="l188" style="background-color: #ffcccc">   real(r8), pointer :: livecroot_xsmr(:)</a>
+   189) <a name="l189" style="background-color: #ffcccc">   ! column level</a>
+   190) <a name="l190" style="background-color: #ffcccc">   real(r8), pointer :: sminn(:)      ! (gN/m2) soil mineral N</a>
+   191) <a name="l191" style="background-color: #ffcccc">   ! ecophysiological constants</a>
+   192) <a name="l192" style="background-color: #ffcccc">   real(r8), pointer :: woody(:)      ! binary flag for woody lifeform (1=woody, 0=not woody)</a>
+   193) <a name="l193" style="background-color: #ffcccc">   real(r8), pointer :: froot_leaf(:) ! allocation parameter: new fine root C per new leaf C (gC/gC)</a>
+   194) <a name="l194" style="background-color: #ffcccc">   real(r8), pointer :: croot_stem(:) ! allocation parameter: new coarse root C per new stem C (gC/gC)</a>
+   195) <a name="l195" style="background-color: #ffcccc">   real(r8), pointer :: stem_leaf(:)  ! allocation parameter: new stem c per new leaf C (gC/gC)</a>
+   196) <a name="l196" style="background-color: #ffcccc">   real(r8), pointer :: flivewd(:)    ! allocation parameter: fraction of new wood that is live (phloem and ray parenchyma) (no units)</a>
+   197) <a name="l197" style="background-color: #ffcccc">   real(r8), pointer :: leafcn(:)     ! leaf C:N (gC/gN)</a>
+   198) <a name="l198" style="background-color: #ffcccc">   real(r8), pointer :: frootcn(:)    ! fine root C:N (gC/gN)</a>
+   199) <a name="l199" style="background-color: #ffcccc">   real(r8), pointer :: livewdcn(:)   ! live wood (phloem and ray parenchyma) C:N (gC/gN)</a>
+   200) <a name="l200" style="background-color: #ffcccc">   real(r8), pointer :: deadwdcn(:)   ! dead wood (xylem and heartwood) C:N (gC/gN)</a>
+   201) <a name="l201" style="background-color: #ffcccc">   real(r8), pointer :: fcur2(:)      ! allocation parameter: fraction of allocation that goes to currently displayed growth, remainder to storage</a>
+   202) <a name="l202" style="background-color: #ffcccc">   integer, pointer :: plandunit(:)   ! index into landunit level quantities</a>
+   203) <a name="l203" style="background-color: #ffcccc">   integer, pointer :: clandunit(:)   ! index into landunit level quantities</a>
+   204) <a name="l204" style="background-color: #ffcccc">   integer , pointer :: itypelun(:)   ! landunit type</a>
+   205) <a name="l205" style="background-color: #ffcccc">   logical , pointer :: croplive(:)   ! flag, true if planted, not harvested</a>
+   206) <a name="l206" style="background-color: #ffcccc">   integer , pointer :: peaklai(:)    ! 1: max allowed lai; 0: not at max</a>
+   207) <a name="l207" style="background-color: #ffcccc">   real(r8), pointer :: gddmaturity(:)! gdd needed to harvest</a>
+   208) <a name="l208" style="background-color: #ffcccc">   real(r8), pointer :: huileaf(:)    ! heat unit index needed from planting to leaf emergence</a>
+   209) <a name="l209" style="background-color: #ffcccc">   real(r8), pointer :: huigrain(:)   ! same to reach vegetative maturity</a>
+   210) <a name="l210" style="background-color: #ffcccc">   real(r8), pointer :: hui(:)        ! =gdd since planting (gddplant)</a>
+   211) <a name="l211" style="background-color: #ffcccc">   real(r8), pointer :: leafout(:)    ! =gdd from top soil layer temperature</a>
+   212) <a name="l212" style="background-color: #ffcccc">   real(r8), pointer :: aleafi(:)     ! saved allocation coefficient from phase 2</a>
+   213) <a name="l213" style="background-color: #ffcccc">   real(r8), pointer :: astemi(:)     ! saved allocation coefficient from phase 2</a>
+   214) <a name="l214" style="background-color: #ffcccc">   real(r8), pointer :: aleaf(:)      ! leaf allocation coefficient</a>
+   215) <a name="l215" style="background-color: #ffcccc">   real(r8), pointer :: astem(:)      ! stem allocation coefficient</a>
+   216) <a name="l216" style="background-color: #ffcccc">   real(r8), pointer :: graincn(:)    ! grain C:N (gC/gN)</a>
+   217) <a name="l217" style="background-color: #ffcccc">!</a>
+   218) <a name="l218" style="background-color: #ffcccc">! local pointers to implicit in/out arrays</a>
+   219) <a name="l219" style="background-color: #ffcccc">!</a>
+   220) <a name="l220" style="background-color: #ffcccc">   ! pft level</a>
+   221) <a name="l221" style="background-color: #ffcccc">   real(r8), pointer :: gpp(:)                   ! GPP flux before downregulation (gC/m2/s)</a>
+   222) <a name="l222" style="background-color: #ffcccc">   real(r8), pointer :: availc(:)                ! C flux available for allocation (gC/m2/s)</a>
+   223) <a name="l223" style="background-color: #ffcccc">   real(r8), pointer :: xsmrpool_recover(:)         ! C flux assigned to recovery of negative cpool (gC/m2/s)</a>
+   224) <a name="l224" style="background-color: #ffcccc">   real(r8), pointer :: c_allometry(:)           ! C allocation index (DIM)</a>
+   225) <a name="l225" style="background-color: #ffcccc">   real(r8), pointer :: n_allometry(:)           ! N allocation index (DIM)</a>
+   226) <a name="l226" style="background-color: #ffcccc">   real(r8), pointer :: plant_ndemand(:)         ! N flux required to support initial GPP (gN/m2/s)</a>
+   227) <a name="l227" style="background-color: #ffcccc">   real(r8), pointer :: tempsum_potential_gpp(:) ! temporary annual sum of potential GPP </a>
+   228) <a name="l228" style="background-color: #ffcccc">   real(r8), pointer :: tempmax_retransn(:)      ! temporary annual max of retranslocated N pool (gN/m2)</a>
+   229) <a name="l229" style="background-color: #ffcccc">   real(r8), pointer :: annsum_potential_gpp(:)  ! annual sum of potential GPP</a>
+   230) <a name="l230" style="background-color: #ffcccc">   real(r8), pointer :: avail_retransn(:)        ! N flux available from retranslocation pool (gN/m2/s)</a>
+   231) <a name="l231" style="background-color: #ffcccc">   real(r8), pointer :: annmax_retransn(:)       ! annual max of retranslocated N pool</a>
+   232) <a name="l232" style="background-color: #ffcccc">   real(r8), pointer :: plant_nalloc(:)          ! total allocated N flux (gN/m2/s)</a>
+   233) <a name="l233" style="background-color: #ffcccc">   real(r8), pointer :: plant_calloc(:)          ! total allocated C flux (gC/m2/s)</a>
+   234) <a name="l234" style="background-color: #ffcccc">   real(r8), pointer :: excess_cflux(:)          ! C flux not allocated due to downregulation (gC/m2/s)</a>
+   235) <a name="l235" style="background-color: #ffcccc">   real(r8), pointer :: downreg(:)               ! fractional reduction in GPP due to N limitation (DIM)</a>
+   236) <a name="l236" style="background-color: #ffcccc">   real(r8), pointer :: annsum_npp(:)            ! annual sum of NPP, for wood allocation</a>
+   237) <a name="l237" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_xsmrpool(:)</a>
+   238) <a name="l238" style="background-color: #ffcccc">   real(r8), pointer :: psnsun_to_cpool(:)</a>
+   239) <a name="l239" style="background-color: #ffcccc">   real(r8), pointer :: psnshade_to_cpool(:)</a>
+   240) <a name="l240" style="background-color: #ffcccc"></a>
+   241) <a name="l241" style="background-color: #ffcccc">   real(r8), pointer :: c13_psnsun_to_cpool(:)</a>
+   242) <a name="l242" style="background-color: #ffcccc">   real(r8), pointer :: c13_psnshade_to_cpool(:)</a>
+   243) <a name="l243" style="background-color: #ffcccc"></a>
+   244) <a name="l244" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_leafc(:)</a>
+   245) <a name="l245" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_leafc_storage(:)</a>
+   246) <a name="l246" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_frootc(:)</a>
+   247) <a name="l247" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_frootc_storage(:)</a>
+   248) <a name="l248" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_livestemc(:)</a>
+   249) <a name="l249" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_livestemc_storage(:)</a>
+   250) <a name="l250" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_deadstemc(:)</a>
+   251) <a name="l251" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_deadstemc_storage(:)</a>
+   252) <a name="l252" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_livecrootc(:)</a>
+   253) <a name="l253" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_livecrootc_storage(:)</a>
+   254) <a name="l254" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_deadcrootc(:)</a>
+   255) <a name="l255" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_deadcrootc_storage(:)</a>
+   256) <a name="l256" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_gresp_storage(:)         ! allocation to growth respiration storage (gC/m2/s)</a>
+   257) <a name="l257" style="background-color: #ffcccc">   real(r8), pointer :: retransn_to_npool(:)              ! deployment of retranslocated N (gN/m2/s)</a>
+   258) <a name="l258" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_npool(:)                 ! deployment of soil mineral N uptake (gN/m2/s)</a>
+   259) <a name="l259" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_grainc(:)                ! allocation to grain C (gC/m2/s)</a>
+   260) <a name="l260" style="background-color: #ffcccc">   real(r8), pointer :: cpool_to_grainc_storage(:)        ! allocation to grain C storage (gC/m2/s)</a>
+   261) <a name="l261" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_grainn(:)                ! allocation to grain N (gN/m2/s)</a>
+   262) <a name="l262" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_grainn_storage(:)        ! allocation to grain N storage (gN/m2/s)</a>
+   263) <a name="l263" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_leafn(:)                 ! allocation to leaf N (gN/m2/s)</a>
+   264) <a name="l264" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_leafn_storage(:)         ! allocation to leaf N storage (gN/m2/s)</a>
+   265) <a name="l265" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_frootn(:)                ! allocation to fine root N (gN/m2/s)</a>
+   266) <a name="l266" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_frootn_storage(:)        ! allocation to fine root N storage (gN/m2/s)</a>
+   267) <a name="l267" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_livestemn(:)</a>
+   268) <a name="l268" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_livestemn_storage(:)</a>
+   269) <a name="l269" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_deadstemn(:)</a>
+   270) <a name="l270" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_deadstemn_storage(:)</a>
+   271) <a name="l271" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_livecrootn(:)</a>
+   272) <a name="l272" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_livecrootn_storage(:)</a>
+   273) <a name="l273" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_deadcrootn(:)</a>
+   274) <a name="l274" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_deadcrootn_storage(:)</a>
+   275) <a name="l275" style="background-color: #ffcccc">   ! column level</a>
+   276) <a name="l276" style="background-color: #ffcccc">   real(r8), pointer :: fpi(:)                          ! fraction of potential immobilization (no units)</a>
+   277) <a name="l277" style="background-color: #ffcccc">   real(r8), pointer :: fpg(:)                          ! fraction of potential gpp (no units)</a>
+   278) <a name="l278" style="background-color: #ffcccc">   real(r8), pointer :: potential_immob(:)</a>
+   279) <a name="l279" style="background-color: #ffcccc">   real(r8), pointer :: actual_immob(:)</a>
+   280) <a name="l280" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_plant(:)</a>
+   281) <a name="l281" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_denit_excess(:)</a>
+   282) <a name="l282" style="background-color: #ffcccc">   real(r8), pointer :: supplement_to_sminn(:)</a>
+   283) <a name="l283" style="background-color: #ffcccc">!</a>
+   284) <a name="l284" style="background-color: #ffcccc">! local pointers to implicit out arrays</a>
+   285) <a name="l285" style="background-color: #ffcccc">!</a>
+   286) <a name="l286" style="background-color: #ffcccc">!</a>
+   287) <a name="l287" style="background-color: #ffcccc">! !OTHER LOCAL VARIABLES:</a>
+   288) <a name="l288" style="background-color: #ffcccc">   integer :: c,p,l,pi             !indices</a>
+   289) <a name="l289" style="background-color: #ffcccc">   integer :: fp                   !lake filter pft index</a>
+   290) <a name="l290" style="background-color: #ffcccc">   integer :: fc                   !lake filter column index</a>
+   291) <a name="l291" style="background-color: #ffcccc">   integer :: nlimit               !flag for N limitation</a>
+   292) <a name="l292" style="background-color: #ffcccc">   real(r8):: mr                   !maintenance respiration (gC/m2/s)</a>
+   293) <a name="l293" style="background-color: #ffcccc">   real(r8):: f1,f2,f3,f4,g1,g2    !allocation parameters</a>
+   294) <a name="l294" style="background-color: #ffcccc">   real(r8):: cnl,cnfr,cnlw,cndw   !C:N ratios for leaf, fine root, and wood</a>
+   295) <a name="l295" style="background-color: #ffcccc">   real(r8):: fcur                 !fraction of current psn displayed as growth</a>
+   296) <a name="l296" style="background-color: #ffcccc">   real(r8):: sum_ndemand          !total column N demand (gN/m2/s)</a>
+   297) <a name="l297" style="background-color: #ffcccc">   real(r8):: gresp_storage        !temporary variable for growth resp to storage</a>
+   298) <a name="l298" style="background-color: #ffcccc">   real(r8):: nlc                  !temporary variable for total new leaf carbon allocation</a>
+   299) <a name="l299" style="background-color: #ffcccc">   real(r8):: curmr, curmr_ratio   !xsmrpool temporary variables</a>
+   300) <a name="l300" style="background-color: #ffcccc">   real(r8) f5                     !grain allocation parameter</a>
+   301) <a name="l301" style="background-color: #ffcccc">   real(r8) cng                    !C:N ratio for grain (= cnlw for now; slevis)</a>
+   302) <a name="l302" style="background-color: #ffcccc">   real(r8) fleaf                  !fraction allocated to leaf</a>
+   303) <a name="l303" style="background-color: #ffcccc"></a>
+   304) <a name="l304" style="background-color: #ffcccc"></a>
+   305) <a name="l305" style="background-color: #ffcccc">!EOP</a>
+   306) <a name="l306" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   307) <a name="l307" style="background-color: #ffcccc">   ! Assign local pointers to derived type arrays (in)</a>
+   308) <a name="l308" style="background-color: #ffcccc">   ivt                         =&gt; pft%itype</a>
+   309) <a name="l309" style="background-color: #ffcccc">   pcolumn                     =&gt; pft%column</a>
+   310) <a name="l310" style="background-color: #ffcccc">   plandunit                   =&gt; pft%landunit</a>
+   311) <a name="l311" style="background-color: #ffcccc">   clandunit                   =&gt; col%landunit</a>
+   312) <a name="l312" style="background-color: #ffcccc">   pfti                        =&gt; col%pfti</a>
+   313) <a name="l313" style="background-color: #ffcccc">   itypelun                    =&gt; lun%itype</a>
+   314) <a name="l314" style="background-color: #ffcccc">   lgsf                        =&gt; pepv%lgsf</a>
+   315) <a name="l315" style="background-color: #ffcccc">   xsmrpool                    =&gt; pcs%xsmrpool</a>
+   316) <a name="l316" style="background-color: #ffcccc">   retransn                    =&gt; pns%retransn</a>
+   317) <a name="l317" style="background-color: #ffcccc">   psnsun                      =&gt; pcf%psnsun</a>
+   318) <a name="l318" style="background-color: #ffcccc">   psnsha                      =&gt; pcf%psnsha</a>
+   319) <a name="l319" style="background-color: #ffcccc"></a>
+   320) <a name="l320" style="background-color: #ffcccc">   c13_psnsun                  =&gt; pc13f%psnsun</a>
+   321) <a name="l321" style="background-color: #ffcccc">   c13_psnsha                  =&gt; pc13f%psnsha</a>
+   322) <a name="l322" style="background-color: #ffcccc"></a>
+   323) <a name="l323" style="background-color: #ffcccc">   laisun                      =&gt; pps%laisun</a>
+   324) <a name="l324" style="background-color: #ffcccc">   laisha                      =&gt; pps%laisha</a>
+   325) <a name="l325" style="background-color: #ffcccc">   leaf_mr                     =&gt; pcf%leaf_mr</a>
+   326) <a name="l326" style="background-color: #ffcccc">   froot_mr                    =&gt; pcf%froot_mr</a>
+   327) <a name="l327" style="background-color: #ffcccc">   livestem_mr                 =&gt; pcf%livestem_mr</a>
+   328) <a name="l328" style="background-color: #ffcccc">   livecroot_mr                =&gt; pcf%livecroot_mr</a>
+   329) <a name="l329" style="background-color: #ffcccc">   leaf_curmr                  =&gt; pcf%leaf_curmr</a>
+   330) <a name="l330" style="background-color: #ffcccc">   froot_curmr                 =&gt; pcf%froot_curmr</a>
+   331) <a name="l331" style="background-color: #ffcccc">   livestem_curmr              =&gt; pcf%livestem_curmr</a>
+   332) <a name="l332" style="background-color: #ffcccc">   livecroot_curmr             =&gt; pcf%livecroot_curmr</a>
+   333) <a name="l333" style="background-color: #ffcccc">   leaf_xsmr                   =&gt; pcf%leaf_xsmr</a>
+   334) <a name="l334" style="background-color: #ffcccc">   froot_xsmr                  =&gt; pcf%froot_xsmr</a>
+   335) <a name="l335" style="background-color: #ffcccc">   livestem_xsmr               =&gt; pcf%livestem_xsmr</a>
+   336) <a name="l336" style="background-color: #ffcccc">   livecroot_xsmr              =&gt; pcf%livecroot_xsmr</a>
+   337) <a name="l337" style="background-color: #ffcccc">   sminn                       =&gt; cns%sminn</a>
+   338) <a name="l338" style="background-color: #ffcccc">   woody                       =&gt; pftcon%woody</a>
+   339) <a name="l339" style="background-color: #ffcccc">   froot_leaf                  =&gt; pftcon%froot_leaf</a>
+   340) <a name="l340" style="background-color: #ffcccc">   croot_stem                  =&gt; pftcon%croot_stem</a>
+   341) <a name="l341" style="background-color: #ffcccc">   stem_leaf                   =&gt; pftcon%stem_leaf</a>
+   342) <a name="l342" style="background-color: #ffcccc">   flivewd                     =&gt; pftcon%flivewd</a>
+   343) <a name="l343" style="background-color: #ffcccc">   leafcn                      =&gt; pftcon%leafcn</a>
+   344) <a name="l344" style="background-color: #ffcccc">   frootcn                     =&gt; pftcon%frootcn</a>
+   345) <a name="l345" style="background-color: #ffcccc">   livewdcn                    =&gt; pftcon%livewdcn</a>
+   346) <a name="l346" style="background-color: #ffcccc">   deadwdcn                    =&gt; pftcon%deadwdcn</a>
+   347) <a name="l347" style="background-color: #ffcccc">   fcur2                       =&gt; pftcon%fcur</a>
+   348) <a name="l348" style="background-color: #ffcccc">   gddmaturity                 =&gt; pps%gddmaturity</a>
+   349) <a name="l349" style="background-color: #ffcccc">   huileaf                     =&gt; pps%huileaf</a>
+   350) <a name="l350" style="background-color: #ffcccc">   huigrain                    =&gt; pps%huigrain</a>
+   351) <a name="l351" style="background-color: #ffcccc">   hui                         =&gt; pps%gddplant</a>
+   352) <a name="l352" style="background-color: #ffcccc">   leafout                     =&gt; pps%gddtsoi</a>
+   353) <a name="l353" style="background-color: #ffcccc">   croplive                    =&gt; pps%croplive</a>
+   354) <a name="l354" style="background-color: #ffcccc">   peaklai                     =&gt; pps%peaklai</a>
+   355) <a name="l355" style="background-color: #ffcccc">   graincn                     =&gt; pftcon%graincn</a>
+   356) <a name="l356" style="background-color: #ffcccc">   ! Assign local pointers to derived type arrays (out)</a>
+   357) <a name="l357" style="background-color: #ffcccc">   gpp                         =&gt; pepv%gpp</a>
+   358) <a name="l358" style="background-color: #ffcccc">   availc                      =&gt; pepv%availc</a>
+   359) <a name="l359" style="background-color: #ffcccc">   xsmrpool_recover            =&gt; pepv%xsmrpool_recover</a>
+   360) <a name="l360" style="background-color: #ffcccc">   c_allometry                 =&gt; pepv%c_allometry</a>
+   361) <a name="l361" style="background-color: #ffcccc">   n_allometry                 =&gt; pepv%n_allometry</a>
+   362) <a name="l362" style="background-color: #ffcccc">   plant_ndemand               =&gt; pepv%plant_ndemand</a>
+   363) <a name="l363" style="background-color: #ffcccc">   tempsum_potential_gpp       =&gt; pepv%tempsum_potential_gpp</a>
+   364) <a name="l364" style="background-color: #ffcccc">   tempmax_retransn            =&gt; pepv%tempmax_retransn</a>
+   365) <a name="l365" style="background-color: #ffcccc">   annsum_potential_gpp        =&gt; pepv%annsum_potential_gpp</a>
+   366) <a name="l366" style="background-color: #ffcccc">   avail_retransn              =&gt; pepv%avail_retransn</a>
+   367) <a name="l367" style="background-color: #ffcccc">   annmax_retransn             =&gt; pepv%annmax_retransn</a>
+   368) <a name="l368" style="background-color: #ffcccc">   plant_nalloc                =&gt; pepv%plant_nalloc</a>
+   369) <a name="l369" style="background-color: #ffcccc">   plant_calloc                =&gt; pepv%plant_calloc</a>
+   370) <a name="l370" style="background-color: #ffcccc">   excess_cflux                =&gt; pepv%excess_cflux</a>
+   371) <a name="l371" style="background-color: #ffcccc">   downreg                     =&gt; pepv%downreg</a>
+   372) <a name="l372" style="background-color: #ffcccc">   annsum_npp                  =&gt; pepv%annsum_npp</a>
+   373) <a name="l373" style="background-color: #ffcccc">   cpool_to_xsmrpool           =&gt; pcf%cpool_to_xsmrpool</a>
+   374) <a name="l374" style="background-color: #ffcccc">   psnsun_to_cpool             =&gt; pcf%psnsun_to_cpool</a>
+   375) <a name="l375" style="background-color: #ffcccc">   psnshade_to_cpool           =&gt; pcf%psnshade_to_cpool</a>
+   376) <a name="l376" style="background-color: #ffcccc"></a>
+   377) <a name="l377" style="background-color: #ffcccc">   c13_psnsun_to_cpool         =&gt; pc13f%psnsun_to_cpool</a>
+   378) <a name="l378" style="background-color: #ffcccc">   c13_psnshade_to_cpool       =&gt; pc13f%psnshade_to_cpool</a>
+   379) <a name="l379" style="background-color: #ffcccc"></a>
+   380) <a name="l380" style="background-color: #ffcccc">   cpool_to_leafc              =&gt; pcf%cpool_to_leafc</a>
+   381) <a name="l381" style="background-color: #ffcccc">   cpool_to_leafc_storage      =&gt; pcf%cpool_to_leafc_storage</a>
+   382) <a name="l382" style="background-color: #ffcccc">   cpool_to_frootc             =&gt; pcf%cpool_to_frootc</a>
+   383) <a name="l383" style="background-color: #ffcccc">   cpool_to_frootc_storage     =&gt; pcf%cpool_to_frootc_storage</a>
+   384) <a name="l384" style="background-color: #ffcccc">   cpool_to_livestemc          =&gt; pcf%cpool_to_livestemc</a>
+   385) <a name="l385" style="background-color: #ffcccc">   cpool_to_livestemc_storage  =&gt; pcf%cpool_to_livestemc_storage</a>
+   386) <a name="l386" style="background-color: #ffcccc">   cpool_to_deadstemc          =&gt; pcf%cpool_to_deadstemc</a>
+   387) <a name="l387" style="background-color: #ffcccc">   cpool_to_deadstemc_storage  =&gt; pcf%cpool_to_deadstemc_storage</a>
+   388) <a name="l388" style="background-color: #ffcccc">   cpool_to_livecrootc         =&gt; pcf%cpool_to_livecrootc</a>
+   389) <a name="l389" style="background-color: #ffcccc">   cpool_to_livecrootc_storage =&gt; pcf%cpool_to_livecrootc_storage</a>
+   390) <a name="l390" style="background-color: #ffcccc">   cpool_to_deadcrootc         =&gt; pcf%cpool_to_deadcrootc</a>
+   391) <a name="l391" style="background-color: #ffcccc">   cpool_to_deadcrootc_storage =&gt; pcf%cpool_to_deadcrootc_storage</a>
+   392) <a name="l392" style="background-color: #ffcccc">   cpool_to_gresp_storage      =&gt; pcf%cpool_to_gresp_storage</a>
+   393) <a name="l393" style="background-color: #ffcccc">   cpool_to_grainc             =&gt; pcf%cpool_to_grainc</a>
+   394) <a name="l394" style="background-color: #ffcccc">   cpool_to_grainc_storage     =&gt; pcf%cpool_to_grainc_storage</a>
+   395) <a name="l395" style="background-color: #ffcccc">   npool_to_grainn             =&gt; pnf%npool_to_grainn</a>
+   396) <a name="l396" style="background-color: #ffcccc">   npool_to_grainn_storage     =&gt; pnf%npool_to_grainn_storage</a>
+   397) <a name="l397" style="background-color: #ffcccc">   retransn_to_npool           =&gt; pnf%retransn_to_npool</a>
+   398) <a name="l398" style="background-color: #ffcccc">   sminn_to_npool              =&gt; pnf%sminn_to_npool</a>
+   399) <a name="l399" style="background-color: #ffcccc">   npool_to_leafn              =&gt; pnf%npool_to_leafn</a>
+   400) <a name="l400" style="background-color: #ffcccc">   npool_to_leafn_storage      =&gt; pnf%npool_to_leafn_storage</a>
+   401) <a name="l401" style="background-color: #ffcccc">   npool_to_frootn             =&gt; pnf%npool_to_frootn</a>
+   402) <a name="l402" style="background-color: #ffcccc">   npool_to_frootn_storage     =&gt; pnf%npool_to_frootn_storage</a>
+   403) <a name="l403" style="background-color: #ffcccc">   npool_to_livestemn          =&gt; pnf%npool_to_livestemn</a>
+   404) <a name="l404" style="background-color: #ffcccc">   npool_to_livestemn_storage  =&gt; pnf%npool_to_livestemn_storage</a>
+   405) <a name="l405" style="background-color: #ffcccc">   npool_to_deadstemn          =&gt; pnf%npool_to_deadstemn</a>
+   406) <a name="l406" style="background-color: #ffcccc">   npool_to_deadstemn_storage  =&gt; pnf%npool_to_deadstemn_storage</a>
+   407) <a name="l407" style="background-color: #ffcccc">   npool_to_livecrootn         =&gt; pnf%npool_to_livecrootn</a>
+   408) <a name="l408" style="background-color: #ffcccc">   npool_to_livecrootn_storage =&gt; pnf%npool_to_livecrootn_storage</a>
+   409) <a name="l409" style="background-color: #ffcccc">   npool_to_deadcrootn         =&gt; pnf%npool_to_deadcrootn</a>
+   410) <a name="l410" style="background-color: #ffcccc">   npool_to_deadcrootn_storage =&gt; pnf%npool_to_deadcrootn_storage</a>
+   411) <a name="l411" style="background-color: #ffcccc">   fpi                         =&gt; cps%fpi</a>
+   412) <a name="l412" style="background-color: #ffcccc">   fpg                         =&gt; cps%fpg</a>
+   413) <a name="l413" style="background-color: #ffcccc">   potential_immob             =&gt; cnf%potential_immob</a>
+   414) <a name="l414" style="background-color: #ffcccc">   actual_immob                =&gt; cnf%actual_immob</a>
+   415) <a name="l415" style="background-color: #ffcccc">   sminn_to_plant              =&gt; cnf%sminn_to_plant</a>
+   416) <a name="l416" style="background-color: #ffcccc">   sminn_to_denit_excess       =&gt; cnf%sminn_to_denit_excess</a>
+   417) <a name="l417" style="background-color: #ffcccc">   supplement_to_sminn         =&gt; cnf%supplement_to_sminn</a>
+   418) <a name="l418" style="background-color: #ffcccc">   aleafi                      =&gt; pps%aleafi</a>
+   419) <a name="l419" style="background-color: #ffcccc">   astemi                      =&gt; pps%astemi</a>
+   420) <a name="l420" style="background-color: #ffcccc">   aleaf                       =&gt; pps%aleaf</a>
+   421) <a name="l421" style="background-color: #ffcccc">   astem                       =&gt; pps%astem</a>
+   422) <a name="l422" style="background-color: #ffcccc"></a>
+   423) <a name="l423" style="background-color: #ffcccc">   ! loop over pfts to assess the total plant N demand</a>
+   424) <a name="l424" style="background-color: #ffcccc">   do fp=1,num_soilp</a>
+   425) <a name="l425" style="background-color: #ffcccc">      p = filter_soilp(fp)</a>
+   426) <a name="l426" style="background-color: #ffcccc"></a>
+   427) <a name="l427" style="background-color: #ffcccc">      ! get the time step total gross photosynthesis</a>
+   428) <a name="l428" style="background-color: #ffcccc">      ! this is coming from the canopy fluxes code, and is the</a>
+   429) <a name="l429" style="background-color: #ffcccc">      ! gpp that is used to control stomatal conductance.</a>
+   430) <a name="l430" style="background-color: #ffcccc">      ! For the nitrogen downregulation code, this is assumed</a>
+   431) <a name="l431" style="background-color: #ffcccc">      ! to be the potential gpp, and the actual gpp will be</a>
+   432) <a name="l432" style="background-color: #ffcccc">      ! reduced due to N limitation. </a>
+   433) <a name="l433" style="background-color: #ffcccc">      </a>
+   434) <a name="l434" style="background-color: #ffcccc">      ! Convert psn from umol/m2/s -&gt; gC/m2/s</a>
+   435) <a name="l435" style="background-color: #ffcccc"></a>
+   436) <a name="l436" style="background-color: #ffcccc">      ! The input psn (psnsun and psnsha) are expressed per unit LAI</a>
+   437) <a name="l437" style="background-color: #ffcccc">      ! in the sunlit and shaded canopy, respectively. These need to be</a>
+   438) <a name="l438" style="background-color: #ffcccc">      ! scaled by laisun and laisha to get the total gpp for allocation</a>
+   439) <a name="l439" style="background-color: #ffcccc"></a>
+   440) <a name="l440" style="background-color: #ffcccc">      psnsun_to_cpool(p) = psnsun(p) * laisun(p) * 12.011e-6_r8</a>
+   441) <a name="l441" style="background-color: #ffcccc">      psnshade_to_cpool(p) = psnsha(p) * laisha(p) * 12.011e-6_r8</a>
+   442) <a name="l442" style="background-color: #ffcccc">      if (use_c13) then</a>
+   443) <a name="l443" style="background-color: #ffcccc">         c13_psnsun_to_cpool(p) = c13_psnsun(p) * laisun(p) * 12.011e-6_r8</a>
+   444) <a name="l444" style="background-color: #ffcccc">         c13_psnshade_to_cpool(p) = c13_psnsha(p) * laisha(p) * 12.011e-6_r8</a>
+   445) <a name="l445" style="background-color: #ffcccc">      endif</a>
+   446) <a name="l446" style="background-color: #ffcccc">      </a>
+   447) <a name="l447" style="background-color: #ffcccc">      gpp(p) = psnsun_to_cpool(p) + psnshade_to_cpool(p)</a>
+   448) <a name="l448" style="background-color: #ffcccc"></a>
+   449) <a name="l449" style="background-color: #ffcccc">      ! get the time step total maintenance respiration</a>
+   450) <a name="l450" style="background-color: #ffcccc">      ! These fluxes should already be in gC/m2/s</a>
+   451) <a name="l451" style="background-color: #ffcccc"></a>
+   452) <a name="l452" style="background-color: #ffcccc">      mr = leaf_mr(p) + froot_mr(p)</a>
+   453) <a name="l453" style="background-color: #ffcccc">      if (woody(ivt(p)) == 1.0_r8) then</a>
+   454) <a name="l454" style="background-color: #ffcccc">         mr = mr + livestem_mr(p) + livecroot_mr(p)</a>
+   455) <a name="l455" style="background-color: #ffcccc">      else if (ivt(p) &gt;= npcropmin)then</a>
+   456) <a name="l456" style="background-color: #ffcccc">         if (croplive(p)) mr = mr + livestem_mr(p)</a>
+   457) <a name="l457" style="background-color: #ffcccc">      end if</a>
+   458) <a name="l458" style="background-color: #ffcccc"></a>
+   459) <a name="l459" style="background-color: #ffcccc">      ! carbon flux available for allocation</a>
+   460) <a name="l460" style="background-color: #ffcccc">      availc(p) = gpp(p) - mr</a>
+   461) <a name="l461" style="background-color: #ffcccc">      </a>
+   462) <a name="l462" style="background-color: #ffcccc">      ! new code added for isotope calculations, 7/1/05, PET</a>
+   463) <a name="l463" style="background-color: #ffcccc">      ! If mr &gt; gpp, then some mr comes from gpp, the rest comes from</a>
+   464) <a name="l464" style="background-color: #ffcccc">      ! cpool (xsmr)</a>
+   465) <a name="l465" style="background-color: #ffcccc">      if (mr &gt; 0._r8 .and. availc(p) &lt; 0._r8) then</a>
+   466) <a name="l466" style="background-color: #ffcccc">         curmr = gpp(p)</a>
+   467) <a name="l467" style="background-color: #ffcccc">         curmr_ratio = curmr / mr</a>
+   468) <a name="l468" style="background-color: #ffcccc">      else</a>
+   469) <a name="l469" style="background-color: #ffcccc">         curmr_ratio = 1._r8</a>
+   470) <a name="l470" style="background-color: #ffcccc">      end if</a>
+   471) <a name="l471" style="background-color: #ffcccc">      leaf_curmr(p) = leaf_mr(p) * curmr_ratio</a>
+   472) <a name="l472" style="background-color: #ffcccc">      leaf_xsmr(p) = leaf_mr(p) - leaf_curmr(p)</a>
+   473) <a name="l473" style="background-color: #ffcccc">      froot_curmr(p) = froot_mr(p) * curmr_ratio</a>
+   474) <a name="l474" style="background-color: #ffcccc">      froot_xsmr(p) = froot_mr(p) - froot_curmr(p)</a>
+   475) <a name="l475" style="background-color: #ffcccc">      livestem_curmr(p) = livestem_mr(p) * curmr_ratio</a>
+   476) <a name="l476" style="background-color: #ffcccc">      livestem_xsmr(p) = livestem_mr(p) - livestem_curmr(p)</a>
+   477) <a name="l477" style="background-color: #ffcccc">      livecroot_curmr(p) = livecroot_mr(p) * curmr_ratio</a>
+   478) <a name="l478" style="background-color: #ffcccc">      livecroot_xsmr(p) = livecroot_mr(p) - livecroot_curmr(p)</a>
+   479) <a name="l479" style="background-color: #ffcccc">      </a>
+   480) <a name="l480" style="background-color: #ffcccc">      ! no allocation when available c is negative</a>
+   481) <a name="l481" style="background-color: #ffcccc">      availc(p) = max(availc(p),0.0_r8)</a>
+   482) <a name="l482" style="background-color: #ffcccc"></a>
+   483) <a name="l483" style="background-color: #ffcccc">      ! test for an xsmrpool deficit</a>
+   484) <a name="l484" style="background-color: #ffcccc">      if (xsmrpool(p) &lt; 0.0_r8) then</a>
+   485) <a name="l485" style="background-color: #ffcccc">         ! Running a deficit in the xsmrpool, so the first priority is to let</a>
+   486) <a name="l486" style="background-color: #ffcccc">         ! some availc from this timestep accumulate in xsmrpool.</a>
+   487) <a name="l487" style="background-color: #ffcccc">         ! Determine rate of recovery for xsmrpool deficit</a>
+   488) <a name="l488" style="background-color: #ffcccc"></a>
+   489) <a name="l489" style="background-color: #ffcccc">         xsmrpool_recover(p) = -xsmrpool(p)/(dayscrecover*secspday)</a>
+   490) <a name="l490" style="background-color: #ffcccc">         if (xsmrpool_recover(p) &lt; availc(p)) then</a>
+   491) <a name="l491" style="background-color: #ffcccc">             ! available carbon reduced by amount for xsmrpool recovery</a>
+   492) <a name="l492" style="background-color: #ffcccc">             availc(p) = availc(p) - xsmrpool_recover(p)</a>
+   493) <a name="l493" style="background-color: #ffcccc">         else</a>
+   494) <a name="l494" style="background-color: #ffcccc">             ! all of the available carbon goes to xsmrpool recovery</a>
+   495) <a name="l495" style="background-color: #ffcccc">             xsmrpool_recover(p) = availc(p)</a>
+   496) <a name="l496" style="background-color: #ffcccc">             availc(p) = 0.0_r8</a>
+   497) <a name="l497" style="background-color: #ffcccc">         end if</a>
+   498) <a name="l498" style="background-color: #ffcccc">         cpool_to_xsmrpool(p) = xsmrpool_recover(p)</a>
+   499) <a name="l499" style="background-color: #ffcccc">      end if</a>
+   500) <a name="l500" style="background-color: #ffcccc"></a>
+   501) <a name="l501" style="background-color: #ffcccc">      f1 = froot_leaf(ivt(p))</a>
+   502) <a name="l502" style="background-color: #ffcccc">      f2 = croot_stem(ivt(p))</a>
+   503) <a name="l503" style="background-color: #ffcccc">     </a>
+   504) <a name="l504" style="background-color: #ffcccc">      ! modified wood allocation to be 2.2 at npp=800 gC/m2/yr, 0.2 at npp=0,</a>
+   505) <a name="l505" style="background-color: #ffcccc">      ! constrained so that it does not go lower than 0.2 (under negative annsum_npp)</a>
+   506) <a name="l506" style="background-color: #ffcccc">      ! This variable allocation is only for trees. Shrubs have a constant</a>
+   507) <a name="l507" style="background-color: #ffcccc">      ! allocation as specified in the pft-physiology file.  The value is also used</a>
+   508) <a name="l508" style="background-color: #ffcccc">      ! as a trigger here: -1.0 means to use the dynamic allocation (trees).</a>
+   509) <a name="l509" style="background-color: #ffcccc">      if (stem_leaf(ivt(p)) == -1._r8) then</a>
+   510) <a name="l510" style="background-color: #ffcccc">         f3 = (2.7/(1.0+exp(-0.004*(annsum_npp(p) - 300.0)))) - 0.4</a>
+   511) <a name="l511" style="background-color: #ffcccc">      else</a>
+   512) <a name="l512" style="background-color: #ffcccc">         f3 = stem_leaf(ivt(p))</a>
+   513) <a name="l513" style="background-color: #ffcccc">      end if</a>
+   514) <a name="l514" style="background-color: #ffcccc">      </a>
+   515) <a name="l515" style="background-color: #ffcccc">      f4 = flivewd(ivt(p))</a>
+   516) <a name="l516" style="background-color: #ffcccc">      g1 = grperc(ivt(p))</a>
+   517) <a name="l517" style="background-color: #ffcccc">      g2 = grpnow(ivt(p))</a>
+   518) <a name="l518" style="background-color: #ffcccc">      cnl = leafcn(ivt(p))</a>
+   519) <a name="l519" style="background-color: #ffcccc">      cnfr = frootcn(ivt(p))</a>
+   520) <a name="l520" style="background-color: #ffcccc">      cnlw = livewdcn(ivt(p))</a>
+   521) <a name="l521" style="background-color: #ffcccc">      cndw = deadwdcn(ivt(p))</a>
+   522) <a name="l522" style="background-color: #ffcccc"></a>
+   523) <a name="l523" style="background-color: #ffcccc">      ! calculate f1 to f5 for prog crops following AgroIBIS subr phenocrop</a>
+   524) <a name="l524" style="background-color: #ffcccc"></a>
+   525) <a name="l525" style="background-color: #ffcccc">      f5 = 0._r8 ! continued intializations from above</a>
+   526) <a name="l526" style="background-color: #ffcccc"></a>
+   527) <a name="l527" style="background-color: #ffcccc">      if (ivt(p) &gt;= npcropmin) then ! skip 2 generic crops</a>
+   528) <a name="l528" style="background-color: #ffcccc"></a>
+   529) <a name="l529" style="background-color: #ffcccc">         if (croplive(p)) then</a>
+   530) <a name="l530" style="background-color: #ffcccc">            ! same phases appear in subroutine CropPhenology</a>
+   531) <a name="l531" style="background-color: #ffcccc"></a>
+   532) <a name="l532" style="background-color: #ffcccc">            ! Phase 1 completed:</a>
+   533) <a name="l533" style="background-color: #ffcccc">            ! ==================</a>
+   534) <a name="l534" style="background-color: #ffcccc">            ! if hui is less than the number of gdd needed for filling of grain</a>
+   535) <a name="l535" style="background-color: #ffcccc">            ! leaf emergence also has to have taken place for lai changes to occur</a>
+   536) <a name="l536" style="background-color: #ffcccc">            ! and carbon assimilation</a>
+   537) <a name="l537" style="background-color: #ffcccc">            ! Next phase: leaf emergence to start of leaf decline</a>
+   538) <a name="l538" style="background-color: #ffcccc"></a>
+   539) <a name="l539" style="background-color: #ffcccc">            if (leafout(p) &gt;= huileaf(p) .and. hui(p) &lt; huigrain(p)) then</a>
+   540) <a name="l540" style="background-color: #ffcccc"></a>
+   541) <a name="l541" style="background-color: #ffcccc">               ! allocation rules for crops based on maturity and linear decrease</a>
+   542) <a name="l542" style="background-color: #ffcccc">               ! of amount allocated to roots over course of the growing season</a>
+   543) <a name="l543" style="background-color: #ffcccc">   </a>
+   544) <a name="l544" style="background-color: #ffcccc">               if (peaklai(p) == 1) then ! lai at maximum allowed</a>
+   545) <a name="l545" style="background-color: #ffcccc">                  arepr(p) = 0._r8</a>
+   546) <a name="l546" style="background-color: #ffcccc">                  aleaf(p) = 1.e-5_r8</a>
+   547) <a name="l547" style="background-color: #ffcccc">                  astem(p) = 0._r8</a>
+   548) <a name="l548" style="background-color: #ffcccc">                  aroot(p) = 1._r8 - arepr(p) - aleaf(p) - astem(p)</a>
+   549) <a name="l549" style="background-color: #ffcccc">               else</a>
+   550) <a name="l550" style="background-color: #ffcccc">                  arepr(p) = 0._r8</a>
+   551) <a name="l551" style="background-color: #ffcccc">                  aroot(p) = max(0._r8, min(1._r8, arooti(ivt(p)) -   &amp;</a>
+   552) <a name="l552" style="background-color: #ffcccc">                                 (arooti(ivt(p)) - arootf(ivt(p))) *  &amp;</a>
+   553) <a name="l553" style="background-color: #ffcccc">                                 min(1._r8, hui(p)/gddmaturity(p))))</a>
+   554) <a name="l554" style="background-color: #ffcccc">                  fleaf = fleafi(ivt(p)) * (exp(-bfact(ivt(p))) -         &amp;</a>
+   555) <a name="l555" style="background-color: #ffcccc">                                exp(-bfact(ivt(p))*hui(p)/huigrain(p))) / &amp;</a>
+   556) <a name="l556" style="background-color: #ffcccc">                                (exp(-bfact(ivt(p)))-1) ! fraction alloc to leaf (from J Norman alloc curve)</a>
+   557) <a name="l557" style="background-color: #ffcccc">                  aleaf(p) = max(1.e-5_r8, (1._r8 - aroot(p)) * fleaf)</a>
+   558) <a name="l558" style="background-color: #ffcccc">                  astem(p) = 1._r8 - arepr(p) - aleaf(p) - aroot(p)</a>
+   559) <a name="l559" style="background-color: #ffcccc">               end if</a>
+   560) <a name="l560" style="background-color: #ffcccc">   </a>
+   561) <a name="l561" style="background-color: #ffcccc">               ! AgroIBIS included here an immediate adjustment to aleaf &amp; astem if the </a>
+   562) <a name="l562" style="background-color: #ffcccc">               ! predicted lai from the above allocation coefficients exceeded laimx.</a>
+   563) <a name="l563" style="background-color: #ffcccc">               ! We have decided to live with lais slightly higher than laimx by</a>
+   564) <a name="l564" style="background-color: #ffcccc">               ! enforcing the cap in the following tstep through the peaklai logic above.</a>
+   565) <a name="l565" style="background-color: #ffcccc"></a>
+   566) <a name="l566" style="background-color: #ffcccc">               astemi(p) = astem(p) ! save for use by equations after shift</a>
+   567) <a name="l567" style="background-color: #ffcccc">               aleafi(p) = aleaf(p) ! to reproductive phenology stage begins</a>
+   568) <a name="l568" style="background-color: #ffcccc"></a>
+   569) <a name="l569" style="background-color: #ffcccc">               ! Phase 2 completed:</a>
+   570) <a name="l570" style="background-color: #ffcccc">               ! ==================</a>
+   571) <a name="l571" style="background-color: #ffcccc">               ! shift allocation either when enough gdd are accumulated or maximum number</a>
+   572) <a name="l572" style="background-color: #ffcccc">               ! of days has elapsed since planting</a>
+   573) <a name="l573" style="background-color: #ffcccc"></a>
+   574) <a name="l574" style="background-color: #ffcccc">            else if (hui(p) &gt;= huigrain(p)) then</a>
+   575) <a name="l575" style="background-color: #ffcccc">   </a>
+   576) <a name="l576" style="background-color: #ffcccc">               aroot(p) = max(0._r8, min(1._r8, arooti(ivt(p)) - &amp;</a>
+   577) <a name="l577" style="background-color: #ffcccc">                         (arooti(ivt(p)) - arootf(ivt(p))) * min(1._r8, hui(p)/gddmaturity(p))))</a>
+   578) <a name="l578" style="background-color: #ffcccc">               if (astemi(p) &gt; astemf(ivt(p))) then</a>
+   579) <a name="l579" style="background-color: #ffcccc">                  astem(p) = max(0._r8, max(astemf(ivt(p)), astem(p) * &amp;</a>
+   580) <a name="l580" style="background-color: #ffcccc">                                 (1._r8 - min((hui(p)-                 &amp;</a>
+   581) <a name="l581" style="background-color: #ffcccc">                                 huigrain(p))/((gddmaturity(p)*declfact(ivt(p)))- &amp;</a>
+   582) <a name="l582" style="background-color: #ffcccc">                                 huigrain(p)),1._r8)**allconss(ivt(p)) )))</a>
+   583) <a name="l583" style="background-color: #ffcccc">               end if</a>
+   584) <a name="l584" style="background-color: #ffcccc">               if (aleafi(p) &gt; aleaff(ivt(p))) then</a>
+   585) <a name="l585" style="background-color: #ffcccc">                  aleaf(p) = max(1.e-5_r8, max(aleaff(ivt(p)), aleaf(p) * &amp;</a>
+   586) <a name="l586" style="background-color: #ffcccc">                                 (1._r8 - min((hui(p)-                    &amp;</a>
+   587) <a name="l587" style="background-color: #ffcccc">                                 huigrain(p))/((gddmaturity(p)*declfact(ivt(p)))- &amp;</a>
+   588) <a name="l588" style="background-color: #ffcccc">                                 huigrain(p)),1._r8)**allconsl(ivt(p)) )))</a>
+   589) <a name="l589" style="background-color: #ffcccc">               end if</a>
+   590) <a name="l590" style="background-color: #ffcccc">               arepr(p) = 1._r8 - aroot(p) - astem(p) - aleaf(p)</a>
+   591) <a name="l591" style="background-color: #ffcccc">               astem(p) = astem(p)+arepr(p)</a>
+   592) <a name="l592" style="background-color: #ffcccc">               arepr(p) = 0._r8</a>
+   593) <a name="l593" style="background-color: #ffcccc"></a>
+   594) <a name="l594" style="background-color: #ffcccc">            else                   ! pre emergence</a>
+   595) <a name="l595" style="background-color: #ffcccc">               aleaf(p) = 1.e-5_r8 ! allocation coefficients should be irrelevant</a>
+   596) <a name="l596" style="background-color: #ffcccc">               astem(p) = 0._r8    ! because crops have no live carbon pools;</a>
+   597) <a name="l597" style="background-color: #ffcccc">               aroot(p) = 0._r8    ! this applies to this &quot;else&quot; and to the &quot;else&quot;</a>
+   598) <a name="l598" style="background-color: #ffcccc">               arepr(p) = 0._r8    ! a few lines down</a>
+   599) <a name="l599" style="background-color: #ffcccc">            end if</a>
+   600) <a name="l600" style="background-color: #ffcccc"></a>
+   601) <a name="l601" style="background-color: #ffcccc">            f1 = aroot(p) / aleaf(p)</a>
+   602) <a name="l602" style="background-color: #ffcccc">            f3 = astem(p) / aleaf(p)</a>
+   603) <a name="l603" style="background-color: #ffcccc">            f5 = arepr(p) / aleaf(p)</a>
+   604) <a name="l604" style="background-color: #ffcccc">            g1 = 0.25_r8</a>
+   605) <a name="l605" style="background-color: #ffcccc"></a>
+   606) <a name="l606" style="background-color: #ffcccc">         else   ! .not croplive</a>
+   607) <a name="l607" style="background-color: #ffcccc">            f1 = 0._r8</a>
+   608) <a name="l608" style="background-color: #ffcccc">            f3 = 0._r8</a>
+   609) <a name="l609" style="background-color: #ffcccc">            f5 = 0._r8</a>
+   610) <a name="l610" style="background-color: #ffcccc">            g1 = 0.25_r8</a>
+   611) <a name="l611" style="background-color: #ffcccc">         end if</a>
+   612) <a name="l612" style="background-color: #ffcccc">      end if</a>
+   613) <a name="l613" style="background-color: #ffcccc"></a>
+   614) <a name="l614" style="background-color: #ffcccc">      ! based on available C, use constant allometric relationships to</a>
+   615) <a name="l615" style="background-color: #ffcccc">      ! determine N requirements</a>
+   616) <a name="l616" style="background-color: #ffcccc">      if (woody(ivt(p)) == 1.0_r8) then</a>
+   617) <a name="l617" style="background-color: #ffcccc">         c_allometry(p) = (1._r8+g1)*(1._r8+f1+f3*(1._r8+f2))</a>
+   618) <a name="l618" style="background-color: #ffcccc">         n_allometry(p) = 1._r8/cnl + f1/cnfr + (f3*f4*(1._r8+f2))/cnlw + &amp;</a>
+   619) <a name="l619" style="background-color: #ffcccc">                       (f3*(1._r8-f4)*(1._r8+f2))/cndw</a>
+   620) <a name="l620" style="background-color: #ffcccc">      else if (ivt(p) &gt;= npcropmin) then ! skip generic crops</a>
+   621) <a name="l621" style="background-color: #ffcccc">         c_allometry(p) = (1._r8+g1)*(1._r8+f1+f3*(1._r8+f2))</a>
+   622) <a name="l622" style="background-color: #ffcccc">         n_allometry(p) = 1._r8/cnl + f1/cnfr + (f3*f4*(1._r8+f2))/cnlw + &amp;</a>
+   623) <a name="l623" style="background-color: #ffcccc">                       (f3*(1._r8-f4)*(1._r8+f2))/cndw</a>
+   624) <a name="l624" style="background-color: #ffcccc">      else</a>
+   625) <a name="l625" style="background-color: #ffcccc">         c_allometry(p) = 1._r8+g1+f1+f1*g1</a>
+   626) <a name="l626" style="background-color: #ffcccc">         n_allometry(p) = 1._r8/cnl + f1/cnfr</a>
+   627) <a name="l627" style="background-color: #ffcccc">      end if</a>
+   628) <a name="l628" style="background-color: #ffcccc">      plant_ndemand(p) = availc(p)*(n_allometry(p)/c_allometry(p))</a>
+   629) <a name="l629" style="background-color: #ffcccc"></a>
+   630) <a name="l630" style="background-color: #ffcccc">      ! retranslocated N deployment depends on seasonal cycle of potential GPP</a>
+   631) <a name="l631" style="background-color: #ffcccc">      ! (requires one year run to accumulate demand)</a>
+   632) <a name="l632" style="background-color: #ffcccc"></a>
+   633) <a name="l633" style="background-color: #ffcccc">      tempsum_potential_gpp(p) = tempsum_potential_gpp(p) + gpp(p)</a>
+   634) <a name="l634" style="background-color: #ffcccc"></a>
+   635) <a name="l635" style="background-color: #ffcccc">      ! Adding the following line to carry max retransn info to CN Annual Update</a>
+   636) <a name="l636" style="background-color: #ffcccc">      tempmax_retransn(p) = max(tempmax_retransn(p),retransn(p))</a>
+   637) <a name="l637" style="background-color: #ffcccc"></a>
+   638) <a name="l638" style="background-color: #ffcccc">      if (annsum_potential_gpp(p) &gt; 0.0_r8) then</a>
+   639) <a name="l639" style="background-color: #ffcccc">         avail_retransn(p) = (annmax_retransn(p)/2.0)*(gpp(p)/annsum_potential_gpp(p))/dt</a>
+   640) <a name="l640" style="background-color: #ffcccc">      else</a>
+   641) <a name="l641" style="background-color: #ffcccc">         avail_retransn(p) = 0.0_r8</a>
+   642) <a name="l642" style="background-color: #ffcccc">      end if</a>
+   643) <a name="l643" style="background-color: #ffcccc"></a>
+   644) <a name="l644" style="background-color: #ffcccc">      ! make sure available retrans N doesn't exceed storage</a>
+   645) <a name="l645" style="background-color: #ffcccc">      avail_retransn(p) = min(avail_retransn(p), retransn(p)/dt)</a>
+   646) <a name="l646" style="background-color: #ffcccc"></a>
+   647) <a name="l647" style="background-color: #ffcccc">      ! modify plant N demand according to the availability of</a>
+   648) <a name="l648" style="background-color: #ffcccc">      ! retranslocated N</a>
+   649) <a name="l649" style="background-color: #ffcccc">      ! take from retransn pool at most the flux required to meet</a>
+   650) <a name="l650" style="background-color: #ffcccc">      ! plant ndemand</a>
+   651) <a name="l651" style="background-color: #ffcccc"></a>
+   652) <a name="l652" style="background-color: #ffcccc">      if (plant_ndemand(p) &gt; avail_retransn(p)) then</a>
+   653) <a name="l653" style="background-color: #ffcccc">         retransn_to_npool(p) = avail_retransn(p)</a>
+   654) <a name="l654" style="background-color: #ffcccc">      else</a>
+   655) <a name="l655" style="background-color: #ffcccc">         retransn_to_npool(p) = plant_ndemand(p)</a>
+   656) <a name="l656" style="background-color: #ffcccc">      end if</a>
+   657) <a name="l657" style="background-color: #ffcccc">      plant_ndemand(p) = plant_ndemand(p) - retransn_to_npool(p)</a>
+   658) <a name="l658" style="background-color: #ffcccc"></a>
+   659) <a name="l659" style="background-color: #ffcccc">   end do ! end pft loop</a>
+   660) <a name="l660" style="background-color: #ffcccc"></a>
+   661) <a name="l661" style="background-color: #ffcccc">   ! now use the p2c routine to get the column-averaged plant_ndemand</a>
+   662) <a name="l662" style="background-color: #ffcccc">   call p2c(num_soilc,filter_soilc,plant_ndemand,col_plant_ndemand)</a>
+   663) <a name="l663" style="background-color: #ffcccc"></a>
+   664) <a name="l664" style="background-color: #ffcccc">   ! column loop to resolve plant/heterotroph competition for mineral N</a>
+   665) <a name="l665" style="background-color: #ffcccc">   do fc=1,num_soilc</a>
+   666) <a name="l666" style="background-color: #ffcccc">      c = filter_soilc(fc)</a>
+   667) <a name="l667" style="background-color: #ffcccc">      l = clandunit(c)</a>
+   668) <a name="l668" style="background-color: #ffcccc"></a>
+   669) <a name="l669" style="background-color: #ffcccc">      sum_ndemand = col_plant_ndemand(c) + potential_immob(c)</a>
+   670) <a name="l670" style="background-color: #ffcccc"></a>
+   671) <a name="l671" style="background-color: #ffcccc">      if (sum_ndemand*dt &lt; sminn(c)) then</a>
+   672) <a name="l672" style="background-color: #ffcccc">         ! N availability is not limiting immobilization of plant</a>
+   673) <a name="l673" style="background-color: #ffcccc">         ! uptake, and both can proceed at their potential rates</a>
+   674) <a name="l674" style="background-color: #ffcccc"></a>
+   675) <a name="l675" style="background-color: #ffcccc">         nlimit = 0</a>
+   676) <a name="l676" style="background-color: #ffcccc">         fpi(c) = 1.0_r8</a>
+   677) <a name="l677" style="background-color: #ffcccc">         actual_immob(c) = potential_immob(c)</a>
+   678) <a name="l678" style="background-color: #ffcccc">         sminn_to_plant(c) = col_plant_ndemand(c)</a>
+   679) <a name="l679" style="background-color: #ffcccc"></a>
+   680) <a name="l680" style="background-color: #ffcccc">         ! under conditions of excess N, some proportion is assumed to</a>
+   681) <a name="l681" style="background-color: #ffcccc">         ! be lost to denitrification, in addition to the constant</a>
+   682) <a name="l682" style="background-color: #ffcccc">         ! proportion lost in the decomposition pathways</a>
+   683) <a name="l683" style="background-color: #ffcccc"></a>
+   684) <a name="l684" style="background-color: #ffcccc">         sminn_to_denit_excess(c) = bdnr*((sminn(c)/dt) - sum_ndemand)</a>
+   685) <a name="l685" style="background-color: #ffcccc">      else if ( ((.not. Carbon_only) .and.  (.not. crop_supln)) .or. &amp;</a>
+   686) <a name="l686" style="background-color: #ffcccc">                (crop_supln .and. ( (itypelun(l) /= istcrop)  .or. &amp;</a>
+   687) <a name="l687" style="background-color: #ffcccc">                ((itypelun(l) == istcrop) .and. (ivt(pfti(c)) &lt; npcropmin) )) ) )then</a>
+   688) <a name="l688" style="background-color: #ffcccc"></a>
+   689) <a name="l689" style="background-color: #ffcccc">         ! N availability can not satisfy the sum of immobilization and</a>
+   690) <a name="l690" style="background-color: #ffcccc">         ! plant growth demands, so these two demands compete for available</a>
+   691) <a name="l691" style="background-color: #ffcccc">         ! soil mineral N resource.</a>
+   692) <a name="l692" style="background-color: #ffcccc"></a>
+   693) <a name="l693" style="background-color: #ffcccc">         nlimit = 1</a>
+   694) <a name="l694" style="background-color: #ffcccc">         if (sum_ndemand &gt; 0.0_r8) then</a>
+   695) <a name="l695" style="background-color: #ffcccc">            actual_immob(c) = (sminn(c)/dt)*(potential_immob(c) / sum_ndemand)</a>
+   696) <a name="l696" style="background-color: #ffcccc">         else</a>
+   697) <a name="l697" style="background-color: #ffcccc">            actual_immob(c) = 0.0_r8</a>
+   698) <a name="l698" style="background-color: #ffcccc">         end if</a>
+   699) <a name="l699" style="background-color: #ffcccc"></a>
+   700) <a name="l700" style="background-color: #ffcccc">         if (potential_immob(c) &gt; 0.0_r8) then</a>
+   701) <a name="l701" style="background-color: #ffcccc">            fpi(c) = actual_immob(c) / potential_immob(c)</a>
+   702) <a name="l702" style="background-color: #ffcccc">         else</a>
+   703) <a name="l703" style="background-color: #ffcccc">            fpi(c) = 0.0_r8</a>
+   704) <a name="l704" style="background-color: #ffcccc">         end if</a>
+   705) <a name="l705" style="background-color: #ffcccc"></a>
+   706) <a name="l706" style="background-color: #ffcccc">         sminn_to_plant(c) = (sminn(c)/dt) - actual_immob(c)</a>
+   707) <a name="l707" style="background-color: #ffcccc">      else if ( Carbon_only .or. &amp;</a>
+   708) <a name="l708" style="background-color: #ffcccc">               (crop_supln .and. (itypelun(l) == istcrop) .and. &amp;</a>
+   709) <a name="l709" style="background-color: #ffcccc">                (ivt(pfti(c)) &gt;= npcropmin)) )then</a>
+   710) <a name="l710" style="background-color: #ffcccc">         ! this code block controls the addition of N to sminn pool</a>
+   711) <a name="l711" style="background-color: #ffcccc">         ! to eliminate any N limitation, when Carbon_Only is set.  This lets the</a>
+   712) <a name="l712" style="background-color: #ffcccc">         ! model behave essentially as a carbon-only model, but with the</a>
+   713) <a name="l713" style="background-color: #ffcccc">         ! benefit of keeping track of the N additions needed to</a>
+   714) <a name="l714" style="background-color: #ffcccc">         ! eliminate N limitations, so there is still a diagnostic quantity</a>
+   715) <a name="l715" style="background-color: #ffcccc">         ! that describes the degree of N limitation at steady-state.</a>
+   716) <a name="l716" style="background-color: #ffcccc"></a>
+   717) <a name="l717" style="background-color: #ffcccc">         nlimit = 1</a>
+   718) <a name="l718" style="background-color: #ffcccc">         fpi(c) = 1.0_r8</a>
+   719) <a name="l719" style="background-color: #ffcccc">         actual_immob(c) = potential_immob(c)</a>
+   720) <a name="l720" style="background-color: #ffcccc">         sminn_to_plant(c) = col_plant_ndemand(c)</a>
+   721) <a name="l721" style="background-color: #ffcccc">         supplement_to_sminn(c) = sum_ndemand - (sminn(c)/dt)</a>
+   722) <a name="l722" style="background-color: #ffcccc">      else</a>
+   723) <a name="l723" style="background-color: #ffcccc">         call endrun( 'This else should NOT be able to happen' )</a>
+   724) <a name="l724" style="background-color: #ffcccc">      end if</a>
+   725) <a name="l725" style="background-color: #ffcccc"></a>
+   726) <a name="l726" style="background-color: #ffcccc">      ! calculate the fraction of potential growth that can be</a>
+   727) <a name="l727" style="background-color: #ffcccc">      ! acheived with the N available to plants</a>
+   728) <a name="l728" style="background-color: #ffcccc"></a>
+   729) <a name="l729" style="background-color: #ffcccc">      if (col_plant_ndemand(c) &gt; 0.0_r8) then</a>
+   730) <a name="l730" style="background-color: #ffcccc">         fpg(c) = sminn_to_plant(c) / col_plant_ndemand(c)</a>
+   731) <a name="l731" style="background-color: #ffcccc">      else</a>
+   732) <a name="l732" style="background-color: #ffcccc">         fpg(c) = 1.0_r8</a>
+   733) <a name="l733" style="background-color: #ffcccc">      end if</a>
+   734) <a name="l734" style="background-color: #ffcccc"></a>
+   735) <a name="l735" style="background-color: #ffcccc">   end do ! end of column loop</a>
+   736) <a name="l736" style="background-color: #ffcccc"></a>
+   737) <a name="l737" style="background-color: #ffcccc">   ! start new pft loop to distribute the available N between the</a>
+   738) <a name="l738" style="background-color: #ffcccc">   ! competing pfts on the basis of relative demand, and allocate C and N to</a>
+   739) <a name="l739" style="background-color: #ffcccc">   ! new growth and storage</a>
+   740) <a name="l740" style="background-color: #ffcccc"></a>
+   741) <a name="l741" style="background-color: #ffcccc">   do fp=1,num_soilp</a>
+   742) <a name="l742" style="background-color: #ffcccc">      p = filter_soilp(fp)</a>
+   743) <a name="l743" style="background-color: #ffcccc">      c = pcolumn(p)</a>
+   744) <a name="l744" style="background-color: #ffcccc"></a>
+   745) <a name="l745" style="background-color: #ffcccc">      ! set some local allocation variables</a>
+   746) <a name="l746" style="background-color: #ffcccc">      f1 = froot_leaf(ivt(p))</a>
+   747) <a name="l747" style="background-color: #ffcccc">      f2 = croot_stem(ivt(p))</a>
+   748) <a name="l748" style="background-color: #ffcccc"></a>
+   749) <a name="l749" style="background-color: #ffcccc">      ! modified wood allocation to be 2.2 at npp=800 gC/m2/yr, 0.2 at npp=0,</a>
+   750) <a name="l750" style="background-color: #ffcccc">      ! constrained so that it does not go lower than 0.2 (under negative annsum_npp)</a>
+   751) <a name="l751" style="background-color: #ffcccc">      ! There was an error in this formula in previous version, where the coefficient</a>
+   752) <a name="l752" style="background-color: #ffcccc">      ! was 0.004 instead of 0.0025.</a>
+   753) <a name="l753" style="background-color: #ffcccc">      ! This variable allocation is only for trees. Shrubs have a constant</a>
+   754) <a name="l754" style="background-color: #ffcccc">      ! allocation as specified in the pft-physiology file.  The value is also used</a>
+   755) <a name="l755" style="background-color: #ffcccc">      ! as a trigger here: -1.0 means to use the dynamic allocation (trees).</a>
+   756) <a name="l756" style="background-color: #ffcccc">      if (stem_leaf(ivt(p)) == -1._r8) then</a>
+   757) <a name="l757" style="background-color: #ffcccc">        f3 = (2.7/(1.0+exp(-0.004*(annsum_npp(p) - 300.0)))) - 0.4</a>
+   758) <a name="l758" style="background-color: #ffcccc">      else</a>
+   759) <a name="l759" style="background-color: #ffcccc">        f3 = stem_leaf(ivt(p))</a>
+   760) <a name="l760" style="background-color: #ffcccc">      end if</a>
+   761) <a name="l761" style="background-color: #ffcccc">      </a>
+   762) <a name="l762" style="background-color: #ffcccc">      f4 = flivewd(ivt(p))</a>
+   763) <a name="l763" style="background-color: #ffcccc">      g1 = grperc(ivt(p))</a>
+   764) <a name="l764" style="background-color: #ffcccc">      g2 = grpnow(ivt(p))</a>
+   765) <a name="l765" style="background-color: #ffcccc">      cnl = leafcn(ivt(p))</a>
+   766) <a name="l766" style="background-color: #ffcccc">      cnfr = frootcn(ivt(p))</a>
+   767) <a name="l767" style="background-color: #ffcccc">      cnlw = livewdcn(ivt(p))</a>
+   768) <a name="l768" style="background-color: #ffcccc">      cndw = deadwdcn(ivt(p))</a>
+   769) <a name="l769" style="background-color: #ffcccc">      fcur = fcur2(ivt(p))</a>
+   770) <a name="l770" style="background-color: #ffcccc"></a>
+   771) <a name="l771" style="background-color: #ffcccc">      if (ivt(p) &gt;= npcropmin) then ! skip 2 generic crops</a>
+   772) <a name="l772" style="background-color: #ffcccc">         if (croplive(p)) then</a>
+   773) <a name="l773" style="background-color: #ffcccc">            f1 = aroot(p) / aleaf(p)</a>
+   774) <a name="l774" style="background-color: #ffcccc">            f3 = astem(p) / aleaf(p)</a>
+   775) <a name="l775" style="background-color: #ffcccc">            f5 = arepr(p) / aleaf(p)</a>
+   776) <a name="l776" style="background-color: #ffcccc">            g1 = 0.25_r8</a>
+   777) <a name="l777" style="background-color: #ffcccc">         else</a>
+   778) <a name="l778" style="background-color: #ffcccc">            f1 = 0._r8</a>
+   779) <a name="l779" style="background-color: #ffcccc">            f3 = 0._r8</a>
+   780) <a name="l780" style="background-color: #ffcccc">            f5 = 0._r8</a>
+   781) <a name="l781" style="background-color: #ffcccc">            g1 = 0.25_r8</a>
+   782) <a name="l782" style="background-color: #ffcccc">         end if</a>
+   783) <a name="l783" style="background-color: #ffcccc">      end if</a>
+   784) <a name="l784" style="background-color: #ffcccc"></a>
+   785) <a name="l785" style="background-color: #ffcccc">      ! increase fcur linearly with ndays_active, until fcur reaches 1.0 at</a>
+   786) <a name="l786" style="background-color: #ffcccc">      ! ndays_active = days/year.  This prevents the continued storage of C and N.</a>
+   787) <a name="l787" style="background-color: #ffcccc">      ! turning off this correction (PET, 12/11/03), instead using bgtr in</a>
+   788) <a name="l788" style="background-color: #ffcccc">      ! phenology algorithm.</a>
+   789) <a name="l789" style="background-color: #ffcccc">      !fcur = fcur + (1._r8 - fcur)*lgsf(p)</a>
+   790) <a name="l790" style="background-color: #ffcccc"></a>
+   791) <a name="l791" style="background-color: #ffcccc">      sminn_to_npool(p) = plant_ndemand(p) * fpg(c)</a>
+   792) <a name="l792" style="background-color: #ffcccc">      plant_nalloc(p) = sminn_to_npool(p) + retransn_to_npool(p)</a>
+   793) <a name="l793" style="background-color: #ffcccc"></a>
+   794) <a name="l794" style="background-color: #ffcccc">      ! calculate the associated carbon allocation, and the excess</a>
+   795) <a name="l795" style="background-color: #ffcccc">      ! carbon flux that must be accounted for through downregulation</a>
+   796) <a name="l796" style="background-color: #ffcccc"></a>
+   797) <a name="l797" style="background-color: #ffcccc">      plant_calloc(p) = plant_nalloc(p) * (c_allometry(p)/n_allometry(p))</a>
+   798) <a name="l798" style="background-color: #ffcccc">      excess_cflux(p) = availc(p) - plant_calloc(p)</a>
+   799) <a name="l799" style="background-color: #ffcccc"></a>
+   800) <a name="l800" style="background-color: #ffcccc">      ! reduce gpp fluxes due to N limitation</a>
+   801) <a name="l801" style="background-color: #ffcccc">      if (gpp(p) &gt; 0.0_r8) then</a>
+   802) <a name="l802" style="background-color: #ffcccc">         downreg(p) = excess_cflux(p)/gpp(p)</a>
+   803) <a name="l803" style="background-color: #ffcccc">         psnsun_to_cpool(p) = psnsun_to_cpool(p)*(1._r8 - downreg(p))</a>
+   804) <a name="l804" style="background-color: #ffcccc">         psnshade_to_cpool(p) = psnshade_to_cpool(p)*(1._r8 - downreg(p))</a>
+   805) <a name="l805" style="background-color: #ffcccc">         if (use_c13) then</a>
+   806) <a name="l806" style="background-color: #ffcccc">            c13_psnsun_to_cpool(p) = c13_psnsun_to_cpool(p)*(1._r8 - downreg(p))</a>
+   807) <a name="l807" style="background-color: #ffcccc">            c13_psnshade_to_cpool(p) = c13_psnshade_to_cpool(p)*(1._r8 - downreg(p))</a>
+   808) <a name="l808" style="background-color: #ffcccc">         endif</a>
+   809) <a name="l809" style="background-color: #ffcccc">      end if</a>
+   810) <a name="l810" style="background-color: #ffcccc"></a>
+   811) <a name="l811" style="background-color: #ffcccc">      ! calculate the amount of new leaf C dictated by these allocation</a>
+   812) <a name="l812" style="background-color: #ffcccc">      ! decisions, and calculate the daily fluxes of C and N to current</a>
+   813) <a name="l813" style="background-color: #ffcccc">      ! growth and storage pools</a>
+   814) <a name="l814" style="background-color: #ffcccc"></a>
+   815) <a name="l815" style="background-color: #ffcccc">      ! fcur is the proportion of this day's growth that is displayed now,</a>
+   816) <a name="l816" style="background-color: #ffcccc">      ! the remainder going into storage for display next year through the</a>
+   817) <a name="l817" style="background-color: #ffcccc">      ! transfer pools</a>
+   818) <a name="l818" style="background-color: #ffcccc"></a>
+   819) <a name="l819" style="background-color: #ffcccc">      nlc = plant_calloc(p) / c_allometry(p)</a>
+   820) <a name="l820" style="background-color: #ffcccc">      cpool_to_leafc(p)          = nlc * fcur</a>
+   821) <a name="l821" style="background-color: #ffcccc">      cpool_to_leafc_storage(p)  = nlc * (1._r8 - fcur)</a>
+   822) <a name="l822" style="background-color: #ffcccc">      cpool_to_frootc(p)         = nlc * f1 * fcur</a>
+   823) <a name="l823" style="background-color: #ffcccc">      cpool_to_frootc_storage(p) = nlc * f1 * (1._r8 - fcur)</a>
+   824) <a name="l824" style="background-color: #ffcccc">      if (woody(ivt(p)) == 1._r8) then</a>
+   825) <a name="l825" style="background-color: #ffcccc">         cpool_to_livestemc(p)          = nlc * f3 * f4 * fcur</a>
+   826) <a name="l826" style="background-color: #ffcccc">         cpool_to_livestemc_storage(p)  = nlc * f3 * f4 * (1._r8 - fcur)</a>
+   827) <a name="l827" style="background-color: #ffcccc">         cpool_to_deadstemc(p)          = nlc * f3 * (1._r8 - f4) * fcur</a>
+   828) <a name="l828" style="background-color: #ffcccc">         cpool_to_deadstemc_storage(p)  = nlc * f3 * (1._r8 - f4) * (1._r8 - fcur)</a>
+   829) <a name="l829" style="background-color: #ffcccc">         cpool_to_livecrootc(p)         = nlc * f2 * f3 * f4 * fcur</a>
+   830) <a name="l830" style="background-color: #ffcccc">         cpool_to_livecrootc_storage(p) = nlc * f2 * f3 * f4 * (1._r8 - fcur)</a>
+   831) <a name="l831" style="background-color: #ffcccc">         cpool_to_deadcrootc(p)         = nlc * f2 * f3 * (1._r8 - f4) * fcur</a>
+   832) <a name="l832" style="background-color: #ffcccc">         cpool_to_deadcrootc_storage(p) = nlc * f2 * f3 * (1._r8 - f4) * (1._r8 - fcur)</a>
+   833) <a name="l833" style="background-color: #ffcccc">      end if</a>
+   834) <a name="l834" style="background-color: #ffcccc">      if (ivt(p) &gt;= npcropmin) then ! skip 2 generic crops</a>
+   835) <a name="l835" style="background-color: #ffcccc">         cpool_to_livestemc(p)          = nlc * f3 * f4 * fcur</a>
+   836) <a name="l836" style="background-color: #ffcccc">         cpool_to_livestemc_storage(p)  = nlc * f3 * f4 * (1._r8 - fcur)</a>
+   837) <a name="l837" style="background-color: #ffcccc">         cpool_to_deadstemc(p)          = nlc * f3 * (1._r8 - f4) * fcur</a>
+   838) <a name="l838" style="background-color: #ffcccc">         cpool_to_deadstemc_storage(p)  = nlc * f3 * (1._r8 - f4) * (1._r8 - fcur)</a>
+   839) <a name="l839" style="background-color: #ffcccc">         cpool_to_livecrootc(p)         = nlc * f2 * f3 * f4 * fcur</a>
+   840) <a name="l840" style="background-color: #ffcccc">         cpool_to_livecrootc_storage(p) = nlc * f2 * f3 * f4 * (1._r8 - fcur)</a>
+   841) <a name="l841" style="background-color: #ffcccc">         cpool_to_deadcrootc(p)         = nlc * f2 * f3 * (1._r8 - f4) * fcur</a>
+   842) <a name="l842" style="background-color: #ffcccc">         cpool_to_deadcrootc_storage(p) = nlc * f2 * f3 * (1._r8 - f4) * (1._r8 - fcur)</a>
+   843) <a name="l843" style="background-color: #ffcccc">         cpool_to_grainc(p)             = nlc * f5 * fcur</a>
+   844) <a name="l844" style="background-color: #ffcccc">         cpool_to_grainc_storage(p)     = nlc * f5 * (1._r8 -fcur)</a>
+   845) <a name="l845" style="background-color: #ffcccc">      end if</a>
+   846) <a name="l846" style="background-color: #ffcccc"></a>
+   847) <a name="l847" style="background-color: #ffcccc">      ! corresponding N fluxes</a>
+   848) <a name="l848" style="background-color: #ffcccc">      npool_to_leafn(p)          = (nlc / cnl) * fcur</a>
+   849) <a name="l849" style="background-color: #ffcccc">      npool_to_leafn_storage(p)  = (nlc / cnl) * (1._r8 - fcur)</a>
+   850) <a name="l850" style="background-color: #ffcccc">      npool_to_frootn(p)         = (nlc * f1 / cnfr) * fcur</a>
+   851) <a name="l851" style="background-color: #ffcccc">      npool_to_frootn_storage(p) = (nlc * f1 / cnfr) * (1._r8 - fcur)</a>
+   852) <a name="l852" style="background-color: #ffcccc">      if (woody(ivt(p)) == 1._r8) then</a>
+   853) <a name="l853" style="background-color: #ffcccc">         npool_to_livestemn(p)          = (nlc * f3 * f4 / cnlw) * fcur</a>
+   854) <a name="l854" style="background-color: #ffcccc">         npool_to_livestemn_storage(p)  = (nlc * f3 * f4 / cnlw) * (1._r8 - fcur)</a>
+   855) <a name="l855" style="background-color: #ffcccc">         npool_to_deadstemn(p)          = (nlc * f3 * (1._r8 - f4) / cndw) * fcur</a>
+   856) <a name="l856" style="background-color: #ffcccc">         npool_to_deadstemn_storage(p)  = (nlc * f3 * (1._r8 - f4) / cndw) * (1._r8 - fcur)</a>
+   857) <a name="l857" style="background-color: #ffcccc">         npool_to_livecrootn(p)         = (nlc * f2 * f3 * f4 / cnlw) * fcur</a>
+   858) <a name="l858" style="background-color: #ffcccc">         npool_to_livecrootn_storage(p) = (nlc * f2 * f3 * f4 / cnlw) * (1._r8 - fcur)</a>
+   859) <a name="l859" style="background-color: #ffcccc">         npool_to_deadcrootn(p)         = (nlc * f2 * f3 * (1._r8 - f4) / cndw) * fcur</a>
+   860) <a name="l860" style="background-color: #ffcccc">         npool_to_deadcrootn_storage(p) = (nlc * f2 * f3 * (1._r8 - f4) / cndw) * (1._r8 - fcur)</a>
+   861) <a name="l861" style="background-color: #ffcccc">      end if</a>
+   862) <a name="l862" style="background-color: #ffcccc">      if (ivt(p) &gt;= npcropmin) then ! skip 2 generic crops</a>
+   863) <a name="l863" style="background-color: #ffcccc">         cng = graincn(ivt(p))</a>
+   864) <a name="l864" style="background-color: #ffcccc">         npool_to_livestemn(p)          = (nlc * f3 * f4 / cnlw) * fcur</a>
+   865) <a name="l865" style="background-color: #ffcccc">         npool_to_livestemn_storage(p)  = (nlc * f3 * f4 / cnlw) * (1._r8 - fcur)</a>
+   866) <a name="l866" style="background-color: #ffcccc">         npool_to_deadstemn(p)          = (nlc * f3 * (1._r8 - f4) / cndw) * fcur</a>
+   867) <a name="l867" style="background-color: #ffcccc">         npool_to_deadstemn_storage(p)  = (nlc * f3 * (1._r8 - f4) / cndw) * (1._r8 - fcur)</a>
+   868) <a name="l868" style="background-color: #ffcccc">         npool_to_livecrootn(p)         = (nlc * f2 * f3 * f4 / cnlw) * fcur</a>
+   869) <a name="l869" style="background-color: #ffcccc">         npool_to_livecrootn_storage(p) = (nlc * f2 * f3 * f4 / cnlw) * (1._r8 - fcur)</a>
+   870) <a name="l870" style="background-color: #ffcccc">         npool_to_deadcrootn(p)         = (nlc * f2 * f3 * (1._r8 - f4) / cndw) * fcur</a>
+   871) <a name="l871" style="background-color: #ffcccc">         npool_to_deadcrootn_storage(p) = (nlc * f2 * f3 * (1._r8 - f4) / cndw) * (1._r8 - fcur)</a>
+   872) <a name="l872" style="background-color: #ffcccc">         npool_to_grainn(p)             = (nlc * f5 / cng) * fcur</a>
+   873) <a name="l873" style="background-color: #ffcccc">         npool_to_grainn_storage(p)     = (nlc * f5 / cng) * (1._r8 -fcur)</a>
+   874) <a name="l874" style="background-color: #ffcccc">      end if</a>
+   875) <a name="l875" style="background-color: #ffcccc"></a>
+   876) <a name="l876" style="background-color: #ffcccc">      ! Calculate the amount of carbon that needs to go into growth</a>
+   877) <a name="l877" style="background-color: #ffcccc">      ! respiration storage to satisfy all of the storage growth demands.</a>
+   878) <a name="l878" style="background-color: #ffcccc">      ! Allows for the fraction of growth respiration that is released at the</a>
+   879) <a name="l879" style="background-color: #ffcccc">      ! time of fixation, versus the remaining fraction that is stored for</a>
+   880) <a name="l880" style="background-color: #ffcccc">      ! release at the time of display. Note that all the growth respiration</a>
+   881) <a name="l881" style="background-color: #ffcccc">      ! fluxes that get released on a given timestep are calculated in growth_resp(),</a>
+   882) <a name="l882" style="background-color: #ffcccc">      ! but that the storage of C for growth resp during display of transferred</a>
+   883) <a name="l883" style="background-color: #ffcccc">      ! growth is assigned here.</a>
+   884) <a name="l884" style="background-color: #ffcccc"></a>
+   885) <a name="l885" style="background-color: #ffcccc">      gresp_storage = cpool_to_leafc_storage(p) + cpool_to_frootc_storage(p)</a>
+   886) <a name="l886" style="background-color: #ffcccc">      if (woody(ivt(p)) == 1._r8) then</a>
+   887) <a name="l887" style="background-color: #ffcccc">         gresp_storage = gresp_storage + cpool_to_livestemc_storage(p)</a>
+   888) <a name="l888" style="background-color: #ffcccc">         gresp_storage = gresp_storage + cpool_to_deadstemc_storage(p)</a>
+   889) <a name="l889" style="background-color: #ffcccc">         gresp_storage = gresp_storage + cpool_to_livecrootc_storage(p)</a>
+   890) <a name="l890" style="background-color: #ffcccc">         gresp_storage = gresp_storage + cpool_to_deadcrootc_storage(p)</a>
+   891) <a name="l891" style="background-color: #ffcccc">      end if</a>
+   892) <a name="l892" style="background-color: #ffcccc">      if (ivt(p) &gt;= npcropmin) then ! skip 2 generic crops</a>
+   893) <a name="l893" style="background-color: #ffcccc">         gresp_storage = gresp_storage + cpool_to_livestemc_storage(p)</a>
+   894) <a name="l894" style="background-color: #ffcccc">         gresp_storage = gresp_storage + cpool_to_grainc_storage(p)</a>
+   895) <a name="l895" style="background-color: #ffcccc">      end if</a>
+   896) <a name="l896" style="background-color: #ffcccc">      cpool_to_gresp_storage(p) = gresp_storage * g1 * (1._r8 - g2)</a>
+   897) <a name="l897" style="background-color: #ffcccc"></a>
+   898) <a name="l898" style="background-color: #ffcccc">   end do ! end pft loop</a>
+   899) <a name="l899" style="background-color: #ffcccc"></a>
+   900) <a name="l900" style="background-color: #ffcccc">end subroutine CNAllocation</a>
+   901) <a name="l901" style="background-color: #ffffff"></a>
+   902) <a name="l902" style="background-color: #ffffff">end module CNAllocationMod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

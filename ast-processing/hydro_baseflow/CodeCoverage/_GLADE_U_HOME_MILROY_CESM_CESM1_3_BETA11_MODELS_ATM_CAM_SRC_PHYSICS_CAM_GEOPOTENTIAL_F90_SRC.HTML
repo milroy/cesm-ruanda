@@ -1,0 +1,246 @@
+<html>
+<head>
+<title>Listing of geopotential.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;geopotential.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 90.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff"></a>
+     2) <a name="l2" style="background-color: #ffffff">module geopotential</a>
+     3) <a name="l3" style="background-color: #ffffff"></a>
+     4) <a name="l4" style="background-color: #ffffff">!---------------------------------------------------------------------------------</a>
+     5) <a name="l5" style="background-color: #ffffff">! Compute geopotential from temperature or</a>
+     6) <a name="l6" style="background-color: #ffffff">! compute geopotential and temperature from dry static energy.</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! The hydrostatic matrix elements must be consistent with the dynamics algorithm.</a>
+     9) <a name="l9" style="background-color: #ffffff">! The diagonal element is the itegration weight from interface k+1 to midpoint k.</a>
+    10) <a name="l10" style="background-color: #ffffff">! The offdiagonal element is the weight between interfaces.</a>
+    11) <a name="l11" style="background-color: #ffffff">! </a>
+    12) <a name="l12" style="background-color: #ffffff">! Author: B.Boville, Feb 2001 from earlier code by Boville and S.J. Lin</a>
+    13) <a name="l13" style="background-color: #ffffff">!---------------------------------------------------------------------------------</a>
+    14) <a name="l14" style="background-color: #ffffff"></a>
+    15) <a name="l15" style="background-color: #ffffff">  use shr_kind_mod, only: r8 =&gt; shr_kind_r8</a>
+    16) <a name="l16" style="background-color: #ffffff">  use ppgrid,       only: pver, pverp</a>
+    17) <a name="l17" style="background-color: #ffffff">  use dycore,       only: dycore_is</a>
+    18) <a name="l18" style="background-color: #ffffff"></a>
+    19) <a name="l19" style="background-color: #ffffff">  implicit none</a>
+    20) <a name="l20" style="background-color: #ffffff">  private</a>
+    21) <a name="l21" style="background-color: #ffffff">  save</a>
+    22) <a name="l22" style="background-color: #ffffff"></a>
+    23) <a name="l23" style="background-color: #ffffff">  public geopotential_dse</a>
+    24) <a name="l24" style="background-color: #ffffff">  public geopotential_t</a>
+    25) <a name="l25" style="background-color: #ffffff"></a>
+    26) <a name="l26" style="background-color: #ffffff">contains</a>
+    27) <a name="l27" style="background-color: #ffffff">!===============================================================================</a>
+    28) <a name="l28" style="background-color: #ffffff">  subroutine geopotential_dse(                                &amp;</a>
+    29) <a name="l29" style="background-color: #ffffff">       piln   , pmln   , pint   , pmid   , pdel   , rpdel  ,  &amp;</a>
+    30) <a name="l30" style="background-color: #ffffff">       dse    , q      , phis   , rair   , gravit , cpair  ,  &amp;</a>
+    31) <a name="l31" style="background-color: #ffffff">       zvir   , t      , zi     , zm     , ncol             )</a>
+    32) <a name="l32" style="background-color: #ffffff">!----------------------------------------------------------------------- </a>
+    33) <a name="l33" style="background-color: #ffffff">! </a>
+    34) <a name="l34" style="background-color: #ffffff">! Purpose: </a>
+    35) <a name="l35" style="background-color: #ffffff">! Compute the temperature  and geopotential height (above the surface) at the</a>
+    36) <a name="l36" style="background-color: #ffffff">! midpoints and interfaces from the input dry static energy and pressures.</a>
+    37) <a name="l37" style="background-color: #ffffff">!</a>
+    38) <a name="l38" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    39) <a name="l39" style="background-color: #ffffff">!------------------------------Arguments--------------------------------</a>
+    40) <a name="l40" style="background-color: #ffffff">!</a>
+    41) <a name="l41" style="background-color: #ffffff">! Input arguments</a>
+    42) <a name="l42" style="background-color: #ffffff">    integer, intent(in) :: ncol                  ! Number of longitudes</a>
+    43) <a name="l43" style="background-color: #ffffff"></a>
+    44) <a name="l44" style="background-color: #ffffff">    ! rair, and cpair are passed in as slices of rank 3 arrays allocated</a>
+    45) <a name="l45" style="background-color: #ffffff">    ! at runtime. Don't specify size to avoid temporary copy.</a>
+    46) <a name="l46" style="background-color: #ffffff">    real(r8), intent(in) :: piln (:,:)    ! (pcols,pverp) - Log interface pressures</a>
+    47) <a name="l47" style="background-color: #ffffff">    real(r8), intent(in) :: pmln (:,:)    ! (pcols,pver)  - Log midpoint pressures</a>
+    48) <a name="l48" style="background-color: #ffffff">    real(r8), intent(in) :: pint (:,:)    ! (pcols,pverp) - Interface pressures</a>
+    49) <a name="l49" style="background-color: #ffffff">    real(r8), intent(in) :: pmid (:,:)    ! (pcols,pver)  - Midpoint pressures</a>
+    50) <a name="l50" style="background-color: #ffffff">    real(r8), intent(in) :: pdel (:,:)    ! (pcols,pver)  - layer thickness</a>
+    51) <a name="l51" style="background-color: #ffffff">    real(r8), intent(in) :: rpdel(:,:)    ! (pcols,pver)  - inverse of layer thickness</a>
+    52) <a name="l52" style="background-color: #ffffff">    real(r8), intent(in) :: dse  (:,:)    ! (pcols,pver)  - dry static energy</a>
+    53) <a name="l53" style="background-color: #ffffff">    real(r8), intent(in) :: q    (:,:)    ! (pcols,pver)  - specific humidity</a>
+    54) <a name="l54" style="background-color: #ffffff">    real(r8), intent(in) :: phis (:)      ! (pcols)       - surface geopotential</a>
+    55) <a name="l55" style="background-color: #ffffff">    real(r8), intent(in) :: rair (:,:)    !               - Gas constant for dry air</a>
+    56) <a name="l56" style="background-color: #ffffff">    real(r8), intent(in) :: gravit        !               - Acceleration of gravity</a>
+    57) <a name="l57" style="background-color: #ffffff">    real(r8), intent(in) :: cpair(:,:)    !               - specific heat at constant p for dry air</a>
+    58) <a name="l58" style="background-color: #ffffff">    real(r8), intent(in) :: zvir (:,:)    ! (pcols,pver)  - rh2o/rair - 1</a>
+    59) <a name="l59" style="background-color: #ffffff"></a>
+    60) <a name="l60" style="background-color: #ffffff">! Output arguments</a>
+    61) <a name="l61" style="background-color: #ffffff"></a>
+    62) <a name="l62" style="background-color: #ffffff">    real(r8), intent(out) :: t(:,:)       ! (pcols,pver)  - temperature</a>
+    63) <a name="l63" style="background-color: #ffffff">    real(r8), intent(out) :: zi(:,:)      ! (pcols,pverp) - Height above surface at interfaces</a>
+    64) <a name="l64" style="background-color: #ffffff">    real(r8), intent(out) :: zm(:,:)      ! (pcols,pver)  - Geopotential height at mid level</a>
+    65) <a name="l65" style="background-color: #ffffff">!</a>
+    66) <a name="l66" style="background-color: #ffffff">!---------------------------Local variables-----------------------------------------</a>
+    67) <a name="l67" style="background-color: #ffffff">!</a>
+    68) <a name="l68" style="background-color: #ffffff">    logical  :: fvdyn                   ! finite volume dynamics</a>
+    69) <a name="l69" style="background-color: #ffffff">    integer  :: i,k                     ! Lon, level, level indices</a>
+    70) <a name="l70" style="background-color: #ffffff">    real(r8) :: hkk(ncol)               ! diagonal element of hydrostatic matrix</a>
+    71) <a name="l71" style="background-color: #ffffff">    real(r8) :: hkl(ncol)               ! off-diagonal element</a>
+    72) <a name="l72" style="background-color: #ffffff">    real(r8) :: rog(ncol,pver)          ! Rair / gravit</a>
+    73) <a name="l73" style="background-color: #ffffff">    real(r8) :: tv                      ! virtual temperature</a>
+    74) <a name="l74" style="background-color: #ffffff">    real(r8) :: tvfac                   ! Tv/T</a>
+    75) <a name="l75" style="background-color: #ffffff">!</a>
+    76) <a name="l76" style="background-color: #ffffff">!----------------------------------------------------------------------------------</a>
+    77) <a name="l77" style="background-color: #ffffff">    rog(:ncol,:) = rair(:ncol,:) / gravit</a>
+    78) <a name="l78" style="background-color: #ffffff"></a>
+    79) <a name="l79" style="background-color: #ffffff">! Set dynamics flag</a>
+    80) <a name="l80" style="background-color: #ffffff">    fvdyn = dycore_is ('LR')</a>
+    81) <a name="l81" style="background-color: #ffffff"></a>
+    82) <a name="l82" style="background-color: #ffffff">! The surface height is zero by definition.</a>
+    83) <a name="l83" style="background-color: #ffffff">    do i = 1,ncol</a>
+    84) <a name="l84" style="background-color: #ffffff">       zi(i,pverp) = 0.0_r8</a>
+    85) <a name="l85" style="background-color: #ffffff">    end do</a>
+    86) <a name="l86" style="background-color: #ffffff"></a>
+    87) <a name="l87" style="background-color: #ffffff">! Compute the virtual temperature, zi, zm from bottom up</a>
+    88) <a name="l88" style="background-color: #ffffff">! Note, zi(i,k) is the interface above zm(i,k)</a>
+    89) <a name="l89" style="background-color: #ffffff">    do k = pver, 1, -1</a>
+    90) <a name="l90" style="background-color: #ffffff"></a>
+    91) <a name="l91" style="background-color: #ffffff">! First set hydrostatic elements consistent with dynamics</a>
+    92) <a name="l92" style="background-color: #ffffff">       if (fvdyn) then</a>
+    93) <a name="l93" style="background-color: #ffff99">          do i = 1,ncol</a>
+    94) <a name="l94" style="background-color: #ffff99">             hkl(i) = piln(i,k+1) - piln(i,k)</a>
+    95) <a name="l95" style="background-color: #ffff99">             hkk(i) = 1._r8 - pint(i,k) * hkl(i) * rpdel(i,k)</a>
+    96) <a name="l96" style="background-color: #ffff99">          end do</a>
+    97) <a name="l97" style="background-color: #ffff99">       else</a>
+    98) <a name="l98" style="background-color: #ffffff">          do i = 1,ncol</a>
+    99) <a name="l99" style="background-color: #ffffff">             hkl(i) = pdel(i,k) / pmid(i,k)</a>
+   100) <a name="l100" style="background-color: #ffffff">             hkk(i) = 0.5_r8 * hkl(i)</a>
+   101) <a name="l101" style="background-color: #ffffff">          end do</a>
+   102) <a name="l102" style="background-color: #ffffff">       end if</a>
+   103) <a name="l103" style="background-color: #ffffff"></a>
+   104) <a name="l104" style="background-color: #ffffff">! Now compute tv, t, zm, zi</a>
+   105) <a name="l105" style="background-color: #ffffff">       do i = 1,ncol</a>
+   106) <a name="l106" style="background-color: #ffffff">          tvfac   = 1._r8 + zvir(i,k) * q(i,k)</a>
+   107) <a name="l107" style="background-color: #ffffff">          tv      = (dse(i,k) - phis(i) - gravit*zi(i,k+1)) / ((cpair(i,k) / tvfac) + &amp;</a>
+   108) <a name="l108" style="background-color: #ffffff">	                                                               rair(i,k)*hkk(i))</a>
+   109) <a name="l109" style="background-color: #ffffff"></a>
+   110) <a name="l110" style="background-color: #ffffff">          t (i,k) = tv / tvfac</a>
+   111) <a name="l111" style="background-color: #ffffff"></a>
+   112) <a name="l112" style="background-color: #ffffff">          zm(i,k) = zi(i,k+1) + rog(i,k) * tv * hkk(i)</a>
+   113) <a name="l113" style="background-color: #ffffff">          zi(i,k) = zi(i,k+1) + rog(i,k) * tv * hkl(i)</a>
+   114) <a name="l114" style="background-color: #ffffff">       end do</a>
+   115) <a name="l115" style="background-color: #ffffff">    end do</a>
+   116) <a name="l116" style="background-color: #ffffff"></a>
+   117) <a name="l117" style="background-color: #ffffff">    return</a>
+   118) <a name="l118" style="background-color: #ffffff">  end subroutine geopotential_dse</a>
+   119) <a name="l119" style="background-color: #ffffff"></a>
+   120) <a name="l120" style="background-color: #ffffff">!===============================================================================</a>
+   121) <a name="l121" style="background-color: #ffffff">  subroutine geopotential_t(                                 &amp;</a>
+   122) <a name="l122" style="background-color: #ffffff">       piln   , pmln   , pint   , pmid   , pdel   , rpdel  , &amp;</a>
+   123) <a name="l123" style="background-color: #ffffff">       t      , q      , rair   , gravit , zvir   ,          &amp;</a>
+   124) <a name="l124" style="background-color: #ffffff">       zi     , zm     , ncol   )</a>
+   125) <a name="l125" style="background-color: #ffffff"></a>
+   126) <a name="l126" style="background-color: #ffffff">!----------------------------------------------------------------------- </a>
+   127) <a name="l127" style="background-color: #ffffff">! </a>
+   128) <a name="l128" style="background-color: #ffffff">! Purpose: </a>
+   129) <a name="l129" style="background-color: #ffffff">! Compute the geopotential height (above the surface) at the midpoints and </a>
+   130) <a name="l130" style="background-color: #ffffff">! interfaces using the input temperatures and pressures.</a>
+   131) <a name="l131" style="background-color: #ffffff">!</a>
+   132) <a name="l132" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   133) <a name="l133" style="background-color: #ffffff"></a>
+   134) <a name="l134" style="background-color: #ffffff">use ppgrid, only : pcols</a>
+   135) <a name="l135" style="background-color: #ffffff"></a>
+   136) <a name="l136" style="background-color: #ffffff">!------------------------------Arguments--------------------------------</a>
+   137) <a name="l137" style="background-color: #ffffff">!</a>
+   138) <a name="l138" style="background-color: #ffffff">! Input arguments</a>
+   139) <a name="l139" style="background-color: #ffffff">!</a>
+   140) <a name="l140" style="background-color: #ffffff">    integer, intent(in) :: ncol                  ! Number of longitudes</a>
+   141) <a name="l141" style="background-color: #ffffff"></a>
+   142) <a name="l142" style="background-color: #ffffff">    real(r8), intent(in) :: piln (:,:)    ! (pcols,pverp) - Log interface pressures</a>
+   143) <a name="l143" style="background-color: #ffffff">    real(r8), intent(in) :: pmln (:,:)    ! (pcols,pver)  - Log midpoint pressures</a>
+   144) <a name="l144" style="background-color: #ffffff">    real(r8), intent(in) :: pint (:,:)    ! (pcols,pverp) - Interface pressures</a>
+   145) <a name="l145" style="background-color: #ffffff">    real(r8), intent(in) :: pmid (:,:)    ! (pcols,pver)  - Midpoint pressures</a>
+   146) <a name="l146" style="background-color: #ffffff">    real(r8), intent(in) :: pdel (:,:)    ! (pcols,pver)  - layer thickness</a>
+   147) <a name="l147" style="background-color: #ffffff">    real(r8), intent(in) :: rpdel(:,:)    ! (pcols,pver)  - inverse of layer thickness</a>
+   148) <a name="l148" style="background-color: #ffffff">    real(r8), intent(in) :: t    (:,:)    ! (pcols,pver)  - temperature</a>
+   149) <a name="l149" style="background-color: #ffffff">    real(r8), intent(in) :: q    (:,:)    ! (pcols,pver)  - specific humidity</a>
+   150) <a name="l150" style="background-color: #ffffff">    real(r8), intent(in) :: rair (:,:)    ! (pcols,pver)  - Gas constant for dry air</a>
+   151) <a name="l151" style="background-color: #ffffff">    real(r8), intent(in) :: gravit        !               - Acceleration of gravity</a>
+   152) <a name="l152" style="background-color: #ffffff">    real(r8), intent(in) :: zvir (:,:)    ! (pcols,pver)  - rh2o/rair - 1</a>
+   153) <a name="l153" style="background-color: #ffffff"></a>
+   154) <a name="l154" style="background-color: #ffffff">! Output arguments</a>
+   155) <a name="l155" style="background-color: #ffffff"></a>
+   156) <a name="l156" style="background-color: #ffffff">    real(r8), intent(out) :: zi(:,:)      ! (pcols,pverp) - Height above surface at interfaces</a>
+   157) <a name="l157" style="background-color: #ffffff">    real(r8), intent(out) :: zm(:,:)      ! (pcols,pver)  - Geopotential height at mid level</a>
+   158) <a name="l158" style="background-color: #ffffff">!</a>
+   159) <a name="l159" style="background-color: #ffffff">!---------------------------Local variables-----------------------------</a>
+   160) <a name="l160" style="background-color: #ffffff">!</a>
+   161) <a name="l161" style="background-color: #ffffff">    logical  :: fvdyn                   ! finite volume dynamics</a>
+   162) <a name="l162" style="background-color: #ffffff">    integer  :: i,k                     ! Lon, level indices</a>
+   163) <a name="l163" style="background-color: #ffffff">    real(r8) :: hkk(ncol)               ! diagonal element of hydrostatic matrix</a>
+   164) <a name="l164" style="background-color: #ffffff">    real(r8) :: hkl(ncol)               ! off-diagonal element</a>
+   165) <a name="l165" style="background-color: #ffffff">    real(r8) :: rog(ncol,pver)          ! Rair / gravit</a>
+   166) <a name="l166" style="background-color: #ffffff">    real(r8) :: tv                      ! virtual temperature</a>
+   167) <a name="l167" style="background-color: #ffffff">    real(r8) :: tvfac                   ! Tv/T</a>
+   168) <a name="l168" style="background-color: #ffffff">!</a>
+   169) <a name="l169" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   170) <a name="l170" style="background-color: #ffffff">!</a>
+   171) <a name="l171" style="background-color: #ffffff">    rog(:ncol,:) = rair(:ncol,:) / gravit</a>
+   172) <a name="l172" style="background-color: #ffffff"></a>
+   173) <a name="l173" style="background-color: #ffffff">! Set dynamics flag</a>
+   174) <a name="l174" style="background-color: #ffffff"></a>
+   175) <a name="l175" style="background-color: #ffffff">    fvdyn = dycore_is ('LR')</a>
+   176) <a name="l176" style="background-color: #ffffff"></a>
+   177) <a name="l177" style="background-color: #ffffff">! The surface height is zero by definition.</a>
+   178) <a name="l178" style="background-color: #ffffff"></a>
+   179) <a name="l179" style="background-color: #ffffff">    do i = 1,ncol</a>
+   180) <a name="l180" style="background-color: #ffffff">       zi(i,pverp) = 0.0_r8</a>
+   181) <a name="l181" style="background-color: #ffffff">    end do</a>
+   182) <a name="l182" style="background-color: #ffffff"></a>
+   183) <a name="l183" style="background-color: #ffffff">! Compute zi, zm from bottom up. </a>
+   184) <a name="l184" style="background-color: #ffffff">! Note, zi(i,k) is the interface above zm(i,k)</a>
+   185) <a name="l185" style="background-color: #ffffff"></a>
+   186) <a name="l186" style="background-color: #ffffff">    do k = pver, 1, -1</a>
+   187) <a name="l187" style="background-color: #ffffff"></a>
+   188) <a name="l188" style="background-color: #ffffff">! First set hydrostatic elements consistent with dynamics</a>
+   189) <a name="l189" style="background-color: #ffffff"></a>
+   190) <a name="l190" style="background-color: #ffffff">       if (fvdyn) then</a>
+   191) <a name="l191" style="background-color: #ffff99">          do i = 1,ncol</a>
+   192) <a name="l192" style="background-color: #ffff99">             hkl(i) = piln(i,k+1) - piln(i,k)</a>
+   193) <a name="l193" style="background-color: #ffff99">             hkk(i) = 1._r8 - pint(i,k) * hkl(i) * rpdel(i,k)</a>
+   194) <a name="l194" style="background-color: #ffff99">          end do</a>
+   195) <a name="l195" style="background-color: #ffff99">       else</a>
+   196) <a name="l196" style="background-color: #ffffff">          do i = 1,ncol</a>
+   197) <a name="l197" style="background-color: #ffffff">             hkl(i) = pdel(i,k) / pmid(i,k)</a>
+   198) <a name="l198" style="background-color: #ffffff">             hkk(i) = 0.5_r8 * hkl(i)</a>
+   199) <a name="l199" style="background-color: #ffffff">          end do</a>
+   200) <a name="l200" style="background-color: #ffffff">       end if</a>
+   201) <a name="l201" style="background-color: #ffffff"></a>
+   202) <a name="l202" style="background-color: #ffffff">! Now compute tv, zm, zi</a>
+   203) <a name="l203" style="background-color: #ffffff"></a>
+   204) <a name="l204" style="background-color: #ffffff">       do i = 1,ncol</a>
+   205) <a name="l205" style="background-color: #ffffff">          tvfac   = 1._r8 + zvir(i,k) * q(i,k)</a>
+   206) <a name="l206" style="background-color: #ffffff">          tv      = t(i,k) * tvfac</a>
+   207) <a name="l207" style="background-color: #ffffff"></a>
+   208) <a name="l208" style="background-color: #ffffff">          zm(i,k) = zi(i,k+1) + rog(i,k) * tv * hkk(i)</a>
+   209) <a name="l209" style="background-color: #ffffff">          zi(i,k) = zi(i,k+1) + rog(i,k) * tv * hkl(i)</a>
+   210) <a name="l210" style="background-color: #ffffff">       end do</a>
+   211) <a name="l211" style="background-color: #ffffff">    end do</a>
+   212) <a name="l212" style="background-color: #ffffff"></a>
+   213) <a name="l213" style="background-color: #ffffff">    return</a>
+   214) <a name="l214" style="background-color: #ffffff">  end subroutine geopotential_t</a>
+   215) <a name="l215" style="background-color: #ffffff">end module geopotential</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

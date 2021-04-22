@@ -1,0 +1,1714 @@
+<html>
+<head>
+<title>Listing of m_AttrVectComms.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;m_AttrVectComms.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 57.14&#160;%func&#160;&#160;&#160;&#160; 38.02&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+     2) <a name="l2" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+     3) <a name="l3" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">! CVS $Id$</a>
+     5) <a name="l5" style="background-color: #ffffff">! CVS $Name$ </a>
+     6) <a name="l6" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !MODULE: m_AttrVectComms - MPI Communications Methods for the AttrVect</a>
+     9) <a name="l9" style="background-color: #ffffff">!</a>
+    10) <a name="l10" style="background-color: #ffffff">! !DESCRIPTION:</a>
+    11) <a name="l11" style="background-color: #ffffff">!</a>
+    12) <a name="l12" style="background-color: #ffffff">! This module defines the communications methods for the {\tt AttrVect} </a>
+    13) <a name="l13" style="background-color: #ffffff">! datatype (see the module {\tt m\_AttrVect} for more information about </a>
+    14) <a name="l14" style="background-color: #ffffff">! this class and its methods).  MCT's communications are implemented </a>
+    15) <a name="l15" style="background-color: #ffffff">! in terms of the Message Passing Interface (MPI) standard, and we have </a>
+    16) <a name="l16" style="background-color: #ffffff">! as best as possible, made the interfaces to these routines appear as</a>
+    17) <a name="l17" style="background-color: #ffffff">! similar as possible to the corresponding MPI routines.  For the </a>
+    18) <a name="l18" style="background-color: #ffffff">! { \tt AttrVect}, we supply {\em blocking} point-to-point send and </a>
+    19) <a name="l19" style="background-color: #ffffff">! receive operations.  We also supply the following collective </a>
+    20) <a name="l20" style="background-color: #ffffff">! operations: broadcast, gather, and scatter.  The gather and scatter </a>
+    21) <a name="l21" style="background-color: #ffffff">! operations rely on domain decomposition descriptors that are defined</a>
+    22) <a name="l22" style="background-color: #ffffff">! elsewhere in MCT:  the {\tt GlobalMap}, which is a one-dimensional </a>
+    23) <a name="l23" style="background-color: #ffffff">! decomposition (see the MCT module {\tt m\_GlobalMap} for more details); </a>
+    24) <a name="l24" style="background-color: #ffffff">! and the {\tt GlobalSegMap}, which is a segmented decomposition capable</a>
+    25) <a name="l25" style="background-color: #ffffff">! of supporting multidimensional domain decompositions (see the MCT module </a>
+    26) <a name="l26" style="background-color: #ffffff">! {\tt m\_GlobalSegMap} for more details).</a>
+    27) <a name="l27" style="background-color: #ffffff">!</a>
+    28) <a name="l28" style="background-color: #ffffff">! !INTERFACE:</a>
+    29) <a name="l29" style="background-color: #ffffff"> module m_AttrVectComms</a>
+    30) <a name="l30" style="background-color: #ffffff">!</a>
+    31) <a name="l31" style="background-color: #ffffff">! !USES:</a>
+    32) <a name="l32" style="background-color: #ffffff">!</a>
+    33) <a name="l33" style="background-color: #ffffff">      use m_AttrVect ! AttrVect class and its methods</a>
+    34) <a name="l34" style="background-color: #ffffff"></a>
+    35) <a name="l35" style="background-color: #ffffff">      implicit none</a>
+    36) <a name="l36" style="background-color: #ffffff"></a>
+    37) <a name="l37" style="background-color: #ffffff">      private	! except</a>
+    38) <a name="l38" style="background-color: #ffffff"></a>
+    39) <a name="l39" style="background-color: #ffffff">      public :: gather		! gather all local vectors to the root</a>
+    40) <a name="l40" style="background-color: #ffffff">      public :: scatter		! scatter from the root to all PEs</a>
+    41) <a name="l41" style="background-color: #ffffff">      public :: bcast		! bcast from root to all PEs</a>
+    42) <a name="l42" style="background-color: #ffffff">      public :: send		! send an AttrVect</a>
+    43) <a name="l43" style="background-color: #ffffff">      public :: recv		! receive an AttrVect</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">    interface gather ; module procedure &amp;</a>
+    46) <a name="l46" style="background-color: #ffffff">	      GM_gather_, &amp;</a>
+    47) <a name="l47" style="background-color: #ffffff">	      GSM_gather_ </a>
+    48) <a name="l48" style="background-color: #ffffff">    end interface</a>
+    49) <a name="l49" style="background-color: #ffffff">    interface scatter ; module procedure &amp;</a>
+    50) <a name="l50" style="background-color: #ffffff">	      GM_scatter_, &amp;</a>
+    51) <a name="l51" style="background-color: #ffffff">	      GSM_scatter_ </a>
+    52) <a name="l52" style="background-color: #ffffff">    end interface</a>
+    53) <a name="l53" style="background-color: #ffffff">    interface bcast  ; module procedure bcast_  ; end interface</a>
+    54) <a name="l54" style="background-color: #ffffff">    interface send  ; module procedure send_  ; end interface</a>
+    55) <a name="l55" style="background-color: #ffffff">    interface recv  ; module procedure recv_  ; end interface</a>
+    56) <a name="l56" style="background-color: #ffffff"></a>
+    57) <a name="l57" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    58) <a name="l58" style="background-color: #ffffff">! 27Oct00 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - relocated routines</a>
+    59) <a name="l59" style="background-color: #ffffff">!           from m_AttrVect to create this module.</a>
+    60) <a name="l60" style="background-color: #ffffff">! 15Jan01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Added APIs for </a>
+    61) <a name="l61" style="background-color: #ffffff">!           GSM_gather_() and GSM_scatter_().</a>
+    62) <a name="l62" style="background-color: #ffffff">!  9May01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Modified GM_scatter_</a>
+    63) <a name="l63" style="background-color: #ffffff">!           so its communication model agrees with MPI_scatter().</a>
+    64) <a name="l64" style="background-color: #ffffff">!           Also tidied up prologues in all module routines.</a>
+    65) <a name="l65" style="background-color: #ffffff">!  7Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Added send() </a>
+    66) <a name="l66" style="background-color: #ffffff">!           and recv().</a>
+    67) <a name="l67" style="background-color: #ffffff">!  3Aug01 - E.T. Ong &lt;eong@mcs.anl.gov&gt; - in GSM_scatter, call </a>
+    68) <a name="l68" style="background-color: #ffffff">!           GlobalMap_init with actual shaped array to satisfy</a>
+    69) <a name="l69" style="background-color: #ffffff">!           Fortran 90 standard. See comment in subroutine.</a>
+    70) <a name="l70" style="background-color: #ffffff">! 23Aug01 - E.T. Ong &lt;eong@mcs.anl.gov&gt; - replaced assignment(=)</a>
+    71) <a name="l71" style="background-color: #ffffff">!           with copy for list type to avoid compiler bugs in pgf90.</a>
+    72) <a name="l72" style="background-color: #ffffff">!           Added more error checking in gsm scatter. Fixed minor bugs </a>
+    73) <a name="l73" style="background-color: #ffffff">!          in gsm and gm gather.</a>
+    74) <a name="l74" style="background-color: #ffffff">! 13Dec01 - E.T. Ong &lt;eong@mcs.anl.gov&gt; - GSM_scatter, allow users</a>
+    75) <a name="l75" style="background-color: #ffffff">!           to scatter with a haloed GSMap. Fixed some bugs in </a>
+    76) <a name="l76" style="background-color: #ffffff">!           GM_scatter.</a>
+    77) <a name="l77" style="background-color: #ffffff">! 19Dec01 - E.T. Ong &lt;eong@mcs.anl.gov&gt; - allow bcast of an AttrVect</a>
+    78) <a name="l78" style="background-color: #ffffff">!           with only an integer or real attribute.</a>
+    79) <a name="l79" style="background-color: #ffffff">! 27Mar02 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Corrected usage of</a>
+    80) <a name="l80" style="background-color: #ffffff">!           m_die routines throughout this module.</a>
+    81) <a name="l81" style="background-color: #ffffff">!EOP ___________________________________________________________________</a>
+    82) <a name="l82" style="background-color: #ffffff"></a>
+    83) <a name="l83" style="background-color: #ffffff">  character(len=*),parameter :: myname='MCT::m_AttrVectComms'</a>
+    84) <a name="l84" style="background-color: #ffffff"></a>
+    85) <a name="l85" style="background-color: #ffffff"> contains</a>
+    86) <a name="l86" style="background-color: #ffffff"></a>
+    87) <a name="l87" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+    88) <a name="l88" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+    89) <a name="l89" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+    90) <a name="l90" style="background-color: #ffffff">!</a>
+    91) <a name="l91" style="background-color: #ffffff">! !IROUTINE: send_ - Point-to-point Send of an AttrVect</a>
+    92) <a name="l92" style="background-color: #ffffff">!</a>
+    93) <a name="l93" style="background-color: #ffffff">! !DESCRIPTION:  This routine takes an input {\tt AttrVect} argument </a>
+    94) <a name="l94" style="background-color: #ffffff">! {\tt inAV} and sends it to processor {\tt dest} on the communicator </a>
+    95) <a name="l95" style="background-color: #ffffff">! associated with the Fortran {\tt INTEGER} MPI communicator handle </a>
+    96) <a name="l96" style="background-color: #ffffff">! {\tt comm}.  The overalll message is tagged by the input {\tt INTEGER} </a>
+    97) <a name="l97" style="background-color: #ffffff">! argument {\tt TagBase}.  The success (failure) of this operation is </a>
+    98) <a name="l98" style="background-color: #ffffff">! reported in the zero (nonzero) optional output argument {\tt status}.</a>
+    99) <a name="l99" style="background-color: #ffffff">!</a>
+   100) <a name="l100" style="background-color: #ffffff">! {\bf N.B.}:  One must avoid assigning elsewhere the MPI tag values </a>
+   101) <a name="l101" style="background-color: #ffffff">! between {\tt TagBase} and {\tt TagBase+7}, inclusive.  This is </a>
+   102) <a name="l102" style="background-color: #ffffff">! because {\tt send\_()} performs the send of the {\tt AttrVect} as </a>
+   103) <a name="l103" style="background-color: #ffffff">! a series of eight send operations.</a>
+   104) <a name="l104" style="background-color: #ffffff">!</a>
+   105) <a name="l105" style="background-color: #ffffff">! !INTERFACE:</a>
+   106) <a name="l106" style="background-color: #ffffff"></a>
+   107) <a name="l107" style="background-color: #ffffff"> subroutine </a><a style="background-color: #ffcccc">send_(inAV, dest, TagBase, comm, status)</a>
+   108) <a name="l108" style="background-color: #ffcccc">!</a>
+   109) <a name="l109" style="background-color: #ffcccc">! !USES:</a>
+   110) <a name="l110" style="background-color: #ffcccc">!</a>
+   111) <a name="l111" style="background-color: #ffcccc">      use m_stdio</a>
+   112) <a name="l112" style="background-color: #ffcccc">      use m_mpif90</a>
+   113) <a name="l113" style="background-color: #ffcccc">      use m_die</a>
+   114) <a name="l114" style="background-color: #ffcccc"></a>
+   115) <a name="l115" style="background-color: #ffcccc">      use m_List, only : List</a>
+   116) <a name="l116" style="background-color: #ffcccc">      use m_List, only : List_allocated =&gt; allocated</a>
+   117) <a name="l117" style="background-color: #ffcccc">      use m_List, only : List_nitem =&gt; nitem</a>
+   118) <a name="l118" style="background-color: #ffcccc">      use m_List, only : List_send =&gt; send</a>
+   119) <a name="l119" style="background-color: #ffcccc"></a>
+   120) <a name="l120" style="background-color: #ffcccc">      use m_AttrVect, only : AttrVect</a>
+   121) <a name="l121" style="background-color: #ffcccc">      use m_AttrVect, only : AttrVect_lsize =&gt; lsize</a>
+   122) <a name="l122" style="background-color: #ffcccc"></a>
+   123) <a name="l123" style="background-color: #ffcccc">      implicit none</a>
+   124) <a name="l124" style="background-color: #ffcccc"></a>
+   125) <a name="l125" style="background-color: #ffcccc">! !INPUT PARAMETERS: </a>
+   126) <a name="l126" style="background-color: #ffcccc">!</a>
+   127) <a name="l127" style="background-color: #ffcccc">      type(AttrVect),     intent(in)  :: inAV</a>
+   128) <a name="l128" style="background-color: #ffcccc">      integer,            intent(in)  :: dest</a>
+   129) <a name="l129" style="background-color: #ffcccc">      integer,            intent(in)  :: TagBase</a>
+   130) <a name="l130" style="background-color: #ffcccc">      integer,            intent(in)  :: comm</a>
+   131) <a name="l131" style="background-color: #ffcccc"></a>
+   132) <a name="l132" style="background-color: #ffcccc">! !OUTPUT PARAMETERS: </a>
+   133) <a name="l133" style="background-color: #ffcccc">!</a>
+   134) <a name="l134" style="background-color: #ffcccc">      integer, optional,  intent(out) :: status</a>
+   135) <a name="l135" style="background-color: #ffcccc"></a>
+   136) <a name="l136" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   137) <a name="l137" style="background-color: #ffcccc">!  7Jun01 - J.W. Larson - initial version.</a>
+   138) <a name="l138" style="background-color: #ffcccc">! 13Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initialize status</a>
+   139) <a name="l139" style="background-color: #ffcccc">!           (if present).</a>
+   140) <a name="l140" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+   141) <a name="l141" style="background-color: #ffcccc"></a>
+   142) <a name="l142" style="background-color: #ffcccc"> character(len=*),parameter :: myname_=myname//'::send_'</a>
+   143) <a name="l143" style="background-color: #ffcccc"></a>
+   144) <a name="l144" style="background-color: #ffcccc"> logical :: ListAssoc(2)</a>
+   145) <a name="l145" style="background-color: #ffcccc"> integer :: ierr</a>
+   146) <a name="l146" style="background-color: #ffcccc"> integer :: AVlength</a>
+   147) <a name="l147" style="background-color: #ffcccc"></a>
+   148) <a name="l148" style="background-color: #ffcccc">      ! Initialize status (if present)</a>
+   149) <a name="l149" style="background-color: #ffcccc"></a>
+   150) <a name="l150" style="background-color: #ffcccc">  if(present(status)) status = 0</a>
+   151) <a name="l151" style="background-color: #ffcccc"></a>
+   152) <a name="l152" style="background-color: #ffcccc"></a>
+   153) <a name="l153" style="background-color: #ffcccc">       ! Step 1. Are inAV%iList and inAV%rList filled?  Store</a>
+   154) <a name="l154" style="background-color: #ffcccc">       ! the answers in the LOGICAL array ListAssoc and send.</a>
+   155) <a name="l155" style="background-color: #ffcccc"></a>
+   156) <a name="l156" style="background-color: #ffcccc">  ListAssoc(1) = List_allocated(inAV%iList) </a>
+   157) <a name="l157" style="background-color: #ffcccc">  ListAssoc(2) = List_allocated(inAV%rList) </a>
+   158) <a name="l158" style="background-color: #ffcccc"></a>
+   159) <a name="l159" style="background-color: #ffcccc">  if(.NOT. (ListAssoc(1).or.ListAssoc(2)) ) then</a>
+   160) <a name="l160" style="background-color: #ffcccc">     call die(myname_,&quot;inAV has not been initialized&quot;)</a>
+   161) <a name="l161" style="background-color: #ffcccc">  endif</a>
+   162) <a name="l162" style="background-color: #ffcccc">     </a>
+   163) <a name="l163" style="background-color: #ffcccc">  call MPI_SEND(ListAssoc, 2, MP_LOGICAL, dest, TagBase, comm, ierr)</a>
+   164) <a name="l164" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+   165) <a name="l165" style="background-color: #ffcccc">     call MP_perr_die(myname_,':: MPI_SEND(ListAssoc...',ierr)</a>
+   166) <a name="l166" style="background-color: #ffcccc">  endif</a>
+   167) <a name="l167" style="background-color: #ffcccc"></a>
+   168) <a name="l168" style="background-color: #ffcccc"></a>
+   169) <a name="l169" style="background-color: #ffcccc">       ! Step 2. Send non-blank inAV%iList and inAV%rList.</a>
+   170) <a name="l170" style="background-color: #ffcccc"></a>
+   171) <a name="l171" style="background-color: #ffcccc">  if(ListAssoc(1)) then</a>
+   172) <a name="l172" style="background-color: #ffcccc">    call List_send(inAV%iList, dest, TagBase+1, comm, ierr)</a>
+   173) <a name="l173" style="background-color: #ffcccc">    if(ierr /= 0) then</a>
+   174) <a name="l174" style="background-color: #ffcccc">       if(present(status)) then</a>
+   175) <a name="l175" style="background-color: #ffcccc">	  write(stderr,*) myname_,':: call List_send(inAV%iList...'</a>
+   176) <a name="l176" style="background-color: #ffcccc">	  status = ierr</a>
+   177) <a name="l177" style="background-color: #ffcccc">	  return</a>
+   178) <a name="l178" style="background-color: #ffcccc">       else</a>
+   179) <a name="l179" style="background-color: #ffcccc">	  call die(myname_,':: call List_send(inAV%iList...',ierr)</a>
+   180) <a name="l180" style="background-color: #ffcccc">       endif</a>
+   181) <a name="l181" style="background-color: #ffcccc">    endif</a>
+   182) <a name="l182" style="background-color: #ffcccc">  endif</a>
+   183) <a name="l183" style="background-color: #ffcccc"></a>
+   184) <a name="l184" style="background-color: #ffcccc">  if(ListAssoc(2)) then</a>
+   185) <a name="l185" style="background-color: #ffcccc">    call List_send(inAV%rList, dest, TagBase+3, comm, ierr)</a>
+   186) <a name="l186" style="background-color: #ffcccc">    if(ierr /= 0) then</a>
+   187) <a name="l187" style="background-color: #ffcccc">       if(present(status)) then</a>
+   188) <a name="l188" style="background-color: #ffcccc">	  write(stderr,*) myname_,':: call List_send(inAV%rList...'</a>
+   189) <a name="l189" style="background-color: #ffcccc">	  status = ierr</a>
+   190) <a name="l190" style="background-color: #ffcccc">	  return</a>
+   191) <a name="l191" style="background-color: #ffcccc">       else</a>
+   192) <a name="l192" style="background-color: #ffcccc">	  call die(myname_,':: call List_send(inAV%rList...',ierr)</a>
+   193) <a name="l193" style="background-color: #ffcccc">       endif</a>
+   194) <a name="l194" style="background-color: #ffcccc">    endif</a>
+   195) <a name="l195" style="background-color: #ffcccc">  endif</a>
+   196) <a name="l196" style="background-color: #ffcccc"></a>
+   197) <a name="l197" style="background-color: #ffcccc">       ! Step 3. Determine and send the lengths of inAV%iAttr(:,:)</a>
+   198) <a name="l198" style="background-color: #ffcccc">       ! and inAV%rAttr(:,:).</a>
+   199) <a name="l199" style="background-color: #ffcccc"></a>
+   200) <a name="l200" style="background-color: #ffcccc">  AVlength = AttrVect_lsize(inAV)</a>
+   201) <a name="l201" style="background-color: #ffcccc"></a>
+   202) <a name="l202" style="background-color: #ffcccc">  if(AVlength&lt;=0) then</a>
+   203) <a name="l203" style="background-color: #ffcccc">     call die(myname_,&quot;Size of inAV &lt;= 0&quot;,AVLength)</a>
+   204) <a name="l204" style="background-color: #ffcccc">  endif</a>
+   205) <a name="l205" style="background-color: #ffcccc"></a>
+   206) <a name="l206" style="background-color: #ffcccc">  call MPI_SEND(AVlength, 1, MP_type(AVlength), dest, TagBase+5, &amp;</a>
+   207) <a name="l207" style="background-color: #ffcccc">                comm, ierr)</a>
+   208) <a name="l208" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+   209) <a name="l209" style="background-color: #ffcccc">     call MP_perr_die(myname_,':: call MPI_SEND(AVlength...',ierr)</a>
+   210) <a name="l210" style="background-color: #ffcccc">  endif</a>
+   211) <a name="l211" style="background-color: #ffcccc"></a>
+   212) <a name="l212" style="background-color: #ffcccc">       ! Step 4. If AVlength &gt; 0, we may have INTEGER and REAL </a>
+   213) <a name="l213" style="background-color: #ffcccc">       ! data to send.  Send as needed.</a>
+   214) <a name="l214" style="background-color: #ffcccc"></a>
+   215) <a name="l215" style="background-color: #ffcccc">  if(AVlength &gt; 0) then</a>
+   216) <a name="l216" style="background-color: #ffcccc"></a>
+   217) <a name="l217" style="background-color: #ffcccc">     if(ListAssoc(1)) then</a>
+   218) <a name="l218" style="background-color: #ffcccc"></a>
+   219) <a name="l219" style="background-color: #ffcccc">       ! Send the INTEGER data stored in inAV%iAttr(:,:)</a>
+   220) <a name="l220" style="background-color: #ffcccc"></a>
+   221) <a name="l221" style="background-color: #ffcccc">	call MPI_SEND(inAV%iAttr(1,1), AVlength*List_nitem(inAV%iList), &amp;</a>
+   222) <a name="l222" style="background-color: #ffcccc">                      MP_type(inAV%iAttr(1,1)), dest, TagBase+6,   &amp;</a>
+   223) <a name="l223" style="background-color: #ffcccc">                      comm, ierr)</a>
+   224) <a name="l224" style="background-color: #ffcccc">	if(ierr /= 0) then</a>
+   225) <a name="l225" style="background-color: #ffcccc">	   call MP_perr_die(myname_,':: call MPI_SEND(inAV%iAttr...',ierr)</a>
+   226) <a name="l226" style="background-color: #ffcccc">	endif</a>
+   227) <a name="l227" style="background-color: #ffcccc"></a>
+   228) <a name="l228" style="background-color: #ffcccc">     endif ! if(associated(inAV%rList))</a>
+   229) <a name="l229" style="background-color: #ffcccc"></a>
+   230) <a name="l230" style="background-color: #ffcccc">     if(ListAssoc(2)) then</a>
+   231) <a name="l231" style="background-color: #ffcccc"></a>
+   232) <a name="l232" style="background-color: #ffcccc">       ! Send the REAL data stored in inAV%rAttr(:,:)</a>
+   233) <a name="l233" style="background-color: #ffcccc"></a>
+   234) <a name="l234" style="background-color: #ffcccc">	call MPI_SEND(inAV%rAttr(1,1), AVlength*List_nitem(inAV%rList), &amp;</a>
+   235) <a name="l235" style="background-color: #ffcccc">                      MP_type(inAV%rAttr(1,1)), dest, TagBase+7,   &amp;</a>
+   236) <a name="l236" style="background-color: #ffcccc">                      comm, ierr)</a>
+   237) <a name="l237" style="background-color: #ffcccc">	if(ierr /= 0) then</a>
+   238) <a name="l238" style="background-color: #ffcccc">	   call MP_perr_die(myname_,':: call MPI_SEND(inAV%rAttr...',ierr)</a>
+   239) <a name="l239" style="background-color: #ffcccc">	endif</a>
+   240) <a name="l240" style="background-color: #ffcccc"></a>
+   241) <a name="l241" style="background-color: #ffcccc">     endif ! if(associated(inAV%rList))</a>
+   242) <a name="l242" style="background-color: #ffcccc"></a>
+   243) <a name="l243" style="background-color: #ffcccc">  endif ! if (AVlength &gt; 0)</a>
+   244) <a name="l244" style="background-color: #ffcccc"></a>
+   245) <a name="l245" style="background-color: #ffcccc"> end subroutine send_</a>
+   246) <a name="l246" style="background-color: #ffffff"></a>
+   247) <a name="l247" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   248) <a name="l248" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+   249) <a name="l249" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   250) <a name="l250" style="background-color: #ffffff">!</a>
+   251) <a name="l251" style="background-color: #ffffff">! !IROUTINE: recv_ - Point-to-point Receive of an AttrVect</a>
+   252) <a name="l252" style="background-color: #ffffff">!</a>
+   253) <a name="l253" style="background-color: #ffffff">! !DESCRIPTION:  This routine receives the output {\tt AttrVect} argument </a>
+   254) <a name="l254" style="background-color: #ffffff">! {\tt outAV} from processor {\tt source} on the communicator associated </a>
+   255) <a name="l255" style="background-color: #ffffff">! with the Fortran {\tt INTEGER} MPI communicator handle {\tt comm}.  The </a>
+   256) <a name="l256" style="background-color: #ffffff">! overall message is tagged by the input {\tt INTEGER} argument </a>
+   257) <a name="l257" style="background-color: #ffffff">! {\tt TagBase}.  The success (failure) of this operation is reported in </a>
+   258) <a name="l258" style="background-color: #ffffff">! the zero (nonzero) optional output argument {\tt status}.</a>
+   259) <a name="l259" style="background-color: #ffffff">!</a>
+   260) <a name="l260" style="background-color: #ffffff">! {\bf N.B.}:  One must avoid assigning elsewhere the MPI tag values </a>
+   261) <a name="l261" style="background-color: #ffffff">! between {\tt TagBase} and {\tt TagBase+7}, inclusive.  This is </a>
+   262) <a name="l262" style="background-color: #ffffff">! because {\tt recv\_()} performs the receive of the {\tt AttrVect} as </a>
+   263) <a name="l263" style="background-color: #ffffff">! a series of eight receive operations.</a>
+   264) <a name="l264" style="background-color: #ffffff">!</a>
+   265) <a name="l265" style="background-color: #ffffff">! !INTERFACE:</a>
+   266) <a name="l266" style="background-color: #ffffff"></a>
+   267) <a name="l267" style="background-color: #ffffff"> subroutine </a><a style="background-color: #ffcccc">recv_(outAV, dest, TagBase, comm, status)</a>
+   268) <a name="l268" style="background-color: #ffcccc">!</a>
+   269) <a name="l269" style="background-color: #ffcccc">! !USES:</a>
+   270) <a name="l270" style="background-color: #ffcccc">!</a>
+   271) <a name="l271" style="background-color: #ffcccc">      use m_stdio</a>
+   272) <a name="l272" style="background-color: #ffcccc">      use m_mpif90</a>
+   273) <a name="l273" style="background-color: #ffcccc">      use m_die</a>
+   274) <a name="l274" style="background-color: #ffcccc"></a>
+   275) <a name="l275" style="background-color: #ffcccc">      use m_List, only : List</a>
+   276) <a name="l276" style="background-color: #ffcccc">      use m_List, only : List_nitem =&gt; nitem</a>
+   277) <a name="l277" style="background-color: #ffcccc">      use m_List, only : List_recv =&gt; recv</a>
+   278) <a name="l278" style="background-color: #ffcccc"></a>
+   279) <a name="l279" style="background-color: #ffcccc">      use m_AttrVect, only : AttrVect</a>
+   280) <a name="l280" style="background-color: #ffcccc"></a>
+   281) <a name="l281" style="background-color: #ffcccc">      implicit none</a>
+   282) <a name="l282" style="background-color: #ffcccc"></a>
+   283) <a name="l283" style="background-color: #ffcccc">! !INPUT PARAMETERS: </a>
+   284) <a name="l284" style="background-color: #ffcccc">!</a>
+   285) <a name="l285" style="background-color: #ffcccc">      integer,            intent(in)  :: dest</a>
+   286) <a name="l286" style="background-color: #ffcccc">      integer,            intent(in)  :: TagBase</a>
+   287) <a name="l287" style="background-color: #ffcccc">      integer,            intent(in)  :: comm</a>
+   288) <a name="l288" style="background-color: #ffcccc"></a>
+   289) <a name="l289" style="background-color: #ffcccc">! !OUTPUT PARAMETERS: </a>
+   290) <a name="l290" style="background-color: #ffcccc">!</a>
+   291) <a name="l291" style="background-color: #ffcccc">      type(AttrVect),     intent(out) :: outAV</a>
+   292) <a name="l292" style="background-color: #ffcccc">      integer, optional,  intent(out) :: status</a>
+   293) <a name="l293" style="background-color: #ffcccc"></a>
+   294) <a name="l294" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   295) <a name="l295" style="background-color: #ffcccc">!  7Jun01 - J.W. Larson - initial working version.</a>
+   296) <a name="l296" style="background-color: #ffcccc">! 13Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initialize status</a>
+   297) <a name="l297" style="background-color: #ffcccc">!           (if present).</a>
+   298) <a name="l298" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+   299) <a name="l299" style="background-color: #ffcccc"></a>
+   300) <a name="l300" style="background-color: #ffcccc"> character(len=*),parameter :: myname_=myname//'::recv_'</a>
+   301) <a name="l301" style="background-color: #ffcccc"></a>
+   302) <a name="l302" style="background-color: #ffcccc"> logical :: ListAssoc(2)</a>
+   303) <a name="l303" style="background-color: #ffcccc"> integer :: ierr</a>
+   304) <a name="l304" style="background-color: #ffcccc"> integer :: AVlength</a>
+   305) <a name="l305" style="background-color: #ffcccc"> integer :: MPstatus(MP_STATUS_SIZE)</a>
+   306) <a name="l306" style="background-color: #ffcccc"></a>
+   307) <a name="l307" style="background-color: #ffcccc">      ! Initialize status (if present)</a>
+   308) <a name="l308" style="background-color: #ffcccc"></a>
+   309) <a name="l309" style="background-color: #ffcccc">  if(present(status)) status = 0</a>
+   310) <a name="l310" style="background-color: #ffcccc"></a>
+   311) <a name="l311" style="background-color: #ffcccc"></a>
+   312) <a name="l312" style="background-color: #ffcccc">       ! Step 1. Are outAV%iList and outAV%rList filled?  TRUE</a>
+   313) <a name="l313" style="background-color: #ffcccc">       ! entries in the LOGICAL array ListAssoc(:) correspond</a>
+   314) <a name="l314" style="background-color: #ffcccc">       ! to Non-blank Lists...that is:</a>
+   315) <a name="l315" style="background-color: #ffcccc">       !</a>
+   316) <a name="l316" style="background-color: #ffcccc">       ! ListAssoc(1) = .TRUE. &lt;==&gt; associated(outAV%iList%bf)</a>
+   317) <a name="l317" style="background-color: #ffcccc">       ! ListAssoc(2) = .TRUE. &lt;==&gt; associated(outAV%rList%bf)</a>
+   318) <a name="l318" style="background-color: #ffcccc"></a>
+   319) <a name="l319" style="background-color: #ffcccc">  call MPI_RECV(ListAssoc, 2, MP_LOGICAL, dest, TagBase, comm, &amp;</a>
+   320) <a name="l320" style="background-color: #ffcccc">                MPstatus, ierr)</a>
+   321) <a name="l321" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+   322) <a name="l322" style="background-color: #ffcccc">     call MP_perr_die(myname_,':: MPI_RECV(ListAssoc...',ierr)</a>
+   323) <a name="l323" style="background-color: #ffcccc">  endif</a>
+   324) <a name="l324" style="background-color: #ffcccc"></a>
+   325) <a name="l325" style="background-color: #ffcccc"></a>
+   326) <a name="l326" style="background-color: #ffcccc">       ! Step 2. Receive non-blank outAV%iList and outAV%rList.</a>
+   327) <a name="l327" style="background-color: #ffcccc"></a>
+   328) <a name="l328" style="background-color: #ffcccc">  if(ListAssoc(1)) then</a>
+   329) <a name="l329" style="background-color: #ffcccc">    call List_recv(outAV%iList, dest, TagBase+1, comm, ierr)</a>
+   330) <a name="l330" style="background-color: #ffcccc">    if(ierr /= 0) then</a>
+   331) <a name="l331" style="background-color: #ffcccc">       if(present(status)) then</a>
+   332) <a name="l332" style="background-color: #ffcccc">	  write(stderr,*) myname_,':: call List_recv(outAV%iList...'</a>
+   333) <a name="l333" style="background-color: #ffcccc">	  status = ierr</a>
+   334) <a name="l334" style="background-color: #ffcccc">	  return</a>
+   335) <a name="l335" style="background-color: #ffcccc">       else</a>
+   336) <a name="l336" style="background-color: #ffcccc">	  call die(myname_,':: call List_recv(outAV%iList...',ierr)</a>
+   337) <a name="l337" style="background-color: #ffcccc">       endif</a>
+   338) <a name="l338" style="background-color: #ffcccc">    endif</a>
+   339) <a name="l339" style="background-color: #ffcccc">  endif</a>
+   340) <a name="l340" style="background-color: #ffcccc"></a>
+   341) <a name="l341" style="background-color: #ffcccc">  if(ListAssoc(2)) then</a>
+   342) <a name="l342" style="background-color: #ffcccc">    call List_recv(outAV%rList, dest, TagBase+3, comm, ierr)</a>
+   343) <a name="l343" style="background-color: #ffcccc">    if(ierr /= 0) then</a>
+   344) <a name="l344" style="background-color: #ffcccc">       if(present(status)) then</a>
+   345) <a name="l345" style="background-color: #ffcccc">	  write(stderr,*) myname_,':: call List_recv(outAV%rList...'</a>
+   346) <a name="l346" style="background-color: #ffcccc">	  status = ierr</a>
+   347) <a name="l347" style="background-color: #ffcccc">	  return</a>
+   348) <a name="l348" style="background-color: #ffcccc">       else</a>
+   349) <a name="l349" style="background-color: #ffcccc">	  call die(myname_,':: call List_recv(outAV%rList...',ierr)</a>
+   350) <a name="l350" style="background-color: #ffcccc">       endif</a>
+   351) <a name="l351" style="background-color: #ffcccc">    endif</a>
+   352) <a name="l352" style="background-color: #ffcccc">  endif</a>
+   353) <a name="l353" style="background-color: #ffcccc"></a>
+   354) <a name="l354" style="background-color: #ffcccc">       ! Step 3. Receive the lengths of outAV%iAttr(:,:) and outAV%rAttr(:,:).</a>
+   355) <a name="l355" style="background-color: #ffcccc"></a>
+   356) <a name="l356" style="background-color: #ffcccc">  call MPI_RECV(AVlength, 1, MP_type(AVlength), dest, TagBase+5, &amp;</a>
+   357) <a name="l357" style="background-color: #ffcccc">                comm, MPstatus, ierr)</a>
+   358) <a name="l358" style="background-color: #ffcccc">  if(ierr /= 0) then</a>
+   359) <a name="l359" style="background-color: #ffcccc">     call MP_perr_die(myname_,':: call MPI_RECV(AVlength...',ierr)</a>
+   360) <a name="l360" style="background-color: #ffcccc">  endif</a>
+   361) <a name="l361" style="background-color: #ffcccc"></a>
+   362) <a name="l362" style="background-color: #ffcccc">       ! Step 4. If AVlength &gt; 0, we may have to receive INTEGER </a>
+   363) <a name="l363" style="background-color: #ffcccc">       ! and/or REAL data.  Receive as needed.</a>
+   364) <a name="l364" style="background-color: #ffcccc"></a>
+   365) <a name="l365" style="background-color: #ffcccc">  if(AVlength &gt; 0) then</a>
+   366) <a name="l366" style="background-color: #ffcccc"></a>
+   367) <a name="l367" style="background-color: #ffcccc">     if(ListAssoc(1)) then</a>
+   368) <a name="l368" style="background-color: #ffcccc"></a>
+   369) <a name="l369" style="background-color: #ffcccc">       ! Allocate outAV%iAttr(:,:)</a>
+   370) <a name="l370" style="background-color: #ffcccc"></a>
+   371) <a name="l371" style="background-color: #ffcccc">        allocate(outAV%iAttr(List_nitem(outAV%iList),AVlength), stat=ierr)</a>
+   372) <a name="l372" style="background-color: #ffcccc">        if(ierr/=0) call die(myname_,&quot;allocate(outAV%iAttr)&quot;,ierr)</a>
+   373) <a name="l373" style="background-color: #ffcccc"></a>
+   374) <a name="l374" style="background-color: #ffcccc">       ! Receive the INTEGER data to outAV%iAttr(:,:)</a>
+   375) <a name="l375" style="background-color: #ffcccc"></a>
+   376) <a name="l376" style="background-color: #ffcccc">	call MPI_RECV(outAV%iAttr(1,1), AVlength*List_nitem(outAV%iList), &amp;</a>
+   377) <a name="l377" style="background-color: #ffcccc">                      MP_type(outAV%iAttr(1,1)), dest, TagBase+6,   &amp;</a>
+   378) <a name="l378" style="background-color: #ffcccc">                      comm, MPstatus, ierr)</a>
+   379) <a name="l379" style="background-color: #ffcccc">	if(ierr /= 0) then</a>
+   380) <a name="l380" style="background-color: #ffcccc">	   call MP_perr_die(myname_,':: call MPI_RECV(outAV%iAttr...',ierr)</a>
+   381) <a name="l381" style="background-color: #ffcccc">	endif</a>
+   382) <a name="l382" style="background-color: #ffcccc"></a>
+   383) <a name="l383" style="background-color: #ffcccc">     endif ! if(associated(outAV%rList))</a>
+   384) <a name="l384" style="background-color: #ffcccc"></a>
+   385) <a name="l385" style="background-color: #ffcccc">     if(ListAssoc(2)) then</a>
+   386) <a name="l386" style="background-color: #ffcccc"></a>
+   387) <a name="l387" style="background-color: #ffcccc">       ! Allocate outAV%rAttr(:,:)</a>
+   388) <a name="l388" style="background-color: #ffcccc"></a>
+   389) <a name="l389" style="background-color: #ffcccc">        allocate(outAV%rAttr(List_nitem(outAV%rList),AVlength), stat=ierr)</a>
+   390) <a name="l390" style="background-color: #ffcccc">        if(ierr/=0) call die(myname_,&quot;allocate(outAV%rAttr)&quot;,ierr)</a>
+   391) <a name="l391" style="background-color: #ffcccc"></a>
+   392) <a name="l392" style="background-color: #ffcccc">       ! Receive the REAL data to outAV%rAttr(:,:)</a>
+   393) <a name="l393" style="background-color: #ffcccc"></a>
+   394) <a name="l394" style="background-color: #ffcccc">	call MPI_RECV(outAV%rAttr(1,1), AVlength*List_nitem(outAV%rList), &amp;</a>
+   395) <a name="l395" style="background-color: #ffcccc">                      MP_type(outAV%rAttr(1,1)), dest, TagBase+7,   &amp;</a>
+   396) <a name="l396" style="background-color: #ffcccc">                      comm, MPstatus, ierr)</a>
+   397) <a name="l397" style="background-color: #ffcccc">	if(ierr /= 0) then</a>
+   398) <a name="l398" style="background-color: #ffcccc">	   call MP_perr_die(myname_,':: call MPI_RECV(outAV%rAttr...',ierr)</a>
+   399) <a name="l399" style="background-color: #ffcccc">	endif</a>
+   400) <a name="l400" style="background-color: #ffcccc"></a>
+   401) <a name="l401" style="background-color: #ffcccc">     endif ! if(associated(outAV%rList))</a>
+   402) <a name="l402" style="background-color: #ffcccc"></a>
+   403) <a name="l403" style="background-color: #ffcccc">  endif ! if (AVlength &gt; 0)</a>
+   404) <a name="l404" style="background-color: #ffcccc"></a>
+   405) <a name="l405" style="background-color: #ffcccc"> end subroutine recv_</a>
+   406) <a name="l406" style="background-color: #ffffff"></a>
+   407) <a name="l407" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   408) <a name="l408" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+   409) <a name="l409" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   410) <a name="l410" style="background-color: #ffffff">!</a>
+   411) <a name="l411" style="background-color: #ffffff">! !IROUTINE: GM_gather_ - Gather an AttrVect Distributed by a GlobalMap</a>
+   412) <a name="l412" style="background-color: #ffffff">!</a>
+   413) <a name="l413" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   414) <a name="l414" style="background-color: #ffffff">! This routine gathers a {\em distributed} {\tt AttrVect} {\tt iV} to </a>
+   415) <a name="l415" style="background-color: #ffffff">! the {\tt root} process, and returns it in the output {\tt AttrVect}</a>
+   416) <a name="l416" style="background-color: #ffffff">! argument {\tt oV}.  The decomposition of {\tt iV} is described by </a>
+   417) <a name="l417" style="background-color: #ffffff">! the input {\tt GlobalMap} argument {\tt GMap}.  The input {\tt INTEGER}</a>
+   418) <a name="l418" style="background-color: #ffffff">! argument {\tt comm} is the Fortran integer MPI communicator handle.</a>
+   419) <a name="l419" style="background-color: #ffffff">! The success (failure) of this operation corresponds to a zero (nonzero)</a>
+   420) <a name="l420" style="background-color: #ffffff">! value of the optional output {\tt INTEGER} argument {\tt stat}.</a>
+   421) <a name="l421" style="background-color: #ffffff">!</a>
+   422) <a name="l422" style="background-color: #ffffff">! !INTERFACE:</a>
+   423) <a name="l423" style="background-color: #ffffff"></a>
+   424) <a name="l424" style="background-color: #ffffff"> subroutine GM_gather_(iV, oV, GMap, root, comm, stat)</a>
+   425) <a name="l425" style="background-color: #ffffff">!</a>
+   426) <a name="l426" style="background-color: #ffffff">! !USES:</a>
+   427) <a name="l427" style="background-color: #ffffff">!</a>
+   428) <a name="l428" style="background-color: #ffffff">      use m_stdio</a>
+   429) <a name="l429" style="background-color: #ffffff">      use m_die</a>
+   430) <a name="l430" style="background-color: #ffffff">      use m_mpif90</a>
+   431) <a name="l431" style="background-color: #ffffff">      use m_realkinds, only : FP</a>
+   432) <a name="l432" style="background-color: #ffffff">      use m_GlobalMap, only : GlobalMap</a>
+   433) <a name="l433" style="background-color: #ffffff">      use m_GlobalMap, only : GlobalMap_lsize =&gt; lsize</a>
+   434) <a name="l434" style="background-color: #ffffff">      use m_GlobalMap, only : GlobalMap_gsize =&gt; gsize</a>
+   435) <a name="l435" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect</a>
+   436) <a name="l436" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_init =&gt; init</a>
+   437) <a name="l437" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_zero =&gt; zero </a>
+   438) <a name="l438" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_lsize =&gt; lsize</a>
+   439) <a name="l439" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_nIAttr =&gt; nIAttr</a>
+   440) <a name="l440" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_nRAttr =&gt; nRAttr</a>
+   441) <a name="l441" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_clean =&gt; clean</a>
+   442) <a name="l442" style="background-color: #ffffff">      use m_FcComms,  only : fc_gatherv_int, fc_gatherv_fp</a>
+   443) <a name="l443" style="background-color: #ffffff"></a>
+   444) <a name="l444" style="background-color: #ffffff">      implicit none</a>
+   445) <a name="l445" style="background-color: #ffffff"></a>
+   446) <a name="l446" style="background-color: #ffffff">! !INPUT PARAMETERS: </a>
+   447) <a name="l447" style="background-color: #ffffff">!</a>
+   448) <a name="l448" style="background-color: #ffffff">      type(AttrVect),           intent(in)  :: iV</a>
+   449) <a name="l449" style="background-color: #ffffff">      type(GlobalMap),          intent(in)  :: GMap</a>
+   450) <a name="l450" style="background-color: #ffffff">      integer,                  intent(in)  :: root</a>
+   451) <a name="l451" style="background-color: #ffffff">      integer,                  intent(in)  :: comm</a>
+   452) <a name="l452" style="background-color: #ffffff"></a>
+   453) <a name="l453" style="background-color: #ffffff">! !OUTPUT PARAMETERS:</a>
+   454) <a name="l454" style="background-color: #ffffff">!</a>
+   455) <a name="l455" style="background-color: #ffffff">      type(AttrVect),           intent(out) :: oV</a>
+   456) <a name="l456" style="background-color: #ffffff">      integer,        optional, intent(out) :: stat</a>
+   457) <a name="l457" style="background-color: #ffffff"></a>
+   458) <a name="l458" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   459) <a name="l459" style="background-color: #ffffff">! 15Apr98 - Jing Guo &lt;guo@thunder&gt; - initial prototype/prolog/code</a>
+   460) <a name="l460" style="background-color: #ffffff">! 27Oct00 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - relocated from</a>
+   461) <a name="l461" style="background-color: #ffffff">!           m_AttrVect</a>
+   462) <a name="l462" style="background-color: #ffffff">! 15Jan01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - renamed GM_gather_</a>
+   463) <a name="l463" style="background-color: #ffffff">!  9May01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - tidied up prologue</a>
+   464) <a name="l464" style="background-color: #ffffff">! 18May01 - R.L. Jacob &lt;jacob@mcs.anl.gov&gt; - use MP_Type function</a>
+   465) <a name="l465" style="background-color: #ffffff">!           to determine type for mpi_gatherv</a>
+   466) <a name="l466" style="background-color: #ffffff">! 31Jan09 - P.H. Worley &lt;worleyph@ornl.gov&gt; - replaced call to</a>
+   467) <a name="l467" style="background-color: #ffffff">!           MPI_gatherv with call to flow controlled gather routines</a>
+   468) <a name="l468" style="background-color: #ffffff">!EOP ___________________________________________________________________</a>
+   469) <a name="l469" style="background-color: #ffffff"></a>
+   470) <a name="l470" style="background-color: #ffffff">  character(len=*),parameter :: myname_=myname//'::GM_gather_'</a>
+   471) <a name="l471" style="background-color: #ffffff">  integer :: nIA,nRA,niV,noV,ier</a>
+   472) <a name="l472" style="background-color: #ffffff">  integer :: myID</a>
+   473) <a name="l473" style="background-color: #ffffff">  integer :: mp_type_Av</a>
+   474) <a name="l474" style="background-color: #ffffff">  type(AttrVect) :: nonRootAV</a>
+   475) <a name="l475" style="background-color: #ffffff"></a>
+   476) <a name="l476" style="background-color: #ffffff">  if(</a><a style="background-color: #fafad2">present(stat)) </a><a style="background-color: #ffff99">stat=0</a>
+   477) <a name="l477" style="background-color: #ffff99"></a>
+   478) <a name="l478" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">MP_comm_rank(comm, myID, ier)</a>
+   479) <a name="l479" style="background-color: #ffffff">  if(ier /= 0) then</a>
+   480) <a name="l480" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">MP_perr_die(myname_,':: call MP_COMM_RANK()',ier)</a>
+   481) <a name="l481" style="background-color: #ffff99">  endif</a>
+   482) <a name="l482" style="background-color: #ffff99"></a>
+   483) <a name="l483" style="background-color: #ffff99">	! Verify the input: a _scatterd_ vector</a>
+   484) <a name="l484" style="background-color: #ffff99"></a>
+   485) <a name="l485" style="background-color: #ffffff">  niV=GlobalMap_lsize(GMap)</a>
+   486) <a name="l486" style="background-color: #ffffff">  noV=AttrVect_lsize(iV)</a>
+   487) <a name="l487" style="background-color: #ffffff"></a>
+   488) <a name="l488" style="background-color: #ffffff">  if(niV /= noV) then</a>
+   489) <a name="l489" style="background-color: #ffff99">     write(stderr,'(2a,i4,a,i4,a,i4)') myname_,	&amp;</a>
+   490) <a name="l490" style="background-color: #ffff99">	  ': invalid input, lsize(GMap) =',niV,	&amp;</a>
+   491) <a name="l491" style="background-color: #ffff99">	  ', lsize(iV) =',noV, 'myID =', myID</a>
+   492) <a name="l492" style="background-color: #ffff99">     if(.not.present(stat)) call die(myname_)</a>
+   493) <a name="l493" style="background-color: #ffff99">     stat=-1</a>
+   494) <a name="l494" style="background-color: #ffff99">     return</a>
+   495) <a name="l495" style="background-color: #ffff99">  endif</a>
+   496) <a name="l496" style="background-color: #ffff99"></a>
+   497) <a name="l497" style="background-color: #ffffff">  noV=GlobalMap_gsize(GMap) ! the gathered local size, as for the output</a>
+   498) <a name="l498" style="background-color: #ffffff"></a>
+   499) <a name="l499" style="background-color: #ffffff">  if(myID == root) then</a>
+   500) <a name="l500" style="background-color: #ffffff">     call AttrVect_init(oV,iV,noV)</a>
+   501) <a name="l501" style="background-color: #ffffff">     call AttrVect_zero(oV)</a>
+   502) <a name="l502" style="background-color: #ffffff">  else</a>
+   503) <a name="l503" style="background-color: #ffffff">     call AttrVect_init(nonRootAV,iV,1)</a>
+   504) <a name="l504" style="background-color: #ffffff">     call AttrVect_zero(nonRootAV)</a>
+   505) <a name="l505" style="background-color: #ffffff">  endif</a>
+   506) <a name="l506" style="background-color: #ffffff"></a>
+   507) <a name="l507" style="background-color: #ffffff">  niV=GlobalMap_lsize(GMap) ! the scattered local size, as for the input</a>
+   508) <a name="l508" style="background-color: #ffffff"></a>
+   509) <a name="l509" style="background-color: #ffffff">  nIA=AttrVect_nIAttr(iV)	! number of INTEGER attributes</a>
+   510) <a name="l510" style="background-color: #ffffff">  nRA=AttrVect_nRAttr(iV)	! number of REAL attributes</a>
+   511) <a name="l511" style="background-color: #ffffff"></a>
+   512) <a name="l512" style="background-color: #ffffff">  mp_type_Av = MP_Type(1._FP)   ! set mpi type to same as AV%rAttr</a>
+   513) <a name="l513" style="background-color: #ffffff"></a>
+   514) <a name="l514" style="background-color: #ffffff">  if(nIA &gt; 0) then</a>
+   515) <a name="l515" style="background-color: #ffffff">     </a>
+   516) <a name="l516" style="background-color: #ffffff">     if(myID == root) then</a>
+   517) <a name="l517" style="background-color: #ffffff"></a>
+   518) <a name="l518" style="background-color: #ffffff">        call </a><a style="background-color: #fafad2">fc_gatherv_int(iV%iAttr,niV*nIA,MP_INTEGER,		&amp;</a>
+   519) <a name="l519" style="background-color: #ffffff">             oV%iAttr,GMap%counts*nIA,GMap%displs*nIA,             &amp;</a>
+   520) <a name="l520" style="background-color: #ffffff">             MP_INTEGER,root,comm)</a>
+   521) <a name="l521" style="background-color: #ffffff"></a>
+   522) <a name="l522" style="background-color: #ffffff">     else</a>
+   523) <a name="l523" style="background-color: #ffffff">        </a>
+   524) <a name="l524" style="background-color: #ffffff">        call </a><a style="background-color: #fafad2">fc_gatherv_int(iV%iAttr,niV*nIA,MP_INTEGER,		&amp;</a>
+   525) <a name="l525" style="background-color: #ffffff">             nonRootAV%iAttr,GMap%counts*nIA,GMap%displs*nIA,      &amp;</a>
+   526) <a name="l526" style="background-color: #ffffff">             MP_INTEGER,root,comm)</a>
+   527) <a name="l527" style="background-color: #ffffff"></a>
+   528) <a name="l528" style="background-color: #ffffff">     endif  ! if(myID == root)</a>
+   529) <a name="l529" style="background-color: #ffffff">        </a>
+   530) <a name="l530" style="background-color: #ffffff">  endif  ! if(nIA &gt; 0)</a>
+   531) <a name="l531" style="background-color: #ffffff"></a>
+   532) <a name="l532" style="background-color: #ffffff">  if(nRA &gt; 0) then</a>
+   533) <a name="l533" style="background-color: #ffffff"></a>
+   534) <a name="l534" style="background-color: #ffffff">     if(myID == root) then</a>
+   535) <a name="l535" style="background-color: #ffffff"></a>
+   536) <a name="l536" style="background-color: #ffffff">        call </a><a style="background-color: #fafad2">fc_gatherv_fp(iV%rAttr,niV*nRA,mp_type_Av,	        &amp;</a>
+   537) <a name="l537" style="background-color: #ffffff">             oV%rAttr,GMap%counts*nRA,GMap%displs*nRA,             &amp; </a>
+   538) <a name="l538" style="background-color: #ffffff">             mp_type_Av,root,comm)</a>
+   539) <a name="l539" style="background-color: #ffffff"></a>
+   540) <a name="l540" style="background-color: #ffffff">     else</a>
+   541) <a name="l541" style="background-color: #ffffff"></a>
+   542) <a name="l542" style="background-color: #ffffff">        call </a><a style="background-color: #fafad2">fc_gatherv_fp(iV%rAttr,niV*nRA,mp_type_Av,	        &amp;</a>
+   543) <a name="l543" style="background-color: #ffffff">             nonRootAV%rAttr,GMap%counts*nRA,GMap%displs*nRA,      &amp;</a>
+   544) <a name="l544" style="background-color: #ffffff">             mp_type_Av,root,comm)</a>
+   545) <a name="l545" style="background-color: #ffffff"></a>
+   546) <a name="l546" style="background-color: #ffffff">     endif  ! if(myID == root)</a>
+   547) <a name="l547" style="background-color: #ffffff"></a>
+   548) <a name="l548" style="background-color: #ffffff">  endif  ! if(nRA &gt; 0)</a>
+   549) <a name="l549" style="background-color: #ffffff"></a>
+   550) <a name="l550" style="background-color: #ffffff"></a>
+   551) <a name="l551" style="background-color: #ffffff"></a>
+   552) <a name="l552" style="background-color: #ffffff">  if(myID /= root) then</a>
+   553) <a name="l553" style="background-color: #ffffff">     call AttrVect_clean(nonRootAV,ier)</a>
+   554) <a name="l554" style="background-color: #ffffff">     if(ier /= 0) then</a>
+   555) <a name="l555" style="background-color: #ffff99">        write(stderr,'(2a,i4)') myname_,	&amp;</a>
+   556) <a name="l556" style="background-color: #ffff99">             ':: AttrVect_clean(nonRootAV) failed for non-root &amp;</a>
+   557) <a name="l557" style="background-color: #ffff99">             &amp;process: myID = ', myID</a>
+   558) <a name="l558" style="background-color: #ffff99">        call die(myname_,':: AttrVect_clean failed &amp;</a>
+   559) <a name="l559" style="background-color: #ffff99">             &amp;for nonRootAV off of root',ier)</a>
+   560) <a name="l560" style="background-color: #ffff99">     endif</a>
+   561) <a name="l561" style="background-color: #ffff99">  endif</a>
+   562) <a name="l562" style="background-color: #ffff99"></a>
+   563) <a name="l563" style="background-color: #ffffff"> end subroutine GM_gather_</a>
+   564) <a name="l564" style="background-color: #ffffff"></a>
+   565) <a name="l565" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   566) <a name="l566" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+   567) <a name="l567" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   568) <a name="l568" style="background-color: #ffffff">!</a>
+   569) <a name="l569" style="background-color: #ffffff">! !IROUTINE: GSM_gather_ - Gather an AttrVect Distributed by a GlobalSegMap</a>
+   570) <a name="l570" style="background-color: #ffffff">!</a>
+   571) <a name="l571" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   572) <a name="l572" style="background-color: #ffffff">! The routine {\tt GSM\_gather\_()} takes a distributed input </a>
+   573) <a name="l573" style="background-color: #ffffff">! {\tt AttrVect} argument {\tt iV}, whose decomposition is described </a>
+   574) <a name="l574" style="background-color: #ffffff">! by the input {\tt GlobalSegMap} argument {\tt GSMap}, and gathers </a>
+   575) <a name="l575" style="background-color: #ffffff">! it to the output {\tt AttrVect} argument {\tt oV}.  The gathered </a>
+   576) <a name="l576" style="background-color: #ffffff">! {\tt AttrVect} {\tt oV} is valid only on the root process specified </a>
+   577) <a name="l577" style="background-color: #ffffff">! by the input argument {\tt root}.  The communicator used to gather</a>
+   578) <a name="l578" style="background-color: #ffffff">! the data is specified by the argument {\tt comm}.  The success (failure)</a>
+   579) <a name="l579" style="background-color: #ffffff">! is reported in the zero (non-zero) value of the output argument </a>
+   580) <a name="l580" style="background-color: #ffffff">! {\tt stat}.</a>
+   581) <a name="l581" style="background-color: #ffffff">!</a>
+   582) <a name="l582" style="background-color: #ffffff">! {\tt GSM\_gather\_()} converts the problem of gathering data </a>
+   583) <a name="l583" style="background-color: #ffffff">! according to a {\tt GlobalSegMap} into the simpler problem of </a>
+   584) <a name="l584" style="background-color: #ffffff">! gathering data as specified by a {\tt GlobalMap}.  The {\tt GlobalMap}</a>
+   585) <a name="l585" style="background-color: #ffffff">! variable {\tt GMap} is created based on the local storage requirements </a>
+   586) <a name="l586" style="background-color: #ffffff">! for each distributed piece of {\tt iV}.  On the root, a complete </a>
+   587) <a name="l587" style="background-color: #ffffff">! (including halo points) gathered copy of {\tt iV} is collected into </a>
+   588) <a name="l588" style="background-color: #ffffff">! the temporary {\tt AttrVect} variable {\tt workV} (the length of</a>
+   589) <a name="l589" style="background-color: #ffffff">! {\tt workV} is the larger of {\tt GlobalSegMap\_GlobalStorage(GSMap)} or</a>
+   590) <a name="l590" style="background-color: #ffffff">! {\tt GlobalSegMap\_GlobalSize(GSMap)}).  The </a>
+   591) <a name="l591" style="background-color: #ffffff">! variable {\tt workV} is segmented by process, and segments are </a>
+   592) <a name="l592" style="background-color: #ffffff">! copied into it by process, but ordered in the same order the segments</a>
+   593) <a name="l593" style="background-color: #ffffff">! appear in {\tt GSMap}.  Once {\tt workV} is loaded, the data are </a>
+   594) <a name="l594" style="background-color: #ffffff">! copied segment-by-segment to their appropriate locations in the output </a>
+   595) <a name="l595" style="background-color: #ffffff">! {\tt AttrVect} {\tt oV}.</a>
+   596) <a name="l596" style="background-color: #ffffff">!</a>
+   597) <a name="l597" style="background-color: #ffffff">! !INTERFACE:</a>
+   598) <a name="l598" style="background-color: #ffffff"></a>
+   599) <a name="l599" style="background-color: #ffffff"> subroutine GSM_gather_(iV, oV, GSMap, root, comm, stat, rdefault, idefault)</a>
+   600) <a name="l600" style="background-color: #ffffff">!</a>
+   601) <a name="l601" style="background-color: #ffffff">! !USES:</a>
+   602) <a name="l602" style="background-color: #ffffff">!</a>
+   603) <a name="l603" style="background-color: #ffffff">! Message-passing environment utilities (mpeu) modules:</a>
+   604) <a name="l604" style="background-color: #ffffff">      use m_stdio</a>
+   605) <a name="l605" style="background-color: #ffffff">      use m_die</a>
+   606) <a name="l606" style="background-color: #ffffff">      use m_mpif90</a>
+   607) <a name="l607" style="background-color: #ffffff">      use m_realkinds, only: FP</a>
+   608) <a name="l608" style="background-color: #ffffff">! GlobalSegMap and associated services:</a>
+   609) <a name="l609" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap</a>
+   610) <a name="l610" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_comp_id =&gt; comp_id</a>
+   611) <a name="l611" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_ngseg =&gt; ngseg</a>
+   612) <a name="l612" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_lsize =&gt; lsize</a>
+   613) <a name="l613" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_gsize =&gt; gsize</a>
+   614) <a name="l614" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_haloed =&gt; haloed</a>
+   615) <a name="l615" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_GlobalStorage =&gt; GlobalStorage</a>
+   616) <a name="l616" style="background-color: #ffffff">! AttrVect and associated services:</a>
+   617) <a name="l617" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect</a>
+   618) <a name="l618" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_init =&gt; init</a>
+   619) <a name="l619" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_zero =&gt; zero</a>
+   620) <a name="l620" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_lsize =&gt; lsize</a>
+   621) <a name="l621" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_nIAttr =&gt; nIAttr</a>
+   622) <a name="l622" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_nRAttr =&gt; nRAttr</a>
+   623) <a name="l623" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_clean =&gt; clean </a>
+   624) <a name="l624" style="background-color: #ffffff">! GlobalMap and associated services:</a>
+   625) <a name="l625" style="background-color: #ffffff">      use m_GlobalMap, only : GlobalMap</a>
+   626) <a name="l626" style="background-color: #ffffff">      use m_GlobalMap, only : GlobalMap_init =&gt; init</a>
+   627) <a name="l627" style="background-color: #ffffff">      use m_GlobalMap, only : GlobalMap_clean =&gt; clean</a>
+   628) <a name="l628" style="background-color: #ffffff"></a>
+   629) <a name="l629" style="background-color: #ffffff">      implicit none</a>
+   630) <a name="l630" style="background-color: #ffffff"></a>
+   631) <a name="l631" style="background-color: #ffffff">! !INPUT PARAMETERS: </a>
+   632) <a name="l632" style="background-color: #ffffff">!</a>
+   633) <a name="l633" style="background-color: #ffffff">      type(AttrVect),            intent(in)  :: iV</a>
+   634) <a name="l634" style="background-color: #ffffff">      type(GlobalSegMap),        intent(in)  :: GSMap</a>
+   635) <a name="l635" style="background-color: #ffffff">      integer,                   intent(in)  :: root</a>
+   636) <a name="l636" style="background-color: #ffffff">      integer,                   intent(in)  :: comm</a>
+   637) <a name="l637" style="background-color: #ffffff">      real(FP), optional,        intent(in)  :: rdefault</a>
+   638) <a name="l638" style="background-color: #ffffff">      integer, optional,         intent(in)  :: idefault</a>
+   639) <a name="l639" style="background-color: #ffffff"></a>
+   640) <a name="l640" style="background-color: #ffffff">! !OUTPUT PARAMETERS:</a>
+   641) <a name="l641" style="background-color: #ffffff">!</a>
+   642) <a name="l642" style="background-color: #ffffff">      type(AttrVect),            intent(out) :: oV</a>
+   643) <a name="l643" style="background-color: #ffffff">      integer,        optional,  intent(out) :: stat</a>
+   644) <a name="l644" style="background-color: #ffffff"></a>
+   645) <a name="l645" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   646) <a name="l646" style="background-color: #ffffff">! 15Jan01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - API specification.</a>
+   647) <a name="l647" style="background-color: #ffffff">! 25Feb01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Prototype code.</a>
+   648) <a name="l648" style="background-color: #ffffff">! 26Apr01 - R.L. Jacob &lt;jacob@mcs.anl.gov&gt; - add use statement for</a>
+   649) <a name="l649" style="background-color: #ffffff">!           AttVect_clean</a>
+   650) <a name="l650" style="background-color: #ffffff">!  9May01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - tidied up prologue</a>
+   651) <a name="l651" style="background-color: #ffffff">! 13Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initialize stat</a>
+   652) <a name="l652" style="background-color: #ffffff">!           (if present).</a>
+   653) <a name="l653" style="background-color: #ffffff">! 20Aug01 - E.T. Ong &lt;eong@mcs.anl.gov&gt; - Added error checking for</a>
+   654) <a name="l654" style="background-color: #ffffff">!           matching processors in gsmap and comm. Corrected</a>
+   655) <a name="l655" style="background-color: #ffffff">!           current_pos assignment.</a>
+   656) <a name="l656" style="background-color: #ffffff">! 23Nov01 - R. Jacob &lt;jacob@mcs.anl.gov&gt; - zero the oV before copying in</a>
+   657) <a name="l657" style="background-color: #ffffff">!           gathered data.</a>
+   658) <a name="l658" style="background-color: #ffffff">! 27Jul07 - R. Loy &lt;rloy@mcs.anl.gov&gt; - add Tony's suggested improvement</a>
+   659) <a name="l659" style="background-color: #ffffff">!           for a default value in the output AV</a>
+   660) <a name="l660" style="background-color: #ffffff">! 11Aug08 - R. Jacob &lt;jacob@mcs.anl.gov&gt; - add Pat Worley's faster way</a>
+   661) <a name="l661" style="background-color: #ffffff">!           to initialize lns</a>
+   662) <a name="l662" style="background-color: #ffffff">!EOP ___________________________________________________________________</a>
+   663) <a name="l663" style="background-color: #ffffff"></a>
+   664) <a name="l664" style="background-color: #ffffff">  character(len=*),parameter :: myname_=myname//'::GSM_gather_'</a>
+   665) <a name="l665" style="background-color: #ffffff"></a>
+   666) <a name="l666" style="background-color: #ffffff">! Temporary workspace AttrVect:</a>
+   667) <a name="l667" style="background-color: #ffffff">  type(AttrVect) :: workV</a>
+   668) <a name="l668" style="background-color: #ffffff">! Component ID and number of segments for GSMap:</a>
+   669) <a name="l669" style="background-color: #ffffff">  integer :: comp_id, ngseg, iseg</a>
+   670) <a name="l670" style="background-color: #ffffff">! Total length of GSMap segments laid end-to-end:</a>
+   671) <a name="l671" style="background-color: #ffffff">  integer :: global_storage</a>
+   672) <a name="l672" style="background-color: #ffffff">! Error Flag</a>
+   673) <a name="l673" style="background-color: #ffffff">  integer :: ierr</a>
+   674) <a name="l674" style="background-color: #ffffff">! Number of processes on communicator, and local rank:</a>
+   675) <a name="l675" style="background-color: #ffffff">  integer :: NumProcs, myID</a>
+   676) <a name="l676" style="background-color: #ffffff">! Total local storage on each pe according to GSMap:</a>
+   677) <a name="l677" style="background-color: #ffffff">  integer, dimension(:), allocatable :: lns</a>
+   678) <a name="l678" style="background-color: #ffffff">! Temporary GlobalMap used to scatter the segmented (by pe) data</a>
+   679) <a name="l679" style="background-color: #ffffff">  type(GlobalMap) :: workGMap</a>
+   680) <a name="l680" style="background-color: #ffffff">! Loop counters and temporary indices:</a>
+   681) <a name="l681" style="background-color: #ffffff">  integer :: m, n, ilb, iub, olb, oub, pe</a>
+   682) <a name="l682" style="background-color: #ffffff">! workV segment tracking index array:</a>
+   683) <a name="l683" style="background-color: #ffffff">  integer, dimension(:), allocatable :: current_pos</a>
+   684) <a name="l684" style="background-color: #ffffff">! workV sizes</a>
+   685) <a name="l685" style="background-color: #ffffff">  integer :: gssize, gstorage</a>
+   686) <a name="l686" style="background-color: #ffffff"></a>
+   687) <a name="l687" style="background-color: #ffffff">      ! Initialize stat (if present)</a>
+   688) <a name="l688" style="background-color: #ffffff"></a>
+   689) <a name="l689" style="background-color: #ffffff">  if(</a><a style="background-color: #fafad2">present(stat)) </a><a style="background-color: #ffff99">stat = 0</a>
+   690) <a name="l690" style="background-color: #ffff99"></a>
+   691) <a name="l691" style="background-color: #ffff99">       ! Initial Check:  If GSMap contains halo points, die</a>
+   692) <a name="l692" style="background-color: #ffff99">       </a>
+   693) <a name="l693" style="background-color: #ffff99">  if(</a><a style="background-color: #ffffff">GlobalSegMap_haloed(GSMap)) then</a>
+   694) <a name="l694" style="background-color: #ffff99">     ierr = 1</a>
+   695) <a name="l695" style="background-color: #ffff99">     call die(myname_,&quot;Input GlobalSegMap haloed--not allowed&quot;,ierr)</a>
+   696) <a name="l696" style="background-color: #ffff99">  endif</a>
+   697) <a name="l697" style="background-color: #ffff99"></a>
+   698) <a name="l698" style="background-color: #ffff99">       ! Which process am I?</a>
+   699) <a name="l699" style="background-color: #ffff99"></a>
+   700) <a name="l700" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">MPI_COMM_RANK(comm, myID, ierr)</a>
+   701) <a name="l701" style="background-color: #ffffff"></a>
+   702) <a name="l702" style="background-color: #ffffff">  if(ierr /= 0) then</a>
+   703) <a name="l703" style="background-color: #ffffff">	call </a><a style="background-color: #ffff99">MP_perr_die(myname_,':: call MPI_COMM_RANK()',ierr)</a>
+   704) <a name="l704" style="background-color: #ffff99">  endif</a>
+   705) <a name="l705" style="background-color: #ffff99">       ! How many processes are there on this communicator?</a>
+   706) <a name="l706" style="background-color: #ffff99"></a>
+   707) <a name="l707" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">MPI_COMM_SIZE(comm, NumProcs, ierr)</a>
+   708) <a name="l708" style="background-color: #ffffff"></a>
+   709) <a name="l709" style="background-color: #ffffff">  if(ierr /= 0) then</a>
+   710) <a name="l710" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">MP_perr_die(myname_,':: call MPI_COMM_SIZE()',ierr)</a>
+   711) <a name="l711" style="background-color: #ffff99">  endif</a>
+   712) <a name="l712" style="background-color: #ffff99"></a>
+   713) <a name="l713" style="background-color: #ffff99">       ! Processor Check: Do the processors on GSMap match those in comm?</a>
+   714) <a name="l714" style="background-color: #ffff99"></a>
+   715) <a name="l715" style="background-color: #ffff99">  if(</a><a style="background-color: #ffffff">MAXVAL(GSMap%pe_loc) &gt; (NumProcs-1)) then</a>
+   716) <a name="l716" style="background-color: #ffff99">     stat=2</a>
+   717) <a name="l717" style="background-color: #ffff99">     write(stderr,*) myname_, &amp;</a>
+   718) <a name="l718" style="background-color: #ffff99">       &quot;:: Procs in GSMap%pe_loc do not match procs in communicator &quot;, &amp;</a>
+   719) <a name="l719" style="background-color: #ffff99">       NumProcs-1, MAXVAL(GSMap%pe_loc)</a>
+   720) <a name="l720" style="background-color: #ffff99">     call die(myname_, &amp;</a>
+   721) <a name="l721" style="background-color: #ffff99">	  &quot;Procs in GSMap%pe_loc do not match procs in communicator&quot;,stat)</a>
+   722) <a name="l722" style="background-color: #ffff99">  endif</a>
+   723) <a name="l723" style="background-color: #ffff99"></a>
+   724) <a name="l724" style="background-color: #ffffff">  if(myID == root) then</a>
+   725) <a name="l725" style="background-color: #ffffff"></a>
+   726) <a name="l726" style="background-color: #ffffff">       ! Allocate a precursor to a GlobalMap accordingly...</a>
+   727) <a name="l727" style="background-color: #ffffff"></a>
+   728) <a name="l728" style="background-color: #fafad2">     allocate(lns(0:NumProcs-1), stat=ierr)</a>
+   729) <a name="l729" style="background-color: #fafad2"></a>
+   730) <a name="l730" style="background-color: #fafad2">       ! And Load it...</a>
+   731) <a name="l731" style="background-color: #fafad2"></a>
+   732) <a name="l732" style="background-color: #ffffff">     lns(:)=0</a>
+   733) <a name="l733" style="background-color: #ffffff">     do iseg=1,GSMap%ngseg</a>
+   734) <a name="l734" style="background-color: #ffffff">        n = GSMap%pe_loc(iseg)</a>
+   735) <a name="l735" style="background-color: #ffffff">	lns(n) = lns(n) + GSMap%length(iseg)</a>
+   736) <a name="l736" style="background-color: #ffffff">     end do</a>
+   737) <a name="l737" style="background-color: #ffffff"></a>
+   738) <a name="l738" style="background-color: #ffffff">  else</a>
+   739) <a name="l739" style="background-color: #ffffff"></a>
+   740) <a name="l740" style="background-color: #ffffff">     allocate(lns(0)) ! This conforms to F90 standard for shaped arguments.</a>
+   741) <a name="l741" style="background-color: #ffffff"></a>
+   742) <a name="l742" style="background-color: #ffffff">  endif ! if(myID == root)</a>
+   743) <a name="l743" style="background-color: #ffffff"></a>
+   744) <a name="l744" style="background-color: #ffffff">       ! Determine the component id of GSMap:</a>
+   745) <a name="l745" style="background-color: #ffffff"></a>
+   746) <a name="l746" style="background-color: #ffffff">  comp_id = GlobalSegMap_comp_id(GSMap)</a>
+   747) <a name="l747" style="background-color: #ffffff"></a>
+   748) <a name="l748" style="background-color: #ffffff">       ! Create working GlobalMap workGMap (used for the gather):</a>
+   749) <a name="l749" style="background-color: #ffffff"></a>
+   750) <a name="l750" style="background-color: #ffffff">  call GlobalMap_init(workGMap, comp_id, lns, root, comm)</a>
+   751) <a name="l751" style="background-color: #ffffff"></a>
+   752) <a name="l752" style="background-color: #ffffff">       ! Gather the Data process-by-process to workV...</a>
+   753) <a name="l753" style="background-color: #ffffff">       ! do not include stat argument; bypass an argument check in gm_gather.</a>
+   754) <a name="l754" style="background-color: #ffffff"></a>
+   755) <a name="l755" style="background-color: #ffffff">  call GM_gather_(iV, workV, workGMap, root, comm, stat)</a>
+   756) <a name="l756" style="background-color: #ffffff"></a>
+   757) <a name="l757" style="background-color: #ffffff">       ! On the root, initialize oV, and load the contents of</a>
+   758) <a name="l758" style="background-color: #ffffff">       !workV into it...</a>
+   759) <a name="l759" style="background-color: #ffffff"></a>
+   760) <a name="l760" style="background-color: #ffffff">  if(myID == root) then</a>
+   761) <a name="l761" style="background-color: #ffffff"></a>
+   762) <a name="l762" style="background-color: #ffffff">! bug fix:  gstorage will be bigger than gssize if GSmap is</a>
+   763) <a name="l763" style="background-color: #ffffff">! haloed.  But gstorage may be smaller than gsize if GSmap</a>
+   764) <a name="l764" style="background-color: #ffffff">! is masked.  So take the maximum.  RLJ</a>
+   765) <a name="l765" style="background-color: #ffffff">     gstorage = GlobalSegMap_GlobalStorage(GSMap)</a>
+   766) <a name="l766" style="background-color: #ffffff">     gssize = GlobalSegMap_gsize(GSMap)</a>
+   767) <a name="l767" style="background-color: #ffffff">     global_storage = MAX(gstorage,gssize)</a>
+   768) <a name="l768" style="background-color: #ffffff"></a>
+   769) <a name="l769" style="background-color: #ffffff">     call AttrVect_init(oV,iV,global_storage)</a>
+   770) <a name="l770" style="background-color: #ffffff">     call AttrVect_zero(oV)</a>
+   771) <a name="l771" style="background-color: #ffffff"></a>
+   772) <a name="l772" style="background-color: #ffffff">     if (</a><a style="background-color: #fafad2">present(rdefault)) then</a>
+   773) <a name="l773" style="background-color: #fafad2">       if (</a><a style="background-color: #ffff99">AttrVect_nRAttr(oV) &gt; 0) oV%rAttr=rdefault</a>
+   774) <a name="l774" style="background-color: #ffff99">     endif</a>
+   775) <a name="l775" style="background-color: #ffffff">     if (</a><a style="background-color: #fafad2">present(idefault)) then</a>
+   776) <a name="l776" style="background-color: #fafad2">       if (</a><a style="background-color: #ffff99">AttrVect_nIAttr(oV) &gt; 0) oV%iAttr=idefault</a>
+   777) <a name="l777" style="background-color: #ffff99">     endif</a>
+   778) <a name="l778" style="background-color: #ffff99"></a>
+   779) <a name="l779" style="background-color: #ffff99">       ! On the root, allocate current position index for</a>
+   780) <a name="l780" style="background-color: #ffff99">       ! each process chunk:</a>
+   781) <a name="l781" style="background-color: #ffff99"></a>
+   782) <a name="l782" style="background-color: #fafad2">     allocate(current_pos(0:NumProcs-1), stat=ierr)</a>
+   783) <a name="l783" style="background-color: #fafad2"></a>
+   784) <a name="l784" style="background-color: #fafad2">     if(ierr /= 0) then</a>
+   785) <a name="l785" style="background-color: #ffff99">	write(stderr,*) myname_,':: allocate(current_pos(..) failed,', &amp;</a>
+   786) <a name="l786" style="background-color: #ffff99">	     'stat = ',ierr</a>
+   787) <a name="l787" style="background-color: #ffff99">	if(present(stat)) then</a>
+   788) <a name="l788" style="background-color: #ffff99">	   stat=ierr</a>
+   789) <a name="l789" style="background-color: #ffff99">	else</a>
+   790) <a name="l790" style="background-color: #ffff99">	   call die(myname_,'allocate(current_pos(..) failed.' )</a>
+   791) <a name="l791" style="background-color: #ffff99">	endif</a>
+   792) <a name="l792" style="background-color: #ffff99">     endif</a>
+   793) <a name="l793" style="background-color: #ffff99"></a>
+   794) <a name="l794" style="background-color: #ffff99">       ! Initialize current_pos(:) using GMap%displs(:)</a>
+   795) <a name="l795" style="background-color: #ffff99"></a>
+   796) <a name="l796" style="background-color: #ffffff">     do n=0,NumProcs-1</a>
+   797) <a name="l797" style="background-color: #ffffff">	current_pos(n) = workGMap%displs(n) + 1</a>
+   798) <a name="l798" style="background-color: #ffffff">     end do</a>
+   799) <a name="l799" style="background-color: #ffffff"></a>
+   800) <a name="l800" style="background-color: #ffffff">       ! Load each segment of iV into its appropriate segment</a>
+   801) <a name="l801" style="background-color: #ffffff">       ! of workV:</a>
+   802) <a name="l802" style="background-color: #ffffff">     </a>
+   803) <a name="l803" style="background-color: #ffffff">     ngseg = GlobalSegMap_ngseg(GSMap)</a>
+   804) <a name="l804" style="background-color: #ffffff"></a>
+   805) <a name="l805" style="background-color: #ffffff">     do n=1,ngseg</a>
+   806) <a name="l806" style="background-color: #ffffff"></a>
+   807) <a name="l807" style="background-color: #ffffff">       ! Determine which process owns segment n:</a>
+   808) <a name="l808" style="background-color: #ffffff"></a>
+   809) <a name="l809" style="background-color: #ffffff">	pe = GSMap%pe_loc(n)</a>
+   810) <a name="l810" style="background-color: #ffffff"></a>
+   811) <a name="l811" style="background-color: #ffffff">       ! Input map (lower/upper indicess) of segment of iV:</a>
+   812) <a name="l812" style="background-color: #ffffff"></a>
+   813) <a name="l813" style="background-color: #ffffff">	ilb = current_pos(pe)</a>
+   814) <a name="l814" style="background-color: #ffffff">	iub = current_pos(pe) + GSMap%length(n) - 1</a>
+   815) <a name="l815" style="background-color: #ffffff"></a>
+   816) <a name="l816" style="background-color: #ffffff">       ! Output map of (lower/upper indicess) segment of workV:</a>
+   817) <a name="l817" style="background-color: #ffffff"></a>
+   818) <a name="l818" style="background-color: #ffffff">	olb = GSMap%start(n)</a>
+   819) <a name="l819" style="background-color: #ffffff">	oub = GSMap%start(n) + GSMap%length(n) - 1</a>
+   820) <a name="l820" style="background-color: #ffffff"></a>
+   821) <a name="l821" style="background-color: #ffffff">       ! Increment current_pos(n) for next time:</a>
+   822) <a name="l822" style="background-color: #ffffff"></a>
+   823) <a name="l823" style="background-color: #ffffff">	current_pos(pe) = current_pos(pe) + GSMap%length(n)</a>
+   824) <a name="l824" style="background-color: #ffffff"></a>
+   825) <a name="l825" style="background-color: #ffffff">       ! Now we are equipped to do the copy:</a>
+   826) <a name="l826" style="background-color: #ffffff"></a>
+   827) <a name="l827" style="background-color: #ffffff">	do m=1,AttrVect_nIAttr(iV)</a>
+   828) <a name="l828" style="background-color: #ffffff">   	   oV%iAttr(m,olb:oub) = workV%iAttr(m,ilb:iub)</a>
+   829) <a name="l829" style="background-color: #ffffff">	end do</a>
+   830) <a name="l830" style="background-color: #ffffff"></a>
+   831) <a name="l831" style="background-color: #ffffff">	do m=1,AttrVect_nRAttr(iV)</a>
+   832) <a name="l832" style="background-color: #ffffff">   	   oV%rAttr(m,olb:oub) = workV%rAttr(m,ilb:iub)</a>
+   833) <a name="l833" style="background-color: #ffffff">	end do</a>
+   834) <a name="l834" style="background-color: #ffffff"></a>
+   835) <a name="l835" style="background-color: #ffffff">     end do ! do n=1,ngseg</a>
+   836) <a name="l836" style="background-color: #ffffff"></a>
+   837) <a name="l837" style="background-color: #ffffff">       ! Clean up current_pos, which was only allocated on the root</a>
+   838) <a name="l838" style="background-color: #ffffff"></a>
+   839) <a name="l839" style="background-color: #ffffff">     deallocate(current_pos, stat=ierr)</a>
+   840) <a name="l840" style="background-color: #ffffff">     if(ierr /= 0) then</a>
+   841) <a name="l841" style="background-color: #ffff99">	write(stderr,*) myname_,'error in deallocate(current_pos), stat=',ierr</a>
+   842) <a name="l842" style="background-color: #ffff99">	if(present(stat)) then</a>
+   843) <a name="l843" style="background-color: #ffff99">	   stat=ierr</a>
+   844) <a name="l844" style="background-color: #ffff99">	else</a>
+   845) <a name="l845" style="background-color: #ffff99">	   call die(myname_)</a>
+   846) <a name="l846" style="background-color: #ffff99">	endif</a>
+   847) <a name="l847" style="background-color: #ffff99">     endif</a>
+   848) <a name="l848" style="background-color: #ffff99">  endif ! if(myID == root)</a>
+   849) <a name="l849" style="background-color: #ffff99"></a>
+   850) <a name="l850" style="background-color: #ffff99">       ! At this point, we are finished.  The data have been gathered</a>
+   851) <a name="l851" style="background-color: #ffff99">       ! to oV</a>
+   852) <a name="l852" style="background-color: #ffff99"></a>
+   853) <a name="l853" style="background-color: #ffff99">       ! Finally, clean up allocated structures:</a>
+   854) <a name="l854" style="background-color: #ffff99"></a>
+   855) <a name="l855" style="background-color: #ffffff">  if(myID == root) call AttrVect_clean(workV)</a>
+   856) <a name="l856" style="background-color: #ffffff">  call GlobalMap_clean(workGMap)</a>
+   857) <a name="l857" style="background-color: #ffffff"></a>
+   858) <a name="l858" style="background-color: #ffffff">  deallocate(lns, stat=ierr)</a>
+   859) <a name="l859" style="background-color: #ffffff"></a>
+   860) <a name="l860" style="background-color: #ffffff">  if(ierr /= 0) then</a>
+   861) <a name="l861" style="background-color: #ffff99">    write(stderr,*) myname_,'error in deallocate(lns), stat=',ierr</a>
+   862) <a name="l862" style="background-color: #ffff99">    if(present(stat)) then</a>
+   863) <a name="l863" style="background-color: #ffff99">       stat=ierr</a>
+   864) <a name="l864" style="background-color: #ffff99">    else</a>
+   865) <a name="l865" style="background-color: #ffff99">       call die(myname_)</a>
+   866) <a name="l866" style="background-color: #ffff99">    endif</a>
+   867) <a name="l867" style="background-color: #ffff99">  endif</a>
+   868) <a name="l868" style="background-color: #ffff99"></a>
+   869) <a name="l869" style="background-color: #fafad2"> end subroutine GSM_gather_</a>
+   870) <a name="l870" style="background-color: #ffffff"></a>
+   871) <a name="l871" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   872) <a name="l872" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+   873) <a name="l873" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   874) <a name="l874" style="background-color: #ffffff">!</a>
+   875) <a name="l875" style="background-color: #ffffff">! !IROUTINE: GM_scatter_ - Scatter an AttrVect Using a GlobalMap</a>
+   876) <a name="l876" style="background-color: #ffffff">!</a>
+   877) <a name="l877" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   878) <a name="l878" style="background-color: #ffffff">! The routine {\tt GM\_scatter\_} takes an input {\tt AttrVect} type</a>
+   879) <a name="l879" style="background-color: #ffffff">! {\tt iV} (valid only on the root), and scatters it to a distributed </a>
+   880) <a name="l880" style="background-color: #ffffff">! {\tt AttrVect} {\tt oV}.  The input {\tt GlobalMap} argument </a>
+   881) <a name="l881" style="background-color: #ffffff">! {\tt GMap} dictates how {\tt iV} is scattered to {\tt oV}.  The </a>
+   882) <a name="l882" style="background-color: #ffffff">! success (failure) of this routine is reported in the zero (non-zero)</a>
+   883) <a name="l883" style="background-color: #ffffff">! value of the output argument {\tt stat}.</a>
+   884) <a name="l884" style="background-color: #ffffff">!</a>
+   885) <a name="l885" style="background-color: #ffffff">! {\bf N.B.}:  The output {\tt AttrVect} argument {\tt oV} represents</a>
+   886) <a name="l886" style="background-color: #ffffff">! dynamically allocated memory.  When it is no longer needed, it should</a>
+   887) <a name="l887" style="background-color: #ffffff">! be deallocated by invoking {\tt AttrVect\_clean()} (see the module</a>
+   888) <a name="l888" style="background-color: #ffffff">! {\tt m\_AttrVect} for more details).</a>
+   889) <a name="l889" style="background-color: #ffffff">!</a>
+   890) <a name="l890" style="background-color: #ffffff">! !INTERFACE:</a>
+   891) <a name="l891" style="background-color: #ffffff"></a>
+   892) <a name="l892" style="background-color: #ffffff"> subroutine GM_scatter_(iV, oV, GMap, root, comm, stat)</a>
+   893) <a name="l893" style="background-color: #ffffff">!</a>
+   894) <a name="l894" style="background-color: #ffffff">! !USES:</a>
+   895) <a name="l895" style="background-color: #ffffff">!</a>
+   896) <a name="l896" style="background-color: #ffffff">      use m_stdio</a>
+   897) <a name="l897" style="background-color: #ffffff">      use m_die</a>
+   898) <a name="l898" style="background-color: #ffffff">      use m_mpif90</a>
+   899) <a name="l899" style="background-color: #ffffff">      use m_realkinds, only : FP</a>
+   900) <a name="l900" style="background-color: #ffffff"></a>
+   901) <a name="l901" style="background-color: #ffffff">      use m_List, only : List</a>
+   902) <a name="l902" style="background-color: #ffffff">      use m_List, only : List_copy =&gt; copy</a>
+   903) <a name="l903" style="background-color: #ffffff">      use m_List, only : List_bcast =&gt; bcast</a>
+   904) <a name="l904" style="background-color: #ffffff">      use m_List, only : List_clean =&gt; clean</a>
+   905) <a name="l905" style="background-color: #ffffff">      use m_List, only : List_nullify =&gt; nullify</a>
+   906) <a name="l906" style="background-color: #ffffff">      use m_List, only : List_nitem =&gt; nitem</a>
+   907) <a name="l907" style="background-color: #ffffff"></a>
+   908) <a name="l908" style="background-color: #ffffff">      use m_GlobalMap, only : GlobalMap</a>
+   909) <a name="l909" style="background-color: #ffffff">      use m_GlobalMap, only : GlobalMap_lsize =&gt; lsize</a>
+   910) <a name="l910" style="background-color: #ffffff">      use m_GlobalMap, only : GlobalMap_gsize =&gt; gsize</a>
+   911) <a name="l911" style="background-color: #ffffff"></a>
+   912) <a name="l912" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect</a>
+   913) <a name="l913" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_init =&gt; init</a>
+   914) <a name="l914" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_zero =&gt; zero</a>
+   915) <a name="l915" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_lsize =&gt; lsize</a>
+   916) <a name="l916" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_nIAttr =&gt; nIAttr</a>
+   917) <a name="l917" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_nRAttr =&gt; nRAttr</a>
+   918) <a name="l918" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_clean =&gt; clean</a>
+   919) <a name="l919" style="background-color: #ffffff"></a>
+   920) <a name="l920" style="background-color: #ffffff">      implicit none</a>
+   921) <a name="l921" style="background-color: #ffffff"></a>
+   922) <a name="l922" style="background-color: #ffffff">! !INPUT PARAMETERS: </a>
+   923) <a name="l923" style="background-color: #ffffff">!</a>
+   924) <a name="l924" style="background-color: #ffffff">      type(AttrVect),           intent(in)  :: iV</a>
+   925) <a name="l925" style="background-color: #ffffff">      type(GlobalMap),          intent(in)  :: GMap</a>
+   926) <a name="l926" style="background-color: #ffffff">      integer,                  intent(in)  :: root</a>
+   927) <a name="l927" style="background-color: #ffffff">      integer,                  intent(in)  :: comm</a>
+   928) <a name="l928" style="background-color: #ffffff"></a>
+   929) <a name="l929" style="background-color: #ffffff">! !OUTPUT PARAMETERS:</a>
+   930) <a name="l930" style="background-color: #ffffff">!</a>
+   931) <a name="l931" style="background-color: #ffffff">      type(AttrVect),           intent(out) :: oV</a>
+   932) <a name="l932" style="background-color: #ffffff">      integer,        optional, intent(out) :: stat</a>
+   933) <a name="l933" style="background-color: #ffffff"></a>
+   934) <a name="l934" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   935) <a name="l935" style="background-color: #ffffff">! 21Apr98 - Jing Guo &lt;guo@thunder&gt; - initial prototype/prolog/code</a>
+   936) <a name="l936" style="background-color: #ffffff">! 27Oct00 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - relocated from</a>
+   937) <a name="l937" style="background-color: #ffffff">!           m_AttrVect</a>
+   938) <a name="l938" style="background-color: #ffffff">! 15Jan01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - renamed  GM_scatter_</a>
+   939) <a name="l939" style="background-color: #ffffff">!  8Feb01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - add logic to prevent</a>
+   940) <a name="l940" style="background-color: #ffffff">!           empty calls (i.e. no data in buffer) to MPI_SCATTERV()</a>
+   941) <a name="l941" style="background-color: #ffffff">! 27Apr01 - R.L. Jacob &lt;jacob@mcs.anl.gov&gt; - small bug fix to</a>
+   942) <a name="l942" style="background-color: #ffffff">!           integer attribute scatter</a>
+   943) <a name="l943" style="background-color: #ffffff">!  9May01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Re-vamped comms model</a>
+   944) <a name="l944" style="background-color: #ffffff">!           to reflect MPI comms model for the scatter.  Tidied up</a>
+   945) <a name="l945" style="background-color: #ffffff">!           the prologue, too.</a>
+   946) <a name="l946" style="background-color: #ffffff">! 18May01 - R.L. Jacob &lt;jacob@mcs.anl.gov&gt; - use MP_Type function</a>
+   947) <a name="l947" style="background-color: #ffffff">!           to determine type for mpi_scatterv</a>
+   948) <a name="l948" style="background-color: #ffffff">!  8Aug01 - E.T. Ong &lt;eong@mcs.anl.gov&gt; - replace list assignment(=)</a>
+   949) <a name="l949" style="background-color: #ffffff">!           with list copy to avoid compiler errors in pgf90.</a>
+   950) <a name="l950" style="background-color: #ffffff">! 13Dec01 - E.T. Ong &lt;eong@mcs.anl.gov&gt; - allow scatter with an</a>
+   951) <a name="l951" style="background-color: #ffffff">!           AttrVect containing only an iList or rList.</a>
+   952) <a name="l952" style="background-color: #ffffff">!EOP ___________________________________________________________________</a>
+   953) <a name="l953" style="background-color: #ffffff"></a>
+   954) <a name="l954" style="background-color: #ffffff">  character(len=*),parameter :: myname_=myname//'::GM_scatter_'</a>
+   955) <a name="l955" style="background-color: #ffffff">  integer :: nIA,nRA,niV,noV,ier</a>
+   956) <a name="l956" style="background-color: #ffffff">  integer :: myID</a>
+   957) <a name="l957" style="background-color: #ffffff">  integer :: mp_type_Av</a>
+   958) <a name="l958" style="background-color: #ffffff">  type(List) :: iList, rList</a>
+   959) <a name="l959" style="background-color: #ffffff">  type(AttrVect) :: nonRootAV</a>
+   960) <a name="l960" style="background-color: #ffffff"></a>
+   961) <a name="l961" style="background-color: #ffffff">  if(present(stat)) stat=0</a>
+   962) <a name="l962" style="background-color: #ffffff"></a>
+   963) <a name="l963" style="background-color: #ffffff">  call MP_comm_rank(comm,myID,ier)</a>
+   964) <a name="l964" style="background-color: #ffffff">  if(ier /= 0) then</a>
+   965) <a name="l965" style="background-color: #ffffff">    call </a><a style="background-color: #ffff99">MP_perr_die(myname_,'MP_comm_rank()',ier)</a>
+   966) <a name="l966" style="background-color: #ffff99">  endif</a>
+   967) <a name="l967" style="background-color: #ffff99"></a>
+   968) <a name="l968" style="background-color: #ffff99">	! Verify the input: a _gathered_ vector</a>
+   969) <a name="l969" style="background-color: #ffff99"></a>
+   970) <a name="l970" style="background-color: #ffffff">  if(myID == root) then</a>
+   971) <a name="l971" style="background-color: #ffffff"></a>
+   972) <a name="l972" style="background-color: #ffffff">     niV = GlobalMap_gsize(GMap)  ! the _gathered_ local size</a>
+   973) <a name="l973" style="background-color: #ffffff">     noV = AttrVect_lsize(iV)     ! the length of the input AttrVect iV</a>
+   974) <a name="l974" style="background-color: #ffffff"></a>
+   975) <a name="l975" style="background-color: #ffffff">     if(niV /= noV) then</a>
+   976) <a name="l976" style="background-color: #ffff99">        write(stderr,'(2a,i5,a,i8,a,i8)') myname_,	&amp;</a>
+   977) <a name="l977" style="background-color: #ffff99">             ': myID = ',myID,'.  Invalid input on root, gsize(GMap) =',&amp;</a>
+   978) <a name="l978" style="background-color: #ffff99">             niV,', lsize(iV) =',noV</a>
+   979) <a name="l979" style="background-color: #ffff99">        if(present(stat)) then</a>
+   980) <a name="l980" style="background-color: #ffff99">           stat=-1</a>
+   981) <a name="l981" style="background-color: #ffff99">        else</a>
+   982) <a name="l982" style="background-color: #ffff99">           call die(myname_)</a>
+   983) <a name="l983" style="background-color: #ffff99">        endif</a>
+   984) <a name="l984" style="background-color: #ffff99">     endif</a>
+   985) <a name="l985" style="background-color: #ffff99"></a>
+   986) <a name="l986" style="background-color: #ffff99">  endif</a>
+   987) <a name="l987" style="background-color: #ffff99"></a>
+   988) <a name="l988" style="background-color: #ffff99">        ! On the root, read the integer and real attribute </a>
+   989) <a name="l989" style="background-color: #ffff99">        ! lists off of iV.</a>
+   990) <a name="l990" style="background-color: #ffff99"></a>
+   991) <a name="l991" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">List_nullify(iList)</a>
+   992) <a name="l992" style="background-color: #ffffff">  call List_nullify(rList)</a>
+   993) <a name="l993" style="background-color: #ffffff"></a>
+   994) <a name="l994" style="background-color: #ffffff">  if(myID == root) then</a>
+   995) <a name="l995" style="background-color: #ffffff"></a>
+   996) <a name="l996" style="background-color: #ffffff">     ! Count the number of real and integer attributes</a>
+   997) <a name="l997" style="background-color: #ffffff"></a>
+   998) <a name="l998" style="background-color: #ffffff">     nIA = AttrVect_nIAttr(iV)	! number of INTEGER attributes</a>
+   999) <a name="l999" style="background-color: #ffffff">     nRA = AttrVect_nRAttr(iV)	! number of REAL attributes</a>
+  1000) <a name="l1000" style="background-color: #ffffff"></a>
+  1001) <a name="l1001" style="background-color: #ffffff">     if(nIA &gt; 0) then</a>
+  1002) <a name="l1002" style="background-color: #ffffff">	call List_copy(iList,iV%iList)</a>
+  1003) <a name="l1003" style="background-color: #ffffff">     endif</a>
+  1004) <a name="l1004" style="background-color: #ffffff"></a>
+  1005) <a name="l1005" style="background-color: #ffffff">     if(nRA &gt; 0) then</a>
+  1006) <a name="l1006" style="background-color: #ffffff">	call List_copy(rList,iV%rList)</a>
+  1007) <a name="l1007" style="background-color: #ffffff">     endif</a>
+  1008) <a name="l1008" style="background-color: #ffffff"></a>
+  1009) <a name="l1009" style="background-color: #ffffff">  endif</a>
+  1010) <a name="l1010" style="background-color: #ffffff">  </a>
+  1011) <a name="l1011" style="background-color: #ffffff">        ! From the root, broadcast iList and rList</a>
+  1012) <a name="l1012" style="background-color: #ffffff"></a>
+  1013) <a name="l1013" style="background-color: #ffffff">  call MPI_BCAST(nIA,1,MP_INTEGER,root,comm,ier)</a>
+  1014) <a name="l1014" style="background-color: #ffffff">  if(ier /= 0) </a><a style="background-color: #ffff99">call MP_perr(myname_,'MPI_BCAST(nIA)',ier)</a>
+  1015) <a name="l1015" style="background-color: #ffff99"></a>
+  1016) <a name="l1016" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">MPI_BCAST(nRA,1,MP_INTEGER,root,comm,ier)</a>
+  1017) <a name="l1017" style="background-color: #ffffff">  if(ier /= 0) </a><a style="background-color: #ffff99">call MP_perr(myname_,'MPI_BCAST(nRA)',ier)</a>
+  1018) <a name="l1018" style="background-color: #ffff99"></a>
+  1019) <a name="l1019" style="background-color: #ffffff">  if(nIA&gt;0) call List_bcast(iList, root, comm)</a>
+  1020) <a name="l1020" style="background-color: #ffffff">  if(nRA&gt;0) call List_bcast(rList, root, comm)</a>
+  1021) <a name="l1021" style="background-color: #ffffff"></a>
+  1022) <a name="l1022" style="background-color: #ffffff">  noV = GlobalMap_lsize(GMap) ! the _scatterd_ local size</a>
+  1023) <a name="l1023" style="background-color: #ffffff"></a>
+  1024) <a name="l1024" style="background-color: #ffffff">        ! On all processes, use List data and noV to initialize oV </a>
+  1025) <a name="l1025" style="background-color: #ffffff"></a>
+  1026) <a name="l1026" style="background-color: #ffffff">  call AttrVect_init(oV, iList, rList, noV)</a>
+  1027) <a name="l1027" style="background-color: #ffffff">  call AttrVect_zero(oV)</a>
+  1028) <a name="l1028" style="background-color: #ffffff"></a>
+  1029) <a name="l1029" style="background-color: #ffffff">        ! Initialize a dummy AttrVect for non-root MPI calls</a>
+  1030) <a name="l1030" style="background-color: #ffffff"></a>
+  1031) <a name="l1031" style="background-color: #ffffff">  if(myID/=root) then</a>
+  1032) <a name="l1032" style="background-color: #ffffff">    call AttrVect_init(nonRootAV,oV,1)</a>
+  1033) <a name="l1033" style="background-color: #ffffff">    call AttrVect_zero(nonRootAV)</a>
+  1034) <a name="l1034" style="background-color: #ffffff">  endif</a>
+  1035) <a name="l1035" style="background-color: #ffffff"></a>
+  1036) <a name="l1036" style="background-color: #ffffff"></a>
+  1037) <a name="l1037" style="background-color: #ffffff">  if(nIA &gt; 0) then</a>
+  1038) <a name="l1038" style="background-color: #ffffff"></a>
+  1039) <a name="l1039" style="background-color: #ffffff">     if(myID == root) then</a>
+  1040) <a name="l1040" style="background-color: #ffffff"></a>
+  1041) <a name="l1041" style="background-color: #ffffff">        call MPI_scatterv(</a><a style="background-color: #fafad2">iV%iAttr,GMap%</a><a style="background-color: #ffffff">counts*nIA, &amp;</a>
+  1042) <a name="l1042" style="background-color: #ffffff">             GMap%displs*nIA,MP_INTEGER,</a><a style="background-color: #fafad2">oV%iAttr,   &amp;</a>
+  1043) <a name="l1043" style="background-color: #fafad2">             noV*nIA,MP_INTEGER,root,comm,ier )</a>
+  1044) <a name="l1044" style="background-color: #fafad2">        if(ier /= 0) then</a>
+  1045) <a name="l1045" style="background-color: #fafad2">           call </a><a style="background-color: #ffff99">MP_perr_die(myname_,'MPI_scatterv(iAttr) on root',ier)</a>
+  1046) <a name="l1046" style="background-color: #ffff99">        endif</a>
+  1047) <a name="l1047" style="background-color: #ffff99"></a>
+  1048) <a name="l1048" style="background-color: #ffff99">     else</a>
+  1049) <a name="l1049" style="background-color: #ffff99"></a>
+  1050) <a name="l1050" style="background-color: #ffff99">        call </a><a style="background-color: #ffffff">MPI_scatterv(</a><a style="background-color: #fafad2">nonRootAV%iAttr,GMap%</a><a style="background-color: #ffffff">counts*nIA, &amp;</a>
+  1051) <a name="l1051" style="background-color: #ffffff">             GMap%displs*nIA,MP_INTEGER,</a><a style="background-color: #fafad2">oV%iAttr,          &amp;</a>
+  1052) <a name="l1052" style="background-color: #fafad2">             noV*nIA,MP_INTEGER,root,comm,ier )</a>
+  1053) <a name="l1053" style="background-color: #fafad2">        if(ier /= 0) then</a>
+  1054) <a name="l1054" style="background-color: #fafad2">           call </a><a style="background-color: #ffff99">MP_perr_die(myname_,'MPI_scatterv(iAttr) off root',ier)</a>
+  1055) <a name="l1055" style="background-color: #ffff99">        endif</a>
+  1056) <a name="l1056" style="background-color: #ffff99"></a>
+  1057) <a name="l1057" style="background-color: #ffff99">     endif   ! if(myID == root)</a>
+  1058) <a name="l1058" style="background-color: #ffff99"></a>
+  1059) <a name="l1059" style="background-color: #ffff99">     call </a><a style="background-color: #ffffff">List_clean(iList)</a>
+  1060) <a name="l1060" style="background-color: #ffffff"></a>
+  1061) <a name="l1061" style="background-color: #ffffff">  endif   ! if(nIA &gt; 0)</a>
+  1062) <a name="l1062" style="background-color: #ffffff"></a>
+  1063) <a name="l1063" style="background-color: #ffffff">  mp_type_Av = MP_Type(1._FP)   ! set mpi type to same as AV%rAttr</a>
+  1064) <a name="l1064" style="background-color: #ffffff"></a>
+  1065) <a name="l1065" style="background-color: #ffffff">  if(nRA &gt; 0) then</a>
+  1066) <a name="l1066" style="background-color: #ffffff"></a>
+  1067) <a name="l1067" style="background-color: #ffffff">     if(myID == root) then</a>
+  1068) <a name="l1068" style="background-color: #ffffff"></a>
+  1069) <a name="l1069" style="background-color: #ffffff"></a>
+  1070) <a name="l1070" style="background-color: #ffffff">        call MPI_scatterv(</a><a style="background-color: #fafad2">iV%rAttr,GMap%</a><a style="background-color: #ffffff">counts*nRA, &amp;</a>
+  1071) <a name="l1071" style="background-color: #ffffff">             GMap%displs*nRA,mp_type_Av,</a><a style="background-color: #fafad2">oV%rAttr,   &amp;</a>
+  1072) <a name="l1072" style="background-color: #fafad2">             noV*nRA,mp_type_Av,root,comm,ier )</a>
+  1073) <a name="l1073" style="background-color: #fafad2">        if(ier /= 0) then</a>
+  1074) <a name="l1074" style="background-color: #fafad2">           call </a><a style="background-color: #ffff99">MP_perr_die(myname_,'MPI_scatterv(rAttr) on root',ier)</a>
+  1075) <a name="l1075" style="background-color: #ffff99">        endif</a>
+  1076) <a name="l1076" style="background-color: #ffff99"></a>
+  1077) <a name="l1077" style="background-color: #ffff99">     else</a>
+  1078) <a name="l1078" style="background-color: #ffff99"></a>
+  1079) <a name="l1079" style="background-color: #ffff99"></a>
+  1080) <a name="l1080" style="background-color: #ffff99">        call </a><a style="background-color: #ffffff">MPI_scatterv(</a><a style="background-color: #fafad2">nonRootAV%rAttr,GMap%</a><a style="background-color: #ffffff">counts*nRA, &amp;</a>
+  1081) <a name="l1081" style="background-color: #ffffff">             GMap%displs*nRA,mp_type_Av,</a><a style="background-color: #fafad2">oV%rAttr,          &amp;</a>
+  1082) <a name="l1082" style="background-color: #fafad2">             noV*nRA,mp_type_Av,root,comm,ier )</a>
+  1083) <a name="l1083" style="background-color: #fafad2">        if(ier /= 0) then</a>
+  1084) <a name="l1084" style="background-color: #fafad2">           call </a><a style="background-color: #ffff99">MP_perr_die(myname_,'MPI_scatterv(rAttr) off root',ier)</a>
+  1085) <a name="l1085" style="background-color: #ffff99">        endif</a>
+  1086) <a name="l1086" style="background-color: #ffff99"></a>
+  1087) <a name="l1087" style="background-color: #ffff99">     endif</a>
+  1088) <a name="l1088" style="background-color: #ffff99"></a>
+  1089) <a name="l1089" style="background-color: #ffff99">     call </a><a style="background-color: #ffffff">List_clean(rList)</a>
+  1090) <a name="l1090" style="background-color: #ffffff"></a>
+  1091) <a name="l1091" style="background-color: #ffffff">  endif</a>
+  1092) <a name="l1092" style="background-color: #ffffff"></a>
+  1093) <a name="l1093" style="background-color: #ffffff">  if(myID /= root) then</a>
+  1094) <a name="l1094" style="background-color: #ffffff">     call AttrVect_clean(nonRootAV,ier)</a>
+  1095) <a name="l1095" style="background-color: #ffffff">     if(ier /= 0) then</a>
+  1096) <a name="l1096" style="background-color: #ffff99">        write(stderr,'(2a,i4)') myname_,	&amp;</a>
+  1097) <a name="l1097" style="background-color: #ffff99">             ':: AttrVect_clean(nonRootAV) failed for non-root &amp;</a>
+  1098) <a name="l1098" style="background-color: #ffff99">             &amp;process: myID = ', myID</a>
+  1099) <a name="l1099" style="background-color: #ffff99">        call die(myname_,':: AttrVect_clean failed &amp;</a>
+  1100) <a name="l1100" style="background-color: #ffff99">             &amp;for nonRootAV off of root',ier)</a>
+  1101) <a name="l1101" style="background-color: #ffff99">     endif</a>
+  1102) <a name="l1102" style="background-color: #ffff99">  endif</a>
+  1103) <a name="l1103" style="background-color: #ffff99"></a>
+  1104) <a name="l1104" style="background-color: #ffffff"> end subroutine GM_scatter_</a>
+  1105) <a name="l1105" style="background-color: #ffffff"></a>
+  1106) <a name="l1106" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+  1107) <a name="l1107" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+  1108) <a name="l1108" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+  1109) <a name="l1109" style="background-color: #ffffff">!</a>
+  1110) <a name="l1110" style="background-color: #ffffff">! !IROUTINE: GSM_scatter_ - Scatter an AttrVect using a GlobalSegMap</a>
+  1111) <a name="l1111" style="background-color: #ffffff">!</a>
+  1112) <a name="l1112" style="background-color: #ffffff">! !DESCRIPTION:</a>
+  1113) <a name="l1113" style="background-color: #ffffff">! The routine {\tt GSM\_scatter\_} takes an input {\tt AttrVect} type</a>
+  1114) <a name="l1114" style="background-color: #ffffff">! {\tt iV} (valid only on the root), and scatters it to a distributed </a>
+  1115) <a name="l1115" style="background-color: #ffffff">! {\tt AttrVect} {\tt oV}.  The input {\tt GlobalSegMap} argument </a>
+  1116) <a name="l1116" style="background-color: #ffffff">! {\tt GSMap} dictates how {\tt iV} is scattered to {\tt oV}.  The </a>
+  1117) <a name="l1117" style="background-color: #ffffff">! success (failure) of this routine is reported in the zero (non-zero)</a>
+  1118) <a name="l1118" style="background-color: #ffffff">! value of the output argument {\tt stat}.</a>
+  1119) <a name="l1119" style="background-color: #ffffff">!</a>
+  1120) <a name="l1120" style="background-color: #ffffff">! {\tt GSM\_scatter\_()} converts the problem of scattering data </a>
+  1121) <a name="l1121" style="background-color: #ffffff">! according to a {\tt GlobalSegMap} into the simpler problem of </a>
+  1122) <a name="l1122" style="background-color: #ffffff">! scattering data as specified by a {\tt GlobalMap}.  The {\tt GlobalMap}</a>
+  1123) <a name="l1123" style="background-color: #ffffff">! variable {\tt GMap} is created based on the local storage requirements </a>
+  1124) <a name="l1124" style="background-color: #ffffff">! for each distributed piece of {\tt iV}.  On the root, a complete </a>
+  1125) <a name="l1125" style="background-color: #ffffff">! (including halo points) copy of {\tt iV} is stored in </a>
+  1126) <a name="l1126" style="background-color: #ffffff">! the temporary {\tt AttrVect} variable {\tt workV} (the length of</a>
+  1127) <a name="l1127" style="background-color: #ffffff">! {\tt workV} is {\tt GlobalSegMap\_GlobalStorage(GSMap)}).  The </a>
+  1128) <a name="l1128" style="background-color: #ffffff">! variable {\tt workV} is segmented by process, and segments are </a>
+  1129) <a name="l1129" style="background-color: #ffffff">! copied into it by process, but ordered in the same order the segments</a>
+  1130) <a name="l1130" style="background-color: #ffffff">! appear in {\tt GSMap}.  Once {\tt workV} is loaded, the data are </a>
+  1131) <a name="l1131" style="background-color: #ffffff">! scattered to the output {\tt AttrVect} {\tt oV} by a call to the</a>
+  1132) <a name="l1132" style="background-color: #ffffff">! routine {\tt GM\_scatter\_()} defined in this module, with {\tt workV}</a>
+  1133) <a name="l1133" style="background-color: #ffffff">! and {\tt GMap} as the input arguments.</a>
+  1134) <a name="l1134" style="background-color: #ffffff">!</a>
+  1135) <a name="l1135" style="background-color: #ffffff">! {\bf N.B.:}  This algorithm  assumes that memory access times are much </a>
+  1136) <a name="l1136" style="background-color: #ffffff">! shorter than message-passing transmission times.</a>
+  1137) <a name="l1137" style="background-color: #ffffff">!</a>
+  1138) <a name="l1138" style="background-color: #ffffff">! {\bf N.B.}:  The output {\tt AttrVect} argument {\tt oV} represents</a>
+  1139) <a name="l1139" style="background-color: #ffffff">! dynamically allocated memory.  When it is no longer needed, it should</a>
+  1140) <a name="l1140" style="background-color: #ffffff">! be deallocated by invoking {\tt AttrVect\_clean()} (see the module</a>
+  1141) <a name="l1141" style="background-color: #ffffff">! {\tt m\_AttrVect} for more details).</a>
+  1142) <a name="l1142" style="background-color: #ffffff">!</a>
+  1143) <a name="l1143" style="background-color: #ffffff">! !INTERFACE:</a>
+  1144) <a name="l1144" style="background-color: #ffffff"></a>
+  1145) <a name="l1145" style="background-color: #ffffff"> subroutine GSM_scatter_(iV, oV, GSMap, root, comm, stat)</a>
+  1146) <a name="l1146" style="background-color: #ffffff">!</a>
+  1147) <a name="l1147" style="background-color: #ffffff">! !USES:</a>
+  1148) <a name="l1148" style="background-color: #ffffff">!</a>
+  1149) <a name="l1149" style="background-color: #ffffff">! Environment utilities from mpeu:</a>
+  1150) <a name="l1150" style="background-color: #ffffff"></a>
+  1151) <a name="l1151" style="background-color: #ffffff">      use m_stdio</a>
+  1152) <a name="l1152" style="background-color: #ffffff">      use m_die</a>
+  1153) <a name="l1153" style="background-color: #ffffff">      use m_mpif90</a>
+  1154) <a name="l1154" style="background-color: #ffffff"></a>
+  1155) <a name="l1155" style="background-color: #ffffff">      use m_List, only : List_nullify =&gt; nullify</a>
+  1156) <a name="l1156" style="background-color: #ffffff"></a>
+  1157) <a name="l1157" style="background-color: #ffffff">! GlobalSegMap and associated services:</a>
+  1158) <a name="l1158" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap</a>
+  1159) <a name="l1159" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_comp_id =&gt; comp_id</a>
+  1160) <a name="l1160" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_ngseg =&gt; ngseg</a>
+  1161) <a name="l1161" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_lsize =&gt; lsize</a>
+  1162) <a name="l1162" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_gsize =&gt; gsize</a>
+  1163) <a name="l1163" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_GlobalStorage =&gt; GlobalStorage</a>
+  1164) <a name="l1164" style="background-color: #ffffff">! AttrVect and associated services:</a>
+  1165) <a name="l1165" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect</a>
+  1166) <a name="l1166" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_init =&gt; init</a>
+  1167) <a name="l1167" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_zero =&gt; zero</a>
+  1168) <a name="l1168" style="background-color: #ffffff">      use m_AttrVect,  only : AttrVect_lsize =&gt; lsize</a>
+  1169) <a name="l1169" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_nIAttr =&gt; nIAttr</a>
+  1170) <a name="l1170" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_nRAttr =&gt; nRAttr</a>
+  1171) <a name="l1171" style="background-color: #ffffff">      use m_AttrVect, only : AttrVect_clean =&gt; clean </a>
+  1172) <a name="l1172" style="background-color: #ffffff">! GlobalMap and associated services:</a>
+  1173) <a name="l1173" style="background-color: #ffffff">      use m_GlobalMap, only : GlobalMap</a>
+  1174) <a name="l1174" style="background-color: #ffffff">      use m_GlobalMap, only : GlobalMap_init =&gt; init</a>
+  1175) <a name="l1175" style="background-color: #ffffff">      use m_GlobalMap, only : GlobalMap_clean =&gt; clean</a>
+  1176) <a name="l1176" style="background-color: #ffffff"></a>
+  1177) <a name="l1177" style="background-color: #ffffff">      implicit none</a>
+  1178) <a name="l1178" style="background-color: #ffffff"></a>
+  1179) <a name="l1179" style="background-color: #ffffff">! !INPUT PARAMETERS: </a>
+  1180) <a name="l1180" style="background-color: #ffffff">!</a>
+  1181) <a name="l1181" style="background-color: #ffffff">      type(AttrVect),            intent(in)  :: iV</a>
+  1182) <a name="l1182" style="background-color: #ffffff">      type(GlobalSegMap),        intent(in)  :: GSMap</a>
+  1183) <a name="l1183" style="background-color: #ffffff">      integer,                   intent(in)  :: root</a>
+  1184) <a name="l1184" style="background-color: #ffffff">      integer,                   intent(in)  :: comm</a>
+  1185) <a name="l1185" style="background-color: #ffffff"></a>
+  1186) <a name="l1186" style="background-color: #ffffff">! !OUTPUT PARAMETERS:</a>
+  1187) <a name="l1187" style="background-color: #ffffff">!</a>
+  1188) <a name="l1188" style="background-color: #ffffff">      type(AttrVect),            intent(out) :: oV</a>
+  1189) <a name="l1189" style="background-color: #ffffff">      integer,        optional,  intent(out) :: stat</a>
+  1190) <a name="l1190" style="background-color: #ffffff"></a>
+  1191) <a name="l1191" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+  1192) <a name="l1192" style="background-color: #ffffff">! 15Jan01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - API specification.</a>
+  1193) <a name="l1193" style="background-color: #ffffff">!  8Feb01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initial code.</a>
+  1194) <a name="l1194" style="background-color: #ffffff">! 25Feb01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Bug fix--replaced</a>
+  1195) <a name="l1195" style="background-color: #ffffff">!           call to GlobalSegMap_lsize with call to the new fcn.</a>
+  1196) <a name="l1196" style="background-color: #ffffff">!           GlobalSegMap_ProcessStorage().</a>
+  1197) <a name="l1197" style="background-color: #ffffff">! 26Apr01 - R.L. Jacob &lt;jacob@mcs.anl.gov&gt; - add use statement for</a>
+  1198) <a name="l1198" style="background-color: #ffffff">!           AttVect_clean</a>
+  1199) <a name="l1199" style="background-color: #ffffff">! 26Apr01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - bug fixes--data </a>
+  1200) <a name="l1200" style="background-color: #ffffff">!           misalignment in use of the GlobalMap to compute the</a>
+  1201) <a name="l1201" style="background-color: #ffffff">!           memory map into workV, and initialization of workV</a>
+  1202) <a name="l1202" style="background-color: #ffffff">!           on all processes.</a>
+  1203) <a name="l1203" style="background-color: #ffffff">!  9May01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - tidied up prologue</a>
+  1204) <a name="l1204" style="background-color: #ffffff">! 15May01 - Larson / Jacob &lt;larson@mcs.anl.gov&gt; - stopped initializing</a>
+  1205) <a name="l1205" style="background-color: #ffffff">!           workV on off-root processes (no longer necessary).</a>
+  1206) <a name="l1206" style="background-color: #ffffff">! 13Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Initialize stat</a>
+  1207) <a name="l1207" style="background-color: #ffffff">!           (if present).</a>
+  1208) <a name="l1208" style="background-color: #ffffff">! 20Jun01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - Fixed a subtle bug</a>
+  1209) <a name="l1209" style="background-color: #ffffff">!           appearing on AIX regarding the fact workV is uninitial-</a>
+  1210) <a name="l1210" style="background-color: #ffffff">!           ized on non-root processes.  This is fixed by nullifying</a>
+  1211) <a name="l1211" style="background-color: #ffffff">!           all the pointers in workV for non-root processes.</a>
+  1212) <a name="l1212" style="background-color: #ffffff">! 20Aug01 - E.T. Ong &lt;eong@mcs.anl.gov&gt; - Added argument check</a>
+  1213) <a name="l1213" style="background-color: #ffffff">!           for matching processors in gsmap and comm.</a>
+  1214) <a name="l1214" style="background-color: #ffffff">! 13Dec01 - E.T. Ong &lt;eong@mcs.anl.gov&gt; - got rid of restriction </a>
+  1215) <a name="l1215" style="background-color: #ffffff">!           GlobalStorage(GSMap)==AttrVect_lsize(AV) to allow for</a>
+  1216) <a name="l1216" style="background-color: #ffffff">!           GSMap to be haloed.</a>
+  1217) <a name="l1217" style="background-color: #ffffff">! 11Aug08 - R. Jacob &lt;jacob@mcs.anl.gov&gt; - remove call to ProcessStorage</a>
+  1218) <a name="l1218" style="background-color: #ffffff">!           and replace with faster algorithm provided by Pat Worley</a>
+  1219) <a name="l1219" style="background-color: #ffffff">!EOP ___________________________________________________________________</a>
+  1220) <a name="l1220" style="background-color: #ffffff"></a>
+  1221) <a name="l1221" style="background-color: #ffffff">  character(len=*),parameter :: myname_=myname//'::GSM_scatter_'</a>
+  1222) <a name="l1222" style="background-color: #ffffff"></a>
+  1223) <a name="l1223" style="background-color: #ffffff">! Temporary workspace AttrVect:</a>
+  1224) <a name="l1224" style="background-color: #ffffff">  type(AttrVect) :: workV</a>
+  1225) <a name="l1225" style="background-color: #ffffff">! Component ID and number of segments for GSMap:</a>
+  1226) <a name="l1226" style="background-color: #ffffff">  integer :: comp_id, ngseg, iseg</a>
+  1227) <a name="l1227" style="background-color: #ffffff">! Total length of GSMap segments laid end-to-end:</a>
+  1228) <a name="l1228" style="background-color: #ffffff">  integer :: global_storage</a>
+  1229) <a name="l1229" style="background-color: #ffffff">! Error Flag</a>
+  1230) <a name="l1230" style="background-color: #ffffff">  integer :: ierr</a>
+  1231) <a name="l1231" style="background-color: #ffffff">! Number of processes on communicator, and local rank:</a>
+  1232) <a name="l1232" style="background-color: #ffffff">  integer :: NumProcs, myID</a>
+  1233) <a name="l1233" style="background-color: #ffffff">! Total local storage on each pe according to GSMap:</a>
+  1234) <a name="l1234" style="background-color: #ffffff">  integer, dimension(:), allocatable :: lns</a>
+  1235) <a name="l1235" style="background-color: #ffffff">! Temporary GlobalMap used to scatter the segmented (by pe) data</a>
+  1236) <a name="l1236" style="background-color: #ffffff">  type(GlobalMap) :: GMap</a>
+  1237) <a name="l1237" style="background-color: #ffffff">! Loop counters and temporary indices:</a>
+  1238) <a name="l1238" style="background-color: #ffffff">  integer :: m, n, ilb, iub, olb, oub, pe</a>
+  1239) <a name="l1239" style="background-color: #ffffff">! workV segment tracking index array:</a>
+  1240) <a name="l1240" style="background-color: #ffffff">  integer, dimension(:), allocatable :: current_pos</a>
+  1241) <a name="l1241" style="background-color: #ffffff"></a>
+  1242) <a name="l1242" style="background-color: #ffffff">      ! Initialize stat (if present)</a>
+  1243) <a name="l1243" style="background-color: #ffffff"></a>
+  1244) <a name="l1244" style="background-color: #ffffff">  if(present(stat)) stat = 0</a>
+  1245) <a name="l1245" style="background-color: #ffffff"></a>
+  1246) <a name="l1246" style="background-color: #ffffff">       ! Which process am I?</a>
+  1247) <a name="l1247" style="background-color: #ffffff"></a>
+  1248) <a name="l1248" style="background-color: #ffffff">  call MPI_COMM_RANK(comm, myID, ierr)</a>
+  1249) <a name="l1249" style="background-color: #ffffff"></a>
+  1250) <a name="l1250" style="background-color: #ffffff">  if(ierr /= 0) then</a>
+  1251) <a name="l1251" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">MP_perr_die(myname_,'MPI_COMM_RANK',ierr)</a>
+  1252) <a name="l1252" style="background-color: #ffff99">  endif</a>
+  1253) <a name="l1253" style="background-color: #ffff99"></a>
+  1254) <a name="l1254" style="background-color: #ffffff">  if(myID == root) then</a>
+  1255) <a name="l1255" style="background-color: #ffffff">     </a>
+  1256) <a name="l1256" style="background-color: #ffffff">     if(GSMap%gsize &gt; AttrVect_lsize(iV)) then</a>
+  1257) <a name="l1257" style="background-color: #ffff99">	write(stderr,'(2a,i5,a,i8,a,i8)') myname_,	&amp;</a>
+  1258) <a name="l1258" style="background-color: #ffff99">	     ': myID = ',myID,'.  Invalid input, GSMap%gsize =',&amp;</a>
+  1259) <a name="l1259" style="background-color: #ffff99">	     GSMap%gsize, ', lsize(iV) =',AttrVect_lsize(iV)</a>
+  1260) <a name="l1260" style="background-color: #ffff99">	if(present(stat)) then</a>
+  1261) <a name="l1261" style="background-color: #ffff99">	   stat=-1</a>
+  1262) <a name="l1262" style="background-color: #ffff99">	else</a>
+  1263) <a name="l1263" style="background-color: #ffff99">	   call die(myname_)</a>
+  1264) <a name="l1264" style="background-color: #ffff99">	endif</a>
+  1265) <a name="l1265" style="background-color: #ffff99">     endif</a>
+  1266) <a name="l1266" style="background-color: #ffff99"></a>
+  1267) <a name="l1267" style="background-color: #ffff99">  endif     </a>
+  1268) <a name="l1268" style="background-color: #ffff99"></a>
+  1269) <a name="l1269" style="background-color: #ffff99">       ! On the root, initialize a work AttrVect type of the </a>
+  1270) <a name="l1270" style="background-color: #ffff99">       ! above length, and with the same attribute lists as iV.</a>
+  1271) <a name="l1271" style="background-color: #ffff99">       ! on other processes, initialize workV only with the </a>
+  1272) <a name="l1272" style="background-color: #ffff99">       ! attribute information, but no storage.</a>
+  1273) <a name="l1273" style="background-color: #ffff99"></a>
+  1274) <a name="l1274" style="background-color: #ffffff">  if(myID == root) then</a>
+  1275) <a name="l1275" style="background-color: #ffffff"></a>
+  1276) <a name="l1276" style="background-color: #ffffff">     global_storage = GlobalSegMap_GlobalStorage(GSMap)</a>
+  1277) <a name="l1277" style="background-color: #ffffff">     call AttrVect_init(workV, iV, global_storage)</a>
+  1278) <a name="l1278" style="background-color: #ffffff">     call AttrVect_zero(workV)</a>
+  1279) <a name="l1279" style="background-color: #ffffff"></a>
+  1280) <a name="l1280" style="background-color: #ffffff">  else</a>
+  1281) <a name="l1281" style="background-color: #ffffff">       ! nullify workV just to be safe</a>
+  1282) <a name="l1282" style="background-color: #ffffff"> </a>
+  1283) <a name="l1283" style="background-color: #ffffff">     call List_nullify(workV%iList)</a>
+  1284) <a name="l1284" style="background-color: #ffffff">     call List_nullify(workV%rList)</a>
+  1285) <a name="l1285" style="background-color: #ffffff">     nullify(workV%iAttr)</a>
+  1286) <a name="l1286" style="background-color: #ffffff">     nullify(workV%rAttr)</a>
+  1287) <a name="l1287" style="background-color: #ffffff"></a>
+  1288) <a name="l1288" style="background-color: #ffffff">  endif</a>
+  1289) <a name="l1289" style="background-color: #ffffff"></a>
+  1290) <a name="l1290" style="background-color: #ffffff">       ! Return to processing on the root to load workV:</a>
+  1291) <a name="l1291" style="background-color: #ffffff"></a>
+  1292) <a name="l1292" style="background-color: #ffffff">       ! How many processes are there on this communicator?</a>
+  1293) <a name="l1293" style="background-color: #ffffff"></a>
+  1294) <a name="l1294" style="background-color: #ffffff">  call MPI_COMM_SIZE(comm, NumProcs, ierr)</a>
+  1295) <a name="l1295" style="background-color: #ffffff"></a>
+  1296) <a name="l1296" style="background-color: #ffffff">  if(ierr /= 0) then</a>
+  1297) <a name="l1297" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">MP_perr_die(myname_,'MPI_COMM_SIZE',ierr)</a>
+  1298) <a name="l1298" style="background-color: #ffff99">  endif</a>
+  1299) <a name="l1299" style="background-color: #ffff99"></a>
+  1300) <a name="l1300" style="background-color: #ffff99">       ! Processor Check: Do the processors on GSMap match those in comm?</a>
+  1301) <a name="l1301" style="background-color: #ffff99"></a>
+  1302) <a name="l1302" style="background-color: #ffff99">  if(</a><a style="background-color: #ffffff">MAXVAL(GSMap%pe_loc) &gt; (NumProcs-1)) then</a>
+  1303) <a name="l1303" style="background-color: #ffff99">     write(stderr,*) myname_, &amp;</a>
+  1304) <a name="l1304" style="background-color: #ffff99">          &quot;:: Procs in GSMap%pe_loc do not match procs in communicator &quot;, &amp;</a>
+  1305) <a name="l1305" style="background-color: #ffff99">          NumProcs-1, MAXVAL(GSMap%pe_loc)</a>
+  1306) <a name="l1306" style="background-color: #ffff99">     if(present(stat)) then</a>
+  1307) <a name="l1307" style="background-color: #ffff99">	stat=1</a>
+  1308) <a name="l1308" style="background-color: #ffff99">	return</a>
+  1309) <a name="l1309" style="background-color: #ffff99">     else</a>
+  1310) <a name="l1310" style="background-color: #ffff99">	call die(myname_)</a>
+  1311) <a name="l1311" style="background-color: #ffff99">     endif</a>
+  1312) <a name="l1312" style="background-color: #ffff99">  endif</a>
+  1313) <a name="l1313" style="background-color: #ffff99"></a>
+  1314) <a name="l1314" style="background-color: #ffffff">  if(myID == root) then</a>
+  1315) <a name="l1315" style="background-color: #ffffff"></a>
+  1316) <a name="l1316" style="background-color: #ffffff">       ! Allocate a precursor to a GlobalMap accordingly...</a>
+  1317) <a name="l1317" style="background-color: #ffffff"></a>
+  1318) <a name="l1318" style="background-color: #fafad2">     allocate(lns(0:NumProcs-1), stat=ierr)</a>
+  1319) <a name="l1319" style="background-color: #fafad2">     if(ierr /= 0) then</a>
+  1320) <a name="l1320" style="background-color: #ffff99">	write(stderr,*) myname_,':: allocate(lns...) failed, stat=',ierr</a>
+  1321) <a name="l1321" style="background-color: #ffff99">	if(present(stat)) then</a>
+  1322) <a name="l1322" style="background-color: #ffff99">	   stat=ierr</a>
+  1323) <a name="l1323" style="background-color: #ffff99">	else</a>
+  1324) <a name="l1324" style="background-color: #ffff99">	   call die(myname_,'allocate(lns)',ierr)</a>
+  1325) <a name="l1325" style="background-color: #ffff99">	endif</a>
+  1326) <a name="l1326" style="background-color: #ffff99">     endif</a>
+  1327) <a name="l1327" style="background-color: #ffff99"></a>
+  1328) <a name="l1328" style="background-color: #ffff99">       ! And Load it...</a>
+  1329) <a name="l1329" style="background-color: #ffff99"></a>
+  1330) <a name="l1330" style="background-color: #ffffff">     lns(:)=0</a>
+  1331) <a name="l1331" style="background-color: #ffffff">     do iseg=1,GSMap%ngseg</a>
+  1332) <a name="l1332" style="background-color: #ffffff">        n = GSMap%pe_loc(iseg)</a>
+  1333) <a name="l1333" style="background-color: #ffffff">	lns(n) = lns(n) + GSMap%length(iseg)</a>
+  1334) <a name="l1334" style="background-color: #ffffff">     end do</a>
+  1335) <a name="l1335" style="background-color: #ffffff"></a>
+  1336) <a name="l1336" style="background-color: #ffffff">  endif ! if(myID == root)</a>
+  1337) <a name="l1337" style="background-color: #ffffff"></a>
+  1338) <a name="l1338" style="background-color: #ffffff">        ! Non-root processes call GlobalMap_init with lns,</a>
+  1339) <a name="l1339" style="background-color: #ffffff">        ! although this argument is not used in the </a>
+  1340) <a name="l1340" style="background-color: #ffffff">        ! subroutine. Since it correspond to a dummy shaped array arguments</a>
+  1341) <a name="l1341" style="background-color: #ffffff">        ! in GlobslMap_init, the Fortran 90 standard dictates that the actual </a>
+  1342) <a name="l1342" style="background-color: #ffffff">        ! argument must contain complete shape information. Therefore, </a>
+  1343) <a name="l1343" style="background-color: #ffffff">        ! the array argument must be allocated on all processes.</a>
+  1344) <a name="l1344" style="background-color: #ffffff"></a>
+  1345) <a name="l1345" style="background-color: #ffffff">  if(myID /= root) then</a>
+  1346) <a name="l1346" style="background-color: #ffffff"></a>
+  1347) <a name="l1347" style="background-color: #ffffff">     allocate(lns(1),stat=ierr)</a>
+  1348) <a name="l1348" style="background-color: #ffffff">     if(ierr /= 0) then</a>
+  1349) <a name="l1349" style="background-color: #ffff99">	write(stderr,*) myname_,':: allocate(lns...) failed, stat=',ierr</a>
+  1350) <a name="l1350" style="background-color: #ffff99">	if(present(stat)) then</a>
+  1351) <a name="l1351" style="background-color: #ffff99">	   stat=ierr</a>
+  1352) <a name="l1352" style="background-color: #ffff99">	   return</a>
+  1353) <a name="l1353" style="background-color: #ffff99">	else</a>
+  1354) <a name="l1354" style="background-color: #ffff99">	   call die(myname_,'allocate(lns(1))',ierr)</a>
+  1355) <a name="l1355" style="background-color: #ffff99">	endif</a>
+  1356) <a name="l1356" style="background-color: #ffff99">     endif</a>
+  1357) <a name="l1357" style="background-color: #ffff99"></a>
+  1358) <a name="l1358" style="background-color: #ffff99">  endif ! if(myID /= root)...</a>
+  1359) <a name="l1359" style="background-color: #ffff99"></a>
+  1360) <a name="l1360" style="background-color: #ffff99">       ! Create a GlobalMap describing the 1-D decomposition </a>
+  1361) <a name="l1361" style="background-color: #ffff99">       ! of workV:</a>
+  1362) <a name="l1362" style="background-color: #ffff99"></a>
+  1363) <a name="l1363" style="background-color: #ffffff">  comp_id = GlobalSegMap_comp_id(GSMap)</a>
+  1364) <a name="l1364" style="background-color: #ffffff"></a>
+  1365) <a name="l1365" style="background-color: #ffffff">  call GlobalMap_init(GMap, comp_id, lns, root, comm)</a>
+  1366) <a name="l1366" style="background-color: #ffffff"></a>
+  1367) <a name="l1367" style="background-color: #ffffff">       ! On the root, load workV:</a>
+  1368) <a name="l1368" style="background-color: #ffffff"></a>
+  1369) <a name="l1369" style="background-color: #ffffff">  if(myID == root) then</a>
+  1370) <a name="l1370" style="background-color: #ffffff"></a>
+  1371) <a name="l1371" style="background-color: #ffffff">       ! On the root, allocate current position index for</a>
+  1372) <a name="l1372" style="background-color: #ffffff">       ! each process chunk:</a>
+  1373) <a name="l1373" style="background-color: #ffffff"></a>
+  1374) <a name="l1374" style="background-color: #fafad2">     allocate(current_pos(0:NumProcs-1), stat=ierr)</a>
+  1375) <a name="l1375" style="background-color: #fafad2">     if(ierr /= 0) then</a>
+  1376) <a name="l1376" style="background-color: #ffff99">	write(stderr,*) myname_,':: allocate(current_pos..) failed, stat=', &amp;</a>
+  1377) <a name="l1377" style="background-color: #ffff99">	     ierr</a>
+  1378) <a name="l1378" style="background-color: #ffff99">	if(present(stat)) then</a>
+  1379) <a name="l1379" style="background-color: #ffff99">	   stat=ierr</a>
+  1380) <a name="l1380" style="background-color: #ffff99">	   return</a>
+  1381) <a name="l1381" style="background-color: #ffff99">	else</a>
+  1382) <a name="l1382" style="background-color: #ffff99">	   call die(myname_,'allocate(current_pos)',ierr)</a>
+  1383) <a name="l1383" style="background-color: #ffff99">	endif</a>
+  1384) <a name="l1384" style="background-color: #ffff99">     endif</a>
+  1385) <a name="l1385" style="background-color: #ffff99"></a>
+  1386) <a name="l1386" style="background-color: #ffff99">       ! Initialize current_pos(:) using GMap%displs(:)</a>
+  1387) <a name="l1387" style="background-color: #ffff99"></a>
+  1388) <a name="l1388" style="background-color: #ffffff">     do n=0,NumProcs-1</a>
+  1389) <a name="l1389" style="background-color: #ffffff">	current_pos(n) = GMap%displs(n) + 1</a>
+  1390) <a name="l1390" style="background-color: #ffffff">     end do</a>
+  1391) <a name="l1391" style="background-color: #ffffff"></a>
+  1392) <a name="l1392" style="background-color: #ffffff">       ! Load each segment of iV into its appropriate segment</a>
+  1393) <a name="l1393" style="background-color: #ffffff">       ! of workV:</a>
+  1394) <a name="l1394" style="background-color: #ffffff"></a>
+  1395) <a name="l1395" style="background-color: #ffffff">     ngseg = GlobalSegMap_ngseg(GSMap)</a>
+  1396) <a name="l1396" style="background-color: #ffffff"></a>
+  1397) <a name="l1397" style="background-color: #ffffff">     do n=1,ngseg</a>
+  1398) <a name="l1398" style="background-color: #ffffff"></a>
+  1399) <a name="l1399" style="background-color: #ffffff">       ! Determine which process owns segment n:</a>
+  1400) <a name="l1400" style="background-color: #ffffff"></a>
+  1401) <a name="l1401" style="background-color: #ffffff">	pe = GSMap%pe_loc(n)</a>
+  1402) <a name="l1402" style="background-color: #ffffff"></a>
+  1403) <a name="l1403" style="background-color: #ffffff">       ! Input map (lower/upper indicess) of segment of iV:</a>
+  1404) <a name="l1404" style="background-color: #ffffff"></a>
+  1405) <a name="l1405" style="background-color: #ffffff">	ilb = GSMap%start(n)</a>
+  1406) <a name="l1406" style="background-color: #ffffff">	iub = GSMap%start(n) + GSMap%length(n) - 1</a>
+  1407) <a name="l1407" style="background-color: #ffffff"></a>
+  1408) <a name="l1408" style="background-color: #ffffff">       ! Output map of (lower/upper indicess) segment of workV:</a>
+  1409) <a name="l1409" style="background-color: #ffffff"></a>
+  1410) <a name="l1410" style="background-color: #ffffff">	olb = current_pos(pe)</a>
+  1411) <a name="l1411" style="background-color: #ffffff">	oub = current_pos(pe) + GSMap%length(n) - 1</a>
+  1412) <a name="l1412" style="background-color: #ffffff"></a>
+  1413) <a name="l1413" style="background-color: #ffffff">       ! Increment current_pos(n) for next time:</a>
+  1414) <a name="l1414" style="background-color: #ffffff"></a>
+  1415) <a name="l1415" style="background-color: #ffffff">	current_pos(pe) = current_pos(pe) + GSMap%length(n)</a>
+  1416) <a name="l1416" style="background-color: #ffffff"></a>
+  1417) <a name="l1417" style="background-color: #ffffff">       ! Now we are equipped to do the copy:</a>
+  1418) <a name="l1418" style="background-color: #ffffff"></a>
+  1419) <a name="l1419" style="background-color: #ffffff">	do m=1,AttrVect_nIAttr(iV)</a>
+  1420) <a name="l1420" style="background-color: #ffffff">   	   workV%iAttr(m,olb:oub) = iV%iAttr(m,ilb:iub)</a>
+  1421) <a name="l1421" style="background-color: #ffffff">	end do</a>
+  1422) <a name="l1422" style="background-color: #ffffff"></a>
+  1423) <a name="l1423" style="background-color: #ffffff">	do m=1,AttrVect_nRAttr(iV)</a>
+  1424) <a name="l1424" style="background-color: #ffffff">   	   workV%rAttr(m,olb:oub) = iV%rAttr(m,ilb:iub)</a>
+  1425) <a name="l1425" style="background-color: #ffffff">	end do</a>
+  1426) <a name="l1426" style="background-color: #ffffff"></a>
+  1427) <a name="l1427" style="background-color: #ffffff">     end do ! do n=1,ngseg</a>
+  1428) <a name="l1428" style="background-color: #ffffff"></a>
+  1429) <a name="l1429" style="background-color: #ffffff">       ! Clean up current_pos, which was only allocated on the root</a>
+  1430) <a name="l1430" style="background-color: #ffffff"></a>
+  1431) <a name="l1431" style="background-color: #ffffff">     deallocate(current_pos, stat=ierr)</a>
+  1432) <a name="l1432" style="background-color: #ffffff">     if(ierr /= 0) then</a>
+  1433) <a name="l1433" style="background-color: #ffff99">	write(stderr,*) myname_,':: deallocate(current_pos) failed.  ', &amp;</a>
+  1434) <a name="l1434" style="background-color: #ffff99">	     'stat = ',ierr</a>
+  1435) <a name="l1435" style="background-color: #ffff99">	if(present(stat)) then</a>
+  1436) <a name="l1436" style="background-color: #ffff99">	   stat=ierr</a>
+  1437) <a name="l1437" style="background-color: #ffff99">	   return</a>
+  1438) <a name="l1438" style="background-color: #ffff99">	else</a>
+  1439) <a name="l1439" style="background-color: #ffff99">	   call die(myname_,'deallocate(current_pos)',ierr)</a>
+  1440) <a name="l1440" style="background-color: #ffff99">	endif</a>
+  1441) <a name="l1441" style="background-color: #ffff99">     endif</a>
+  1442) <a name="l1442" style="background-color: #ffff99"></a>
+  1443) <a name="l1443" style="background-color: #ffff99">  endif ! if(myID == root)</a>
+  1444) <a name="l1444" style="background-color: #ffff99"></a>
+  1445) <a name="l1445" style="background-color: #ffff99">       ! Now we are in business...we have:  1) an AttrVect laid out</a>
+  1446) <a name="l1446" style="background-color: #ffff99">       ! in contiguous segments, each segment corresponding to a </a>
+  1447) <a name="l1447" style="background-color: #ffff99">       ! process, and in the same order dictated by GSMap; </a>
+  1448) <a name="l1448" style="background-color: #ffff99">       ! 2) a GlobalMap telling us which segment of workV goes to </a>
+  1449) <a name="l1449" style="background-color: #ffff99">       ! which process.  Thus, we can us GM_scatter_() to achieve </a>
+  1450) <a name="l1450" style="background-color: #ffff99">       ! our goal.</a>
+  1451) <a name="l1451" style="background-color: #ffff99"></a>
+  1452) <a name="l1452" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">GM_scatter_(workV, oV, GMap, root, comm, ierr)</a>
+  1453) <a name="l1453" style="background-color: #ffffff">  if(ierr /= 0) then</a>
+  1454) <a name="l1454" style="background-color: #ffff99">     write(stderr,*) myname,':: ERROR in return from GM_scatter_(), ierr=',&amp;</a>
+  1455) <a name="l1455" style="background-color: #ffff99">	  ierr</a>
+  1456) <a name="l1456" style="background-color: #ffff99">     if(present(stat)) then</a>
+  1457) <a name="l1457" style="background-color: #ffff99">	stat = ierr</a>
+  1458) <a name="l1458" style="background-color: #ffff99">	return</a>
+  1459) <a name="l1459" style="background-color: #ffff99">     else</a>
+  1460) <a name="l1460" style="background-color: #ffff99">	call die(myname_,'ERROR returning from GM_scatter_()',ierr)</a>
+  1461) <a name="l1461" style="background-color: #ffff99">     endif</a>
+  1462) <a name="l1462" style="background-color: #ffff99">  endif</a>
+  1463) <a name="l1463" style="background-color: #ffff99"></a>
+  1464) <a name="l1464" style="background-color: #ffff99">       ! Finally, clean up allocated structures:</a>
+  1465) <a name="l1465" style="background-color: #ffff99">  </a>
+  1466) <a name="l1466" style="background-color: #ffffff">  if(myID == root) then</a>
+  1467) <a name="l1467" style="background-color: #ffffff">     call AttrVect_clean(workV)</a>
+  1468) <a name="l1468" style="background-color: #ffffff">  endif</a>
+  1469) <a name="l1469" style="background-color: #ffffff"></a>
+  1470) <a name="l1470" style="background-color: #ffffff">  call GlobalMap_clean(GMap)</a>
+  1471) <a name="l1471" style="background-color: #ffffff"></a>
+  1472) <a name="l1472" style="background-color: #ffffff">  deallocate(lns, stat=ierr)</a>
+  1473) <a name="l1473" style="background-color: #ffffff">  if(ierr /= 0) then</a>
+  1474) <a name="l1474" style="background-color: #ffff99">     write(stderr,*) myname_,':: ERROR in deallocate(lns), ierr=',ierr</a>
+  1475) <a name="l1475" style="background-color: #ffff99">     if(present(stat)) then</a>
+  1476) <a name="l1476" style="background-color: #ffff99">	stat=ierr</a>
+  1477) <a name="l1477" style="background-color: #ffff99">	return</a>
+  1478) <a name="l1478" style="background-color: #ffff99">     else</a>
+  1479) <a name="l1479" style="background-color: #ffff99">	call die(myname_,'deallocate(lns)',ierr)</a>
+  1480) <a name="l1480" style="background-color: #ffff99">     endif</a>
+  1481) <a name="l1481" style="background-color: #ffff99">  endif</a>
+  1482) <a name="l1482" style="background-color: #ffff99"></a>
+  1483) <a name="l1483" style="background-color: #fafad2"> end subroutine GSM_scatter_</a>
+  1484) <a name="l1484" style="background-color: #ffffff"></a>
+  1485) <a name="l1485" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+  1486) <a name="l1486" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+  1487) <a name="l1487" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+  1488) <a name="l1488" style="background-color: #ffffff">!</a>
+  1489) <a name="l1489" style="background-color: #ffffff">! !IROUTINE: bcast_ - Broadcast an AttrVect</a>
+  1490) <a name="l1490" style="background-color: #ffffff">!</a>
+  1491) <a name="l1491" style="background-color: #ffffff">! !DESCRIPTION:  This routine takes an {\tt AttrVect} argument {\tt aV}</a>
+  1492) <a name="l1492" style="background-color: #ffffff">! (at input, valid on the root only), and broadcasts it to all the</a>
+  1493) <a name="l1493" style="background-color: #ffffff">! processes associated with the communicator handle {\tt comm}.  The </a>
+  1494) <a name="l1494" style="background-color: #ffffff">! success (failure) of this routine is reported in the zero (non-zero)</a>
+  1495) <a name="l1495" style="background-color: #ffffff">! value of the output argument {\tt stat}.</a>
+  1496) <a name="l1496" style="background-color: #ffffff">!</a>
+  1497) <a name="l1497" style="background-color: #ffffff">! {\bf N.B.}:  The output (on non-root processes) {\tt AttrVect} argument </a>
+  1498) <a name="l1498" style="background-color: #ffffff">! {\tt aV} represents dynamically allocated memory.  When it is no longer </a>
+  1499) <a name="l1499" style="background-color: #ffffff">! needed, it should be deallocated by invoking {\tt AttrVect\_clean()} </a>
+  1500) <a name="l1500" style="background-color: #ffffff">! (see the module {\tt m\_AttrVect} for details).</a>
+  1501) <a name="l1501" style="background-color: #ffffff">!</a>
+  1502) <a name="l1502" style="background-color: #ffffff">! !INTERFACE:</a>
+  1503) <a name="l1503" style="background-color: #ffffff"></a>
+  1504) <a name="l1504" style="background-color: #ffffff"> subroutine </a><a style="background-color: #ffcccc">bcast_(aV, root, comm, stat)</a>
+  1505) <a name="l1505" style="background-color: #ffcccc">!</a>
+  1506) <a name="l1506" style="background-color: #ffcccc">! !USES:</a>
+  1507) <a name="l1507" style="background-color: #ffcccc">!</a>
+  1508) <a name="l1508" style="background-color: #ffcccc">      use m_stdio</a>
+  1509) <a name="l1509" style="background-color: #ffcccc">      use m_die</a>
+  1510) <a name="l1510" style="background-color: #ffcccc">      use m_mpif90</a>
+  1511) <a name="l1511" style="background-color: #ffcccc">      use m_String, only : String,bcast,char,String_clean</a>
+  1512) <a name="l1512" style="background-color: #ffcccc">      use m_String, only : String_bcast =&gt; bcast</a>
+  1513) <a name="l1513" style="background-color: #ffcccc">      use m_List, only : List_get =&gt; get</a>
+  1514) <a name="l1514" style="background-color: #ffcccc">      use m_AttrVect, only : AttrVect</a>
+  1515) <a name="l1515" style="background-color: #ffcccc">      use m_AttrVect, only : AttrVect_init =&gt; init</a>
+  1516) <a name="l1516" style="background-color: #ffcccc">      use m_AttrVect, only : AttrVect_zero =&gt; zero</a>
+  1517) <a name="l1517" style="background-color: #ffcccc">      use m_AttrVect, only : AttrVect_lsize =&gt; lsize</a>
+  1518) <a name="l1518" style="background-color: #ffcccc">      use m_AttrVect, only : AttrVect_nIAttr =&gt; nIAttr</a>
+  1519) <a name="l1519" style="background-color: #ffcccc">      use m_AttrVect, only : AttrVect_nRAttr =&gt; nRAttr</a>
+  1520) <a name="l1520" style="background-color: #ffcccc"></a>
+  1521) <a name="l1521" style="background-color: #ffcccc">      implicit none</a>
+  1522) <a name="l1522" style="background-color: #ffcccc"></a>
+  1523) <a name="l1523" style="background-color: #ffcccc">! !INPUT PARAMETERS: </a>
+  1524) <a name="l1524" style="background-color: #ffcccc">!</a>
+  1525) <a name="l1525" style="background-color: #ffcccc">      integer,                  intent(in)    :: root</a>
+  1526) <a name="l1526" style="background-color: #ffcccc">      integer,                  intent(in)    :: comm</a>
+  1527) <a name="l1527" style="background-color: #ffcccc"></a>
+  1528) <a name="l1528" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS: </a>
+  1529) <a name="l1529" style="background-color: #ffcccc">!</a>
+  1530) <a name="l1530" style="background-color: #ffcccc">      type(AttrVect),           intent(inout) :: aV ! (IN) on the root, </a>
+  1531) <a name="l1531" style="background-color: #ffcccc">                                                    ! (OUT) elsewhere</a>
+  1532) <a name="l1532" style="background-color: #ffcccc"></a>
+  1533) <a name="l1533" style="background-color: #ffcccc">! !OUTPUT PARAMETERS:</a>
+  1534) <a name="l1534" style="background-color: #ffcccc">!</a>
+  1535) <a name="l1535" style="background-color: #ffcccc">      integer,        optional, intent(out)   :: stat</a>
+  1536) <a name="l1536" style="background-color: #ffcccc"></a>
+  1537) <a name="l1537" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+  1538) <a name="l1538" style="background-color: #ffcccc">! 27Apr98 - Jing Guo &lt;guo@thunder&gt; - initial prototype/prologue/code</a>
+  1539) <a name="l1539" style="background-color: #ffcccc">! 27Oct00 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - relocated from</a>
+  1540) <a name="l1540" style="background-color: #ffcccc">!           m_AttrVect</a>
+  1541) <a name="l1541" style="background-color: #ffcccc">!  9May01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - tidied up prologue</a>
+  1542) <a name="l1542" style="background-color: #ffcccc">! 18May01 - R.L. Jacob &lt;jacob@mcs.anl.gov&gt; - use MP_Type function</a>
+  1543) <a name="l1543" style="background-color: #ffcccc">!           to determine type for bcast</a>
+  1544) <a name="l1544" style="background-color: #ffcccc">! 19Dec01 - E.T. Ong &lt;eong@mcs.anl.gov&gt; - adjusted for case of AV with </a>
+  1545) <a name="l1545" style="background-color: #ffcccc">!           only integer or real attribute </a>
+  1546) <a name="l1546" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+  1547) <a name="l1547" style="background-color: #ffcccc"></a>
+  1548) <a name="l1548" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::bcast_'</a>
+  1549) <a name="l1549" style="background-color: #ffcccc">  type(String) :: iLStr,rLStr</a>
+  1550) <a name="l1550" style="background-color: #ffcccc">  integer :: nIA, nRA, lsize</a>
+  1551) <a name="l1551" style="background-color: #ffcccc">  integer :: myID</a>
+  1552) <a name="l1552" style="background-color: #ffcccc">  integer :: ier</a>
+  1553) <a name="l1553" style="background-color: #ffcccc">  integer :: mp_Type_aV</a>
+  1554) <a name="l1554" style="background-color: #ffcccc"></a>
+  1555) <a name="l1555" style="background-color: #ffcccc">  if(present(stat)) stat=0</a>
+  1556) <a name="l1556" style="background-color: #ffcccc"></a>
+  1557) <a name="l1557" style="background-color: #ffcccc">  call MP_comm_rank(comm,myID,ier)</a>
+  1558) <a name="l1558" style="background-color: #ffcccc">  if(ier /= 0) then</a>
+  1559) <a name="l1559" style="background-color: #ffcccc">    call MP_perr_die(myname_,'MP_comm_rank()',ier)</a>
+  1560) <a name="l1560" style="background-color: #ffcccc">  endif</a>
+  1561) <a name="l1561" style="background-color: #ffcccc"></a>
+  1562) <a name="l1562" style="background-color: #ffcccc">       ! Broadcaast to all PEs</a>
+  1563) <a name="l1563" style="background-color: #ffcccc"></a>
+  1564) <a name="l1564" style="background-color: #ffcccc">  if(myID == root) then</a>
+  1565) <a name="l1565" style="background-color: #ffcccc">     nIA = AttrVect_nIAttr(aV)</a>
+  1566) <a name="l1566" style="background-color: #ffcccc">     nRA = AttrVect_nRAttr(aV)</a>
+  1567) <a name="l1567" style="background-color: #ffcccc">     lsize = AttrVect_lsize(aV)</a>
+  1568) <a name="l1568" style="background-color: #ffcccc">  endif</a>
+  1569) <a name="l1569" style="background-color: #ffcccc"></a>
+  1570) <a name="l1570" style="background-color: #ffcccc">  call MPI_bcast(nIA,1,MP_INTEGER,root,comm,ier)</a>
+  1571) <a name="l1571" style="background-color: #ffcccc">  if(ier /= 0) then</a>
+  1572) <a name="l1572" style="background-color: #ffcccc">    call MP_perr_die(myname_,'MPI_bcast(nIA)',ier)</a>
+  1573) <a name="l1573" style="background-color: #ffcccc">  endif</a>
+  1574) <a name="l1574" style="background-color: #ffcccc"></a>
+  1575) <a name="l1575" style="background-color: #ffcccc">  call MPI_bcast(nRA,1,MP_INTEGER,root,comm,ier)</a>
+  1576) <a name="l1576" style="background-color: #ffcccc">  if(ier /= 0) then</a>
+  1577) <a name="l1577" style="background-color: #ffcccc">    call MP_perr_die(myname_,'MPI_bcast(nRA)',ier)</a>
+  1578) <a name="l1578" style="background-color: #ffcccc">  endif</a>
+  1579) <a name="l1579" style="background-color: #ffcccc"></a>
+  1580) <a name="l1580" style="background-color: #ffcccc">  call MPI_bcast(lsize,1,MP_INTEGER,root,comm,ier)</a>
+  1581) <a name="l1581" style="background-color: #ffcccc">  if(ier /= 0) then</a>
+  1582) <a name="l1582" style="background-color: #ffcccc">    call MP_perr_die(myname_,'MPI_bcast(lsize)',ier)</a>
+  1583) <a name="l1583" style="background-color: #ffcccc">  endif</a>
+  1584) <a name="l1584" style="background-color: #ffcccc"></a>
+  1585) <a name="l1585" style="background-color: #ffcccc">	! Convert the two Lists to two Strings </a>
+  1586) <a name="l1586" style="background-color: #ffcccc"></a>
+  1587) <a name="l1587" style="background-color: #ffcccc">  if(nIA&gt;0) then</a>
+  1588) <a name="l1588" style="background-color: #ffcccc"></a>
+  1589) <a name="l1589" style="background-color: #ffcccc">     if(myID == root) call List_get(iLStr,aV%iList)</a>
+  1590) <a name="l1590" style="background-color: #ffcccc"></a>
+  1591) <a name="l1591" style="background-color: #ffcccc">     call String_bcast(iLStr,root,comm,stat=ier)	! bcast.String()</a>
+  1592) <a name="l1592" style="background-color: #ffcccc"></a>
+  1593) <a name="l1593" style="background-color: #ffcccc">     if(ier /= 0) then</a>
+  1594) <a name="l1594" style="background-color: #ffcccc">	write(stderr,*) myname_,'bcast.String(iLstr), ier=',ier</a>
+  1595) <a name="l1595" style="background-color: #ffcccc">	if(present(stat)) then</a>
+  1596) <a name="l1596" style="background-color: #ffcccc">	   stat=ier</a>
+  1597) <a name="l1597" style="background-color: #ffcccc">	   return</a>
+  1598) <a name="l1598" style="background-color: #ffcccc">	else</a>
+  1599) <a name="l1599" style="background-color: #ffcccc">	   call die(myname_,'String_bcast(iLStr) failed',ier)</a>
+  1600) <a name="l1600" style="background-color: #ffcccc">	endif</a>
+  1601) <a name="l1601" style="background-color: #ffcccc">     endif ! if(ier /= 0)...</a>
+  1602) <a name="l1602" style="background-color: #ffcccc"></a>
+  1603) <a name="l1603" style="background-color: #ffcccc">  endif ! if(nIA &gt; 0)...</a>
+  1604) <a name="l1604" style="background-color: #ffcccc"></a>
+  1605) <a name="l1605" style="background-color: #ffcccc"></a>
+  1606) <a name="l1606" style="background-color: #ffcccc">  if(nRA&gt;0) then</a>
+  1607) <a name="l1607" style="background-color: #ffcccc"></a>
+  1608) <a name="l1608" style="background-color: #ffcccc">     if(myID == root) call List_get(rLStr,aV%rList)</a>
+  1609) <a name="l1609" style="background-color: #ffcccc"></a>
+  1610) <a name="l1610" style="background-color: #ffcccc">     call String_bcast(rLStr,root,comm,stat=ier)	! bcast.String()</a>
+  1611) <a name="l1611" style="background-color: #ffcccc">     if(ier /= 0) then</a>
+  1612) <a name="l1612" style="background-color: #ffcccc">	write(stderr,*) myname_,'bcast.String(iLstr), ier=',ier</a>
+  1613) <a name="l1613" style="background-color: #ffcccc">	if(present(stat)) then</a>
+  1614) <a name="l1614" style="background-color: #ffcccc">	   stat=ier</a>
+  1615) <a name="l1615" style="background-color: #ffcccc">	   return</a>
+  1616) <a name="l1616" style="background-color: #ffcccc">	else</a>
+  1617) <a name="l1617" style="background-color: #ffcccc">	   call die(myname_,'String_bcast(iLStr) failed',ier)</a>
+  1618) <a name="l1618" style="background-color: #ffcccc">	endif</a>
+  1619) <a name="l1619" style="background-color: #ffcccc">     endif ! if(ier /= 0)...</a>
+  1620) <a name="l1620" style="background-color: #ffcccc"></a>
+  1621) <a name="l1621" style="background-color: #ffcccc">  endif ! if(nRA &gt; 0)...</a>
+  1622) <a name="l1622" style="background-color: #ffcccc"></a>
+  1623) <a name="l1623" style="background-color: #ffcccc">  if(myID /= root) then</a>
+  1624) <a name="l1624" style="background-color: #ffcccc">     </a>
+  1625) <a name="l1625" style="background-color: #ffcccc">     if( (nIA&gt;0) .and. (nRA&gt;0) ) then</a>
+  1626) <a name="l1626" style="background-color: #ffcccc">	call AttrVect_init(aV,iList=char(iLStr),rList=char(rLStr), &amp;</a>
+  1627) <a name="l1627" style="background-color: #ffcccc">	                   lsize=lsize)</a>
+  1628) <a name="l1628" style="background-color: #ffcccc">     endif</a>
+  1629) <a name="l1629" style="background-color: #ffcccc"></a>
+  1630) <a name="l1630" style="background-color: #ffcccc">     if( (nIA&gt;0) .and. (nRA&lt;=0) ) then</a>
+  1631) <a name="l1631" style="background-color: #ffcccc">	call AttrVect_init(aV,iList=char(iLStr),lsize=lsize)</a>
+  1632) <a name="l1632" style="background-color: #ffcccc">     endif</a>
+  1633) <a name="l1633" style="background-color: #ffcccc"></a>
+  1634) <a name="l1634" style="background-color: #ffcccc">     if( (nIA&lt;=0) .and. (nRA&gt;0) ) then</a>
+  1635) <a name="l1635" style="background-color: #ffcccc">	call AttrVect_init(aV,rList=char(rLStr),lsize=lsize)</a>
+  1636) <a name="l1636" style="background-color: #ffcccc">     endif</a>
+  1637) <a name="l1637" style="background-color: #ffcccc"></a>
+  1638) <a name="l1638" style="background-color: #ffcccc">     if( (nIA&lt;=0) .and. (nRA&lt;=0) ) then</a>
+  1639) <a name="l1639" style="background-color: #ffcccc">	write(stderr,*) myname_,':: Nonpositive numbers of both ',&amp;</a>
+  1640) <a name="l1640" style="background-color: #ffcccc">	     'real AND integer attributes.  nIA =',nIA,' nRA=',nRA</a>
+  1641) <a name="l1641" style="background-color: #ffcccc">	if(present(stat)) then</a>
+  1642) <a name="l1642" style="background-color: #ffcccc">	   stat = -1</a>
+  1643) <a name="l1643" style="background-color: #ffcccc">	   return</a>
+  1644) <a name="l1644" style="background-color: #ffcccc">	else</a>
+  1645) <a name="l1645" style="background-color: #ffcccc">	   call die(myname_,'AV has not been initialized',-1)</a>
+  1646) <a name="l1646" style="background-color: #ffcccc">	endif</a>
+  1647) <a name="l1647" style="background-color: #ffcccc">     endif ! if((nIA&lt;= 0) .and. (nRA&lt;=0))...</a>
+  1648) <a name="l1648" style="background-color: #ffcccc"></a>
+  1649) <a name="l1649" style="background-color: #ffcccc">     call AttrVect_zero(aV)</a>
+  1650) <a name="l1650" style="background-color: #ffcccc"></a>
+  1651) <a name="l1651" style="background-color: #ffcccc"></a>
+  1652) <a name="l1652" style="background-color: #ffcccc">  endif ! if(myID /= root)...</a>
+  1653) <a name="l1653" style="background-color: #ffcccc"></a>
+  1654) <a name="l1654" style="background-color: #ffcccc">  if(nIA &gt; 0) then</a>
+  1655) <a name="l1655" style="background-color: #ffcccc"></a>
+  1656) <a name="l1656" style="background-color: #ffcccc">     mp_Type_aV=MP_Type(av%iAttr)</a>
+  1657) <a name="l1657" style="background-color: #ffcccc">     call MPI_bcast(aV%iAttr,nIA*lsize,mp_Type_aV,root,comm,ier)</a>
+  1658) <a name="l1658" style="background-color: #ffcccc">     if(ier /= 0) then</a>
+  1659) <a name="l1659" style="background-color: #ffcccc">	call MP_perr_die(myname_,'MPI_bcast(iAttr) failed.',ier)</a>
+  1660) <a name="l1660" style="background-color: #ffcccc">     endif</a>
+  1661) <a name="l1661" style="background-color: #ffcccc"></a>
+  1662) <a name="l1662" style="background-color: #ffcccc">     call String_clean(iLStr)</a>
+  1663) <a name="l1663" style="background-color: #ffcccc"></a>
+  1664) <a name="l1664" style="background-color: #ffcccc">  endif</a>
+  1665) <a name="l1665" style="background-color: #ffcccc"></a>
+  1666) <a name="l1666" style="background-color: #ffcccc">  if(nRA &gt; 0) then</a>
+  1667) <a name="l1667" style="background-color: #ffcccc"></a>
+  1668) <a name="l1668" style="background-color: #ffcccc">     mp_Type_aV=MP_Type(av%rAttr)</a>
+  1669) <a name="l1669" style="background-color: #ffcccc">     call MPI_bcast(aV%rAttr,nRA*lsize,mp_Type_aV,root,comm,ier)</a>
+  1670) <a name="l1670" style="background-color: #ffcccc">     if(ier /= 0) then</a>
+  1671) <a name="l1671" style="background-color: #ffcccc">	call MP_perr_die(myname_,'MPI_bcast(rAttr) failed.',ier)</a>
+  1672) <a name="l1672" style="background-color: #ffcccc">     endif</a>
+  1673) <a name="l1673" style="background-color: #ffcccc"></a>
+  1674) <a name="l1674" style="background-color: #ffcccc">     call String_clean(rLStr)</a>
+  1675) <a name="l1675" style="background-color: #ffcccc"></a>
+  1676) <a name="l1676" style="background-color: #ffcccc">  endif</a>
+  1677) <a name="l1677" style="background-color: #ffcccc"></a>
+  1678) <a name="l1678" style="background-color: #ffcccc"> end subroutine bcast_</a>
+  1679) <a name="l1679" style="background-color: #ffffff"></a>
+  1680) <a name="l1680" style="background-color: #ffffff"> end module m_AttrVectComms</a>
+  1681) <a name="l1681" style="background-color: #ffffff"></a>
+  1682) <a name="l1682" style="background-color: #ffffff"></a>
+  1683) <a name="l1683" style="background-color: #ffffff"></a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

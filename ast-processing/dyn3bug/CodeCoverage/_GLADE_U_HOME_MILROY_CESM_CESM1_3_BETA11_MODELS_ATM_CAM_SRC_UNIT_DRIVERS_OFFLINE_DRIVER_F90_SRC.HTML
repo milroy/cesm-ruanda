@@ -1,0 +1,209 @@
+<html>
+<head>
+<title>Listing of offline_driver.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;offline_driver.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 66.67&#160;%func&#160;&#160;&#160;&#160; 35.16&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!================================================================================</a>
+     2) <a name="l2" style="background-color: #ffffff">! offline unit driver utility module</a>
+     3) <a name="l3" style="background-color: #ffffff">!</a>
+     4) <a name="l4" style="background-color: #ffffff">!================================================================================</a>
+     5) <a name="l5" style="background-color: #ffffff">module offline_driver</a>
+     6) <a name="l6" style="background-color: #ffffff"></a>
+     7) <a name="l7" style="background-color: #ffffff">  use shr_kind_mod, only: r8=&gt;SHR_KIND_R8, cl=&gt;SHR_KIND_CL</a>
+     8) <a name="l8" style="background-color: #ffffff">  use abortutils,   only: endrun</a>
+     9) <a name="l9" style="background-color: #ffffff">  use spmd_utils,   only: masterproc</a>
+    10) <a name="l10" style="background-color: #ffffff">  use cam_logfile,  only: iulog</a>
+    11) <a name="l11" style="background-color: #ffffff">  use drv_input_data, only: drv_input_data_t</a>
+    12) <a name="l12" style="background-color: #ffffff">  use drv_input_data, only: drv_input_data_open, drv_input_data_close</a>
+    13) <a name="l13" style="background-color: #ffffff">  use tracer_data,   only: incr_filename</a>
+    14) <a name="l14" style="background-color: #ffffff"></a>
+    15) <a name="l15" style="background-color: #ffffff">  implicit none</a>
+    16) <a name="l16" style="background-color: #ffffff">  private</a>
+    17) <a name="l17" style="background-color: #ffffff">  save</a>
+    18) <a name="l18" style="background-color: #ffffff"></a>
+    19) <a name="l19" style="background-color: #ffffff">  public :: offline_driver_init</a>
+    20) <a name="l20" style="background-color: #ffffff">  public :: offline_driver_run</a>
+    21) <a name="l21" style="background-color: #ffffff">  public :: offline_driver_dorun</a>
+    22) <a name="l22" style="background-color: #ffffff">  public :: offline_driver_readnl</a>
+    23) <a name="l23" style="background-color: #ffffff"></a>
+    24) <a name="l24" style="background-color: #ffffff">  integer :: recno = 1</a>
+    25) <a name="l25" style="background-color: #ffffff">  logical, protected :: offline_driver_dorun = .false.</a>
+    26) <a name="l26" style="background-color: #ffffff"></a>
+    27) <a name="l27" style="background-color: #ffffff">  character(len=cl) :: current_file = ' '</a>
+    28) <a name="l28" style="background-color: #ffffff">  character(len=cl) :: next_file = ' '</a>
+    29) <a name="l29" style="background-color: #ffffff">  character(len=cl) :: offline_driver_fileslist = ' '</a>
+    30) <a name="l30" style="background-color: #ffffff"></a>
+    31) <a name="l31" style="background-color: #ffffff">  type(drv_input_data_t) :: curr_indata</a>
+    32) <a name="l32" style="background-color: #ffffff"></a>
+    33) <a name="l33" style="background-color: #ffffff">contains</a>
+    34) <a name="l34" style="background-color: #ffffff"></a>
+    35) <a name="l35" style="background-color: #ffffff">!================================================================================</a>
+    36) <a name="l36" style="background-color: #ffffff">!================================================================================</a>
+    37) <a name="l37" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">offline_driver_run( phys_state, pbuf2d, cam_out, cam_in )</a>
+    38) <a name="l38" style="background-color: #ffcccc"></a>
+    39) <a name="l39" style="background-color: #ffcccc">    use physics_types,  only: physics_state</a>
+    40) <a name="l40" style="background-color: #ffcccc">    use ppgrid,         only: begchunk, endchunk</a>
+    41) <a name="l41" style="background-color: #ffcccc">    use camsrfexch,     only: cam_out_t, cam_in_t     </a>
+    42) <a name="l42" style="background-color: #ffcccc">    use physics_buffer, only: physics_buffer_desc</a>
+    43) <a name="l43" style="background-color: #ffcccc">    use time_manager,   only: get_curr_date</a>
+    44) <a name="l44" style="background-color: #ffcccc">    use unit_driver,    only: unit_driver_run</a>
+    45) <a name="l45" style="background-color: #ffcccc"></a>
+    46) <a name="l46" style="background-color: #ffcccc">    type(physics_state), intent(inout) :: phys_state(begchunk:endchunk)</a>
+    47) <a name="l47" style="background-color: #ffcccc">    type(cam_out_t),     intent(inout) :: cam_out(begchunk:endchunk)</a>
+    48) <a name="l48" style="background-color: #ffcccc">    type(cam_in_t),      intent(inout) :: cam_in(begchunk:endchunk)</a>
+    49) <a name="l49" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+    50) <a name="l50" style="background-color: #ffcccc">    </a>
+    51) <a name="l51" style="background-color: #ffcccc">    integer :: yr, mon, day</a>
+    52) <a name="l52" style="background-color: #ffcccc">    integer :: curr_model_date, curr_model_tod</a>
+    53) <a name="l53" style="background-color: #ffcccc">    logical :: active_step</a>
+    54) <a name="l54" style="background-color: #ffcccc"></a>
+    55) <a name="l55" style="background-color: #ffcccc">    if (.not.offline_driver_dorun) return</a>
+    56) <a name="l56" style="background-color: #ffcccc">    </a>
+    57) <a name="l57" style="background-color: #ffcccc">    ! check model date/time against input data date/time</a>
+    58) <a name="l58" style="background-color: #ffcccc">    call get_curr_date(yr, mon, day, curr_model_tod)</a>
+    59) <a name="l59" style="background-color: #ffcccc">    curr_model_date = yr*10000 + mon*100 + day</a>
+    60) <a name="l60" style="background-color: #ffcccc">    if ( recno &lt;= curr_indata%ntimes ) then</a>
+    61) <a name="l61" style="background-color: #ffcccc">       active_step = curr_model_date==curr_indata%dates(recno) .and. curr_model_tod==curr_indata%secs(recno)</a>
+    62) <a name="l62" style="background-color: #ffcccc">    else</a>
+    63) <a name="l63" style="background-color: #ffcccc">       active_step = .false.</a>
+    64) <a name="l64" style="background-color: #ffcccc">    endif</a>
+    65) <a name="l65" style="background-color: #ffcccc"></a>
+    66) <a name="l66" style="background-color: #ffcccc">    if (active_step) then</a>
+    67) <a name="l67" style="background-color: #ffcccc"></a>
+    68) <a name="l68" style="background-color: #ffcccc">       call unit_driver_run(curr_indata, phys_state, pbuf2d, cam_out, cam_in, recno)</a>
+    69) <a name="l69" style="background-color: #ffcccc"></a>
+    70) <a name="l70" style="background-color: #ffcccc">       recno = recno+1</a>
+    71) <a name="l71" style="background-color: #ffcccc">       </a>
+    72) <a name="l72" style="background-color: #ffcccc">       if ( recno &gt; curr_indata%ntimes ) then</a>
+    73) <a name="l73" style="background-color: #ffcccc">          call drv_input_data_close(curr_indata)</a>
+    74) <a name="l74" style="background-color: #ffcccc">          current_file = next_file</a>
+    75) <a name="l75" style="background-color: #ffcccc">          if ( current_file/='NOT_FOUND' ) then</a>
+    76) <a name="l76" style="background-color: #ffcccc">             call drv_input_data_open( current_file, curr_indata )</a>
+    77) <a name="l77" style="background-color: #ffcccc">             recno = 1</a>
+    78) <a name="l78" style="background-color: #ffcccc">             next_file = incr_filename( current_file, filenames_list=offline_driver_fileslist, abort=.false.)</a>
+    79) <a name="l79" style="background-color: #ffcccc">          endif</a>
+    80) <a name="l80" style="background-color: #ffcccc">       endif</a>
+    81) <a name="l81" style="background-color: #ffcccc"></a>
+    82) <a name="l82" style="background-color: #ffcccc">    endif</a>
+    83) <a name="l83" style="background-color: #ffcccc"></a>
+    84) <a name="l84" style="background-color: #ffcccc">  end subroutine offline_driver_run</a>
+    85) <a name="l85" style="background-color: #ffffff"></a>
+    86) <a name="l86" style="background-color: #ffffff">!================================================================================</a>
+    87) <a name="l87" style="background-color: #ffffff">!================================================================================</a>
+    88) <a name="l88" style="background-color: #ffffff">  subroutine offline_driver_init()</a>
+    89) <a name="l89" style="background-color: #ffffff">    use unit_driver,    only: unit_driver_init</a>
+    90) <a name="l90" style="background-color: #ffffff">    use drv_input_data, only: drv_input_data_freq</a>
+    91) <a name="l91" style="background-color: #ffffff">    use shr_const_mod,  only: SHR_CONST_CDAY</a>
+    92) <a name="l92" style="background-color: #ffffff">    use infnan,         only: nan, assignment(=)</a>
+    93) <a name="l93" style="background-color: #ffffff"></a>
+    94) <a name="l94" style="background-color: #ffffff">    type(drv_input_data_t) :: next_indata</a>
+    95) <a name="l95" style="background-color: #ffffff"></a>
+    96) <a name="l96" style="background-color: #ffffff">    if (.not.offline_driver_dorun) return</a>
+    97) <a name="l97" style="background-color: #ffffff"></a>
+    98) <a name="l98" style="background-color: #ffffff">    call </a><a style="background-color: #ffff99">drv_input_data_open( current_file, curr_indata )</a>
+    99) <a name="l99" style="background-color: #ffff99"></a>
+   100) <a name="l100" style="background-color: #ffff99">    drv_input_data_freq = nan</a>
+   101) <a name="l101" style="background-color: #ffff99"></a>
+   102) <a name="l102" style="background-color: #ffff99">    if (curr_indata%ntimes&gt;1) then</a>
+   103) <a name="l103" style="background-color: #ffff99">       drv_input_data_freq = (curr_indata%times(2) - curr_indata%times(1))*SHR_CONST_CDAY ! seconds</a>
+   104) <a name="l104" style="background-color: #ffff99">    else</a>
+   105) <a name="l105" style="background-color: #ffff99">       if ( next_file/='NOT_FOUND' ) then</a>
+   106) <a name="l106" style="background-color: #ffff99">          call drv_input_data_open( next_file, next_indata )</a>
+   107) <a name="l107" style="background-color: #ffff99">          drv_input_data_freq = (next_indata%times(1) - curr_indata%times(1))*SHR_CONST_CDAY ! seconds</a>
+   108) <a name="l108" style="background-color: #ffff99">          call drv_input_data_close(next_indata)</a>
+   109) <a name="l109" style="background-color: #ffff99">       endif</a>
+   110) <a name="l110" style="background-color: #ffff99">    endif</a>
+   111) <a name="l111" style="background-color: #ffff99"></a>
+   112) <a name="l112" style="background-color: #ffff99">    call unit_driver_init()</a>
+   113) <a name="l113" style="background-color: #ffff99"></a>
+   114) <a name="l114" style="background-color: #fafad2">  endsubroutine offline_driver_init</a>
+   115) <a name="l115" style="background-color: #ffffff"></a>
+   116) <a name="l116" style="background-color: #ffffff">!=================================================================================</a>
+   117) <a name="l117" style="background-color: #ffffff">!=================================================================================</a>
+   118) <a name="l118" style="background-color: #ffffff">  subroutine offline_driver_readnl( nlfile )</a>
+   119) <a name="l119" style="background-color: #ffffff"></a>
+   120) <a name="l120" style="background-color: #ffffff">    use namelist_utils,only: find_group_name</a>
+   121) <a name="l121" style="background-color: #ffffff">    use units,         only: getunit, freeunit</a>
+   122) <a name="l122" style="background-color: #ffffff">    use abortutils,    only: endrun</a>
+   123) <a name="l123" style="background-color: #ffffff">    use mpishorthand</a>
+   124) <a name="l124" style="background-color: #ffffff"></a>
+   125) <a name="l125" style="background-color: #ffffff">    ! arguments</a>
+   126) <a name="l126" style="background-color: #ffffff">    character(len=*), intent(in) :: nlfile  ! filepath for file containing namelist input</a>
+   127) <a name="l127" style="background-color: #ffffff"></a>
+   128) <a name="l128" style="background-color: #ffffff">    ! local vars</a>
+   129) <a name="l129" style="background-color: #ffffff">    integer :: unitn, ierr</a>
+   130) <a name="l130" style="background-color: #ffffff"></a>
+   131) <a name="l131" style="background-color: #ffffff">    character(len=cl) :: offline_driver_infile = ' '</a>
+   132) <a name="l132" style="background-color: #ffffff"></a>
+   133) <a name="l133" style="background-color: #ffffff">    namelist /offline_driver_nl/ </a><a style="background-color: #ffff99">offline_driver_infile, offline_driver_fileslist</a>
+   134) <a name="l134" style="background-color: #ffff99"></a>
+   135) <a name="l135" style="background-color: #ffffff">    if (masterproc) then</a>
+   136) <a name="l136" style="background-color: #ffffff"></a>
+   137) <a name="l137" style="background-color: #ffffff">       unitn = getunit()</a>
+   138) <a name="l138" style="background-color: #ffffff">       open( unitn, file=trim(nlfile), status='old' )</a>
+   139) <a name="l139" style="background-color: #ffffff">       call find_group_name(unitn, 'offline_driver_nl', status=ierr)</a>
+   140) <a name="l140" style="background-color: #ffffff">       if (ierr == 0) then</a>
+   141) <a name="l141" style="background-color: #ffff99">          read(unitn, offline_driver_nl, iostat=ierr)</a>
+   142) <a name="l142" style="background-color: #ffff99">          if (ierr /= 0) then</a>
+   143) <a name="l143" style="background-color: #ffff99">             call endrun('offline_driver_readnl: ERROR reading namelist')</a>
+   144) <a name="l144" style="background-color: #ffff99">          end if</a>
+   145) <a name="l145" style="background-color: #ffff99">       end if</a>
+   146) <a name="l146" style="background-color: #ffff99">       close(</a><a style="background-color: #ffffff">unitn)</a>
+   147) <a name="l147" style="background-color: #ffffff">       call freeunit(unitn)</a>
+   148) <a name="l148" style="background-color: #ffffff"></a>
+   149) <a name="l149" style="background-color: #ffffff">    end if</a>
+   150) <a name="l150" style="background-color: #ffffff"></a>
+   151) <a name="l151" style="background-color: #ffffff">#ifdef SPMD</a>
+   152) <a name="l152" style="background-color: #ffffff">    call mpibcast (offline_driver_infile,     len(offline_driver_infile),    mpichar, 0, mpicom)</a>
+   153) <a name="l153" style="background-color: #ffffff">    call mpibcast (offline_driver_fileslist,  len(offline_driver_fileslist), mpichar, 0, mpicom)</a>
+   154) <a name="l154" style="background-color: #ffffff">#endif</a>
+   155) <a name="l155" style="background-color: #ffffff"></a>
+   156) <a name="l156" style="background-color: #ffffff">    current_file = 'NOT_FOUND'</a>
+   157) <a name="l157" style="background-color: #ffffff">    next_file = 'NOT_FOUND'</a>
+   158) <a name="l158" style="background-color: #ffffff">    offline_driver_dorun = .false.</a>
+   159) <a name="l159" style="background-color: #ffffff">    </a>
+   160) <a name="l160" style="background-color: #ffffff">    if ( len_trim(offline_driver_infile) &gt; 0 ) then</a>
+   161) <a name="l161" style="background-color: #ffff99">       current_file = trim(offline_driver_infile)</a>
+   162) <a name="l162" style="background-color: #ffff99">    elseif ( </a><a style="background-color: #ffffff">len_trim(offline_driver_fileslist) &gt; 0 ) then</a>
+   163) <a name="l163" style="background-color: #ffff99">       current_file = incr_filename( offline_driver_infile, filenames_list=offline_driver_fileslist )</a>
+   164) <a name="l164" style="background-color: #ffff99">    else </a>
+   165) <a name="l165" style="background-color: #ffffff">       offline_driver_dorun = .false.</a>
+   166) <a name="l166" style="background-color: #ffffff">       return</a>
+   167) <a name="l167" style="background-color: #ffffff">    endif</a>
+   168) <a name="l168" style="background-color: #ffffff"></a>
+   169) <a name="l169" style="background-color: #ffffff">    if ( </a><a style="background-color: #ffff99">trim(current_file)/='NOT_FOUND' .and. len_trim(current_file) &gt; 0 ) then</a>
+   170) <a name="l170" style="background-color: #ffff99">       offline_driver_dorun = .true.</a>
+   171) <a name="l171" style="background-color: #ffff99">       if ( len_trim(offline_driver_fileslist) &gt; 0 ) then</a>
+   172) <a name="l172" style="background-color: #ffff99">          next_file = incr_filename( current_file, filenames_list=offline_driver_fileslist, abort=.false.)</a>
+   173) <a name="l173" style="background-color: #ffff99">       endif</a>
+   174) <a name="l174" style="background-color: #ffff99">    endif</a>
+   175) <a name="l175" style="background-color: #ffff99"></a>
+   176) <a name="l176" style="background-color: #ffffff">  endsubroutine offline_driver_readnl</a>
+   177) <a name="l177" style="background-color: #ffffff"></a>
+   178) <a name="l178" style="background-color: #ffffff">end module offline_driver</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

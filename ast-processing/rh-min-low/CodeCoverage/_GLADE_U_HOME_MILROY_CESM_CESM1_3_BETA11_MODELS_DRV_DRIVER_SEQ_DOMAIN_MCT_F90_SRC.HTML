@@ -1,0 +1,817 @@
+<html>
+<head>
+<title>Listing of seq_domain_mct.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;seq_domain_mct.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 80.00&#160;%func&#160;&#160;&#160;&#160; 54.13&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module seq_domain_mct</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">  use shr_kind_mod, only: R8=&gt;shr_kind_r8, IN=&gt;shr_kind_in</a>
+     4) <a name="l4" style="background-color: #ffffff">  use shr_kind_mod, only: CL=&gt;shr_kind_cl</a>
+     5) <a name="l5" style="background-color: #ffffff">  use shr_sys_mod,  only: shr_sys_flush, shr_sys_abort</a>
+     6) <a name="l6" style="background-color: #ffffff">  use shr_mpi_mod,  only: shr_mpi_min, shr_mpi_max</a>
+     7) <a name="l7" style="background-color: #ffffff"></a>
+     8) <a name="l8" style="background-color: #ffffff">  use mct_mod</a>
+     9) <a name="l9" style="background-color: #ffffff">  use seq_comm_mct</a>
+    10) <a name="l10" style="background-color: #ffffff">  use seq_infodata_mod</a>
+    11) <a name="l11" style="background-color: #ffffff">  use seq_map_mod     , only: seq_map_map</a>
+    12) <a name="l12" style="background-color: #ffffff">  use seq_map_type_mod, only: seq_map</a>
+    13) <a name="l13" style="background-color: #ffffff"></a>
+    14) <a name="l14" style="background-color: #ffffff">  use component_type_mod</a>
+    15) <a name="l15" style="background-color: #ffffff"></a>
+    16) <a name="l16" style="background-color: #ffffff">  implicit none</a>
+    17) <a name="l17" style="background-color: #ffffff">  private ! except</a>
+    18) <a name="l18" style="background-color: #ffffff">#include &lt;mpif.h&gt;</a>
+    19) <a name="l19" style="background-color: #ffffff">  save</a>
+    20) <a name="l20" style="background-color: #ffffff"></a>
+    21) <a name="l21" style="background-color: #ffffff">!--------------------------------------------------------------------------</a>
+    22) <a name="l22" style="background-color: #ffffff">! Public interfaces</a>
+    23) <a name="l23" style="background-color: #ffffff">!--------------------------------------------------------------------------</a>
+    24) <a name="l24" style="background-color: #ffffff"></a>
+    25) <a name="l25" style="background-color: #ffffff">  public :: seq_domain_check</a>
+    26) <a name="l26" style="background-color: #ffffff">  public :: seq_domain_compare</a>
+    27) <a name="l27" style="background-color: #ffffff">  public :: seq_domain_areafactinit</a>
+    28) <a name="l28" style="background-color: #ffffff"></a>
+    29) <a name="l29" style="background-color: #ffffff">!--------------------------------------------------------------------------</a>
+    30) <a name="l30" style="background-color: #ffffff">! Public variables</a>
+    31) <a name="l31" style="background-color: #ffffff">!--------------------------------------------------------------------------</a>
+    32) <a name="l32" style="background-color: #ffffff"></a>
+    33) <a name="l33" style="background-color: #ffffff">  real(R8), parameter :: eps_tiny   = 1.0e-16_R8 ! roundoff eps</a>
+    34) <a name="l34" style="background-color: #ffffff">  real(R8), parameter :: eps_big    = 1.0e+02_R8 ! big eps</a>
+    35) <a name="l35" style="background-color: #ffffff">  real(R8), parameter :: eps_frac_samegrid = 1.0e-14_R8 ! epsilon for fractions for samegrid</a>
+    36) <a name="l36" style="background-color: #ffffff"></a>
+    37) <a name="l37" style="background-color: #ffffff">!--------------------------------------------------------------------------</a>
+    38) <a name="l38" style="background-color: #ffffff">! Private interfaces</a>
+    39) <a name="l39" style="background-color: #ffffff">!--------------------------------------------------------------------------</a>
+    40) <a name="l40" style="background-color: #ffffff"></a>
+    41) <a name="l41" style="background-color: #ffffff">  private :: seq_domain_check_grid</a>
+    42) <a name="l42" style="background-color: #ffffff"></a>
+    43) <a name="l43" style="background-color: #ffffff">!================================================================================</a>
+    44) <a name="l44" style="background-color: #ffffff">contains</a>
+    45) <a name="l45" style="background-color: #ffffff">!================================================================================</a>
+    46) <a name="l46" style="background-color: #ffffff"></a>
+    47) <a name="l47" style="background-color: #ffffff">!================================================================================</a>
+    48) <a name="l48" style="background-color: #ffffff"></a>
+    49) <a name="l49" style="background-color: #ffffff">  subroutine seq_domain_check( infodata, &amp;</a>
+    50) <a name="l50" style="background-color: #ffffff">       atm, ice, lnd, ocn, rof, glc, &amp;</a>
+    51) <a name="l51" style="background-color: #ffffff">       samegrid_al, samegrid_ao, samegrid_ro)</a>
+    52) <a name="l52" style="background-color: #ffffff"></a>
+    53) <a name="l53" style="background-color: #ffffff">    !-----------------------------------------------------------</a>
+    54) <a name="l54" style="background-color: #ffffff">    ! Uses</a>
+    55) <a name="l55" style="background-color: #ffffff">    !</a>
+    56) <a name="l56" style="background-color: #ffffff">    use prep_atm_mod, only: prep_atm_get_mapper_Fi2a</a>
+    57) <a name="l57" style="background-color: #ffffff">    use prep_atm_mod, only: prep_atm_get_mapper_Fl2a</a>
+    58) <a name="l58" style="background-color: #ffffff">    use prep_atm_mod, only: prep_atm_get_mapper_Fo2a</a>
+    59) <a name="l59" style="background-color: #ffffff">    use prep_lnd_mod, only: prep_lnd_get_mapper_Fa2l</a>
+    60) <a name="l60" style="background-color: #ffffff">    use prep_ocn_mod, only: prep_ocn_get_mapper_SFi2o</a>
+    61) <a name="l61" style="background-color: #ffffff">    use prep_glc_mod, only: prep_glc_get_mapper_SFl2g</a>
+    62) <a name="l62" style="background-color: #ffffff">    !</a>
+    63) <a name="l63" style="background-color: #ffffff">    ! Arguments</a>
+    64) <a name="l64" style="background-color: #ffffff">    !</a>
+    65) <a name="l65" style="background-color: #ffffff">    type (seq_infodata_type) , intent(inout) :: infodata</a>
+    66) <a name="l66" style="background-color: #ffffff">    type(component_type)     , intent(in)    :: atm</a>
+    67) <a name="l67" style="background-color: #ffffff">    type(component_type)     , intent(in)    :: ice</a>
+    68) <a name="l68" style="background-color: #ffffff">    type(component_type)     , intent(in)    :: lnd</a>
+    69) <a name="l69" style="background-color: #ffffff">    type(component_type)     , intent(in)    :: ocn</a>
+    70) <a name="l70" style="background-color: #ffffff">    type(component_type)     , intent(in)    :: rof</a>
+    71) <a name="l71" style="background-color: #ffffff">    type(component_type)     , intent(in)    :: glc</a>
+    72) <a name="l72" style="background-color: #ffffff">    logical                  , intent(in)    :: samegrid_al ! atm lnd grid same</a>
+    73) <a name="l73" style="background-color: #ffffff">    logical                  , intent(in)    :: samegrid_ao ! atm ocn grid same</a>
+    74) <a name="l74" style="background-color: #ffffff">    logical                  , intent(in)    :: samegrid_ro ! rof ocn grid same</a>
+    75) <a name="l75" style="background-color: #ffffff">    !</a>
+    76) <a name="l76" style="background-color: #ffffff">    ! Local variables</a>
+    77) <a name="l77" style="background-color: #ffffff">    !</a>
+    78) <a name="l78" style="background-color: #ffffff">    type(seq_map)   , pointer :: mapper_i2a ! inout needed for lower methods</a>
+    79) <a name="l79" style="background-color: #ffffff">    type(seq_map)   , pointer :: mapper_i2o ! inout needed for lower methods</a>
+    80) <a name="l80" style="background-color: #ffffff">    type(seq_map)   , pointer :: mapper_o2a !</a>
+    81) <a name="l81" style="background-color: #ffffff">    type(seq_map)   , pointer :: mapper_l2g !</a>
+    82) <a name="l82" style="background-color: #ffffff">    type(seq_map)   , pointer :: mapper_a2l !</a>
+    83) <a name="l83" style="background-color: #ffffff">    type(seq_map)   , pointer :: mapper_l2a !</a>
+    84) <a name="l84" style="background-color: #ffffff">                                            !</a>
+    85) <a name="l85" style="background-color: #ffffff">    type(mct_gGrid) , pointer :: atmdom_a   ! atm domain</a>
+    86) <a name="l86" style="background-color: #ffffff">    type(mct_gGrid) , pointer :: icedom_i   ! ice domain</a>
+    87) <a name="l87" style="background-color: #ffffff">    type(mct_gGrid) , pointer :: lnddom_l   ! lnd domain</a>
+    88) <a name="l88" style="background-color: #ffffff">    type(mct_gGrid) , pointer :: ocndom_o   ! ocn domain</a>
+    89) <a name="l89" style="background-color: #ffffff">    type(mct_gGrid) , pointer :: glcdom_g   ! glc domain</a>
+    90) <a name="l90" style="background-color: #ffffff">                                            !</a>
+    91) <a name="l91" style="background-color: #ffffff">    type(mct_gsMap) , pointer :: gsMap_a    ! atm global seg map </a>
+    92) <a name="l92" style="background-color: #ffffff">    type(mct_gsMap) , pointer :: gsMap_i    ! ice global seg map </a>
+    93) <a name="l93" style="background-color: #ffffff">    type(mct_gsMap) , pointer :: gsMap_l    ! lnd global seg map </a>
+    94) <a name="l94" style="background-color: #ffffff">    type(mct_gsMap) , pointer :: gsMap_o    ! ocn global seg map </a>
+    95) <a name="l95" style="background-color: #ffffff">    type(mct_gsMap) , pointer :: gsMap_r    ! ocn global seg map </a>
+    96) <a name="l96" style="background-color: #ffffff">    type(mct_gsMap) , pointer :: gsMap_g    ! glc global seg map </a>
+    97) <a name="l97" style="background-color: #ffffff">    !</a>
+    98) <a name="l98" style="background-color: #ffffff">    type(mct_gGrid) :: lnddom_a              ! lnd domain info on atm decomp</a>
+    99) <a name="l99" style="background-color: #ffffff">    type(mct_gGrid) :: lnddom_g              ! lnd domain info on glc decomp</a>
+   100) <a name="l100" style="background-color: #ffffff">    type(mct_gGrid) :: icedom_a              ! ice domain info on atm decomp (all grids same)</a>
+   101) <a name="l101" style="background-color: #ffffff">    type(mct_gGrid) :: ocndom_a              ! ocn domain info on atm decomp (all grids same)</a>
+   102) <a name="l102" style="background-color: #ffffff">    type(mct_gGrid) :: icedom_o              ! ocn domain info on ocn decomp (atm/ocn grid different)</a>
+   103) <a name="l103" style="background-color: #ffffff">    !</a>
+   104) <a name="l104" style="background-color: #ffffff">    real(R8), pointer :: fracl(:)            ! land fraction on atm decomp </a>
+   105) <a name="l105" style="background-color: #ffffff">    real(R8), pointer :: fraco(:)            ! ocn  fraction on atm decomp </a>
+   106) <a name="l106" style="background-color: #ffffff">    real(R8), pointer :: fraci(:)            ! ice  fraction on atm decomp </a>
+   107) <a name="l107" style="background-color: #ffffff">    real(R8), pointer :: maskl(:)            ! land mask on atm decomp (all grids same)</a>
+   108) <a name="l108" style="background-color: #ffffff">    real(R8), pointer :: maski(:)            ! ice  mask on atm decomp (all grids same)</a>
+   109) <a name="l109" style="background-color: #ffffff">    real(R8), pointer :: masko(:)            ! ocn  mask on atm decomp (all grids same)</a>
+   110) <a name="l110" style="background-color: #ffffff">    !</a>
+   111) <a name="l111" style="background-color: #ffffff">    integer(IN) :: n, kl, ko, ki             ! indicies</a>
+   112) <a name="l112" style="background-color: #ffffff">    integer(IN) :: k1,k2,k3                  ! indicies</a>
+   113) <a name="l113" style="background-color: #ffffff">    !</a>
+   114) <a name="l114" style="background-color: #ffffff">    integer(IN) :: mpicom_cplid</a>
+   115) <a name="l115" style="background-color: #ffffff">    ! </a>
+   116) <a name="l116" style="background-color: #ffffff">    logical      :: atm_present              ! atm present flag</a>
+   117) <a name="l117" style="background-color: #ffffff">    logical      :: lnd_present              ! lnd present flag</a>
+   118) <a name="l118" style="background-color: #ffffff">    logical      :: ocn_present              ! ocn present flag</a>
+   119) <a name="l119" style="background-color: #ffffff">    logical      :: ice_present              ! ice present flag</a>
+   120) <a name="l120" style="background-color: #ffffff">    logical      :: glc_present              ! glc present flag</a>
+   121) <a name="l121" style="background-color: #ffffff">    logical      :: rof_present              ! rof present flag</a>
+   122) <a name="l122" style="background-color: #ffffff">    logical      :: ocnrof_prognostic        ! ocn rof prognostic flag</a>
+   123) <a name="l123" style="background-color: #ffffff">    integer(IN)  :: rcode                    ! error status</a>
+   124) <a name="l124" style="background-color: #ffffff">    integer(IN)  :: atmsize                  ! local  size of atm  grid</a>
+   125) <a name="l125" style="background-color: #ffffff">    integer(IN)  :: lndsize                  ! local  size of land grid</a>
+   126) <a name="l126" style="background-color: #ffffff">    integer(IN)  :: ocnsize                  ! local  size of ocn  grid</a>
+   127) <a name="l127" style="background-color: #ffffff">    integer(IN)  :: icesize                  ! local  size of ice  grid</a>
+   128) <a name="l128" style="background-color: #ffffff">    integer(IN)  :: glcsize                  ! local  size of glc  grid</a>
+   129) <a name="l129" style="background-color: #ffffff">    integer(IN)  :: gatmsize                 ! global size of atm  grid</a>
+   130) <a name="l130" style="background-color: #ffffff">    integer(IN)  :: glndsize                 ! global size of land grid</a>
+   131) <a name="l131" style="background-color: #ffffff">    integer(IN)  :: gocnsize                 ! global size of ocn  grid</a>
+   132) <a name="l132" style="background-color: #ffffff">    integer(IN)  :: grofsize                 ! global size of ocn  grid</a>
+   133) <a name="l133" style="background-color: #ffffff">    integer(IN)  :: gicesize                 ! global size of ice  grid</a>
+   134) <a name="l134" style="background-color: #ffffff">    integer(IN)  :: gglcsize                 ! global size of glc  grid</a>
+   135) <a name="l135" style="background-color: #ffffff">    integer(IN)  :: npts                     ! local size temporary</a>
+   136) <a name="l136" style="background-color: #ffffff">    integer(IN)  :: ier                      ! error code</a>
+   137) <a name="l137" style="background-color: #ffffff">    real(R8)     :: diff,dmaxo,dmaxi         ! difference tracker</a>
+   138) <a name="l138" style="background-color: #ffffff">    logical      :: iamroot                  ! local masterproc</a>
+   139) <a name="l139" style="background-color: #ffffff">    real(R8)     :: eps_frac                 ! epsilon for fractions</a>
+   140) <a name="l140" style="background-color: #ffffff">    real(R8)     :: eps_axmask               ! epsilon for masks, atm/lnd</a>
+   141) <a name="l141" style="background-color: #ffffff">    real(R8)     :: eps_axgrid               ! epsilon for grid coords, atm/lnd</a>
+   142) <a name="l142" style="background-color: #ffffff">    real(R8)     :: eps_axarea               ! epsilon for areas, atm/lnd</a>
+   143) <a name="l143" style="background-color: #ffffff">    real(R8)     :: eps_oimask               ! epsilon for masks, ocn/ice</a>
+   144) <a name="l144" style="background-color: #ffffff">    real(R8)     :: eps_oigrid               ! epsilon for grid coords, ocn/ice</a>
+   145) <a name="l145" style="background-color: #ffffff">    real(R8)     :: eps_oiarea               ! epsilon for areas, ocn/ice</a>
+   146) <a name="l146" style="background-color: #ffffff">    real(R8)     :: my_eps_frac              ! local eps_frac value</a>
+   147) <a name="l147" style="background-color: #ffffff">    real(R8)     :: rmin1,rmax1,rmin,rmax    ! local min max computation</a>
+   148) <a name="l148" style="background-color: #ffffff">    !</a>
+   149) <a name="l149" style="background-color: #ffffff">    real(R8),allocatable :: mask (:)         ! temporary real vector, domain mask</a>
+   150) <a name="l150" style="background-color: #ffffff">    !</a>
+   151) <a name="l151" style="background-color: #ffffff">    character(*),parameter :: F00 = &quot;('(seq_domain_check) ',4a)&quot;</a>
+   152) <a name="l152" style="background-color: #ffffff">    character(*),parameter :: F01 = &quot;('(seq_domain_check) ',a,i6,a)&quot;</a>
+   153) <a name="l153" style="background-color: #ffffff">    character(*),parameter :: F02 = &quot;('(seq_domain_check) ',a,g23.15)&quot;</a>
+   154) <a name="l154" style="background-color: #ffffff">    character(*),parameter :: F0R = &quot;('(seq_domain_check) ',2A,2g23.15,A )&quot;</a>
+   155) <a name="l155" style="background-color: #ffffff">    character(*),parameter :: subName = '(seq_domain_check) '</a>
+   156) <a name="l156" style="background-color: #ffffff">    !-----------------------------------------------------------</a>
+   157) <a name="l157" style="background-color: #ffffff"></a>
+   158) <a name="l158" style="background-color: #ffffff">    mapper_i2a =&gt; prep_atm_get_mapper_Fi2a()</a>
+   159) <a name="l159" style="background-color: #ffffff">    mapper_i2o =&gt; prep_ocn_get_mapper_SFi2o()</a>
+   160) <a name="l160" style="background-color: #ffffff">    mapper_o2a =&gt; prep_atm_get_mapper_Fo2a()</a>
+   161) <a name="l161" style="background-color: #ffffff">    mapper_l2g =&gt; prep_glc_get_mapper_SFl2g()</a>
+   162) <a name="l162" style="background-color: #ffffff">    mapper_a2l =&gt; prep_lnd_get_mapper_Fa2l()</a>
+   163) <a name="l163" style="background-color: #ffffff">    mapper_l2a =&gt; prep_atm_get_mapper_Fl2a()</a>
+   164) <a name="l164" style="background-color: #ffffff"></a>
+   165) <a name="l165" style="background-color: #ffffff">    call seq_comm_setptrs(CPLID,iamroot=iamroot, mpicom=mpicom_cplid)</a>
+   166) <a name="l166" style="background-color: #ffffff"></a>
+   167) <a name="l167" style="background-color: #ffffff">    call seq_infodata_GetData( infodata,      &amp;</a>
+   168) <a name="l168" style="background-color: #ffffff">         lnd_present=lnd_present,             &amp;</a>
+   169) <a name="l169" style="background-color: #ffffff">         ocn_present=ocn_present,             &amp;</a>
+   170) <a name="l170" style="background-color: #ffffff">         ice_present=ice_present,             &amp;</a>
+   171) <a name="l171" style="background-color: #ffffff">         glc_present=glc_present,             &amp;</a>
+   172) <a name="l172" style="background-color: #ffffff">         atm_present=atm_present,             &amp;</a>
+   173) <a name="l173" style="background-color: #ffffff">         rof_present=rof_present,             &amp;</a>
+   174) <a name="l174" style="background-color: #ffffff">         ocnrof_prognostic=ocnrof_prognostic, &amp;</a>
+   175) <a name="l175" style="background-color: #ffffff">         eps_frac=eps_frac,                   &amp;</a>
+   176) <a name="l176" style="background-color: #ffffff">         eps_amask=eps_axmask,                &amp;</a>
+   177) <a name="l177" style="background-color: #ffffff">         eps_agrid=eps_axgrid,                &amp;</a>
+   178) <a name="l178" style="background-color: #ffffff">         eps_aarea=eps_axarea,                &amp;</a>
+   179) <a name="l179" style="background-color: #ffffff">         eps_omask=eps_oimask,                &amp;</a>
+   180) <a name="l180" style="background-color: #ffffff">         eps_ogrid=eps_oigrid,                &amp;</a>
+   181) <a name="l181" style="background-color: #ffffff">         eps_oarea=eps_oiarea )</a>
+   182) <a name="l182" style="background-color: #ffffff"></a>
+   183) <a name="l183" style="background-color: #ffffff">    ! Get info</a>
+   184) <a name="l184" style="background-color: #ffffff"></a>
+   185) <a name="l185" style="background-color: #ffffff">    gsmap_a  =&gt; component_get_gsmap_cx(atm) ! gsmap_ax</a>
+   186) <a name="l186" style="background-color: #ffffff">    atmdom_a =&gt; component_get_dom_cx(atm)   ! dom_ax</a>
+   187) <a name="l187" style="background-color: #ffffff">    atmsize  = mct_avect_lsize(atmdom_a%data)</a>
+   188) <a name="l188" style="background-color: #ffffff">    gatmsize = mct_gsMap_gsize(gsMap_a)</a>
+   189) <a name="l189" style="background-color: #ffffff"></a>
+   190) <a name="l190" style="background-color: #ffffff">    if (atm_present .and. lnd_present) then</a>
+   191) <a name="l191" style="background-color: #ffffff">       gsmap_l  =&gt; component_get_gsmap_cx(lnd) ! gsmap_lx</a>
+   192) <a name="l192" style="background-color: #ffffff">       lnddom_l =&gt; component_get_dom_cx(lnd)   ! dom_lx</a>
+   193) <a name="l193" style="background-color: #ffffff">       lndsize  = mct_avect_lsize(lnddom_l%data)</a>
+   194) <a name="l194" style="background-color: #ffffff">       glndsize = mct_gsMap_gsize(gsMap_l) </a>
+   195) <a name="l195" style="background-color: #ffffff"></a>
+   196) <a name="l196" style="background-color: #ffffff">       if (samegrid_al .and. gatmsize /= glndsize) then</a>
+   197) <a name="l197" style="background-color: #ffff99">          write(logunit,*) subname,' error: global atmsize = ',&amp;</a>
+   198) <a name="l198" style="background-color: #ffff99">               gatmsize,' global lndsize= ',glndsize</a>
+   199) <a name="l199" style="background-color: #ffff99">          call shr_sys_flush(logunit)</a>
+   200) <a name="l200" style="background-color: #ffff99">          call shr_sys_abort(subname//' atm and lnd grid must have the same global size')</a>
+   201) <a name="l201" style="background-color: #ffff99">       end if</a>
+   202) <a name="l202" style="background-color: #ffffff">       if (iamroot) write(logunit,F00) ' --- checking land maskfrac ---'</a>
+   203) <a name="l203" style="background-color: #ffffff">       call seq_domain_check_fracmask(lnddom_l%data)</a>
+   204) <a name="l204" style="background-color: #ffffff">       call mct_gGrid_init(oGGrid=lnddom_a, iGGrid=lnddom_l, lsize=atmsize)</a>
+   205) <a name="l205" style="background-color: #ffffff">       call mct_aVect_zero(lnddom_a%data)</a>
+   206) <a name="l206" style="background-color: #ffffff">       call seq_map_map(mapper_l2a, lnddom_l%data, lnddom_a%data, norm=.false.)</a>
+   207) <a name="l207" style="background-color: #fafad2">       allocate(maskl(atmsize),stat=rcode)</a>
+   208) <a name="l208" style="background-color: #fafad2">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' allocate maskl')</a>
+   209) <a name="l209" style="background-color: #fafad2">       allocate(fracl(atmsize),stat=rcode)</a>
+   210) <a name="l210" style="background-color: #fafad2">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' allocate fracl')</a>
+   211) <a name="l211" style="background-color: #ffff99">       call </a><a style="background-color: #ffffff">mct_aVect_exportRAttr(lnddom_a%data, 'mask', maskl, atmsize)</a>
+   212) <a name="l212" style="background-color: #ffffff">       call mct_aVect_exportRAttr(lnddom_a%data, 'frac', fracl, atmsize)</a>
+   213) <a name="l213" style="background-color: #ffffff">    endif</a>
+   214) <a name="l214" style="background-color: #ffffff"></a>
+   215) <a name="l215" style="background-color: #ffffff">    if (atm_present .and. ocn_present) then</a>
+   216) <a name="l216" style="background-color: #ffffff">       gsmap_o  =&gt; component_get_gsmap_cx(ocn) ! gsmap_ox</a>
+   217) <a name="l217" style="background-color: #ffffff">       ocndom_o =&gt; component_get_dom_cx(ocn)   ! dom_ox</a>
+   218) <a name="l218" style="background-color: #ffffff">       ocnsize  = mct_avect_lsize(ocndom_o%data)</a>
+   219) <a name="l219" style="background-color: #ffffff">       gocnsize = mct_gsMap_gsize(gsMap_o)</a>
+   220) <a name="l220" style="background-color: #ffffff"></a>
+   221) <a name="l221" style="background-color: #ffffff">       if (samegrid_ao .and. gatmsize /= gocnsize) then</a>
+   222) <a name="l222" style="background-color: #ffff99">          write(logunit,*) subname,' error: global atmsize = ',gatmsize,' global ocnsize= ',gocnsize</a>
+   223) <a name="l223" style="background-color: #ffff99">          call shr_sys_flush(logunit)</a>
+   224) <a name="l224" style="background-color: #ffff99">          call shr_sys_abort(subname//' atm and ocn grid must have the same global size')</a>
+   225) <a name="l225" style="background-color: #ffff99">       end if</a>
+   226) <a name="l226" style="background-color: #ffffff">       if (iamroot) write(logunit,F00) ' --- checking ocean maskfrac ---'</a>
+   227) <a name="l227" style="background-color: #ffffff">       call seq_domain_check_fracmask(ocndom_o%data)</a>
+   228) <a name="l228" style="background-color: #ffffff">       call mct_gGrid_init(oGGrid=ocndom_a, iGGrid=ocndom_o, lsize=atmsize)</a>
+   229) <a name="l229" style="background-color: #ffffff">       call mct_aVect_zero(ocndom_a%data)</a>
+   230) <a name="l230" style="background-color: #ffffff">       call seq_map_map(mapper_o2a, ocndom_o%data, ocndom_a%data, norm=.false.)</a>
+   231) <a name="l231" style="background-color: #fafad2">       allocate(masko(atmsize),stat=rcode)</a>
+   232) <a name="l232" style="background-color: #fafad2">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' allocate masko')</a>
+   233) <a name="l233" style="background-color: #fafad2">       allocate(fraco(atmsize),stat=rcode)</a>
+   234) <a name="l234" style="background-color: #fafad2">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' allocate fraco')</a>
+   235) <a name="l235" style="background-color: #ffff99">       call </a><a style="background-color: #ffffff">mct_aVect_exportRAttr(ocndom_a%data, 'mask', masko, atmsize)</a>
+   236) <a name="l236" style="background-color: #ffffff">       if (samegrid_ao) then</a>
+   237) <a name="l237" style="background-color: #ffffff">          call mct_aVect_exportRattr(ocndom_a%data, 'frac', fraco, atmsize)</a>
+   238) <a name="l238" style="background-color: #ffffff">       else</a>
+   239) <a name="l239" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">mct_aVect_exportRattr(ocndom_a%data, 'mask', fraco, atmsize)</a>
+   240) <a name="l240" style="background-color: #ffff99">       endif</a>
+   241) <a name="l241" style="background-color: #ffff99">    endif</a>
+   242) <a name="l242" style="background-color: #ffff99">   </a>
+   243) <a name="l243" style="background-color: #ffffff">    if (atm_present .and. ice_present) then</a>
+   244) <a name="l244" style="background-color: #ffffff">       gsmap_i  =&gt; component_get_gsmap_cx(ice) ! gsmap_ix</a>
+   245) <a name="l245" style="background-color: #ffffff">       icedom_i =&gt; component_get_dom_cx(ice)   ! dom_ix</a>
+   246) <a name="l246" style="background-color: #ffffff">       icesize  = mct_avect_lsize(icedom_i%data)</a>
+   247) <a name="l247" style="background-color: #ffffff">       gicesize = mct_gsMap_gsize(gsMap_i) </a>
+   248) <a name="l248" style="background-color: #ffffff"></a>
+   249) <a name="l249" style="background-color: #ffffff">       if (samegrid_ao .and. gatmsize /= gicesize) then</a>
+   250) <a name="l250" style="background-color: #ffff99">          write(logunit,*) subname,' error: global atmsize = ',&amp;</a>
+   251) <a name="l251" style="background-color: #ffff99">               gatmsize,' global icesize= ',gicesize</a>
+   252) <a name="l252" style="background-color: #ffff99">          call shr_sys_flush(logunit)</a>
+   253) <a name="l253" style="background-color: #ffff99">          call shr_sys_abort(subname//' atm and ice grid must have the same global size')</a>
+   254) <a name="l254" style="background-color: #ffff99">       end if</a>
+   255) <a name="l255" style="background-color: #ffffff">       if (iamroot) write(logunit,F00) ' --- checking ice maskfrac ---'</a>
+   256) <a name="l256" style="background-color: #ffffff">       call seq_domain_check_fracmask(icedom_i%data)</a>
+   257) <a name="l257" style="background-color: #ffffff">       call mct_gGrid_init(oGGrid=icedom_a, iGGrid=icedom_i, lsize=atmsize)</a>
+   258) <a name="l258" style="background-color: #ffffff">       call mct_aVect_zero(icedom_a%data)</a>
+   259) <a name="l259" style="background-color: #ffffff">       call seq_map_map(mapper_i2a, icedom_i%data, icedom_a%data, norm=.false.)</a>
+   260) <a name="l260" style="background-color: #fafad2">       allocate(maski(atmsize),stat=rcode)</a>
+   261) <a name="l261" style="background-color: #fafad2">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' allocate maski')</a>
+   262) <a name="l262" style="background-color: #fafad2">       allocate(fraci(atmsize),stat=rcode)</a>
+   263) <a name="l263" style="background-color: #fafad2">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' allocate fraci')</a>
+   264) <a name="l264" style="background-color: #ffff99">       call </a><a style="background-color: #ffffff">mct_aVect_exportRAttr(icedom_a%data, 'mask', maski, atmsize)</a>
+   265) <a name="l265" style="background-color: #ffffff">       if (samegrid_ao) then</a>
+   266) <a name="l266" style="background-color: #ffffff">          call mct_aVect_exportRattr(icedom_a%data, 'frac', fraci, atmsize)</a>
+   267) <a name="l267" style="background-color: #ffffff">       else</a>
+   268) <a name="l268" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">mct_aVect_exportRattr(icedom_a%data, 'mask', fraci, atmsize)</a>
+   269) <a name="l269" style="background-color: #ffff99">       endif</a>
+   270) <a name="l270" style="background-color: #ffff99">    endif</a>
+   271) <a name="l271" style="background-color: #ffff99"></a>
+   272) <a name="l272" style="background-color: #ffffff">    if (lnd_present .and. glc_present) then</a>
+   273) <a name="l273" style="background-color: #ffff99">       gsmap_l  =&gt; component_get_gsmap_cx(lnd) ! gsmap_lx</a>
+   274) <a name="l274" style="background-color: #ffff99">       lnddom_l =&gt; component_get_dom_cx(lnd)   ! dom_lx</a>
+   275) <a name="l275" style="background-color: #ffff99">       lndsize  = mct_avect_lsize(lnddom_l%data)</a>
+   276) <a name="l276" style="background-color: #ffff99">       glndsize = mct_gsMap_gsize(gsMap_l) </a>
+   277) <a name="l277" style="background-color: #ffff99"></a>
+   278) <a name="l278" style="background-color: #ffff99">       gsmap_g  =&gt; component_get_gsmap_cx(glc) ! gsmap_gx</a>
+   279) <a name="l279" style="background-color: #ffff99">       glcdom_g =&gt; component_get_dom_cx(glc)   ! dom_gx</a>
+   280) <a name="l280" style="background-color: #ffff99">       glcsize  = mct_avect_lsize(glcdom_g%data)</a>
+   281) <a name="l281" style="background-color: #ffff99">       gglcsize = mct_gsMap_gsize(gsMap_g) </a>
+   282) <a name="l282" style="background-color: #ffff99"></a>
+   283) <a name="l283" style="background-color: #ffff99">       if (gglcsize /= glndsize) then</a>
+   284) <a name="l284" style="background-color: #ffff99">          write(logunit,*) subname,' error: global glcsize = ',gglcsize,' global lndsize= ',glndsize</a>
+   285) <a name="l285" style="background-color: #ffff99">          call shr_sys_flush(logunit)</a>
+   286) <a name="l286" style="background-color: #ffff99">          call shr_sys_abort(subname//' glc and lnd grid must have the same global size')</a>
+   287) <a name="l287" style="background-color: #ffff99">       end if</a>
+   288) <a name="l288" style="background-color: #ffff99">       if (iamroot) write(logunit,F00) ' --- checking glc maskfrac ---'</a>
+   289) <a name="l289" style="background-color: #ffff99">       call seq_domain_check_fracmask(glcdom_g%data)</a>
+   290) <a name="l290" style="background-color: #ffff99">       if (iamroot) write(logunit,F00) ' --- checking lnd maskfrac ---'</a>
+   291) <a name="l291" style="background-color: #ffff99">       call seq_domain_check_fracmask(lnddom_l%data)</a>
+   292) <a name="l292" style="background-color: #ffff99">       call mct_gGrid_init(oGGrid=lnddom_g, iGGrid=lnddom_l, lsize=glcsize)</a>
+   293) <a name="l293" style="background-color: #ffff99">       call mct_aVect_zero(lnddom_g%data)</a>
+   294) <a name="l294" style="background-color: #ffff99">       call seq_map_map(mapper_l2g, lnddom_l%data, lnddom_g%data, norm=.false.)</a>
+   295) <a name="l295" style="background-color: #ffff99">       if (iamroot) write(logunit,F00) ' --- checking glc/lnd domains ---'</a>
+   296) <a name="l296" style="background-color: #ffff99">       npts = glcsize</a>
+   297) <a name="l297" style="background-color: #ffff99">       allocate(mask(npts),stat=rcode)</a>
+   298) <a name="l298" style="background-color: #ffff99">       if(rcode /= 0) call shr_sys_abort(subname//' allocate mask')</a>
+   299) <a name="l299" style="background-color: #ffff99">       call mct_aVect_getRAttr(lnddom_g%data,&quot;mask&quot;,mask,rcode)</a>
+   300) <a name="l300" style="background-color: #ffff99">       where (mask &lt; eps_axmask) mask = 0.0_R8</a>
+   301) <a name="l301" style="background-color: #ffff99">       call seq_domain_check_grid(glcdom_g%data, lnddom_g%data, 'mask', eps=eps_axmask, mpicom=mpicom_cplid, mask=mask)</a>
+   302) <a name="l302" style="background-color: #ffff99">       call seq_domain_check_grid(glcdom_g%data, lnddom_g%data, 'lat' , eps=eps_axgrid, mpicom=mpicom_cplid, mask=mask)</a>
+   303) <a name="l303" style="background-color: #ffff99">       call seq_domain_check_grid(glcdom_g%data, lnddom_g%data, 'lon' , eps=eps_axgrid, mpicom=mpicom_cplid, mask=mask)</a>
+   304) <a name="l304" style="background-color: #ffff99">       call seq_domain_check_grid(glcdom_g%data, lnddom_g%data, 'area', eps=eps_axarea, mpicom=mpicom_cplid, mask=mask)</a>
+   305) <a name="l305" style="background-color: #ffff99">       deallocate(mask,stat=rcode)</a>
+   306) <a name="l306" style="background-color: #ffff99">       if(rcode /= 0) call shr_sys_abort(subname//' deallocate mask')</a>
+   307) <a name="l307" style="background-color: #ffff99">    endif</a>
+   308) <a name="l308" style="background-color: #ffff99"></a>
+   309) <a name="l309" style="background-color: #ffffff">    if (ice_present .and. ocn_present) then</a>
+   310) <a name="l310" style="background-color: #ffffff">       gsmap_i  =&gt; component_get_gsmap_cx(ice) ! gsmap_ix</a>
+   311) <a name="l311" style="background-color: #ffffff">       icedom_i =&gt; component_get_dom_cx(ice)   ! dom_ix</a>
+   312) <a name="l312" style="background-color: #ffffff">       icesize  = mct_avect_lsize(icedom_i%data)</a>
+   313) <a name="l313" style="background-color: #ffffff">       gicesize = mct_gsMap_gsize(gsMap_i) </a>
+   314) <a name="l314" style="background-color: #ffffff"></a>
+   315) <a name="l315" style="background-color: #ffffff">       gsmap_o  =&gt; component_get_gsmap_cx(ocn) ! gsmap_ox</a>
+   316) <a name="l316" style="background-color: #ffffff">       ocndom_o =&gt; component_get_dom_cx(ocn)   ! dom_ox</a>
+   317) <a name="l317" style="background-color: #ffffff">       ocnsize  = mct_avect_lsize(ocndom_o%data)</a>
+   318) <a name="l318" style="background-color: #ffffff">       gocnsize = mct_gsMap_gsize(gsMap_o)</a>
+   319) <a name="l319" style="background-color: #ffffff"></a>
+   320) <a name="l320" style="background-color: #ffffff">       if (gocnsize /= gicesize) then</a>
+   321) <a name="l321" style="background-color: #ffff99">          write(logunit,*) subname,' error: global ocnsize = ',gocnsize,' global icesize= ',gicesize</a>
+   322) <a name="l322" style="background-color: #ffff99">          call shr_sys_flush(logunit)</a>
+   323) <a name="l323" style="background-color: #ffff99">          call shr_sys_abort(subname//' ocean and ice grid must have the same global size')</a>
+   324) <a name="l324" style="background-color: #ffff99">       endif</a>
+   325) <a name="l325" style="background-color: #ffff99">       call </a><a style="background-color: #ffffff">mct_gGrid_init(oGGrid=icedom_o, iGGrid=icedom_i, lsize=ocnsize)</a>
+   326) <a name="l326" style="background-color: #ffffff">       call mct_aVect_zero(icedom_o%data)</a>
+   327) <a name="l327" style="background-color: #ffffff">       call seq_map_map(mapper_i2o, icedom_i%data, icedom_o%data, norm=.false.)</a>
+   328) <a name="l328" style="background-color: #ffffff">    end if</a>
+   329) <a name="l329" style="background-color: #ffffff"></a>
+   330) <a name="l330" style="background-color: #ffffff">    if (rof_present </a><a style="background-color: #ffff99">.and. ocnrof_prognostic .and. samegrid_ro) then</a>
+   331) <a name="l331" style="background-color: #ffff99">       gsmap_r  =&gt; component_get_gsmap_cx(glc) ! gsmap_gx</a>
+   332) <a name="l332" style="background-color: #ffff99">       grofsize = mct_gsMap_gsize(gsMap_r)</a>
+   333) <a name="l333" style="background-color: #ffff99"></a>
+   334) <a name="l334" style="background-color: #ffff99">       if (gocnsize /= grofsize) then</a>
+   335) <a name="l335" style="background-color: #ffff99">          write(logunit,*) subname,' error: global ocnsize = ',gocnsize,' global rofsize= ',grofsize</a>
+   336) <a name="l336" style="background-color: #ffff99">          call shr_sys_flush(logunit)</a>
+   337) <a name="l337" style="background-color: #ffff99">          call shr_sys_abort(subname//' ocean and rof grid must have the same global size')</a>
+   338) <a name="l338" style="background-color: #ffff99">       endif</a>
+   339) <a name="l339" style="background-color: #ffff99">    end if</a>
+   340) <a name="l340" style="background-color: #ffff99"></a>
+   341) <a name="l341" style="background-color: #ffff99">    !------------------------------------------------------------------------------</a>
+   342) <a name="l342" style="background-color: #ffff99">    ! Check ice/ocean grid consistency</a>
+   343) <a name="l343" style="background-color: #ffff99">    !------------------------------------------------------------------------------</a>
+   344) <a name="l344" style="background-color: #ffff99"></a>
+   345) <a name="l345" style="background-color: #ffffff">     if (ocn_present .and. ice_present) then</a>
+   346) <a name="l346" style="background-color: #ffffff">!    if (samegrid_oi) then       ! doesn't yet exist</a>
+   347) <a name="l347" style="background-color: #ffffff"></a>
+   348) <a name="l348" style="background-color: #ffffff">       npts = ocnsize</a>
+   349) <a name="l349" style="background-color: #fafad2">       allocate(mask(npts),stat=rcode)</a>
+   350) <a name="l350" style="background-color: #fafad2">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' allocate mask')</a>
+   351) <a name="l351" style="background-color: #ffff99"></a>
+   352) <a name="l352" style="background-color: #ffffff">       if (iamroot) write(logunit,F00) ' --- checking ocn/ice domains ---'</a>
+   353) <a name="l353" style="background-color: #ffffff">       call seq_domain_check_grid(ocndom_o%data, icedom_o%data,'mask', eps=eps_oigrid, mpicom=mpicom_cplid)</a>
+   354) <a name="l354" style="background-color: #ffffff">       call mct_aVect_getRAttr(ocndom_o%data,&quot;mask&quot;,mask,rcode)</a>
+   355) <a name="l355" style="background-color: #ffffff">       where (mask &lt; eps_oimask) mask = 0.0_R8</a>
+   356) <a name="l356" style="background-color: #ffffff"></a>
+   357) <a name="l357" style="background-color: #ffffff">       call </a><a style="background-color: #fafad2">seq_domain_check_grid(ocndom_o%data, icedom_o%data,'lat' , eps=eps_oigrid, mpicom=mpicom_cplid, mask=mask)</a>
+   358) <a name="l358" style="background-color: #fafad2">       call seq_domain_check_grid(ocndom_o%data, icedom_o%data,'lon' , eps=eps_oigrid, mpicom=mpicom_cplid, mask=mask)</a>
+   359) <a name="l359" style="background-color: #fafad2">       call seq_domain_check_grid(ocndom_o%data, icedom_o%data,'area', eps=eps_oiarea, mpicom=mpicom_cplid, mask=mask)</a>
+   360) <a name="l360" style="background-color: #fafad2"></a>
+   361) <a name="l361" style="background-color: #ffffff">       deallocate(mask,stat=rcode)</a>
+   362) <a name="l362" style="background-color: #ffffff">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' deallocate mask')</a>
+   363) <a name="l363" style="background-color: #ffff99"></a>
+   364) <a name="l364" style="background-color: #ffff99">!    endif</a>
+   365) <a name="l365" style="background-color: #ffff99">     endif</a>
+   366) <a name="l366" style="background-color: #ffff99"></a>
+   367) <a name="l367" style="background-color: #ffff99">    !------------------------------------------------------------------------------</a>
+   368) <a name="l368" style="background-color: #ffff99">    ! Check atm/lnd grid consistency</a>
+   369) <a name="l369" style="background-color: #ffff99">    !------------------------------------------------------------------------------</a>
+   370) <a name="l370" style="background-color: #ffff99"></a>
+   371) <a name="l371" style="background-color: #ffffff">    if (atm_present .and. lnd_present .and. samegrid_al) then</a>
+   372) <a name="l372" style="background-color: #ffffff">       if (iamroot) write(logunit,F00) ' --- checking atm/land domains ---'</a>
+   373) <a name="l373" style="background-color: #ffffff">       call </a><a style="background-color: #fafad2">seq_domain_check_grid(atmdom_a%data, lnddom_a%data, 'lat' , eps=eps_axgrid, mpicom=mpicom_cplid, mask=maskl)</a>
+   374) <a name="l374" style="background-color: #fafad2">       call seq_domain_check_grid(atmdom_a%data, lnddom_a%data, 'lon' , eps=eps_axgrid, mpicom=mpicom_cplid, mask=maskl)</a>
+   375) <a name="l375" style="background-color: #fafad2">       call seq_domain_check_grid(atmdom_a%data, lnddom_a%data, 'area', eps=eps_axarea, mpicom=mpicom_cplid, mask=maskl)</a>
+   376) <a name="l376" style="background-color: #fafad2">    endif</a>
+   377) <a name="l377" style="background-color: #fafad2"></a>
+   378) <a name="l378" style="background-color: #fafad2">    !------------------------------------------------------------------------------</a>
+   379) <a name="l379" style="background-color: #fafad2">    ! Check atm/ocn and atm/ice grid consistency (if samegrid)</a>
+   380) <a name="l380" style="background-color: #fafad2">    !------------------------------------------------------------------------------</a>
+   381) <a name="l381" style="background-color: #fafad2"></a>
+   382) <a name="l382" style="background-color: #ffffff">    if (atm_present .and. ice_present .and. samegrid_ao) then</a>
+   383) <a name="l383" style="background-color: #ffffff">       if (iamroot) write(logunit,F00) ' --- checking atm/ice domains ---'</a>
+   384) <a name="l384" style="background-color: #ffffff">       call </a><a style="background-color: #fafad2">seq_domain_check_grid(atmdom_a%data, icedom_a%data, 'lat' , eps=eps_axgrid, mpicom=mpicom_cplid, mask=maski)</a>
+   385) <a name="l385" style="background-color: #fafad2">       call seq_domain_check_grid(atmdom_a%data, icedom_a%data, 'lon' , eps=eps_axgrid, mpicom=mpicom_cplid, mask=maski)</a>
+   386) <a name="l386" style="background-color: #fafad2">       call seq_domain_check_grid(atmdom_a%data, icedom_a%data, 'area', eps=eps_axarea, mpicom=mpicom_cplid, mask=maski)</a>
+   387) <a name="l387" style="background-color: #fafad2">    endif</a>
+   388) <a name="l388" style="background-color: #fafad2"></a>
+   389) <a name="l389" style="background-color: #ffffff">    if (atm_present .and. ocn_present .and. samegrid_ao) then</a>
+   390) <a name="l390" style="background-color: #ffffff">       if (iamroot) write(logunit,F00) ' --- checking atm/ocn domains ---'</a>
+   391) <a name="l391" style="background-color: #ffffff">       call </a><a style="background-color: #fafad2">seq_domain_check_grid(atmdom_a%data, ocndom_a%data, 'lat' , eps=eps_axgrid, mpicom=mpicom_cplid, mask=masko)</a>
+   392) <a name="l392" style="background-color: #fafad2">       call seq_domain_check_grid(atmdom_a%data, ocndom_a%data, 'lon' , eps=eps_axgrid, mpicom=mpicom_cplid, mask=masko)</a>
+   393) <a name="l393" style="background-color: #fafad2">       call seq_domain_check_grid(atmdom_a%data, ocndom_a%data, 'area', eps=eps_axarea, mpicom=mpicom_cplid, mask=masko)</a>
+   394) <a name="l394" style="background-color: #fafad2">    endif</a>
+   395) <a name="l395" style="background-color: #fafad2"></a>
+   396) <a name="l396" style="background-color: #fafad2">    !------------------------------------------------------------------------------</a>
+   397) <a name="l397" style="background-color: #fafad2">    ! Check consistency of land fraction with ocean mask on grid</a>
+   398) <a name="l398" style="background-color: #fafad2">    !------------------------------------------------------------------------------</a>
+   399) <a name="l399" style="background-color: #fafad2"></a>
+   400) <a name="l400" style="background-color: #ffffff">    my_eps_frac = eps_frac</a>
+   401) <a name="l401" style="background-color: #ffffff">    if (samegrid_ao) my_eps_frac = eps_frac_samegrid</a>
+   402) <a name="l402" style="background-color: #ffffff">    if (.not. samegrid_al) </a><a style="background-color: #ffff99">my_eps_frac = eps_big</a>
+   403) <a name="l403" style="background-color: #ffff99"></a>
+   404) <a name="l404" style="background-color: #ffffff">    if (iamroot) write(logunit,F00) ' --- checking fractions in domains ---'</a>
+   405) <a name="l405" style="background-color: #ffffff">    dmaxi = 0.0_R8</a>
+   406) <a name="l406" style="background-color: #ffffff">    dmaxo = 0.0_R8</a>
+   407) <a name="l407" style="background-color: #ffffff">    do n = 1,atmsize</a>
+   408) <a name="l408" style="background-color: #ffffff">       if (atm_present .and. lnd_present .and. ice_present) then</a>
+   409) <a name="l409" style="background-color: #ffffff">          diff = abs(1._R8 - fracl(n) - fraci(n))</a>
+   410) <a name="l410" style="background-color: #ffffff">          dmaxi = max(diff,dmaxi)</a>
+   411) <a name="l411" style="background-color: #ffffff">          if (diff &gt; my_eps_frac) then</a>
+   412) <a name="l412" style="background-color: #ffff99">             write(logunit,*)'inconsistency between land fraction and sea ice fraction'</a>
+   413) <a name="l413" style="background-color: #ffff99">             write(logunit,*)'n= ',n,' fracl= ',fracl(n),' fraci= ',fraci(n),' sum= ',fracl(n)+fraci(n)</a>
+   414) <a name="l414" style="background-color: #ffff99">             call shr_sys_flush(logunit)</a>
+   415) <a name="l415" style="background-color: #ffff99">             call shr_sys_abort(subname//' inconsistency between land fraction and sea ice fraction')</a>
+   416) <a name="l416" style="background-color: #ffff99">          end if</a>
+   417) <a name="l417" style="background-color: #ffffff">          if ((1._R8-fraci(n)) &gt; eps_frac .and. fracl(n) &lt; eps_tiny) then</a>
+   418) <a name="l418" style="background-color: #ffff99">             write(logunit,*)'inconsistency between land mask and sea ice mask'</a>
+   419) <a name="l419" style="background-color: #ffff99">             write(logunit,*)'n= ',n,' fracl= ',fracl(n),' fraci= ',fraci(n)</a>
+   420) <a name="l420" style="background-color: #ffff99">             call shr_sys_flush(logunit)</a>
+   421) <a name="l421" style="background-color: #ffff99">             call shr_sys_abort(subname//'  inconsistency between land mask and sea ice mask')</a>
+   422) <a name="l422" style="background-color: #ffff99">          end if</a>
+   423) <a name="l423" style="background-color: #ffff99">       endif</a>
+   424) <a name="l424" style="background-color: #ffffff">       if (atm_present .and. lnd_present .and. ocn_present) then</a>
+   425) <a name="l425" style="background-color: #ffffff">          diff = abs(1._R8 - fracl(n) - fraco(n))</a>
+   426) <a name="l426" style="background-color: #ffffff">          dmaxo = max(diff,dmaxo)</a>
+   427) <a name="l427" style="background-color: #ffffff">          if (diff &gt; my_eps_frac) then</a>
+   428) <a name="l428" style="background-color: #ffff99">             write(logunit,*)'inconsistency between land fraction and ocn land fraction'</a>
+   429) <a name="l429" style="background-color: #ffff99">             write(logunit,*)'n= ',n,' fracl= ',fracl(n),' fraco= ',fraco(n),' sum= ',fracl(n)+fraco(n)</a>
+   430) <a name="l430" style="background-color: #ffff99">             call shr_sys_flush(logunit)</a>
+   431) <a name="l431" style="background-color: #ffff99">             call shr_sys_abort(subname//'  inconsistency between land fraction and ocn land fraction')</a>
+   432) <a name="l432" style="background-color: #ffff99">          end if</a>
+   433) <a name="l433" style="background-color: #ffffff">          if ((1._R8-fraco(n)) &gt; eps_frac .and. fracl(n) &lt; eps_tiny) then</a>
+   434) <a name="l434" style="background-color: #ffff99">             write(logunit,*)'inconsistency between land mask and ocn land mask'</a>
+   435) <a name="l435" style="background-color: #ffff99">             write(logunit,*)'n= ',n,' fracl= ',fracl(n),' fraco= ',fraco(n)</a>
+   436) <a name="l436" style="background-color: #ffff99">             call shr_sys_flush(logunit)</a>
+   437) <a name="l437" style="background-color: #ffff99">             call shr_sys_abort(subname//'  inconsistency between land mask and ocn land mask')</a>
+   438) <a name="l438" style="background-color: #ffff99">          end if</a>
+   439) <a name="l439" style="background-color: #ffff99">       endif</a>
+   440) <a name="l440" style="background-color: #ffff99">    end do </a>
+   441) <a name="l441" style="background-color: #ffffff">    if (iamroot) then</a>
+   442) <a name="l442" style="background-color: #ffffff">       write(logunit,F02) ' maximum           difference for ofrac sum ',dmaxo</a>
+   443) <a name="l443" style="background-color: #ffffff">       write(logunit,F02) ' maximum           difference for ifrac sum ',dmaxi</a>
+   444) <a name="l444" style="background-color: #ffffff">       write(logunit,F02) ' maximum allowable difference for  frac sum ',my_eps_frac</a>
+   445) <a name="l445" style="background-color: #ffffff">       write(logunit,F02) ' maximum allowable tolerance for valid frac ',eps_frac</a>
+   446) <a name="l446" style="background-color: #ffffff">       call shr_sys_flush(logunit)</a>
+   447) <a name="l447" style="background-color: #ffffff">    endif</a>
+   448) <a name="l448" style="background-color: #ffffff"></a>
+   449) <a name="l449" style="background-color: #ffffff">    !------------------------------------------------------------------------------</a>
+   450) <a name="l450" style="background-color: #ffffff">    ! Clean up allocated memory</a>
+   451) <a name="l451" style="background-color: #ffffff">    !------------------------------------------------------------------------------</a>
+   452) <a name="l452" style="background-color: #ffffff"></a>
+   453) <a name="l453" style="background-color: #ffffff">    if (atm_present .and. lnd_present) then</a>
+   454) <a name="l454" style="background-color: #ffffff">       deallocate(fracl,stat=rcode)</a>
+   455) <a name="l455" style="background-color: #ffffff">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' deallocate fracl')</a>
+   456) <a name="l456" style="background-color: #ffffff">       deallocate(maskl,stat=rcode)</a>
+   457) <a name="l457" style="background-color: #ffffff">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' deallocate maskl')</a>
+   458) <a name="l458" style="background-color: #ffff99">       call </a><a style="background-color: #ffffff">mct_gGrid_clean(lnddom_a, rcode)</a>
+   459) <a name="l459" style="background-color: #ffffff">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' clean lnddom_a')</a>
+   460) <a name="l460" style="background-color: #ffff99">    endif</a>
+   461) <a name="l461" style="background-color: #ffff99"></a>
+   462) <a name="l462" style="background-color: #ffffff">    if (atm_present .and. ocn_present) then</a>
+   463) <a name="l463" style="background-color: #ffffff">       deallocate(fraco,stat=rcode)</a>
+   464) <a name="l464" style="background-color: #ffffff">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' deallocate fraco')</a>
+   465) <a name="l465" style="background-color: #ffffff">       deallocate(masko,stat=rcode)</a>
+   466) <a name="l466" style="background-color: #ffffff">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' deallocate masko')</a>
+   467) <a name="l467" style="background-color: #ffff99">       call </a><a style="background-color: #ffffff">mct_gGrid_clean(ocndom_a, rcode)</a>
+   468) <a name="l468" style="background-color: #ffffff">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' clean ocndom_a')</a>
+   469) <a name="l469" style="background-color: #ffff99">    endif</a>
+   470) <a name="l470" style="background-color: #ffff99"></a>
+   471) <a name="l471" style="background-color: #ffffff">    if (atm_present .and. ice_present) then</a>
+   472) <a name="l472" style="background-color: #ffffff">       deallocate(fraci,stat=rcode)</a>
+   473) <a name="l473" style="background-color: #ffffff">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' deallocate fraci')</a>
+   474) <a name="l474" style="background-color: #ffffff">       deallocate(maski,stat=rcode)</a>
+   475) <a name="l475" style="background-color: #ffffff">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' deallocate maski')</a>
+   476) <a name="l476" style="background-color: #ffff99">       call </a><a style="background-color: #ffffff">mct_gGrid_clean(icedom_a, rcode)</a>
+   477) <a name="l477" style="background-color: #ffffff">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' clean icedom_o')</a>
+   478) <a name="l478" style="background-color: #ffff99">    endif</a>
+   479) <a name="l479" style="background-color: #ffff99"></a>
+   480) <a name="l480" style="background-color: #ffffff">    if (ocn_present .and. ice_present) then</a>
+   481) <a name="l481" style="background-color: #ffffff">       call mct_gGrid_clean(icedom_o, rcode)</a>
+   482) <a name="l482" style="background-color: #ffffff">       if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' clean icedom_o')</a>
+   483) <a name="l483" style="background-color: #ffff99">    endif</a>
+   484) <a name="l484" style="background-color: #ffff99"></a>
+   485) <a name="l485" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">shr_sys_flush(logunit)</a>
+   486) <a name="l486" style="background-color: #ffffff"></a>
+   487) <a name="l487" style="background-color: #fafad2">  end subroutine seq_domain_check</a>
+   488) <a name="l488" style="background-color: #ffffff"></a>
+   489) <a name="l489" style="background-color: #ffffff">!===============================================================================</a>
+   490) <a name="l490" style="background-color: #ffffff">  </a>
+   491) <a name="l491" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">seq_domain_compare(dom1, dom2, mpicom, eps)</a>
+   492) <a name="l492" style="background-color: #ffcccc">   </a>
+   493) <a name="l493" style="background-color: #ffcccc">    !-----------------------------------------------------------</a>
+   494) <a name="l494" style="background-color: #ffcccc"></a>
+   495) <a name="l495" style="background-color: #ffcccc">    ! Arguments</a>
+   496) <a name="l496" style="background-color: #ffcccc"></a>
+   497) <a name="l497" style="background-color: #ffcccc">    type(mct_gGrid)  , intent(in) :: dom1</a>
+   498) <a name="l498" style="background-color: #ffcccc">    type(mct_gGrid)  , intent(in) :: dom2</a>
+   499) <a name="l499" style="background-color: #ffcccc">    integer(IN)      , intent(in) :: mpicom</a>
+   500) <a name="l500" style="background-color: #ffcccc">    real(R8),optional, intent(in) :: eps    ! error condition for compare</a>
+   501) <a name="l501" style="background-color: #ffcccc"></a>
+   502) <a name="l502" style="background-color: #ffcccc">    ! Local variables</a>
+   503) <a name="l503" style="background-color: #ffcccc">    real(R8) :: leps</a>
+   504) <a name="l504" style="background-color: #ffcccc">    character(*),parameter :: F00 = &quot;('(seq_domain_compare) ',4a)&quot;</a>
+   505) <a name="l505" style="background-color: #ffcccc">    character(*),parameter :: F01 = &quot;('(seq_domain_compare) ',a,i12,a)&quot;</a>
+   506) <a name="l506" style="background-color: #ffcccc">    character(*),parameter :: F02 = &quot;('(seq_domain_compare) ',2a,g23.15)&quot;</a>
+   507) <a name="l507" style="background-color: #ffcccc">    character(*),parameter :: F0R = &quot;('(seq_domain_compare) ',2A,2g23.15,A )&quot;</a>
+   508) <a name="l508" style="background-color: #ffcccc">    character(*),parameter :: subName = '(seq_domain_compare) '</a>
+   509) <a name="l509" style="background-color: #ffcccc"></a>
+   510) <a name="l510" style="background-color: #ffcccc">    leps = eps_tiny</a>
+   511) <a name="l511" style="background-color: #ffcccc">    if (present(eps)) then</a>
+   512) <a name="l512" style="background-color: #ffcccc">       leps = eps</a>
+   513) <a name="l513" style="background-color: #ffcccc">    endif</a>
+   514) <a name="l514" style="background-color: #ffcccc"></a>
+   515) <a name="l515" style="background-color: #ffcccc">    call seq_domain_check_grid(dom1%data, dom2%data, 'mask', eps=leps, mpicom=mpicom)</a>
+   516) <a name="l516" style="background-color: #ffcccc">    call seq_domain_check_grid(dom1%data, dom2%data, 'lat' , eps=leps, mpicom=mpicom)</a>
+   517) <a name="l517" style="background-color: #ffcccc">    call seq_domain_check_grid(dom1%data, dom2%data, 'lon' , eps=leps, mpicom=mpicom)</a>
+   518) <a name="l518" style="background-color: #ffcccc">    call seq_domain_check_grid(dom1%data, dom2%data, 'area', eps=leps, mpicom=mpicom)</a>
+   519) <a name="l519" style="background-color: #ffcccc"></a>
+   520) <a name="l520" style="background-color: #ffcccc">  end subroutine seq_domain_compare</a>
+   521) <a name="l521" style="background-color: #ffffff"></a>
+   522) <a name="l522" style="background-color: #ffffff">!===============================================================================</a>
+   523) <a name="l523" style="background-color: #ffffff">  </a>
+   524) <a name="l524" style="background-color: #ffffff">  subroutine seq_domain_check_fracmask(dom1)</a>
+   525) <a name="l525" style="background-color: #ffffff">   </a>
+   526) <a name="l526" style="background-color: #ffffff">    !-----------------------------------------------------------</a>
+   527) <a name="l527" style="background-color: #ffffff"></a>
+   528) <a name="l528" style="background-color: #ffffff">    ! Arguments</a>
+   529) <a name="l529" style="background-color: #ffffff"></a>
+   530) <a name="l530" style="background-color: #ffffff">    type(mct_aVect) , intent(in) :: dom1</a>
+   531) <a name="l531" style="background-color: #ffffff"></a>
+   532) <a name="l532" style="background-color: #ffffff">    ! Local variables</a>
+   533) <a name="l533" style="background-color: #ffffff">    integer(in) :: n,npts,ndiff</a>
+   534) <a name="l534" style="background-color: #ffffff">    integer(in) :: rcode</a>
+   535) <a name="l535" style="background-color: #ffffff">    real(R8), pointer :: dmask(:)           ! temporaries</a>
+   536) <a name="l536" style="background-color: #ffffff">    real(R8), pointer :: dfrac(:)           ! temporaries</a>
+   537) <a name="l537" style="background-color: #ffffff"></a>
+   538) <a name="l538" style="background-color: #ffffff">    character(*),parameter :: F00 = &quot;('(seq_domain_check_fracmask) ',4a)&quot;</a>
+   539) <a name="l539" style="background-color: #ffffff">    character(*),parameter :: F01 = &quot;('(seq_domain_check_fracmask) ',a,i12,a)&quot;</a>
+   540) <a name="l540" style="background-color: #ffffff">    character(*),parameter :: F02 = &quot;('(seq_domain_check_fracmask) ',2a,g23.15)&quot;</a>
+   541) <a name="l541" style="background-color: #ffffff">    character(*),parameter :: F0R = &quot;('(seq_domain_check_fracmask) ',2A,2g23.15,A )&quot;</a>
+   542) <a name="l542" style="background-color: #ffffff">    character(*),parameter :: subName = '(seq_domain_check_fracmask) '</a>
+   543) <a name="l543" style="background-color: #ffffff">    !-----------------------------------------------------------</a>
+   544) <a name="l544" style="background-color: #ffffff"></a>
+   545) <a name="l545" style="background-color: #ffffff">    npts = mct_aVect_lsize(dom1)</a>
+   546) <a name="l546" style="background-color: #ffffff"></a>
+   547) <a name="l547" style="background-color: #fafad2">    allocate(dmask(npts),stat=rcode)</a>
+   548) <a name="l548" style="background-color: #fafad2">    if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' allocate dmask')</a>
+   549) <a name="l549" style="background-color: #fafad2">    allocate(dfrac(npts),stat=rcode)</a>
+   550) <a name="l550" style="background-color: #fafad2">    if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' allocate dfrac')</a>
+   551) <a name="l551" style="background-color: #ffff99"></a>
+   552) <a name="l552" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">mct_aVect_exportRAttr(dom1, 'mask', dmask, npts)</a>
+   553) <a name="l553" style="background-color: #ffffff">    call mct_aVect_exportRAttr(dom1, 'frac', dfrac, npts)</a>
+   554) <a name="l554" style="background-color: #ffffff"></a>
+   555) <a name="l555" style="background-color: #ffffff">    ndiff = 0</a>
+   556) <a name="l556" style="background-color: #ffffff">    do n = 1,npts</a>
+   557) <a name="l557" style="background-color: #ffffff">       if (abs(dfrac(n)) &gt; eps_tiny .and. abs(dmask(n)) &lt; eps_tiny) then</a>
+   558) <a name="l558" style="background-color: #ffffff">!debug            write(logunit,*)'n= ',n,' dfrac= ',dfrac(n),' dmask= ',dmask(n)</a>
+   559) <a name="l559" style="background-color: #ffff99">          ndiff = ndiff + 1</a>
+   560) <a name="l560" style="background-color: #ffff99">       endif</a>
+   561) <a name="l561" style="background-color: #ffff99">    enddo</a>
+   562) <a name="l562" style="background-color: #ffff99"></a>
+   563) <a name="l563" style="background-color: #ffffff">    if (ndiff &gt; 0) then</a>
+   564) <a name="l564" style="background-color: #ffff99">       write(logunit,*) trim(subname),&quot; ERROR: incompatible domain mask and frac values&quot;</a>
+   565) <a name="l565" style="background-color: #ffff99">       call shr_sys_flush(logunit)</a>
+   566) <a name="l566" style="background-color: #ffff99">       call shr_sys_abort(subName//&quot; incompatible domain mask and frac values&quot;)</a>
+   567) <a name="l567" style="background-color: #ffff99">    endif</a>
+   568) <a name="l568" style="background-color: #ffff99"></a>
+   569) <a name="l569" style="background-color: #ffffff">    deallocate(dmask,stat=rcode)</a>
+   570) <a name="l570" style="background-color: #ffffff">    if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' deallocate dmask')</a>
+   571) <a name="l571" style="background-color: #ffffff">    deallocate(dfrac,stat=rcode)</a>
+   572) <a name="l572" style="background-color: #ffffff">    if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' deallocate dfrac')</a>
+   573) <a name="l573" style="background-color: #ffff99"></a>
+   574) <a name="l574" style="background-color: #ffffff"> end subroutine seq_domain_check_fracmask</a>
+   575) <a name="l575" style="background-color: #ffffff"></a>
+   576) <a name="l576" style="background-color: #ffffff">!===============================================================================</a>
+   577) <a name="l577" style="background-color: #ffffff">  </a>
+   578) <a name="l578" style="background-color: #ffffff">  subroutine seq_domain_check_grid(dom1, dom2, attr, eps, mpicom, mask)</a>
+   579) <a name="l579" style="background-color: #ffffff">   </a>
+   580) <a name="l580" style="background-color: #ffffff">    !-----------------------------------------------------------</a>
+   581) <a name="l581" style="background-color: #ffffff"></a>
+   582) <a name="l582" style="background-color: #ffffff">    ! Arguments</a>
+   583) <a name="l583" style="background-color: #ffffff"></a>
+   584) <a name="l584" style="background-color: #ffffff">    type(mct_aVect) , intent(in) :: dom1</a>
+   585) <a name="l585" style="background-color: #ffffff">    type(mct_aVect) , intent(in) :: dom2</a>
+   586) <a name="l586" style="background-color: #ffffff">    character(len=*), intent(in) :: attr   ! grid attribute to compare</a>
+   587) <a name="l587" style="background-color: #ffffff">    real(R8)        , intent(in) :: eps    ! error condition for compare</a>
+   588) <a name="l588" style="background-color: #ffffff">    integer(IN)     , intent(in) :: mpicom</a>
+   589) <a name="l589" style="background-color: #ffffff">    real(R8)        , intent(in), optional :: mask(:)</a>
+   590) <a name="l590" style="background-color: #ffffff"></a>
+   591) <a name="l591" style="background-color: #ffffff">    ! Local variables</a>
+   592) <a name="l592" style="background-color: #ffffff"></a>
+   593) <a name="l593" style="background-color: #ffffff">    integer(in)       :: n,ndiff            ! indices</a>
+   594) <a name="l594" style="background-color: #ffffff">    integer(in)       :: npts1,npts2,npts   ! counters</a>
+   595) <a name="l595" style="background-color: #ffffff">    integer(in)       :: rcode              ! error code</a>
+   596) <a name="l596" style="background-color: #ffffff">    real(R8)          :: diff,max_diff      ! temporaries</a>
+   597) <a name="l597" style="background-color: #ffffff">    real(R8)          :: tot_diff           ! maximum diff across all pes</a>
+   598) <a name="l598" style="background-color: #ffffff">    integer(IN)       :: ier                ! error code</a>
+   599) <a name="l599" style="background-color: #ffffff">    real(R8), pointer :: data1(:)           ! temporaries</a>
+   600) <a name="l600" style="background-color: #ffffff">    real(R8), pointer :: data2(:)           ! temporaries</a>
+   601) <a name="l601" style="background-color: #ffffff">    real(R8), pointer :: lmask(:)           ! temporaries</a>
+   602) <a name="l602" style="background-color: #ffffff">    logical           :: iamroot            ! local masterproc</a>
+   603) <a name="l603" style="background-color: #ffffff"></a>
+   604) <a name="l604" style="background-color: #ffffff">    character(*),parameter :: F00 = &quot;('(seq_domain_check_grid) ',4a)&quot;</a>
+   605) <a name="l605" style="background-color: #ffffff">    character(*),parameter :: F01 = &quot;('(seq_domain_check_grid) ',a,i12,a)&quot;</a>
+   606) <a name="l606" style="background-color: #ffffff">    character(*),parameter :: F02 = &quot;('(seq_domain_check_grid) ',2a,g23.15)&quot;</a>
+   607) <a name="l607" style="background-color: #ffffff">    character(*),parameter :: F0R = &quot;('(seq_domain_check_grid) ',2A,2g23.15,A )&quot;</a>
+   608) <a name="l608" style="background-color: #ffffff">    character(*),parameter :: subName = '(seq_domain_check_grid) '</a>
+   609) <a name="l609" style="background-color: #ffffff">    !-----------------------------------------------------------</a>
+   610) <a name="l610" style="background-color: #ffffff"></a>
+   611) <a name="l611" style="background-color: #ffffff">    call seq_comm_setptrs(CPLID,iamroot=iamroot)</a>
+   612) <a name="l612" style="background-color: #ffffff"></a>
+   613) <a name="l613" style="background-color: #ffffff">    npts1 = mct_aVect_lsize(dom1)</a>
+   614) <a name="l614" style="background-color: #ffffff">    npts2 = mct_aVect_lsize(dom2)</a>
+   615) <a name="l615" style="background-color: #ffffff">    npts  = npts1</a>
+   616) <a name="l616" style="background-color: #ffffff"></a>
+   617) <a name="l617" style="background-color: #ffffff">    if (npts1 == npts2) then</a>
+   618) <a name="l618" style="background-color: #ffffff">       if (iamroot) write(logunit,F01) &quot; the domain size is = &quot;, npts</a>
+   619) <a name="l619" style="background-color: #ffffff">    else</a>
+   620) <a name="l620" style="background-color: #ffff99">       write(logunit,*) trim(subname),&quot; domain size #1 = &quot;, npts1</a>
+   621) <a name="l621" style="background-color: #ffff99">       write(logunit,*) trim(subname),&quot; domain size #2 = &quot;, npts2</a>
+   622) <a name="l622" style="background-color: #ffff99">       write(logunit,*) trim(subname),&quot; ERROR: domain size mis-match&quot;</a>
+   623) <a name="l623" style="background-color: #ffff99">       call shr_sys_abort(subName//&quot; ERROR: domain size mis-match&quot;)</a>
+   624) <a name="l624" style="background-color: #ffff99">    end if</a>
+   625) <a name="l625" style="background-color: #ffff99"></a>
+   626) <a name="l626" style="background-color: #fafad2">    allocate(data1(npts),stat=rcode)</a>
+   627) <a name="l627" style="background-color: #fafad2">    if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' allocate data1')</a>
+   628) <a name="l628" style="background-color: #fafad2">    allocate(data2(npts),stat=rcode)</a>
+   629) <a name="l629" style="background-color: #fafad2">    if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' allocate data2')</a>
+   630) <a name="l630" style="background-color: #fafad2">    allocate(lmask(npts),stat=rcode)</a>
+   631) <a name="l631" style="background-color: #fafad2">    if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' allocate lmask')</a>
+   632) <a name="l632" style="background-color: #ffff99"></a>
+   633) <a name="l633" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">mct_aVect_exportRAttr(dom1, trim(attr), data1, npts)</a>
+   634) <a name="l634" style="background-color: #ffffff">    call mct_aVect_exportRAttr(dom2, trim(attr), data2, npts)</a>
+   635) <a name="l635" style="background-color: #ffffff">    lmask = 1.0_R8</a>
+   636) <a name="l636" style="background-color: #ffffff">    if (present(mask)) then</a>
+   637) <a name="l637" style="background-color: #ffffff">       if (size(mask) /= npts) then</a>
+   638) <a name="l638" style="background-color: #ffffff">	  call </a><a style="background-color: #ffff99">shr_sys_abort(subName//&quot; ERROR: mask size mis-match&quot;)</a>
+   639) <a name="l639" style="background-color: #ffff99">       endif</a>
+   640) <a name="l640" style="background-color: #ffffff">       lmask = mask</a>
+   641) <a name="l641" style="background-color: #ffffff">    endif</a>
+   642) <a name="l642" style="background-color: #ffffff"></a>
+   643) <a name="l643" style="background-color: #ffffff">    ! --- adjust lons to address wraparound issues, we're assuming degree here! ---</a>
+   644) <a name="l644" style="background-color: #ffffff"></a>
+   645) <a name="l645" style="background-color: #ffffff">    if (trim(attr) == &quot;lon&quot;) then</a>
+   646) <a name="l646" style="background-color: #ffffff">       do n = 1,npts</a>
+   647) <a name="l647" style="background-color: #ffffff">	  if (data2(n) &gt; data1(n)) then</a>
+   648) <a name="l648" style="background-color: #fafad2">	     do while ( (data1(n)+360.0_R8) &lt; (data2(n)+180.0_R8) ) ! longitude is periodic</a>
+   649) <a name="l649" style="background-color: #fafad2">		data1(n) = data1(n) + 360.0_R8</a>
+   650) <a name="l650" style="background-color: #fafad2">	     end do</a>
+   651) <a name="l651" style="background-color: #fafad2">	  else</a>
+   652) <a name="l652" style="background-color: #ffffff">	     do while ( (data2(n)+360.0_R8) &lt; (data1(n)+180.0_R8) ) ! longitude is periodic</a>
+   653) <a name="l653" style="background-color: #ffffff">		data2(n) = data2(n) + 360.0_R8</a>
+   654) <a name="l654" style="background-color: #ffffff">	     end do</a>
+   655) <a name="l655" style="background-color: #ffffff">	  endif</a>
+   656) <a name="l656" style="background-color: #ffffff">       enddo</a>
+   657) <a name="l657" style="background-color: #ffffff">    endif</a>
+   658) <a name="l658" style="background-color: #ffffff"></a>
+   659) <a name="l659" style="background-color: #ffffff">    ! Only check consistency where mask is greater than zero, if mask is present</a>
+   660) <a name="l660" style="background-color: #ffffff"></a>
+   661) <a name="l661" style="background-color: #ffffff">    max_diff = 0.0_R8</a>
+   662) <a name="l662" style="background-color: #ffffff">    ndiff = 0</a>
+   663) <a name="l663" style="background-color: #ffffff">    do n=1,npts</a>
+   664) <a name="l664" style="background-color: #ffffff">       if (lmask(n) &gt; eps_tiny) then</a>
+   665) <a name="l665" style="background-color: #ffffff">	  diff = abs(data1(n)-data2(n))</a>
+   666) <a name="l666" style="background-color: #ffffff">	  max_diff = max(max_diff,diff)</a>
+   667) <a name="l667" style="background-color: #ffffff">	  if (diff &gt; eps) then</a>
+   668) <a name="l668" style="background-color: #ffffff">      !debug            write(logunit,*)'n= ',n,' data1= ',data1(n),' data2= ',data2(n),' diff= ',diff, ' eps= ',eps</a>
+   669) <a name="l669" style="background-color: #ffff99">	     ndiff = ndiff + 1</a>
+   670) <a name="l670" style="background-color: #ffff99">	  endif</a>
+   671) <a name="l671" style="background-color: #ffff99">       end if</a>
+   672) <a name="l672" style="background-color: #ffff99">    end do</a>
+   673) <a name="l673" style="background-color: #ffff99"></a>
+   674) <a name="l674" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">mpi_reduce(max_diff,tot_diff,1,MPI_REAL8,MPI_MAX,0,mpicom,ier)</a>
+   675) <a name="l675" style="background-color: #ffffff">    if (iamroot) then</a>
+   676) <a name="l676" style="background-color: #ffffff">       write(logunit,F02) &quot; maximum           difference for &quot;,trim(attr),tot_diff</a>
+   677) <a name="l677" style="background-color: #ffffff">       write(logunit,F02) &quot; maximum allowable difference for &quot;,trim(attr),eps</a>
+   678) <a name="l678" style="background-color: #ffffff">       call shr_sys_flush(logunit)</a>
+   679) <a name="l679" style="background-color: #ffffff">    endif</a>
+   680) <a name="l680" style="background-color: #ffffff">    call mpi_barrier(mpicom,ier)</a>
+   681) <a name="l681" style="background-color: #ffffff"></a>
+   682) <a name="l682" style="background-color: #ffffff">    if (ndiff &gt; 0) then</a>
+   683) <a name="l683" style="background-color: #ffff99">       write(logunit,*) trim(subname),&quot; ERROR: incompatible domain grid coordinates&quot;</a>
+   684) <a name="l684" style="background-color: #ffff99">       call shr_sys_flush(logunit)</a>
+   685) <a name="l685" style="background-color: #ffff99">       call shr_sys_abort(subName//&quot; incompatible domain grid coordinates&quot;)</a>
+   686) <a name="l686" style="background-color: #ffff99">    endif</a>
+   687) <a name="l687" style="background-color: #ffff99"></a>
+   688) <a name="l688" style="background-color: #ffffff">    deallocate(data1,stat=rcode)</a>
+   689) <a name="l689" style="background-color: #ffffff">    if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' deallocate data1')</a>
+   690) <a name="l690" style="background-color: #ffffff">    deallocate(data2,stat=rcode)</a>
+   691) <a name="l691" style="background-color: #ffffff">    if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' deallocate data2')</a>
+   692) <a name="l692" style="background-color: #ffffff">    deallocate(lmask,stat=rcode)</a>
+   693) <a name="l693" style="background-color: #ffffff">    if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' deallocate lmask')</a>
+   694) <a name="l694" style="background-color: #ffff99"></a>
+   695) <a name="l695" style="background-color: #ffffff">  end subroutine seq_domain_check_grid</a>
+   696) <a name="l696" style="background-color: #ffffff"></a>
+   697) <a name="l697" style="background-color: #ffffff">!===============================================================================</a>
+   698) <a name="l698" style="background-color: #ffffff"></a>
+   699) <a name="l699" style="background-color: #ffffff">  subroutine seq_domain_areafactinit(domain, mdl2drv, drv2mdl, &amp;</a>
+   700) <a name="l700" style="background-color: #ffffff">       samegrid, mpicom, iamroot, comment)</a>
+   701) <a name="l701" style="background-color: #ffffff">    !-----------------------------------------------------------</a>
+   702) <a name="l702" style="background-color: #ffffff">    !</a>
+   703) <a name="l703" style="background-color: #ffffff">    ! Arguments</a>
+   704) <a name="l704" style="background-color: #ffffff">    !</a>
+   705) <a name="l705" style="background-color: #ffffff">    type(mct_gGrid)  , pointer             :: domain     ! component domain on component pes</a>
+   706) <a name="l706" style="background-color: #ffffff">    real(R8)         , pointer             :: mdl2drv(:) ! comp-&gt;cpl factor on component pes </a>
+   707) <a name="l707" style="background-color: #ffffff">    real(R8)         , pointer             :: drv2mdl(:) ! cpl-&gt;comp factor on component pes</a>
+   708) <a name="l708" style="background-color: #ffffff">    logical          , intent(in)          :: samegrid   ! true =&gt; two grids are same</a>
+   709) <a name="l709" style="background-color: #ffffff">    integer          , intent(in)          :: mpicom     ! mpi communicator on component pes  </a>
+   710) <a name="l710" style="background-color: #ffffff">    logical          , intent(in)          :: iamroot</a>
+   711) <a name="l711" style="background-color: #ffffff">    character(len=*) , optional,intent(in) :: comment</a>
+   712) <a name="l712" style="background-color: #ffffff">    !</a>
+   713) <a name="l713" style="background-color: #ffffff">    ! Local variables</a>
+   714) <a name="l714" style="background-color: #ffffff">    !</a>
+   715) <a name="l715" style="background-color: #ffffff">    integer                :: j1,j2,m1,n,rcode</a>
+   716) <a name="l716" style="background-color: #ffffff">    integer                :: gridsize,m2dsize,d2msize</a>
+   717) <a name="l717" style="background-color: #ffffff">    real(R8)               :: rmin1,rmax1,rmin,rmax</a>
+   718) <a name="l718" style="background-color: #ffffff">    real(R8)               :: rmask,rarea,raream</a>
+   719) <a name="l719" style="background-color: #ffffff">    character(cl)          :: lcomment</a>
+   720) <a name="l720" style="background-color: #ffffff">    character(len=*),parameter :: subName = '(seq_domain_areafactinit) '</a>
+   721) <a name="l721" style="background-color: #ffffff">    character(len=*),parameter :: F0R = &quot;(2A,2g23.15,A )&quot;</a>
+   722) <a name="l722" style="background-color: #ffffff">    !</a>
+   723) <a name="l723" style="background-color: #ffffff">    !-----------------------------------------------------------</a>
+   724) <a name="l724" style="background-color: #ffffff"></a>
+   725) <a name="l725" style="background-color: #ffffff">    lcomment = ''</a>
+   726) <a name="l726" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(comment)) </a><a style="background-color: #ffffff">lcomment = comment</a>
+   727) <a name="l727" style="background-color: #ffffff"></a>
+   728) <a name="l728" style="background-color: #ffffff">    ! get sizes</a>
+   729) <a name="l729" style="background-color: #ffffff"></a>
+   730) <a name="l730" style="background-color: #ffffff">    gridsize = mct_gGrid_lsize(domain)</a>
+   731) <a name="l731" style="background-color: #fafad2">    allocate(drv2mdl(gridsize),mdl2drv(gridsize),stat=rcode)</a>
+   732) <a name="l732" style="background-color: #fafad2">    if(rcode /= 0) </a><a style="background-color: #ffff99">call shr_sys_abort(subname//' allocate area correction factors')</a>
+   733) <a name="l733" style="background-color: #ffff99"></a>
+   734) <a name="l734" style="background-color: #ffffff">    j1 = mct_gGrid_indexRA(domain,&quot;area&quot;    ,dieWith=subName)</a>
+   735) <a name="l735" style="background-color: #ffffff">    j2 = mct_gGrid_indexRA(domain,&quot;aream&quot;   ,dieWith=subName)</a>
+   736) <a name="l736" style="background-color: #ffffff">    m1 = mct_gGrid_indexRA(domain,&quot;mask&quot;    ,dieWith=subName)</a>
+   737) <a name="l737" style="background-color: #ffffff"></a>
+   738) <a name="l738" style="background-color: #ffffff">    mdl2drv(:)=1.0_R8</a>
+   739) <a name="l739" style="background-color: #ffffff">    drv2mdl(:)=1.0_R8</a>
+   740) <a name="l740" style="background-color: #ffffff"></a>
+   741) <a name="l741" style="background-color: #ffffff">    if (samegrid) then</a>
+   742) <a name="l742" style="background-color: #ffffff">       ! default 1.0</a>
+   743) <a name="l743" style="background-color: #ffffff">    else</a>
+   744) <a name="l744" style="background-color: #ffffff">       do n=1,gridsize</a>
+   745) <a name="l745" style="background-color: #ffffff">          rmask  = domain%data%rAttr(m1,n)</a>
+   746) <a name="l746" style="background-color: #ffffff">          rarea  = domain%data%rAttr(j1,n)</a>
+   747) <a name="l747" style="background-color: #ffffff">          raream = domain%data%rAttr(j2,n)</a>
+   748) <a name="l748" style="background-color: #ffffff">          if ( abs(rmask) &gt;= 1.0e-06) then</a>
+   749) <a name="l749" style="background-color: #ffffff">             if (rarea * raream /= 0.0_R8) then</a>
+   750) <a name="l750" style="background-color: #ffffff">                mdl2drv(n) = rarea/raream</a>
+   751) <a name="l751" style="background-color: #ffffff">                drv2mdl(n) = 1.0_R8/mdl2drv(n)</a>
+   752) <a name="l752" style="background-color: #ffffff">                !if (mdl2drv(n) &gt; 10.0 .or. mdl2drv(n) &lt; 0.1) then</a>
+   753) <a name="l753" style="background-color: #ffffff">                !   write(logunit,*) trim(subname),' WARNING area,aream= ', &amp;</a>
+   754) <a name="l754" style="background-color: #ffffff">                !      domain%data%rAttr(j1,n),domain%data%rAttr(j2,n),' in ',n,gridsize</a>
+   755) <a name="l755" style="background-color: #ffffff">                !endif</a>
+   756) <a name="l756" style="background-color: #ffffff">             else</a>
+   757) <a name="l757" style="background-color: #ffff99">                write(logunit,*) trim(subname),' ERROR area,aream= ', &amp;</a>
+   758) <a name="l758" style="background-color: #ffff99">                     rarea,raream,' in ',n,gridsize</a>
+   759) <a name="l759" style="background-color: #ffff99">                call shr_sys_flush(logunit)</a>
+   760) <a name="l760" style="background-color: #ffff99">                call shr_sys_abort()</a>
+   761) <a name="l761" style="background-color: #ffff99">             endif</a>
+   762) <a name="l762" style="background-color: #ffff99">          endif</a>
+   763) <a name="l763" style="background-color: #ffff99">       enddo</a>
+   764) <a name="l764" style="background-color: #ffff99">    end if</a>
+   765) <a name="l765" style="background-color: #ffff99"></a>
+   766) <a name="l766" style="background-color: #ffffff">    rmin1 = </a><a style="background-color: #fafad2">minval(mdl2drv)</a>
+   767) <a name="l767" style="background-color: #ffffff">    rmax1 = </a><a style="background-color: #fafad2">maxval(mdl2drv)</a>
+   768) <a name="l768" style="background-color: #fafad2">    call </a><a style="background-color: #ffffff">shr_mpi_min(rmin1,rmin,mpicom)</a>
+   769) <a name="l769" style="background-color: #ffffff">    call shr_mpi_max(rmax1,rmax,mpicom)</a>
+   770) <a name="l770" style="background-color: #ffffff">    if (iamroot) write(logunit,F0R) trim(subname),' : min/max mdl2drv ',rmin,rmax,trim(lcomment)</a>
+   771) <a name="l771" style="background-color: #ffffff"></a>
+   772) <a name="l772" style="background-color: #ffffff">    rmin1 = </a><a style="background-color: #fafad2">minval(drv2mdl)</a>
+   773) <a name="l773" style="background-color: #ffffff">    rmax1 = </a><a style="background-color: #fafad2">maxval(drv2mdl)</a>
+   774) <a name="l774" style="background-color: #fafad2">    call </a><a style="background-color: #ffffff">shr_mpi_min(rmin1,rmin,mpicom)</a>
+   775) <a name="l775" style="background-color: #ffffff">    call shr_mpi_max(rmax1,rmax,mpicom)</a>
+   776) <a name="l776" style="background-color: #ffffff">    if (iamroot) write(logunit,F0R) trim(subname),' : min/max drv2mdl ',rmin,rmax,trim(lcomment)</a>
+   777) <a name="l777" style="background-color: #ffffff">    if (iamroot) call shr_sys_flush(logunit)</a>
+   778) <a name="l778" style="background-color: #ffffff"></a>
+   779) <a name="l779" style="background-color: #ffffff">  end subroutine seq_domain_areafactinit</a>
+   780) <a name="l780" style="background-color: #ffffff"></a>
+   781) <a name="l781" style="background-color: #ffffff">!===============================================================================</a>
+   782) <a name="l782" style="background-color: #ffffff"></a>
+   783) <a name="l783" style="background-color: #ffffff">end module seq_domain_mct</a>
+   784) <a name="l784" style="background-color: #ffffff"></a>
+   785) <a name="l785" style="background-color: #ffffff"></a>
+   786) <a name="l786" style="background-color: #ffffff"></a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

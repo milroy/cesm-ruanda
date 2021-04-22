@@ -1,0 +1,1133 @@
+<html>
+<head>
+<title>Listing of schedule_mod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;schedule_mod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 50.00&#160;%func&#160;&#160;&#160;&#160; 61.86&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">#ifdef HAVE_CONFIG_H</a>
+     2) <a name="l2" style="background-color: #ffffff">#include &quot;config.h&quot;</a>
+     3) <a name="l3" style="background-color: #ffffff">#endif</a>
+     4) <a name="l4" style="background-color: #ffffff"></a>
+     5) <a name="l5" style="background-color: #ffffff">#undef DEBUGPART</a>
+     6) <a name="l6" style="background-color: #ffffff">module schedule_mod </a>
+     7) <a name="l7" style="background-color: #ffffff">  use metagraph_mod, only : MetaEdge_t</a>
+     8) <a name="l8" style="background-color: #ffffff">  use kinds, only : int_kind, iulog</a>
+     9) <a name="l9" style="background-color: #ffffff"></a>
+    10) <a name="l10" style="background-color: #ffffff">  implicit none </a>
+    11) <a name="l11" style="background-color: #ffffff">  private </a>
+    12) <a name="l12" style="background-color: #ffffff">  type, public :: Cycle_t</a>
+    13) <a name="l13" style="background-color: #ffffff">     integer                    :: tag</a>
+    14) <a name="l14" style="background-color: #ffffff">     integer                    :: dest</a>
+    15) <a name="l15" style="background-color: #ffffff">     integer                    :: source</a>
+    16) <a name="l16" style="background-color: #ffffff">     integer                    :: lengthP</a>
+    17) <a name="l17" style="background-color: #ffffff">     integer                    :: lengthP_ghost</a>
+    18) <a name="l18" style="background-color: #ffffff">     integer                    :: type </a>
+    19) <a name="l19" style="background-color: #ffffff">     integer                    :: ptrP</a>
+    20) <a name="l20" style="background-color: #ffffff">     integer                    :: ptrP_ghost</a>
+    21) <a name="l21" style="background-color: #ffffff">     type (MetaEdge_t),pointer  :: edge</a>
+    22) <a name="l22" style="background-color: #ffffff">  end type Cycle_t</a>
+    23) <a name="l23" style="background-color: #ffffff"></a>
+    24) <a name="l24" style="background-color: #ffffff">  type, public :: Schedule_t </a>
+    25) <a name="l25" style="background-color: #ffffff">     integer                     ::  ncycles</a>
+    26) <a name="l26" style="background-color: #ffffff">     integer                     ::  nelemd</a>
+    27) <a name="l27" style="background-color: #ffffff">     integer                     :: placeholder  ! total integer count should be even</a>
+    28) <a name="l28" style="background-color: #ffffff">     integer                     :: nSendCycles</a>
+    29) <a name="l29" style="background-color: #ffffff">     integer                     :: nRecvCycles</a>
+    30) <a name="l30" style="background-color: #ffffff">     integer			    :: padding</a>
+    31) <a name="l31" style="background-color: #ffffff">     integer,pointer             :: Local2Global(:)</a>
+    32) <a name="l32" style="background-color: #ffffff">     type (Cycle_t), pointer     ::   Cycle(:)     	</a>
+    33) <a name="l33" style="background-color: #ffffff">     type (Cycle_t), pointer :: SendCycle(:)</a>
+    34) <a name="l34" style="background-color: #ffffff">     type (Cycle_t), pointer :: RecvCycle(:)</a>
+    35) <a name="l35" style="background-color: #ffffff">     type (Cycle_t), pointer :: MoveCycle(:)</a>
+    36) <a name="l36" style="background-color: #ffffff">  end type Schedule_t</a>
+    37) <a name="l37" style="background-color: #ffffff"></a>
+    38) <a name="l38" style="background-color: #ffffff">  type, public :: GraphStats_t</a>
+    39) <a name="l39" style="background-color: #ffffff">     integer(kind=int_kind) :: offnode</a>
+    40) <a name="l40" style="background-color: #ffffff">     integer(kind=int_kind) :: onnode</a>
+    41) <a name="l41" style="background-color: #ffffff">     integer(kind=int_kind) :: LB</a>
+    42) <a name="l42" style="background-color: #ffffff">     integer(kind=int_kind) :: padding </a>
+    43) <a name="l43" style="background-color: #ffffff">  end type GraphStats_t</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">  type (Schedule_t), public, allocatable, target  :: Schedule(:)</a>
+    46) <a name="l46" style="background-color: #ffffff">  type (Schedule_t), public, allocatable, target  :: gSchedule(:) </a>
+    47) <a name="l47" style="background-color: #ffffff">  type (Schedule_t), public, allocatable, target  :: sSchedule(:) </a>
+    48) <a name="l48" style="background-color: #ffffff"></a>
+    49) <a name="l49" style="background-color: #ffffff">  integer,public,parameter :: BNDRY_EXCHANGE_MESSAGE=10</a>
+    50) <a name="l50" style="background-color: #ffffff">  integer,private,allocatable,target  :: Global2Local(:)</a>
+    51) <a name="l51" style="background-color: #ffffff"></a>
+    52) <a name="l52" style="background-color: #ffffff">  integer :: MinNelemd,MaxNelemd</a>
+    53) <a name="l53" style="background-color: #ffffff"></a>
+    54) <a name="l54" style="background-color: #ffffff">  public :: genEdgeSched              ! Setup the communication schedule for the edge based boundary exchange</a>
+    55) <a name="l55" style="background-color: #ffffff">  public :: PrintSchedule, PrintCycle</a>
+    56) <a name="l56" style="background-color: #ffffff">  public :: CheckSchedule</a>
+    57) <a name="l57" style="background-color: #ffffff">  public :: FindBufferSlot</a>
+    58) <a name="l58" style="background-color: #ffffff">!  public :: MessageStats</a>
+    59) <a name="l59" style="background-color: #ffffff">!  public :: PrimMessageStats</a>
+    60) <a name="l60" style="background-color: #ffffff"></a>
+    61) <a name="l61" style="background-color: #ffffff">contains</a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">  !********************** GENCOMSCHED.F ******************************************</a>
+    64) <a name="l64" style="background-color: #ffffff">  subroutine genEdgeSched(elem, PartNumber,LSchedule,MetaVertex)</a>
+    65) <a name="l65" style="background-color: #ffffff">    use element_mod, only : element_t</a>
+    66) <a name="l66" style="background-color: #ffffff">    use metagraph_mod, only : metavertex_t</a>
+    67) <a name="l67" style="background-color: #ffffff">    use dimensions_mod, only : nelem, max_neigh_edges</a>
+    68) <a name="l68" style="background-color: #ffffff">    use gridgraph_mod, only : gridvertex_t, gridedge_t, assignment ( = )</a>
+    69) <a name="l69" style="background-color: #ffffff">#ifdef _MPI</a>
+    70) <a name="l70" style="background-color: #ffffff">    use parallel_mod, only : nComPoints, iam, mpi_status_size, rrequest, srequest, &amp;</a>
+    71) <a name="l71" style="background-color: #ffffff">	status, npackpoints</a>
+    72) <a name="l72" style="background-color: #ffffff">#else</a>
+    73) <a name="l73" style="background-color: #ffffff">    use parallel_mod, only : nComPoints, iam</a>
+    74) <a name="l74" style="background-color: #ffffff">#endif</a>
+    75) <a name="l75" style="background-color: #ffffff">     use parallel_mod, only : haltmp, iam</a>
+    76) <a name="l76" style="background-color: #ffffff">    implicit none</a>
+    77) <a name="l77" style="background-color: #ffffff">    type(element_t), intent(inout)        :: elem(:)</a>
+    78) <a name="l78" style="background-color: #ffffff">    integer, intent(in)                :: PartNumber</a>
+    79) <a name="l79" style="background-color: #ffffff">    type (schedule_t), intent(inout)   :: LSchedule</a>
+    80) <a name="l80" style="background-color: #ffffff">    type (MetaVertex_t),intent(inout)  :: MetaVertex</a>
+    81) <a name="l81" style="background-color: #ffffff"></a>
+    82) <a name="l82" style="background-color: #ffffff">    integer                       :: lengthP,total_length,lengthp_ghost</a>
+    83) <a name="l83" style="background-color: #ffffff">    integer                       :: i,j,is,ir,ncycle</a>
+    84) <a name="l84" style="background-color: #ffffff">    integer                       :: il,ie,ig</a>
+    85) <a name="l85" style="background-color: #ffffff">    integer                       :: nelemd0</a>
+    86) <a name="l86" style="background-color: #ffffff">    integer                       :: jmd</a>
+    87) <a name="l87" style="background-color: #ffffff">    integer                       :: inbr</a>
+    88) <a name="l88" style="background-color: #ffffff">    integer                       :: nSched</a>
+    89) <a name="l89" style="background-color: #ffffff">    integer,allocatable           :: tmpP(:,:)</a>
+    90) <a name="l90" style="background-color: #ffffff">    integer,allocatable           :: tmpP_ghost(:,:)</a>
+    91) <a name="l91" style="background-color: #ffffff">    integer                       :: nSend,nRecv,nedges </a>
+    92) <a name="l92" style="background-color: #ffffff">    integer                       :: icycle</a>
+    93) <a name="l93" style="background-color: #ffffff">    integer			  :: iSched</a>
+    94) <a name="l94" style="background-color: #ffffff">    logical, parameter            :: VerbosePrint=.FALSE.</a>
+    95) <a name="l95" style="background-color: #ffffff">    logical, parameter            :: Debug=.false.</a>
+    96) <a name="l96" style="background-color: #ffffff">    integer :: ierr</a>
+    97) <a name="l97" style="background-color: #ffffff">    integer :: l1,l2,l1id,l2id</a>
+    98) <a name="l98" style="background-color: #ffffff"></a>
+    99) <a name="l99" style="background-color: #ffffff"></a>
+   100) <a name="l100" style="background-color: #ffffff">    nSched=SIZE(schedule)</a>
+   101) <a name="l101" style="background-color: #ffffff">    ! ================================================</a>
+   102) <a name="l102" style="background-color: #ffffff">    ! allocate some arrays for the call to MPI_gatherv</a>
+   103) <a name="l103" style="background-color: #ffffff">    ! ================================================</a>
+   104) <a name="l104" style="background-color: #ffffff"></a>
+   105) <a name="l105" style="background-color: #ffffff">    MinNelemd = nelem</a>
+   106) <a name="l106" style="background-color: #ffffff">    MaxNelemd = 0</a>
+   107) <a name="l107" style="background-color: #ffffff">    ! =====================================================</a>
+   108) <a name="l108" style="background-color: #ffffff">    ! It looks like this is only used in this routine...</a>
+   109) <a name="l109" style="background-color: #ffffff">    ! so no need to put it in the schedule data-structure</a>
+   110) <a name="l110" style="background-color: #ffffff">    ! =====================================================</a>
+   111) <a name="l111" style="background-color: #fafad2">    allocate(Global2Local(nelem))</a>
+   112) <a name="l112" style="background-color: #fafad2">    if(</a><a style="background-color: #ffffff">Debug) </a><a style="background-color: #ffff99">write(iulog,*)'genEdgeSched: point #1'</a>
+   113) <a name="l113" style="background-color: #ffffff">    iSched = PartNumber</a>
+   114) <a name="l114" style="background-color: #ffffff"></a>
+   115) <a name="l115" style="background-color: #ffffff">    nelemd0 = MetaVertex%nmembers</a>
+   116) <a name="l116" style="background-color: #ffffff">    if(VerbosePrint) then</a>
+   117) <a name="l117" style="background-color: #ffff99">       if(iam .eq. 1)  write(iulog,*)'genEdgeSched: Part # ',i,' has ',nelemd0, ' elements '</a>
+   118) <a name="l118" style="background-color: #ffff99">    endif</a>
+   119) <a name="l119" style="background-color: #ffffff">    MaxNelemd = AMAX0(MaxNelemd,nelemd0)</a>
+   120) <a name="l120" style="background-color: #ffffff">    MinNelemd = AMIN0(MinNelemd,nelemd0)</a>
+   121) <a name="l121" style="background-color: #ffffff">    if(Debug) </a><a style="background-color: #ffff99">write(iulog,*)'genEdgeSched: point #2'</a>
+   122) <a name="l122" style="background-color: #ffff99"></a>
+   123) <a name="l123" style="background-color: #ffff99">    if(</a><a style="background-color: #ffffff">Debug) </a><a style="background-color: #ffff99">write(iulog,*)'genEdgeSched: point #3'</a>
+   124) <a name="l124" style="background-color: #ffffff">    LSchedule%ncycles = MetaVertex%nedges</a>
+   125) <a name="l125" style="background-color: #ffffff">    LSchedule%nelemd  = nelemd0</a>
+   126) <a name="l126" style="background-color: #ffffff">    if(Debug) </a><a style="background-color: #ffff99">write(iulog,*)'genEdgeSched: point #4'</a>
+   127) <a name="l127" style="background-color: #ffff99"></a>
+   128) <a name="l128" style="background-color: #ffff99">    !  Note the minus one is for the internal node</a>
+   129) <a name="l129" style="background-color: #ffffff">    nedges = MetaVertex%nedges</a>
+   130) <a name="l130" style="background-color: #ffffff">    if(2*(nedges/2) .eq. nedges) then</a>
+   131) <a name="l131" style="background-color: #ffff99">       nedges = nedges/2</a>
+   132) <a name="l132" style="background-color: #ffff99">    else</a>
+   133) <a name="l133" style="background-color: #ffffff">       nedges = (nedges-1)/2</a>
+   134) <a name="l134" style="background-color: #ffffff">    endif</a>
+   135) <a name="l135" style="background-color: #ffffff">    LSchedule%nSendCycles = nedges</a>
+   136) <a name="l136" style="background-color: #ffffff">    LSchedule%nRecvCycles = nedges</a>
+   137) <a name="l137" style="background-color: #ffffff">    if(Debug) </a><a style="background-color: #ffff99">write(iulog,*)'genEdgeSched: point #5'</a>
+   138) <a name="l138" style="background-color: #ffff99"></a>
+   139) <a name="l139" style="background-color: #ffff99">    ! Temporary array to calculate the Buffer Slot</a>
+   140) <a name="l140" style="background-color: #fafad2">    allocate(tmpP(2,nedges+1))</a>
+   141) <a name="l141" style="background-color: #fafad2">    allocate(tmpP_ghost(2,nedges+1))</a>
+   142) <a name="l142" style="background-color: #fafad2"></a>
+   143) <a name="l143" style="background-color: #ffffff">    tmpP(1,:) = -1</a>
+   144) <a name="l144" style="background-color: #ffffff">    tmpP(2,:) = 0</a>
+   145) <a name="l145" style="background-color: #ffffff">    tmpP_ghost(1,:) = -1</a>
+   146) <a name="l146" style="background-color: #ffffff">    tmpP_ghost(2,:) = 0</a>
+   147) <a name="l147" style="background-color: #ffffff"></a>
+   148) <a name="l148" style="background-color: #ffffff">    !  Allocate all the cycle structures</a>
+   149) <a name="l149" style="background-color: #fafad2">    allocate(LSchedule%SendCycle(nedges))</a>
+   150) <a name="l150" style="background-color: #fafad2">    allocate(LSchedule%RecvCycle(nedges))</a>
+   151) <a name="l151" style="background-color: #ffffff">    allocate(LSchedule%MoveCycle(1))</a>
+   152) <a name="l152" style="background-color: #ffffff">    if(Debug) </a><a style="background-color: #ffff99">write(iulog,*)'genEdgeSched: point #6'</a>
+   153) <a name="l153" style="background-color: #ffff99"></a>
+   154) <a name="l154" style="background-color: #ffff99">    !==================================================================</a>
+   155) <a name="l155" style="background-color: #ffff99">    !  Allocate and initalized the index translation arrays</a>
+   156) <a name="l156" style="background-color: #ffffff">    Global2Local = -1</a>
+   157) <a name="l157" style="background-color: #fafad2">    allocate(LSchedule%Local2Global(nelemd0))</a>
+   158) <a name="l158" style="background-color: #fafad2">    if(</a><a style="background-color: #ffffff">Debug) </a><a style="background-color: #ffff99">write(iulog,*)'genEdgeSched: point #7'</a>
+   159) <a name="l159" style="background-color: #ffff99"></a>
+   160) <a name="l160" style="background-color: #ffffff">    do il=1,nelemd0</a>
+   161) <a name="l161" style="background-color: #ffffff">       ig     = MetaVertex%members(il)%number</a>
+   162) <a name="l162" style="background-color: #ffffff">       Global2Local(ig)=il</a>
+   163) <a name="l163" style="background-color: #ffffff">       LSchedule%Local2Global(il)=ig</a>
+   164) <a name="l164" style="background-color: #ffffff">#ifndef _PREDICT</a>
+   165) <a name="l165" style="background-color: #ffffff">       elem(il)%desc%putmapP=-1</a>
+   166) <a name="l166" style="background-color: #ffffff">       elem(il)%desc%getmapP=-1</a>
+   167) <a name="l167" style="background-color: #ffffff">       elem(il)%desc%putmapP_ghost=-1</a>
+   168) <a name="l168" style="background-color: #ffffff">       elem(il)%desc%getmapP_ghost=-1</a>
+   169) <a name="l169" style="background-color: #ffffff">       elem(il)%desc%reverse = .FALSE.</a>
+   170) <a name="l170" style="background-color: #ffffff">#endif</a>
+   171) <a name="l171" style="background-color: #ffffff">    enddo</a>
+   172) <a name="l172" style="background-color: #ffffff">    !==================================================================</a>
+   173) <a name="l173" style="background-color: #ffffff">    if(Debug) </a><a style="background-color: #ffff99">write(iulog,*)'genEdgeSched: point #8'</a>
+   174) <a name="l174" style="background-color: #ffff99"></a>
+   175) <a name="l175" style="background-color: #ffff99"></a>
+   176) <a name="l176" style="background-color: #ffff99"></a>
+   177) <a name="l177" style="background-color: #ffffff">    total_length = 0</a>
+   178) <a name="l178" style="background-color: #ffffff">    ncycle = LSchedule%ncycles</a>
+   179) <a name="l179" style="background-color: #ffffff">    is=1</a>
+   180) <a name="l180" style="background-color: #ffffff">    ir=1</a>
+   181) <a name="l181" style="background-color: #ffffff">    do j=1,ncycle</a>
+   182) <a name="l182" style="background-color: #ffffff">       lengthP     =  MetaVertex%edges(j)%wgtP</a>
+   183) <a name="l183" style="background-color: #ffffff">       lengthP_ghost     =  MetaVertex%edges(j)%wgtP_ghost</a>
+   184) <a name="l184" style="background-color: #ffffff"></a>
+   185) <a name="l185" style="background-color: #ffffff">       if((MetaVertex%edges(j)%HeadVertex == PartNumber) .AND. &amp;</a>
+   186) <a name="l186" style="background-color: #ffffff">            (MetaVertex%edges(j)%TailVertex == PartNumber)) then</a>
+   187) <a name="l187" style="background-color: #ffffff">          inbr                            = PartNumber</a>
+   188) <a name="l188" style="background-color: #ffffff">          if(Debug) </a><a style="background-color: #ffff99">write(iulog,*)'genEdgeSched: point #9', iam</a>
+   189) <a name="l189" style="background-color: #ffffff">          LSchedule%MoveCycle%ptrP         = FindBufferSlot(inbr,lengthP,tmpP)</a>
+   190) <a name="l190" style="background-color: #ffffff">          LSchedule%MoveCycle%ptrP_ghost   = FindBufferSlot(inbr,lengthP_ghost,tmpP_ghost)</a>
+   191) <a name="l191" style="background-color: #ffffff">          call SetCycle(elem, LSchedule,LSchedule%MoveCycle(1),MetaVertex%edges(j))</a>
+   192) <a name="l192" style="background-color: #ffffff">          if(Debug) </a><a style="background-color: #ffff99">write(iulog,*)'genEdgeSched: point #10',iam</a>
+   193) <a name="l193" style="background-color: #ffffff">       else if (MetaVertex%edges(j)%TailVertex == PartNumber) then</a>
+   194) <a name="l194" style="background-color: #ffffff">          inbr                            = MetaVertex%edges(j)%HeadVertex</a>
+   195) <a name="l195" style="background-color: #ffffff">          if(Debug) </a><a style="background-color: #ffff99">write(iulog,*)'genEdgeSched: point #11', iam</a>
+   196) <a name="l196" style="background-color: #ffffff">          LSchedule%SendCycle(is)%ptrP     = FindBufferSlot(inbr,lengthP,tmpP)</a>
+   197) <a name="l197" style="background-color: #ffffff">          LSchedule%SendCycle(is)%ptrP_ghost= FindBufferSlot(inbr,lengthP_ghost,tmpP_ghost)</a>
+   198) <a name="l198" style="background-color: #ffffff">          call SetCycle(elem, LSchedule,LSchedule%SendCycle(is),MetaVertex%edges(j))</a>
+   199) <a name="l199" style="background-color: #ffffff">          if(Debug) </a><a style="background-color: #ffff99">write(iulog,*)'genEdgeSched: point #12',iam</a>
+   200) <a name="l200" style="background-color: #ffffff">          is = is+1</a>
+   201) <a name="l201" style="background-color: #ffffff">       else if (MetaVertex%edges(j)%HeadVertex == PartNumber) then</a>
+   202) <a name="l202" style="background-color: #ffffff">          inbr                            = MetaVertex%edges(j)%TailVertex</a>
+   203) <a name="l203" style="background-color: #ffffff">          if(Debug) </a><a style="background-color: #ffff99">write(iulog,*)'genEdgeSched: point #13',iam</a>
+   204) <a name="l204" style="background-color: #ffffff">          LSchedule%RecvCycle(ir)%ptrP     = FindBufferSlot(inbr,lengthP,tmpP)</a>
+   205) <a name="l205" style="background-color: #ffffff">          LSchedule%RecvCycle(ir)%ptrP_ghost= FindBufferSlot(inbr,lengthP_ghost,tmpP_ghost)</a>
+   206) <a name="l206" style="background-color: #ffffff">          call SetCycle(elem, LSchedule,LSchedule%RecvCycle(ir),MetaVertex%edges(j))</a>
+   207) <a name="l207" style="background-color: #ffffff">          if(Debug) </a><a style="background-color: #ffff99">write(iulog,*)'genEdgeSched: point #14',iam</a>
+   208) <a name="l208" style="background-color: #ffffff">          ir = ir+1</a>
+   209) <a name="l209" style="background-color: #ffffff">       endif</a>
+   210) <a name="l210" style="background-color: #ffffff">    enddo</a>
+   211) <a name="l211" style="background-color: #ffffff"></a>
+   212) <a name="l212" style="background-color: #ffffff">    deallocate(tmpP)</a>
+   213) <a name="l213" style="background-color: #ffffff">    deallocate(tmpP_ghost)</a>
+   214) <a name="l214" style="background-color: #ffffff"></a>
+   215) <a name="l215" style="background-color: #ffffff"></a>
+   216) <a name="l216" style="background-color: #ffffff"></a>
+   217) <a name="l217" style="background-color: #ffffff">    do ie=1,nelemd0</a>
+   218) <a name="l218" style="background-color: #ffffff">       ! compute number of neighbers for each element</a>
+   219) <a name="l219" style="background-color: #ffffff">       elem(ie)%desc%actual_neigh_edges=0</a>
+   220) <a name="l220" style="background-color: #ffffff">       do i=1,max_neigh_edges</a>
+   221) <a name="l221" style="background-color: #ffffff">          if (elem(ie)%desc%globalID(i)&gt;0) then</a>
+   222) <a name="l222" style="background-color: #ffffff">             elem(ie)%desc%actual_neigh_edges=elem(ie)%desc%actual_neigh_edges+1</a>
+   223) <a name="l223" style="background-color: #ffffff">          endif</a>
+   224) <a name="l224" style="background-color: #ffffff">       enddo</a>
+   225) <a name="l225" style="background-color: #ffffff"></a>
+   226) <a name="l226" style="background-color: #ffffff">       ! normally, we loop over max_neigh_edges, checking if there is an edge</a>
+   227) <a name="l227" style="background-color: #ffffff">       ! let's create a mapping so that we can loop over actual_neigh_edges</a>
+   228) <a name="l228" style="background-color: #ffffff">       ! sort in REVERSE global id order (so the ones with globalID=0 are last)</a>
+   229) <a name="l229" style="background-color: #ffffff">       do l1 = 1,max_neigh_edges-1</a>
+   230) <a name="l230" style="background-color: #ffffff">          do l2=l1+1,max_neigh_edges</a>
+   231) <a name="l231" style="background-color: #ffffff">             l1id=elem(ie)%desc%loc2buf(l1)</a>
+   232) <a name="l232" style="background-color: #ffffff">             l2id=elem(ie)%desc%loc2buf(l2)</a>
+   233) <a name="l233" style="background-color: #ffffff">             if (elem(ie)%desc%globalID(l2id) &gt; elem(ie)%desc%globalID(l1id)) then</a>
+   234) <a name="l234" style="background-color: #ffffff">                ! swap index:</a>
+   235) <a name="l235" style="background-color: #ffffff">                l1id=elem(ie)%desc%loc2buf(l2)</a>
+   236) <a name="l236" style="background-color: #ffffff">                elem(ie)%desc%loc2buf(l2)=elem(ie)%desc%loc2buf(l1)</a>
+   237) <a name="l237" style="background-color: #ffffff">                elem(ie)%desc%loc2buf(l1)=l1id</a>
+   238) <a name="l238" style="background-color: #ffffff">             endif</a>
+   239) <a name="l239" style="background-color: #ffffff">          enddo</a>
+   240) <a name="l240" style="background-color: #ffffff">       enddo</a>
+   241) <a name="l241" style="background-color: #ffffff"></a>
+   242) <a name="l242" style="background-color: #ffffff">       </a>
+   243) <a name="l243" style="background-color: #ffffff"></a>
+   244) <a name="l244" style="background-color: #ffffff"></a>
+   245) <a name="l245" style="background-color: #ffffff">       elem(ie)%vertex     = MetaVertex%members(ie)</a>
+   246) <a name="l246" style="background-color: #ffffff">       ig                  = MetaVertex%members(ie)%number</a>
+   247) <a name="l247" style="background-color: #ffffff">       elem(ie)%GlobalId   = ig</a>
+   248) <a name="l248" style="background-color: #ffffff">       elem(ie)%LocalId    = ie  </a>
+   249) <a name="l249" style="background-color: #ffffff">#if 0</a>
+   250) <a name="l250" style="background-color: #ffffff">       call LLInsertEdge(eroot,ig,jmd)</a>
+   251) <a name="l251" style="background-color: #ffffff">       !DBG write(iulog,*)'After call to LLInsertEdge in schedule: ie,ig ',ie,ig,jmd</a>
+   252) <a name="l252" style="background-color: #ffffff">#endif</a>
+   253) <a name="l253" style="background-color: #ffffff">    enddo</a>
+   254) <a name="l254" style="background-color: #ffffff"></a>
+   255) <a name="l255" style="background-color: #ffffff">    deallocate(Global2Local)</a>
+   256) <a name="l256" style="background-color: #ffffff">    !S-JMD call CheckSchedule()</a>
+   257) <a name="l257" style="background-color: #ffffff">#ifdef _MPI</a>
+   258) <a name="l258" style="background-color: #ffffff">    !================================================================</a>
+   259) <a name="l259" style="background-color: #ffffff">    !     Allocate a couple of structures for bndry_exchange</a>
+   260) <a name="l260" style="background-color: #ffffff">    !        done here to remove it from the critical path</a>
+   261) <a name="l261" style="background-color: #ffffff">    !================================================================</a>
+   262) <a name="l262" style="background-color: #ffffff"></a>
+   263) <a name="l263" style="background-color: #ffffff">    nComPoints=0</a>
+   264) <a name="l264" style="background-color: #ffffff"></a>
+   265) <a name="l265" style="background-color: #ffffff">    nSend = nedges</a>
+   266) <a name="l266" style="background-color: #ffffff">    nRecv = nedges</a>
+   267) <a name="l267" style="background-color: #fafad2">    allocate(Rrequest(nRecv))</a>
+   268) <a name="l268" style="background-color: #fafad2">    allocate(Srequest(nSend))</a>
+   269) <a name="l269" style="background-color: #fafad2">    allocate(status(MPI_STATUS_SIZE,nRecv))</a>
+   270) <a name="l270" style="background-color: #fafad2"></a>
+   271) <a name="l271" style="background-color: #fafad2">    !===============================================================</a>
+   272) <a name="l272" style="background-color: #fafad2">    !   Number of communication points ... to be used later to</a>
+   273) <a name="l273" style="background-color: #fafad2">    !    setup the size of the communication buffer for MPI_Ibsend</a>
+   274) <a name="l274" style="background-color: #fafad2">    !===============================================================</a>
+   275) <a name="l275" style="background-color: #ffffff">    do icycle=1,nSend</a>
+   276) <a name="l276" style="background-color: #ffffff">       nComPoints = nComPoints + LSchedule%SendCycle(icycle)%lengthP</a>
+   277) <a name="l277" style="background-color: #ffffff">    enddo</a>
+   278) <a name="l278" style="background-color: #ffffff">    nPackPoints = nComPoints + LSchedule%MoveCycle(1)%lengthP</a>
+   279) <a name="l279" style="background-color: #ffffff"></a>
+   280) <a name="l280" style="background-color: #ffffff"></a>
+   281) <a name="l281" style="background-color: #ffffff">    !   nbuf = 4*(nv+1)*nelemd*8*4*nlev</a>
+   282) <a name="l282" style="background-color: #ffffff">    !   write(iulog,*)'before call to allocate(combuffer) ',nbuf</a>
+   283) <a name="l283" style="background-color: #ffffff">    !   allocate(combuffer(nbuf))</a>
+   284) <a name="l284" style="background-color: #ffffff">    !   write(iulog,*)'IAM: ',iSched,'Before call to MPI_Buffer_Attach '</a>
+   285) <a name="l285" style="background-color: #ffffff">    !   call MPI_Buffer_Attach(combuffer,nbuf,ierr)</a>
+   286) <a name="l286" style="background-color: #ffffff">    !   write(iulog,*)'IAM: ',iSched,'After call to MPI_Buffer_Attach '</a>
+   287) <a name="l287" style="background-color: #ffffff"></a>
+   288) <a name="l288" style="background-color: #ffffff">#endif</a>
+   289) <a name="l289" style="background-color: #ffffff">#ifdef DEBUGPART</a>
+   290) <a name="l290" style="background-color: #ffffff">    call haltmp(&quot;genEdgeSched: Just testing the partitioning algorithms&quot;)</a>
+   291) <a name="l291" style="background-color: #ffffff">#endif</a>
+   292) <a name="l292" style="background-color: #fafad2">  end subroutine genEdgeSched</a>
+   293) <a name="l293" style="background-color: #ffffff">#ifdef DOTHIS</a>
+   294) <a name="l294" style="background-color: #ffffff">  subroutine MessageStats(nlyr)</a>
+   295) <a name="l295" style="background-color: #ffffff">    use kinds, only : real_kind, log_kind</a>
+   296) <a name="l296" style="background-color: #ffffff">    use dimensions_mod, only : nmpi_per_node, nnodes, npart, nlev, np, nelem</a>
+   297) <a name="l297" style="background-color: #ffffff">    use perfmodel_mod, only : perf_t, commtime_t , setptopnetworkparams, &amp; ! _EXTERNAL</a>
+   298) <a name="l298" style="background-color: #ffffff">         setserialparamsexplicit, setserialparamsimplicit</a>
+   299) <a name="l299" style="background-color: #ffffff">    use control_mod, only : integration</a>
+   300) <a name="l300" style="background-color: #ffffff">    !-----------------</a>
+   301) <a name="l301" style="background-color: #ffffff">    implicit none</a>
+   302) <a name="l302" style="background-color: #ffffff">    integer,intent(in)  ::   nlyr  ! number of 2D layers in the communication</a>
+   303) <a name="l303" style="background-color: #ffffff"></a>
+   304) <a name="l304" style="background-color: #ffffff">    integer                       :: icycle,ip</a>
+   305) <a name="l305" style="background-color: #ffffff">    real(kind=real_kind)          :: lb_nelemd,lb_volume</a>
+   306) <a name="l306" style="background-color: #ffffff">    integer                       :: length,nSend,nRecv</a>
+   307) <a name="l307" style="background-color: #ffffff">    integer                       :: i</a>
+   308) <a name="l308" style="background-color: #ffffff"></a>
+   309) <a name="l309" style="background-color: #ffffff">    real(kind=real_kind), allocatable :: Time_total(:),Time_calc(:), Time_comm(:)</a>
+   310) <a name="l310" style="background-color: #ffffff">    real(kind=real_kind), allocatable :: Time_calc1(:),Time_calc2(:)</a>
+   311) <a name="l311" style="background-color: #ffffff">    type (commtime_t), allocatable :: bndry1(:),bndry2(:),bndry3(:),bndryf(:)</a>
+   312) <a name="l312" style="background-color: #ffffff"></a>
+   313) <a name="l313" style="background-color: #ffffff">    real(kind=real_kind) :: Time_comm1,Time_commf, &amp;</a>
+   314) <a name="l314" style="background-color: #ffffff">         Time_comm2,Time_comm3</a>
+   315) <a name="l315" style="background-color: #ffffff">    integer(kind=int_kind) ::  bytes_per_point</a>
+   316) <a name="l316" style="background-color: #ffffff">    real(kind=real_kind) :: time_per_elem</a>
+   317) <a name="l317" style="background-color: #ffffff">    real(kind=real_kind) :: time_per_iter</a>
+   318) <a name="l318" style="background-color: #ffffff">    real(kind=real_kind) :: latency_tmp,bandwidth_tmp</a>
+   319) <a name="l319" style="background-color: #ffffff">    real(kind=real_kind) :: avg_cg_iters</a>
+   320) <a name="l320" style="background-color: #ffffff"></a>
+   321) <a name="l321" style="background-color: #ffffff">    type (commtime_t)    :: offnode,onnode</a>
+   322) <a name="l322" style="background-color: #ffffff">    type (perf_t)        :: tcv</a>
+   323) <a name="l323" style="background-color: #ffffff">    type (GraphStats_t), allocatable  :: count(:)</a>
+   324) <a name="l324" style="background-color: #ffffff"></a>
+   325) <a name="l325" style="background-color: #ffffff">    real(kind=real_kind) :: Time_serial,Time_parallel,Speedup</a>
+   326) <a name="l326" style="background-color: #ffffff">    integer(kind=int_kind),allocatable :: offnode_count(:),onnode_count(:)</a>
+   327) <a name="l327" style="background-color: #ffffff">    integer(kind=int_kind),allocatable :: LB_count(:)</a>
+   328) <a name="l328" style="background-color: #ffffff">    integer(kind=int_kind) :: edgecut_offnode,edgecut_onnode,edgecut_total</a>
+   329) <a name="l329" style="background-color: #ffffff">    logical(kind=log_kind) :: FoundNetwork,FoundMachine</a>
+   330) <a name="l330" style="background-color: #ffffff">    character(len=80) :: networkname,machinename</a>
+   331) <a name="l331" style="background-color: #ffffff"></a>
+   332) <a name="l332" style="background-color: #ffffff">    integer(kind=int_kind) :: indx_min,indx_comm(1),indx_calc(1)</a>
+   333) <a name="l333" style="background-color: #ffffff">    integer(kind=8) :: imin_volume, &amp;</a>
+   334) <a name="l334" style="background-color: #ffffff">         imax_volume</a>
+   335) <a name="l335" style="background-color: #ffffff">    integer(kind=int_kind),parameter  :: configuration = 5</a>
+   336) <a name="l336" style="background-color: #ffffff"></a>
+   337) <a name="l337" style="background-color: #ffffff">    integer :: node1,node2,nbr,in</a>
+   338) <a name="l338" style="background-color: #ffffff">    integer :: nelemd0</a>
+   339) <a name="l339" style="background-color: #ffffff">    logical, parameter :: Debug = .FALSE.</a>
+   340) <a name="l340" style="background-color: #ffffff">    logical, parameter :: PredictPerformance = .TRUE.</a>
+   341) <a name="l341" style="background-color: #ffffff"></a>
+   342) <a name="l342" style="background-color: #ffffff">    if(PredictPerformance) then </a>
+   343) <a name="l343" style="background-color: #ffffff">       networkname=&quot;protoBGL&quot;</a>
+   344) <a name="l344" style="background-color: #ffffff">       call SetPtoPNetworkParams(offnode,onnode,networkname,FoundNetwork)</a>
+   345) <a name="l345" style="background-color: #ffffff">       write(iulog,*)'MessageStats: After SetSerialParamsExplicit FoundNetwork: ',FoundNetwork</a>
+   346) <a name="l346" style="background-color: #ffffff"></a>
+   347) <a name="l347" style="background-color: #ffffff">       machinename=&quot;protoBGL&quot;</a>
+   348) <a name="l348" style="background-color: #ffffff">       !JMD integration = &quot;explicit&quot;</a>
+   349) <a name="l349" style="background-color: #ffffff">       write(iulog,*)'MessageStats: integration: ',integration</a>
+   350) <a name="l350" style="background-color: #ffffff">       if(integration == &quot;explicit&quot;) then </a>
+   351) <a name="l351" style="background-color: #ffffff">          call SetSerialParamsExplicit(time_per_elem,np,nlev,machinename,FoundMachine)</a>
+   352) <a name="l352" style="background-color: #ffffff">	  write(iulog,*)'MessageStats: After SetSerialParamsExplicit FoundMachine: ',FoundMachine</a>
+   353) <a name="l353" style="background-color: #ffffff">       else if(integration == &quot;semi_imp&quot;) then </a>
+   354) <a name="l354" style="background-color: #ffffff">          call SetSerialParamsImplicit(time_per_elem,time_per_iter,avg_cg_iters, &amp;</a>
+   355) <a name="l355" style="background-color: #ffffff">               np,nelem,nlev,machinename,FoundMachine)</a>
+   356) <a name="l356" style="background-color: #ffffff">       else if(integration == &quot;full_imp&quot;) then </a>
+   357) <a name="l357" style="background-color: #ffffff">	  write(iulog,*)'MessageStats: not set for implicit integration'</a>
+   358) <a name="l358" style="background-color: #ffffff">       endif</a>
+   359) <a name="l359" style="background-color: #ffffff">    endif</a>
+   360) <a name="l360" style="background-color: #ffffff"></a>
+   361) <a name="l361" style="background-color: #ffffff"></a>
+   362) <a name="l362" style="background-color: #ffffff">    allocate(Time_total(npart))</a>
+   363) <a name="l363" style="background-color: #ffffff">    allocate(Time_calc(npart))</a>
+   364) <a name="l364" style="background-color: #ffffff">    allocate(Time_comm(npart))</a>
+   365) <a name="l365" style="background-color: #ffffff">    allocate(Time_calc1(npart))</a>
+   366) <a name="l366" style="background-color: #ffffff">    allocate(Time_calc2(npart))</a>
+   367) <a name="l367" style="background-color: #ffffff"></a>
+   368) <a name="l368" style="background-color: #ffffff">    allocate(bndry1(npart))</a>
+   369) <a name="l369" style="background-color: #ffffff">    allocate(bndry2(npart))</a>
+   370) <a name="l370" style="background-color: #ffffff">    allocate(bndry3(npart))</a>
+   371) <a name="l371" style="background-color: #ffffff">    allocate(bndryf(npart))</a>
+   372) <a name="l372" style="background-color: #ffffff"></a>
+   373) <a name="l373" style="background-color: #ffffff">    write(iulog,*)'MessageStats:  nlev and npart nnodes nmpi_per_node are: ',nlev,npart,nnodes,nmpi_per_node</a>
+   374) <a name="l374" style="background-color: #ffffff">    if(npart .gt. 1) then</a>
+   375) <a name="l375" style="background-color: #ffffff">       allocate(count(nnodes))</a>
+   376) <a name="l376" style="background-color: #ffffff">       call foo(schedule,count)</a>
+   377) <a name="l377" style="background-color: #ffffff"></a>
+   378) <a name="l378" style="background-color: #ffffff">       !----------------------------------------------------</a>
+   379) <a name="l379" style="background-color: #ffffff">       ! Call fooCalc for each boundary exchange </a>
+   380) <a name="l380" style="background-color: #ffffff">       !----------------------------------------------------</a>
+   381) <a name="l381" style="background-color: #ffffff">       write(iulog,*)'MessageStats: '</a>
+   382) <a name="l382" style="background-color: #ffffff">       write(iulog,*)'MessageStats: 		Boundary Exchange #1		'</a>
+   383) <a name="l383" style="background-color: #ffffff">       bytes_per_point = (3*nlev)*8</a>
+   384) <a name="l384" style="background-color: #ffffff">       call fooCalc(schedule,bytes_per_point,offnode,onnode,count,bndry1)</a>
+   385) <a name="l385" style="background-color: #ffffff"></a>
+   386) <a name="l386" style="background-color: #ffffff">       write(iulog,*)'MessageStats: '</a>
+   387) <a name="l387" style="background-color: #ffffff">       write(iulog,*)'MessageStats: 		Filter Boundary Exchange		'</a>
+   388) <a name="l388" style="background-color: #ffffff">       bytes_per_point = (2*nlev)*8</a>
+   389) <a name="l389" style="background-color: #ffffff">       call fooCalc(schedule,bytes_per_point,offnode,onnode,count,bndryf)</a>
+   390) <a name="l390" style="background-color: #ffffff"></a>
+   391) <a name="l391" style="background-color: #ffffff">       if(integration == &quot;semi_imp&quot;) then </a>
+   392) <a name="l392" style="background-color: #ffffff">          write(iulog,*)'MessageStats: '</a>
+   393) <a name="l393" style="background-color: #ffffff">          write(iulog,*)'MessageStats: 		Boundary Exchange #2		'</a>
+   394) <a name="l394" style="background-color: #ffffff">          bytes_per_point = (2*nlev)*8</a>
+   395) <a name="l395" style="background-color: #ffffff">          call fooCalc(schedule,bytes_per_point,offnode,onnode,count,bndry2)</a>
+   396) <a name="l396" style="background-color: #ffffff">          write(iulog,*)'MessageStats: '</a>
+   397) <a name="l397" style="background-color: #ffffff">          write(iulog,*)'MessageStats: 		Helmholtz Boundary Exchange 	'</a>
+   398) <a name="l398" style="background-color: #ffffff">          bytes_per_point = (2*nlev)*8</a>
+   399) <a name="l399" style="background-color: #ffffff">          call fooCalc(schedule,bytes_per_point,offnode,onnode,count,bndry3)</a>
+   400) <a name="l400" style="background-color: #ffffff">       endif</a>
+   401) <a name="l401" style="background-color: #ffffff"></a>
+   402) <a name="l402" style="background-color: #ffffff">#ifdef _PREDICT</a>
+   403) <a name="l403" style="background-color: #ffffff">       if(PredictPerformance) then </a>
+   404) <a name="l404" style="background-color: #ffffff">	  !------------------------------------------------------	</a>
+   405) <a name="l405" style="background-color: #ffffff">	  ! Calculate information about execution time prediction</a>
+   406) <a name="l406" style="background-color: #ffffff">	  !------------------------------------------------------	</a>
+   407) <a name="l407" style="background-color: #ffffff">          if(integration == &quot;explicit&quot;) then </a>
+   408) <a name="l408" style="background-color: #ffffff">             do ip=1,npart</a>
+   409) <a name="l409" style="background-color: #ffffff">                nelemd0 = Schedule(ip)%nelemd</a>
+   410) <a name="l410" style="background-color: #ffffff">                Time_calc(ip) = time_per_elem*nelemd0</a>
+   411) <a name="l411" style="background-color: #ffffff">                if(filter_freq &gt; 0) then </a>
+   412) <a name="l412" style="background-color: #ffffff">                   Time_commf = (bndryf(ip)%latency + bndryf(ip)%bandwidth)/real(filter_freq,kind=real_kind)</a>
+   413) <a name="l413" style="background-color: #ffffff">                else</a>
+   414) <a name="l414" style="background-color: #ffffff">                   Time_commf = 0</a>
+   415) <a name="l415" style="background-color: #ffffff">                endif</a>
+   416) <a name="l416" style="background-color: #ffffff">                Time_comm(ip)   = Time_commf + bndry1(ip)%latency + bndry1(ip)%bandwidth</a>
+   417) <a name="l417" style="background-color: #ffffff">             enddo</a>
+   418) <a name="l418" style="background-color: #ffffff">	  else if(integration == &quot;semi_imp&quot;) then </a>
+   419) <a name="l419" style="background-color: #ffffff">             do ip=1,npart</a>
+   420) <a name="l420" style="background-color: #ffffff">                nelemd0 = Schedule(ip)%nelemd</a>
+   421) <a name="l421" style="background-color: #ffffff">                Time_calc1(ip) = time_per_elem*nelemd0</a>
+   422) <a name="l422" style="background-color: #ffffff">                Time_calc2(ip) = time_per_iter*nelemd0*avg_cg_iters</a>
+   423) <a name="l423" style="background-color: #ffffff">                Time_calc(ip)  = Time_calc1(ip) + Time_calc2(ip)</a>
+   424) <a name="l424" style="background-color: #ffffff">                if(filter_freq &gt; 0) then </a>
+   425) <a name="l425" style="background-color: #ffffff">                   Time_commf = (bndryf(ip)%latency + bndryf(ip)%bandwidth)/real(filter_freq,kind=real_kind)</a>
+   426) <a name="l426" style="background-color: #ffffff">                else</a>
+   427) <a name="l427" style="background-color: #ffffff">                   Time_commf = 0</a>
+   428) <a name="l428" style="background-color: #ffffff">                endif</a>
+   429) <a name="l429" style="background-color: #ffffff">                Time_comm(ip)  = Time_commf &amp;</a>
+   430) <a name="l430" style="background-color: #ffffff">                     + bndry1(ip)%latency + bndry1(ip)%bandwidth   &amp;</a>
+   431) <a name="l431" style="background-color: #ffffff">                     +	bndry2(ip)%latency + bndry2(ip)%bandwidth   &amp;</a>
+   432) <a name="l432" style="background-color: #ffffff">                     + avg_cg_iters*(bndry3(ip)%latency + bndry3(ip)%bandwidth)</a>
+   433) <a name="l433" style="background-color: #ffffff">             enddo</a>
+   434) <a name="l434" style="background-color: #ffffff">	  endif</a>
+   435) <a name="l435" style="background-color: #ffffff"></a>
+   436) <a name="l436" style="background-color: #ffffff">	  !-----------------------------------------------------------</a>
+   437) <a name="l437" style="background-color: #ffffff">	  ! Print out information about the execution time prediction	</a>
+   438) <a name="l438" style="background-color: #ffffff">	  !-----------------------------------------------------------</a>
+   439) <a name="l439" style="background-color: #ffffff">          indx_calc = maxloc(Time_Calc)</a>
+   440) <a name="l440" style="background-color: #ffffff">          indx_comm = maxloc(Time_Comm)</a>
+   441) <a name="l441" style="background-color: #ffffff">          Time_parallel = Time_Calc(indx_calc(1)) + Time_comm(indx_comm(1))</a>
+   442) <a name="l442" style="background-color: #ffffff"></a>
+   443) <a name="l443" style="background-color: #ffffff"></a>
+   444) <a name="l444" style="background-color: #ffffff"></a>
+   445) <a name="l445" style="background-color: #ffffff">          write(iulog,*)'MessageStats: '</a>
+   446) <a name="l446" style="background-color: #ffffff">          write(iulog,*)'MessageStats: 		Execution Time Prediction		'</a>
+   447) <a name="l447" style="background-color: #ffffff">          if(FoundMachine) write(iulog,*)'MessageStats: For Machine: ',TRIM(machinename)</a>
+   448) <a name="l448" style="background-color: #ffffff">          if(FoundNetwork) write(iulog,*)'MessageStats: With Network: ',TRIM(networkname)</a>
+   449) <a name="l449" style="background-color: #ffffff"></a>
+   450) <a name="l450" style="background-color: #ffffff">          if(integration == &quot;explicit&quot; ) then </a>
+   451) <a name="l451" style="background-color: #ffffff">             Time_serial = real(nelem,kind=real_kind)*time_per_elem</a>
+   452) <a name="l452" style="background-color: #ffffff">             Speedup=Time_serial/Time_parallel</a>
+   453) <a name="l453" style="background-color: #ffffff">	     write(iulog,201) Time_serial,1.0D-6*Time_serial*(secpday/tstep)</a>
+   454) <a name="l454" style="background-color: #ffffff">	     !---------------------------------------</a>
+   455) <a name="l455" style="background-color: #ffffff">	     ! First Boundary exchange in advance</a>
+   456) <a name="l456" style="background-color: #ffffff">	     !---------------------------------------</a>
+   457) <a name="l457" style="background-color: #ffffff">             if(FoundNetwork) write(iulog,65) bndry1(indx_comm(1))%latency + bndry1(indx_comm(1))%bandwidth, &amp;</a>
+   458) <a name="l458" style="background-color: #ffffff">                  bndry1(indx_comm(1))%latency,bndry1(indx_comm(1))%bandwidth</a>
+   459) <a name="l459" style="background-color: #ffffff">	     !---------------------------------------</a>
+   460) <a name="l460" style="background-color: #ffffff">	     ! Filter Boundary exchange in advance</a>
+   461) <a name="l461" style="background-color: #ffffff">	     !---------------------------------------</a>
+   462) <a name="l462" style="background-color: #ffffff">             if(filter_freq &gt; 0) then </a>
+   463) <a name="l463" style="background-color: #ffffff">                Time_commf   = (bndryf(indx_comm(1))%latency  &amp;</a>
+   464) <a name="l464" style="background-color: #ffffff">                     + bndryf(indx_comm(1))%bandwidth)/real(filter_freq,kind=real_kind)</a>
+   465) <a name="l465" style="background-color: #ffffff">                if(FoundNetwork) write(iulog,68) Time_commf, bndryf(indx_comm(1))%latency,bndryf(indx_comm(1))%bandwidth</a>
+   466) <a name="l466" style="background-color: #ffffff">             endif</a>
+   467) <a name="l467" style="background-color: #ffffff">	     !---------------------------------------</a>
+   468) <a name="l468" style="background-color: #ffffff">             !  Total Communication Cost</a>
+   469) <a name="l469" style="background-color: #ffffff">	     !---------------------------------------</a>
+   470) <a name="l470" style="background-color: #ffffff">             if(FoundMachine .and. FoundNetwork) &amp;</a>
+   471) <a name="l471" style="background-color: #ffffff">                  write(iulog,55) Time_Parallel,Time_calc(indx_calc(1)), Time_comm(indx_comm(1))</a>
+   472) <a name="l472" style="background-color: #ffffff">          else if(integration ==  &quot;semi_imp&quot;) then </a>
+   473) <a name="l473" style="background-color: #ffffff">             Time_serial = real(nelem,kind=real_kind)*(time_per_elem + avg_cg_iters*time_per_iter)</a>
+   474) <a name="l474" style="background-color: #ffffff">             Speedup     = Time_serial/Time_parallel</a>
+   475) <a name="l475" style="background-color: #ffffff">	     write(iulog,202) avg_cg_iters</a>
+   476) <a name="l476" style="background-color: #ffffff">	     write(iulog,201) Time_serial,1.0D-6*Time_serial*(secpday/tstep)</a>
+   477) <a name="l477" style="background-color: #ffffff">             write(iulog,35) MAXVAL(Time_calc1)</a>
+   478) <a name="l478" style="background-color: #ffffff">             write(iulog,45) MAXVAL(Time_calc2)</a>
+   479) <a name="l479" style="background-color: #ffffff">	     !---------------------------------------</a>
+   480) <a name="l480" style="background-color: #ffffff">	     ! Filter Boundary exchange in advance_si</a>
+   481) <a name="l481" style="background-color: #ffffff">	     !---------------------------------------</a>
+   482) <a name="l482" style="background-color: #ffffff">             if(filter_freq &gt; 0) then </a>
+   483) <a name="l483" style="background-color: #ffffff">                Time_commf   = (bndryf(indx_comm(1))%latency  &amp;</a>
+   484) <a name="l484" style="background-color: #ffffff">                     + bndryf(indx_comm(1))%bandwidth)/real(filter_freq,kind=real_kind)</a>
+   485) <a name="l485" style="background-color: #ffffff">                if(FoundNetwork) write(iulog,68) Time_commf, bndryf(indx_comm(1))%latency,bndryf(indx_comm(1))%bandwidth</a>
+   486) <a name="l486" style="background-color: #ffffff">             endif</a>
+   487) <a name="l487" style="background-color: #ffffff">	     !---------------------------------------</a>
+   488) <a name="l488" style="background-color: #ffffff">	     ! First Boundary exchange in advance_si</a>
+   489) <a name="l489" style="background-color: #ffffff">	     !---------------------------------------</a>
+   490) <a name="l490" style="background-color: #ffffff">             Time_comm1   = bndry1(indx_comm(1))%latency + bndry1(indx_comm(1))%bandwidth</a>
+   491) <a name="l491" style="background-color: #ffffff">             if(FoundNetwork) write(iulog,65) Time_comm1, bndry1(indx_comm(1))%latency,bndry1(indx_comm(1))%bandwidth</a>
+   492) <a name="l492" style="background-color: #ffffff"></a>
+   493) <a name="l493" style="background-color: #ffffff">	     !---------------------------------------</a>
+   494) <a name="l494" style="background-color: #ffffff">	     ! Second Boundary exchange in advance_si</a>
+   495) <a name="l495" style="background-color: #ffffff">	     !---------------------------------------</a>
+   496) <a name="l496" style="background-color: #ffffff">             Time_comm2 = bndry2(indx_comm(1))%latency + bndry2(indx_comm(1))%bandwidth</a>
+   497) <a name="l497" style="background-color: #ffffff">             if(FoundNetwork) write(iulog,66) Time_comm2, bndry2(indx_comm(1))%latency,bndry2(indx_comm(1))%bandwidth</a>
+   498) <a name="l498" style="background-color: #ffffff"></a>
+   499) <a name="l499" style="background-color: #ffffff">	     !---------------------------------------</a>
+   500) <a name="l500" style="background-color: #ffffff">	     ! Boundary exchange in solver_mod</a>
+   501) <a name="l501" style="background-color: #ffffff">	     !---------------------------------------</a>
+   502) <a name="l502" style="background-color: #ffffff">             Time_comm3 = bndry3(indx_comm(1))%latency + bndry3(indx_comm(1))%bandwidth</a>
+   503) <a name="l503" style="background-color: #ffffff">             if(FoundNetwork)  then</a>
+   504) <a name="l504" style="background-color: #ffffff">		write(iulog,67) avg_cg_iters*Time_comm3, avg_cg_iters*bndry3(indx_comm(1))%latency, &amp;</a>
+   505) <a name="l505" style="background-color: #ffffff">                     avg_cg_iters*bndry3(indx_comm(1))%bandwidth</a>
+   506) <a name="l506" style="background-color: #ffffff">             endif</a>
+   507) <a name="l507" style="background-color: #ffffff"></a>
+   508) <a name="l508" style="background-color: #ffffff">	     !---------------------------------------</a>
+   509) <a name="l509" style="background-color: #ffffff">             !  Total Communication Cost</a>
+   510) <a name="l510" style="background-color: #ffffff">	     !---------------------------------------</a>
+   511) <a name="l511" style="background-color: #ffffff">             if(FoundMachine .and. FoundNetwork) &amp;</a>
+   512) <a name="l512" style="background-color: #ffffff">                  write(iulog,55) Time_Parallel,Time_calc(indx_calc(1)), &amp;</a>
+   513) <a name="l513" style="background-color: #ffffff">                  Time_comm1 + Time_commf + Time_comm2 + avg_cg_iters*Time_comm3</a>
+   514) <a name="l514" style="background-color: #ffffff">          endif</a>
+   515) <a name="l515" style="background-color: #ffffff"></a>
+   516) <a name="l516" style="background-color: #ffffff">          if(FoundMachine .and. FoundNetwork) write(iulog,95) Speedup</a>
+   517) <a name="l517" style="background-color: #ffffff">       endif</a>
+   518) <a name="l518" style="background-color: #ffffff">       call haltmp(&quot;MessageStats: Just testing the partitioning algorithms&quot;)</a>
+   519) <a name="l519" style="background-color: #ffffff">#endif</a>
+   520) <a name="l520" style="background-color: #ffffff">    endif</a>
+   521) <a name="l521" style="background-color: #ffffff">110 format(1x,A,I10,I10,f12.2,f12.2)</a>
+   522) <a name="l522" style="background-color: #ffffff">100 format(1x,A,I8,I8,f10.2,f8.5)</a>
+   523) <a name="l523" style="background-color: #ffffff">35  format(&quot; MessageStats: Predicted SI STEP       Time (usec/step) &quot;,f12.1)</a>
+   524) <a name="l524" style="background-color: #ffffff">45  format(&quot; MessageStats: Predicted PCG SOLVER    Time (usec/step) &quot;,f12.1)</a>
+   525) <a name="l525" style="background-color: #ffffff">55  format(&quot; MessageStats: Predicted TOTAL      Time (usec/step) total:= &quot;,f12.1,&quot; calc:= &quot;,f12.1,&quot; comm:= &quot;,f12.1)</a>
+   526) <a name="l526" style="background-color: #ffffff">65  format(&quot; MessageStats: Predicted BNDRY #1   Time (usec/step) Total:=&quot;,f12.1,&quot; latency:= &quot;,f12.1,&quot; band:= &quot;,f12.1)</a>
+   527) <a name="l527" style="background-color: #ffffff">165 format(&quot; MessageStats: Predicted BNDRY #1 &quot;,i5,&quot;  Time (usec/step) Total:=&quot;,f12.1,&quot; latency:= &quot;,f12.1,&quot; band:= &quot;,f12.1)</a>
+   528) <a name="l528" style="background-color: #ffffff">66  format(&quot; MessageStats: Predicted BNDRY #2   Time (usec/step) Total:=&quot;,f12.1,&quot; latency:= &quot;,f12.1,&quot; band:= &quot;,f12.1)</a>
+   529) <a name="l529" style="background-color: #ffffff">67  format(&quot; MessageStats: Predicted HELM BNDRY Time (usec/step) Total:=&quot;,f12.1,&quot; latency:= &quot;,f12.1,&quot; band:= &quot;,f12.1)</a>
+   530) <a name="l530" style="background-color: #ffffff">68  format(&quot; MessageStats: Predicted FLTR BNDRY Time (usec/step) Total:=&quot;,f12.1,&quot; latency:= &quot;,f12.1,&quot; band:= &quot;,f12.1)</a>
+   531) <a name="l531" style="background-color: #ffffff">75  format(&quot; MessageStats: Edgecut   total: &quot;,i10,&quot; onnode: &quot;,i10,&quot; offnode: &quot;,i10)</a>
+   532) <a name="l532" style="background-color: #ffffff">95  format(&quot; MessageStats: Speedup:  &quot;,f10.1)</a>
+   533) <a name="l533" style="background-color: #ffffff">201 format(&quot; MessageStats: Serial Execution Time (usec/step)&quot;,f12.1,&quot; (sec/day) &quot;,f12.1)</a>
+   534) <a name="l534" style="background-color: #ffffff">202 format(&quot; MessageStats: Average CG iterations: &quot;,f6.3)</a>
+   535) <a name="l535" style="background-color: #ffffff"></a>
+   536) <a name="l536" style="background-color: #ffffff">120 format(A,I8,I8,f8.5)</a>
+   537) <a name="l537" style="background-color: #ffffff"></a>
+   538) <a name="l538" style="background-color: #ffffff">  end subroutine MessageStats</a>
+   539) <a name="l539" style="background-color: #ffffff"></a>
+   540) <a name="l540" style="background-color: #ffffff">  subroutine PrimMessageStats(nlyr)</a>
+   541) <a name="l541" style="background-color: #ffffff">    use kinds, only : real_kind, log_kind</a>
+   542) <a name="l542" style="background-color: #ffffff">    use perfmodel_mod, only : perf_t, commtime_t , setptopnetworkparams, &amp; ! _EXTERNAL</a>
+   543) <a name="l543" style="background-color: #ffffff">         setserialparamsprimexplicit</a>
+   544) <a name="l544" style="background-color: #ffffff">    use dimensions_mod, only : nmpi_per_node, nnodes, npart, nlev, np, nelem, nelemd</a>
+   545) <a name="l545" style="background-color: #ffffff">    use control_mod, only : integration</a>
+   546) <a name="l546" style="background-color: #ffffff">    !-----------------</a>
+   547) <a name="l547" style="background-color: #ffffff">    implicit none</a>
+   548) <a name="l548" style="background-color: #ffffff">    integer,intent(in)  ::   nlyr  ! number of 2D layers in the communication</a>
+   549) <a name="l549" style="background-color: #ffffff"></a>
+   550) <a name="l550" style="background-color: #ffffff">    integer                       :: icycle,ip</a>
+   551) <a name="l551" style="background-color: #ffffff">    real(kind=real_kind)          :: lb_nelemd,lb_volume</a>
+   552) <a name="l552" style="background-color: #ffffff">    integer                       :: length,nSend,nRecv</a>
+   553) <a name="l553" style="background-color: #ffffff">    integer                       :: i</a>
+   554) <a name="l554" style="background-color: #ffffff"></a>
+   555) <a name="l555" style="background-color: #ffffff">    real(kind=real_kind), allocatable :: Time_total(:),Time_calc(:), Time_comm(:)</a>
+   556) <a name="l556" style="background-color: #ffffff">    real(kind=real_kind), allocatable :: Time_calc1(:),Time_calc2(:)</a>
+   557) <a name="l557" style="background-color: #ffffff">    type (commtime_t), allocatable :: bndry1(:),bndry2(:),bndry3(:),bndryf(:)</a>
+   558) <a name="l558" style="background-color: #ffffff"></a>
+   559) <a name="l559" style="background-color: #ffffff">    real(kind=real_kind) :: Time_comm1,Time_commf, &amp;</a>
+   560) <a name="l560" style="background-color: #ffffff">         Time_comm2,Time_comm3</a>
+   561) <a name="l561" style="background-color: #ffffff">    integer(kind=int_kind) ::  bytes_per_point</a>
+   562) <a name="l562" style="background-color: #ffffff">    real(kind=real_kind) :: time_per_elem</a>
+   563) <a name="l563" style="background-color: #ffffff">    real(kind=real_kind) :: time_per_iter</a>
+   564) <a name="l564" style="background-color: #ffffff">    real(kind=real_kind) :: latency_tmp,bandwidth_tmp</a>
+   565) <a name="l565" style="background-color: #ffffff">    real(kind=real_kind) :: avg_cg_iters</a>
+   566) <a name="l566" style="background-color: #ffffff"></a>
+   567) <a name="l567" style="background-color: #ffffff">    type (commtime_t)    :: offnode,onnode</a>
+   568) <a name="l568" style="background-color: #ffffff">    type (perf_t)        :: tcv</a>
+   569) <a name="l569" style="background-color: #ffffff">    type (GraphStats_t), allocatable  :: count(:)</a>
+   570) <a name="l570" style="background-color: #ffffff"></a>
+   571) <a name="l571" style="background-color: #ffffff">    real(kind=real_kind) :: Time_serial,Time_parallel,Speedup</a>
+   572) <a name="l572" style="background-color: #ffffff">    integer(kind=int_kind),allocatable :: offnode_count(:),onnode_count(:)</a>
+   573) <a name="l573" style="background-color: #ffffff">    integer(kind=int_kind),allocatable :: LB_count(:)</a>
+   574) <a name="l574" style="background-color: #ffffff">    integer(kind=int_kind) :: edgecut_offnode,edgecut_onnode,edgecut_total</a>
+   575) <a name="l575" style="background-color: #ffffff">    logical(kind=log_kind) :: FoundNetwork,FoundMachine</a>
+   576) <a name="l576" style="background-color: #ffffff">    character(len=80) :: networkname,machinename</a>
+   577) <a name="l577" style="background-color: #ffffff"></a>
+   578) <a name="l578" style="background-color: #ffffff">    integer(kind=int_kind) :: indx_min,indx_comm(1),indx_calc(1)</a>
+   579) <a name="l579" style="background-color: #ffffff">    integer(kind=8) :: imin_volume, &amp;</a>
+   580) <a name="l580" style="background-color: #ffffff">         imax_volume</a>
+   581) <a name="l581" style="background-color: #ffffff">    integer(kind=int_kind),parameter  :: configuration = 5</a>
+   582) <a name="l582" style="background-color: #ffffff"></a>
+   583) <a name="l583" style="background-color: #ffffff">    integer :: node1,node2,nbr,in</a>
+   584) <a name="l584" style="background-color: #ffffff">    integer :: nelemd0</a>
+   585) <a name="l585" style="background-color: #ffffff">    logical, parameter :: Debug = .FALSE.</a>
+   586) <a name="l586" style="background-color: #ffffff">    logical, parameter :: PredictPerformance = .TRUE.</a>
+   587) <a name="l587" style="background-color: #ffffff"></a>
+   588) <a name="l588" style="background-color: #ffffff">    if(PredictPerformance) then </a>
+   589) <a name="l589" style="background-color: #ffffff">       networkname=&quot;protoBGL&quot;</a>
+   590) <a name="l590" style="background-color: #ffffff">       call SetPtoPNetworkParams(offnode,onnode,networkname,FoundNetwork)</a>
+   591) <a name="l591" style="background-color: #ffffff">       write(iulog,*)'PrimMessageStats: After SetSerialParamsExplicit FoundNetwork: ',FoundNetwork</a>
+   592) <a name="l592" style="background-color: #ffffff"></a>
+   593) <a name="l593" style="background-color: #ffffff">       machinename=&quot;protoBGL&quot;</a>
+   594) <a name="l594" style="background-color: #ffffff">       integration = &quot;explicit&quot;</a>
+   595) <a name="l595" style="background-color: #ffffff">       write(iulog,*)'PrimMessageStats: integration: ',integration</a>
+   596) <a name="l596" style="background-color: #ffffff">       if(integration == &quot;explicit&quot;) then </a>
+   597) <a name="l597" style="background-color: #ffffff">          call SetSerialParamsPrimExplicit(time_per_elem,np,nlev,machinename,FoundMachine)</a>
+   598) <a name="l598" style="background-color: #ffffff">	  write(iulog,*)'PrimMessageStats: After SetSerialParamsPrimExplicit FoundMachine: ',FoundMachine</a>
+   599) <a name="l599" style="background-color: #ffffff">       endif</a>
+   600) <a name="l600" style="background-color: #ffffff">    endif</a>
+   601) <a name="l601" style="background-color: #ffffff"></a>
+   602) <a name="l602" style="background-color: #ffffff"></a>
+   603) <a name="l603" style="background-color: #ffffff">    allocate(Time_total(npart))</a>
+   604) <a name="l604" style="background-color: #ffffff">    allocate(Time_calc(npart))</a>
+   605) <a name="l605" style="background-color: #ffffff">    allocate(Time_comm(npart))</a>
+   606) <a name="l606" style="background-color: #ffffff">    allocate(Time_calc1(npart))</a>
+   607) <a name="l607" style="background-color: #ffffff">    allocate(Time_calc2(npart))</a>
+   608) <a name="l608" style="background-color: #ffffff"></a>
+   609) <a name="l609" style="background-color: #ffffff">    allocate(bndry1(npart))</a>
+   610) <a name="l610" style="background-color: #ffffff">    allocate(bndry2(npart))</a>
+   611) <a name="l611" style="background-color: #ffffff">    allocate(bndry3(npart))</a>
+   612) <a name="l612" style="background-color: #ffffff">    allocate(bndryf(npart))</a>
+   613) <a name="l613" style="background-color: #ffffff"></a>
+   614) <a name="l614" style="background-color: #ffffff">    write(iulog,*)'PrimMessageStats:  nlev and npart nnodes nmpi_per_node are: ',nlev,npart,nnodes,nmpi_per_node</a>
+   615) <a name="l615" style="background-color: #ffffff">    if(npart .gt. 1) then</a>
+   616) <a name="l616" style="background-color: #ffffff">       allocate(count(nnodes))</a>
+   617) <a name="l617" style="background-color: #ffffff">       call foo(schedule,count)</a>
+   618) <a name="l618" style="background-color: #ffffff"></a>
+   619) <a name="l619" style="background-color: #ffffff">       !----------------------------------------------------</a>
+   620) <a name="l620" style="background-color: #ffffff">       ! Call fooCalc for each boundary exchange </a>
+   621) <a name="l621" style="background-color: #ffffff">       !----------------------------------------------------</a>
+   622) <a name="l622" style="background-color: #ffffff">       write(iulog,*)'PrimMessageStats: '</a>
+   623) <a name="l623" style="background-color: #ffffff">       write(iulog,*)'PrimMessageStats: 		Boundary Exchange #1		'</a>
+   624) <a name="l624" style="background-color: #ffffff">       bytes_per_point = 3*8</a>
+   625) <a name="l625" style="background-color: #ffffff">       call fooCalc(schedule,bytes_per_point,offnode,onnode,count,bndry1)</a>
+   626) <a name="l626" style="background-color: #ffffff"></a>
+   627) <a name="l627" style="background-color: #ffffff">       write(iulog,*)'PrimMessageStats: '</a>
+   628) <a name="l628" style="background-color: #ffffff">       write(iulog,*)'PrimMessageStats: 		Boundary Exchange #2		'</a>
+   629) <a name="l629" style="background-color: #ffffff">       bytes_per_point = (3*nlev+1)*8</a>
+   630) <a name="l630" style="background-color: #ffffff">       call fooCalc(schedule,bytes_per_point,offnode,onnode,count,bndry2)</a>
+   631) <a name="l631" style="background-color: #ffffff"></a>
+   632) <a name="l632" style="background-color: #ffffff">       write(iulog,*)'PrimMessageStats: '</a>
+   633) <a name="l633" style="background-color: #ffffff">       write(iulog,*)'PrimMessageStats: 		Filter Boundary Exchange		'</a>
+   634) <a name="l634" style="background-color: #ffffff">       bytes_per_point = (3*nlev+1)*8</a>
+   635) <a name="l635" style="background-color: #ffffff">       call fooCalc(schedule,bytes_per_point,offnode,onnode,count,bndryf)</a>
+   636) <a name="l636" style="background-color: #ffffff"></a>
+   637) <a name="l637" style="background-color: #ffffff">#ifdef _PREDICT</a>
+   638) <a name="l638" style="background-color: #ffffff">       if(PredictPerformance) then </a>
+   639) <a name="l639" style="background-color: #ffffff">	  !------------------------------------------------------	</a>
+   640) <a name="l640" style="background-color: #ffffff">	  ! Calculate information about execution time prediction</a>
+   641) <a name="l641" style="background-color: #ffffff">	  !------------------------------------------------------	</a>
+   642) <a name="l642" style="background-color: #ffffff">          if(integration == &quot;explicit&quot;) then </a>
+   643) <a name="l643" style="background-color: #ffffff">             do ip=1,npart</a>
+   644) <a name="l644" style="background-color: #ffffff">                nelemd0 = Schedule(ip)%nelemd</a>
+   645) <a name="l645" style="background-color: #ffffff">                Time_calc(ip) = time_per_elem*nelemd0</a>
+   646) <a name="l646" style="background-color: #ffffff">                if(filter_freq &gt; 0) then </a>
+   647) <a name="l647" style="background-color: #ffffff">                   Time_commf = (bndryf(ip)%latency + bndryf(ip)%bandwidth)/real(filter_freq,kind=real_kind)</a>
+   648) <a name="l648" style="background-color: #ffffff">                else</a>
+   649) <a name="l649" style="background-color: #ffffff">                   Time_commf = 0</a>
+   650) <a name="l650" style="background-color: #ffffff">                endif</a>
+   651) <a name="l651" style="background-color: #ffffff">                Time_comm(ip)   = Time_commf +     bndry1(ip)%latency + bndry1(ip)%bandwidth &amp;</a>
+   652) <a name="l652" style="background-color: #ffffff">                     + 4.*(bndry2(ip)%latency + bndry2(ip)%bandwidth)</a>
+   653) <a name="l653" style="background-color: #ffffff">             enddo</a>
+   654) <a name="l654" style="background-color: #ffffff">	  endif</a>
+   655) <a name="l655" style="background-color: #ffffff"></a>
+   656) <a name="l656" style="background-color: #ffffff">	  !-----------------------------------------------------------</a>
+   657) <a name="l657" style="background-color: #ffffff">	  ! Print out information about the execution time prediction	</a>
+   658) <a name="l658" style="background-color: #ffffff">	  !-----------------------------------------------------------</a>
+   659) <a name="l659" style="background-color: #ffffff">          indx_calc = maxloc(Time_Calc)</a>
+   660) <a name="l660" style="background-color: #ffffff">          indx_comm = maxloc(Time_Comm)</a>
+   661) <a name="l661" style="background-color: #ffffff">          Time_parallel = Time_Calc(indx_calc(1)) + Time_comm(indx_comm(1))</a>
+   662) <a name="l662" style="background-color: #ffffff"></a>
+   663) <a name="l663" style="background-color: #ffffff"></a>
+   664) <a name="l664" style="background-color: #ffffff"></a>
+   665) <a name="l665" style="background-color: #ffffff">          write(iulog,*)'PrimMessageStats: '</a>
+   666) <a name="l666" style="background-color: #ffffff">          write(iulog,*)'PrimMessageStats: 		Execution Time Prediction		'</a>
+   667) <a name="l667" style="background-color: #ffffff">          if(FoundMachine) write(iulog,*)'PrimMessageStats: For Machine: ',TRIM(machinename)</a>
+   668) <a name="l668" style="background-color: #ffffff">          if(FoundNetwork) write(iulog,*)'PrimMessageStats: With Network: ',TRIM(networkname)</a>
+   669) <a name="l669" style="background-color: #ffffff"></a>
+   670) <a name="l670" style="background-color: #ffffff">          if(integration == &quot;explicit&quot; ) then </a>
+   671) <a name="l671" style="background-color: #ffffff">             Time_serial = real(nelem,kind=real_kind)*time_per_elem</a>
+   672) <a name="l672" style="background-color: #ffffff">             Speedup=Time_serial/Time_parallel</a>
+   673) <a name="l673" style="background-color: #ffffff">	     write(iulog,201) Time_serial,1.0D-6*Time_serial*(secpday/tstep)</a>
+   674) <a name="l674" style="background-color: #ffffff">	     !---------------------------------------</a>
+   675) <a name="l675" style="background-color: #ffffff">	     ! Small Boundary exchange in prim_advance</a>
+   676) <a name="l676" style="background-color: #ffffff">	     !---------------------------------------</a>
+   677) <a name="l677" style="background-color: #ffffff">             if(FoundNetwork) write(iulog,65) bndry1(indx_comm(1))%latency + bndry1(indx_comm(1))%bandwidth, &amp;</a>
+   678) <a name="l678" style="background-color: #ffffff">                  bndry1(indx_comm(1))%latency,bndry1(indx_comm(1))%bandwidth</a>
+   679) <a name="l679" style="background-color: #ffffff"></a>
+   680) <a name="l680" style="background-color: #ffffff">	     !-------------------------------------------</a>
+   681) <a name="l681" style="background-color: #ffffff">	     ! 4 Large Boundary exchanges in prim_advance</a>
+   682) <a name="l682" style="background-color: #ffffff">	     !-------------------------------------------</a>
+   683) <a name="l683" style="background-color: #ffffff">             if(FoundNetwork) write(iulog,65) 4.*(bndry2(indx_comm(1))%latency + bndry2(indx_comm(1))%bandwidth), &amp;</a>
+   684) <a name="l684" style="background-color: #ffffff">                  4.*bndry2(indx_comm(1))%latency,4.*bndry1(indx_comm(1))%bandwidth</a>
+   685) <a name="l685" style="background-color: #ffffff">	     !---------------------------------------</a>
+   686) <a name="l686" style="background-color: #ffffff">	     ! Filter Boundary exchange in advance</a>
+   687) <a name="l687" style="background-color: #ffffff">	     !---------------------------------------</a>
+   688) <a name="l688" style="background-color: #ffffff">             if(filter_freq &gt; 0) then </a>
+   689) <a name="l689" style="background-color: #ffffff">                Time_commf   = (bndryf(indx_comm(1))%latency  &amp;</a>
+   690) <a name="l690" style="background-color: #ffffff">                     + bndryf(indx_comm(1))%bandwidth)/real(filter_freq,kind=real_kind)</a>
+   691) <a name="l691" style="background-color: #ffffff">                if(FoundNetwork) write(iulog,68) Time_commf, bndryf(indx_comm(1))%latency,bndryf(indx_comm(1))%bandwidth</a>
+   692) <a name="l692" style="background-color: #ffffff">             endif</a>
+   693) <a name="l693" style="background-color: #ffffff">	     !---------------------------------------</a>
+   694) <a name="l694" style="background-color: #ffffff">             !  Total Communication Cost</a>
+   695) <a name="l695" style="background-color: #ffffff">	     !---------------------------------------</a>
+   696) <a name="l696" style="background-color: #ffffff">             if(FoundMachine .and. FoundNetwork) &amp;</a>
+   697) <a name="l697" style="background-color: #ffffff">                  write(iulog,55) Time_Parallel,Time_calc(indx_calc(1)), Time_comm(indx_comm(1))</a>
+   698) <a name="l698" style="background-color: #ffffff">          else if(integration ==  &quot;semi_imp&quot;) then </a>
+   699) <a name="l699" style="background-color: #ffffff">             write(iulog,*)'PrimMessageStats: not yet support for Semi-Implicit time integration'</a>
+   700) <a name="l700" style="background-color: #ffffff">          endif</a>
+   701) <a name="l701" style="background-color: #ffffff"></a>
+   702) <a name="l702" style="background-color: #ffffff">          if(FoundMachine .and. FoundNetwork) write(iulog,95) Speedup</a>
+   703) <a name="l703" style="background-color: #ffffff">       endif</a>
+   704) <a name="l704" style="background-color: #ffffff">       call haltmp(&quot;PrimMessageStats: Just testing the partitioning algorithms&quot;)</a>
+   705) <a name="l705" style="background-color: #ffffff">#endif</a>
+   706) <a name="l706" style="background-color: #ffffff">    endif</a>
+   707) <a name="l707" style="background-color: #ffffff">110 format(1x,A,I10,I10,f12.2,f12.2)</a>
+   708) <a name="l708" style="background-color: #ffffff">100 format(1x,A,I8,I8,f10.2,f8.5)</a>
+   709) <a name="l709" style="background-color: #ffffff">35  format(&quot; PrimMessageStats: Predicted SI STEP       Time (usec/step) &quot;,f12.1)</a>
+   710) <a name="l710" style="background-color: #ffffff">45  format(&quot; PrimMessageStats: Predicted PCG SOLVER    Time (usec/step) &quot;,f12.1)</a>
+   711) <a name="l711" style="background-color: #ffffff">55  format(&quot; PrimMessageStats: Predicted TOTAL      Time (usec/step) total:= &quot;,f12.1,&quot; calc:= &quot;,f12.1,&quot; comm:= &quot;,f12.1)</a>
+   712) <a name="l712" style="background-color: #ffffff">65  format(&quot; PrimMessageStats: Predicted BNDRY #1   Time (usec/step) Total:=&quot;,f12.1,&quot; latency:= &quot;,f12.1,&quot; band:= &quot;,f12.1)</a>
+   713) <a name="l713" style="background-color: #ffffff">165 format(&quot; PrimMessageStats: Predicted BNDRY #1 &quot;,i5,&quot;  Time (usec/step) Total:=&quot;,f12.1,&quot; latency:= &quot;,f12.1,&quot; band:= &quot;,f12.1)</a>
+   714) <a name="l714" style="background-color: #ffffff">66  format(&quot; PrimMessageStats: Predicted BNDRY #2   Time (usec/step) Total:=&quot;,f12.1,&quot; latency:= &quot;,f12.1,&quot; band:= &quot;,f12.1)</a>
+   715) <a name="l715" style="background-color: #ffffff">67  format(&quot; PrimMessageStats: Predicted HELM BNDRY Time (usec/step) Total:=&quot;,f12.1,&quot; latency:= &quot;,f12.1,&quot; band:= &quot;,f12.1)</a>
+   716) <a name="l716" style="background-color: #ffffff">68  format(&quot; PrimMessageStats: Predicted FLTR BNDRY Time (usec/step) Total:=&quot;,f12.1,&quot; latency:= &quot;,f12.1,&quot; band:= &quot;,f12.1)</a>
+   717) <a name="l717" style="background-color: #ffffff">75  format(&quot; PrimMessageStats: Edgecut   total: &quot;,i10,&quot; onnode: &quot;,i10,&quot; offnode: &quot;,i10)</a>
+   718) <a name="l718" style="background-color: #ffffff">95  format(&quot; PrimMessageStats: Speedup:  &quot;,f10.1)</a>
+   719) <a name="l719" style="background-color: #ffffff">201 format(&quot; PrimMessageStats: Serial Execution Time (usec/step)&quot;,f12.1,&quot; (sec/day) &quot;,f12.1)</a>
+   720) <a name="l720" style="background-color: #ffffff">202 format(&quot; PrimMessageStats: Average CG iterations: &quot;,f6.3)</a>
+   721) <a name="l721" style="background-color: #ffffff"></a>
+   722) <a name="l722" style="background-color: #ffffff">120 format(A,I8,I8,f8.5)</a>
+   723) <a name="l723" style="background-color: #ffffff"></a>
+   724) <a name="l724" style="background-color: #ffffff">  end subroutine PrimMessageStats</a>
+   725) <a name="l725" style="background-color: #ffffff">#endif</a>
+   726) <a name="l726" style="background-color: #ffffff"></a>
+   727) <a name="l727" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">CheckSchedule()</a>
+   728) <a name="l728" style="background-color: #ffcccc">    implicit none </a>
+   729) <a name="l729" style="background-color: #ffcccc"></a>
+   730) <a name="l730" style="background-color: #ffcccc">    integer                             :: i,nSched,nbufferwords_1,nbufferwords_2</a>
+   731) <a name="l731" style="background-color: #ffcccc">    type (Schedule_t), pointer          :: pSchedule</a>
+   732) <a name="l732" style="background-color: #ffcccc"></a>
+   733) <a name="l733" style="background-color: #ffcccc">    nSched = SIZE(Schedule)</a>
+   734) <a name="l734" style="background-color: #ffcccc"></a>
+   735) <a name="l735" style="background-color: #ffcccc">    do i=1,nSched</a>
+   736) <a name="l736" style="background-color: #ffcccc">       pSchedule =&gt; Schedule(i)</a>
+   737) <a name="l737" style="background-color: #ffcccc">       nbufferwords_1 = SUM(pSchedule%SendCycle(:)%lengthP)</a>
+   738) <a name="l738" style="background-color: #ffcccc">       nbufferwords_2 = SUM(pSchedule%RecvCycle(:)%lengthP)</a>
+   739) <a name="l739" style="background-color: #ffcccc">       if(nbufferwords_1 .ne. nbufferwords_2) then </a>
+   740) <a name="l740" style="background-color: #ffcccc">          write (*,100) i,nbufferwords_1, nbufferwords_2</a>
+   741) <a name="l741" style="background-color: #ffcccc">       endif</a>
+   742) <a name="l742" style="background-color: #ffcccc">    enddo</a>
+   743) <a name="l743" style="background-color: #ffcccc">100 format('CheckSchedule: ERR IAM:',I3,' SIZEOF(SendBuffer):',I10,' != SIZEOF(RecvBuffer) :',I10)</a>
+   744) <a name="l744" style="background-color: #ffcccc">110 format('CheckSchedule: ERR IAM:',I3,' LENGTH(SendBuffer):',I10,' != LENGTH(RecvBuffer) :',I10)</a>
+   745) <a name="l745" style="background-color: #ffcccc"></a>
+   746) <a name="l746" style="background-color: #ffcccc">  end subroutine CheckSchedule</a>
+   747) <a name="l747" style="background-color: #ffcccc"></a><a style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">PrintSchedule(Schedule)</a>
+   748) <a name="l748" style="background-color: #ffcccc">    use gridgraph_mod, only : printgridedge</a>
+   749) <a name="l749" style="background-color: #ffcccc"></a>
+   750) <a name="l750" style="background-color: #ffcccc">    implicit none</a>
+   751) <a name="l751" style="background-color: #ffcccc">    type (Schedule_t),intent(in),target   :: Schedule(:)</a>
+   752) <a name="l752" style="background-color: #ffcccc">    type (Schedule_t), pointer            :: pSchedule</a>
+   753) <a name="l753" style="background-color: #ffcccc">    type (Cycle_t),pointer                :: pCycle</a>
+   754) <a name="l754" style="background-color: #ffcccc"></a>
+   755) <a name="l755" style="background-color: #ffcccc">    integer               :: i,j,nSched</a>
+   756) <a name="l756" style="background-color: #ffcccc"></a>
+   757) <a name="l757" style="background-color: #ffcccc">    nSched = SIZE(Schedule)</a>
+   758) <a name="l758" style="background-color: #ffcccc"></a>
+   759) <a name="l759" style="background-color: #ffcccc">    write(*,*) '------NEW SCHEDULE FORMAT---------------------'</a>
+   760) <a name="l760" style="background-color: #ffcccc">    do i=1,nSched</a>
+   761) <a name="l761" style="background-color: #ffcccc">       pSchedule =&gt; Schedule(i)</a>
+   762) <a name="l762" style="background-color: #ffcccc">       write(*,*)</a>
+   763) <a name="l763" style="background-color: #ffcccc">       write(*,*) '----------------------------------------------'</a>
+   764) <a name="l764" style="background-color: #ffcccc">       write(*,90) i,pSchedule%ncycles</a>
+   765) <a name="l765" style="background-color: #ffcccc">       write(*,*) '----------------------------------------------'</a>
+   766) <a name="l766" style="background-color: #ffcccc">       write(*,*) '-----------SEND-------------------------------'</a>
+   767) <a name="l767" style="background-color: #ffcccc">       do j=1,pSchedule%nSendCycles</a>
+   768) <a name="l768" style="background-color: #ffcccc">          pCycle =&gt; pSchedule%SendCycle(j)</a>
+   769) <a name="l769" style="background-color: #ffcccc">          call PrintCycle(pCycle)</a>
+   770) <a name="l770" style="background-color: #ffcccc">          call PrintGridEdge(pCycle%edge%members)</a>
+   771) <a name="l771" style="background-color: #ffcccc">       enddo</a>
+   772) <a name="l772" style="background-color: #ffcccc">       write(*,*) '-----------RECV-------------------------------'</a>
+   773) <a name="l773" style="background-color: #ffcccc">       do j=1,pSchedule%nRecvCycles</a>
+   774) <a name="l774" style="background-color: #ffcccc">          pCycle =&gt; pSchedule%RecvCycle(j)</a>
+   775) <a name="l775" style="background-color: #ffcccc">          call PrintCycle(pCycle)</a>
+   776) <a name="l776" style="background-color: #ffcccc">          call PrintGridEdge(pCycle%edge%members)</a>
+   777) <a name="l777" style="background-color: #ffcccc">       enddo</a>
+   778) <a name="l778" style="background-color: #ffcccc">       write(*,*) '-----------MOVE-------------------------------'</a>
+   779) <a name="l779" style="background-color: #ffcccc">       pCycle =&gt; pSchedule%MoveCycle(1)</a>
+   780) <a name="l780" style="background-color: #ffcccc">       call PrintCycle(pCycle)</a>
+   781) <a name="l781" style="background-color: #ffcccc">       call PrintGridEdge(pCycle%edge%members)</a>
+   782) <a name="l782" style="background-color: #ffcccc">    enddo</a>
+   783) <a name="l783" style="background-color: #ffcccc">90  format('NODE # ',I2,2x,'NCYCLES ',I2)</a>
+   784) <a name="l784" style="background-color: #ffcccc">97  format(10x,'EDGE #',I2,2x,'TYPE ',I1,2x,'G.EDGES',I4,2x,'WORDS ',I5,2x, &amp;</a>
+   785) <a name="l785" style="background-color: #ffcccc">         'SRC ',I3,2x,'DEST ',I3,2x,'PTR ',I4)</a>
+   786) <a name="l786" style="background-color: #ffcccc">100 format(15x,I4,5x,I3,1x,'(',I1,') --',I1,'--&gt; ',I3,1x,'(',I1,')')</a>
+   787) <a name="l787" style="background-color: #ffcccc"></a>
+   788) <a name="l788" style="background-color: #ffcccc"></a>
+   789) <a name="l789" style="background-color: #ffcccc">  end subroutine PrintSchedule</a>
+   790) <a name="l790" style="background-color: #ffffff"></a>
+   791) <a name="l791" style="background-color: #ffffff">#ifdef DOTHIS</a>
+   792) <a name="l792" style="background-color: #ffffff">  subroutine fooCalc(Schedule,bytes_per_point,offnode,onnode,count,Time)</a>
+   793) <a name="l793" style="background-color: #ffffff">    use kinds, only : real_kind</a>
+   794) <a name="l794" style="background-color: #ffffff">    use perfmodel_mod, only : commtime_t, perf_t ! _EXTERNAL</a>
+   795) <a name="l795" style="background-color: #ffffff">    use flops_mod, only : min_number,max_number, avg_number, &amp; ! _EXTERNAL</a>
+   796) <a name="l796" style="background-color: #ffffff">         min_volume,max_volume, avg_volume, &amp;</a>
+   797) <a name="l797" style="background-color: #ffffff">         min_message,max_message, avg_message, &amp;</a>
+   798) <a name="l798" style="background-color: #ffffff">         LocalComVolume,TotalComVolume, tnsend</a>
+   799) <a name="l799" style="background-color: #ffffff">    use parallel_mod, only : iam, ncompoints</a>
+   800) <a name="l800" style="background-color: #ffffff">    use dimensions_mod, only : nmpi_per_node, npart</a>
+   801) <a name="l801" style="background-color: #ffffff">    ! results:: TnSend,{min,max}_{volume,number},Time_{total,calc,latency,bandwidth}</a>
+   802) <a name="l802" style="background-color: #ffffff">    ! inputs:: results + Schedule + bytes_per_point </a>
+   803) <a name="l803" style="background-color: #ffffff"></a>
+   804) <a name="l804" style="background-color: #ffffff">    type (Schedule_t),intent(in) :: Schedule(:)</a>
+   805) <a name="l805" style="background-color: #ffffff">    integer(kind=int_kind),intent(in) :: bytes_per_point</a>
+   806) <a name="l806" style="background-color: #ffffff">    type (commtime_t),intent(in)    :: offnode,onnode</a>
+   807) <a name="l807" style="background-color: #ffffff">    type (GraphStats_t), intent(in)   :: count(:)</a>
+   808) <a name="l808" style="background-color: #ffffff">    type (commtime_t),intent(inout)   :: Time(:)</a>
+   809) <a name="l809" style="background-color: #ffffff"></a>
+   810) <a name="l810" style="background-color: #ffffff">    real(kind=real_kind)   :: bandwidth_tmp,latency_tmp</a>
+   811) <a name="l811" style="background-color: #ffffff">    integer(kind=int_kind) :: nbr,node1,node2,nsend,ip,icycle,nrecv</a>
+   812) <a name="l812" style="background-color: #ffffff">    integer(kind=int_kind) :: length</a>
+   813) <a name="l813" style="background-color: #ffffff">    real(kind=real_kind) :: lb_volume</a>
+   814) <a name="l814" style="background-color: #ffffff">    integer(kind=int_kind) :: imax_volume,imin_volume</a>
+   815) <a name="l815" style="background-color: #ffffff">    type (perf_t)          :: tcv</a>
+   816) <a name="l816" style="background-color: #ffffff">    integer                :: nSched</a>
+   817) <a name="l817" style="background-color: #ffffff">    integer                :: nelemd0</a>
+   818) <a name="l818" style="background-color: #ffffff">    logical, parameter     :: Debug = .FALSE.</a>
+   819) <a name="l819" style="background-color: #ffffff"></a>
+   820) <a name="l820" style="background-color: #ffffff">    nSched=SIZE(Schedule)</a>
+   821) <a name="l821" style="background-color: #ffffff">    min_message = 1000000</a>
+   822) <a name="l822" style="background-color: #ffffff">    min_volume  = 1000000</a>
+   823) <a name="l823" style="background-color: #ffffff">    max_message = 0</a>
+   824) <a name="l824" style="background-color: #ffffff">    max_volume  = 0</a>
+   825) <a name="l825" style="background-color: #ffffff">    TotalComVolume = 0</a>
+   826) <a name="l826" style="background-color: #ffffff">    TnSend = 0</a>
+   827) <a name="l827" style="background-color: #ffffff"></a>
+   828) <a name="l828" style="background-color: #ffffff">    tcv%onnode  = 0.0</a>
+   829) <a name="l829" style="background-color: #ffffff">    tcv%offnode = 0.0</a>
+   830) <a name="l830" style="background-color: #ffffff">    do ip=1,nSched</a>
+   831) <a name="l831" style="background-color: #ffffff">       nSend = Schedule(ip)%nSendCycles</a>
+   832) <a name="l832" style="background-color: #ffffff">       nRecv = Schedule(ip)%nRecvCycles</a>
+   833) <a name="l833" style="background-color: #ffffff">       nelemd0 = Schedule(ip)%nelemd</a>
+   834) <a name="l834" style="background-color: #ffffff">       nComPoints = 0</a>
+   835) <a name="l835" style="background-color: #ffffff">       Time(ip)%latency = 0</a>
+   836) <a name="l836" style="background-color: #ffffff">       Time(ip)%bandwidth = 0</a>
+   837) <a name="l837" style="background-color: #ffffff">       do icycle=1,nSend</a>
+   838) <a name="l838" style="background-color: #ffffff">          length = Schedule(ip)%SendCycle(icycle)%lengthV</a>
+   839) <a name="l839" style="background-color: #ffffff">          nComPoints = nComPoints + length</a>
+   840) <a name="l840" style="background-color: #ffffff">          min_message = MIN(min_message, bytes_per_point*length)</a>
+   841) <a name="l841" style="background-color: #ffffff">          max_message = MAX(max_message, bytes_per_point*length)</a>
+   842) <a name="l842" style="background-color: #ffffff">       enddo</a>
+   843) <a name="l843" style="background-color: #ffffff">       do icycle=1,nRecv</a>
+   844) <a name="l844" style="background-color: #ffffff">          length = Schedule(ip)%RecvCycle(icycle)%lengthV</a>
+   845) <a name="l845" style="background-color: #ffffff">          nbr = Schedule(ip)%RecvCycle(icycle)%source</a>
+   846) <a name="l846" style="background-color: #ffffff">          node1 = ((ip-1)/nmpi_per_node) + 1</a>
+   847) <a name="l847" style="background-color: #ffffff">          node2 = ((nbr-1)/nmpi_per_node) + 1</a>
+   848) <a name="l848" style="background-color: #ffffff">          if(node1 .eq. node2 )  then</a>
+   849) <a name="l849" style="background-color: #ffffff">             ! Message is set to an on-node processor</a>
+   850) <a name="l850" style="background-color: #ffffff">             tcv%onnode = tcv%onnode + length*bytes_per_point</a>
+   851) <a name="l851" style="background-color: #ffffff">             bandwidth_tmp = onnode%bandwidth</a>
+   852) <a name="l852" style="background-color: #ffffff">             latency_tmp = onnode%latency</a>
+   853) <a name="l853" style="background-color: #ffffff">          else</a>
+   854) <a name="l854" style="background-color: #ffffff">             ! Message is set to an off-node processor</a>
+   855) <a name="l855" style="background-color: #ffffff">             tcv%offnode = tcv%offnode + length*bytes_per_point</a>
+   856) <a name="l856" style="background-color: #ffffff">             bandwidth_tmp = real(count(node1)%offnode,kind=real_kind)*offnode%bandwidth</a>
+   857) <a name="l857" style="background-color: #ffffff">             latency_tmp = offnode%latency</a>
+   858) <a name="l858" style="background-color: #ffffff">             if(Debug) write(iulog,*)'fooCalc: node # ',node1,' offnode count is ',real(count(node1)%offnode,kind=real_kind)</a>
+   859) <a name="l859" style="background-color: #ffffff">             if(Debug) write(iulog,*)'fooCalc: node # ',node1,' offnode ={total,effective} ',offnode%bandwidth,bandwidth_tmp</a>
+   860) <a name="l860" style="background-color: #ffffff"></a>
+   861) <a name="l861" style="background-color: #ffffff">          endif</a>
+   862) <a name="l862" style="background-color: #ffffff">          Time(ip)%latency = Time(ip)%latency + latency_tmp</a>
+   863) <a name="l863" style="background-color: #ffffff">          if(Debug) then </a>
+   864) <a name="l864" style="background-color: #ffffff">             write(iulog,*)'fooCalc: node # ',node1,' Contribution in time ',length*bytes_per_point,  &amp;</a>
+   865) <a name="l865" style="background-color: #ffffff">                  length*bytes_per_point*bandwidth_tmp</a>
+   866) <a name="l866" style="background-color: #ffffff">          endif</a>
+   867) <a name="l867" style="background-color: #ffffff">          Time(ip)%bandwidth = Time(ip)%bandwidth + length*bytes_per_point*bandwidth_tmp</a>
+   868) <a name="l868" style="background-color: #ffffff">       enddo</a>
+   869) <a name="l869" style="background-color: #ffffff">       !JMD  Note: I am removing the size of the communication buffer out of the computation</a>
+   870) <a name="l870" style="background-color: #ffffff">       LocalComVolume = bytes_per_point*nComPoints</a>
+   871) <a name="l871" style="background-color: #ffffff">       min_volume = MIN(min_volume,LocalComVolume)</a>
+   872) <a name="l872" style="background-color: #ffffff">       max_volume = MAX(max_volume,LocalComVolume)</a>
+   873) <a name="l873" style="background-color: #ffffff">       TnSend     = TnSend + nSend</a>
+   874) <a name="l874" style="background-color: #ffffff"></a>
+   875) <a name="l875" style="background-color: #ffffff">       TotalComVolume = TotalComVolume + LocalComVolume</a>
+   876) <a name="l876" style="background-color: #ffffff">    enddo</a>
+   877) <a name="l877" style="background-color: #ffffff"></a>
+   878) <a name="l878" style="background-color: #ffffff">    !------------------------------------------------------</a>
+   879) <a name="l879" style="background-color: #ffffff">    ! This Outputs information about each boundary exchange </a>
+   880) <a name="l880" style="background-color: #ffffff">    !------------------------------------------------------</a>
+   881) <a name="l881" style="background-color: #ffffff">    avg_volume  = dble(TotalComVolume)/dble(npart)</a>
+   882) <a name="l882" style="background-color: #ffffff">    lb_volume  = (max_volume-avg_volume)/max_volume</a>
+   883) <a name="l883" style="background-color: #ffffff">    avg_message = dble(TotalComVolume)/dble(TnSend)</a>
+   884) <a name="l884" style="background-color: #ffffff">    imin_volume = NINT(min_volume)</a>
+   885) <a name="l885" style="background-color: #ffffff">    imax_volume = NINT(max_volume)</a>
+   886) <a name="l886" style="background-color: #ffffff">    if(iam .eq. 1) then </a>
+   887) <a name="l887" style="background-color: #ffffff"></a>
+   888) <a name="l888" style="background-color: #ffffff">       write(iulog,*)'MessageStats: Total Message volume is (Mbytes): ',1.0e-6*TotalComVolume</a>
+   889) <a name="l889" style="background-color: #ffffff">#if 1</a>
+   890) <a name="l890" style="background-color: #ffffff">       write(iulog,*) 'MessageStats: imin_volume',imin_volume</a>
+   891) <a name="l891" style="background-color: #ffffff">       write(iulog,*) 'MessageStats: imax_volume',imax_volume</a>
+   892) <a name="l892" style="background-color: #ffffff">       write(iulog,*) 'MessageStats: avg_volume',avg_volume</a>
+   893) <a name="l893" style="background-color: #ffffff">       write(iulog,*) 'MessageStats: lb_volume',lb_volume</a>
+   894) <a name="l894" style="background-color: #ffffff">#else</a>
+   895) <a name="l895" style="background-color: #ffffff">       !JMD For some reason on AIX this line breaks when the numbers are high</a>
+   896) <a name="l896" style="background-color: #ffffff">       write(iulog,110) 'MessageStats: Single process volume (bytes) {MIN,MAX,AVG,LB} =: ', &amp;</a>
+   897) <a name="l897" style="background-color: #ffffff">            imin_volume, imax_volume, avg_volume,lb_volume</a>
+   898) <a name="l898" style="background-color: #ffffff">#endif</a>
+   899) <a name="l899" style="background-color: #ffffff">       write(iulog,*) 'MessageStats: Single message (bytes) {MIN,MAX,AVG} =: ',  &amp;</a>
+   900) <a name="l900" style="background-color: #ffffff">            min_message,max_message,avg_message</a>
+   901) <a name="l901" style="background-color: #ffffff">       write(iulog,85) 1.0E-3*TotalComVolume,1.0E-3*tcv%onnode,1.0E-3*tcv%offnode</a>
+   902) <a name="l902" style="background-color: #ffffff">    endif</a>
+   903) <a name="l903" style="background-color: #ffffff">85  format(&quot; MessageStats: TCV    total: &quot;,f10.1,&quot; onnode: &quot;,f10.1,&quot; offnode: &quot;,f10.1)</a>
+   904) <a name="l904" style="background-color: #ffffff">110 format(1x,A,I10,I10,f12.2,f12.2)</a>
+   905) <a name="l905" style="background-color: #ffffff"></a>
+   906) <a name="l906" style="background-color: #ffffff">  end subroutine fooCalc</a>
+   907) <a name="l907" style="background-color: #ffffff"></a>
+   908) <a name="l908" style="background-color: #ffffff">  subroutine foo(Schedule,count)</a>
+   909) <a name="l909" style="background-color: #ffffff">    use kinds, only : real_kind, log_kind</a>
+   910) <a name="l910" style="background-color: #ffffff">    use flops_mod, only : min_number,max_number, avg_number ! _EXTERNAL</a>
+   911) <a name="l911" style="background-color: #ffffff">    use dimensions_mod, only : nmpi_per_node, npart, nelem</a>
+   912) <a name="l912" style="background-color: #ffffff">    use parallel_mod, only : iam</a>
+   913) <a name="l913" style="background-color: #ffffff">    type (Schedule_t),intent(in) :: Schedule(:)</a>
+   914) <a name="l914" style="background-color: #ffffff">    type (GraphStats_t),intent(inout) :: count(:)</a>
+   915) <a name="l915" style="background-color: #ffffff"></a>
+   916) <a name="l916" style="background-color: #ffffff">    integer :: node2,nbr,ip,node1,icycle,nrecv,nsend</a>
+   917) <a name="l917" style="background-color: #ffffff">    logical :: offnode,found_offnode,found_onnode,found_lbnode</a>
+   918) <a name="l918" style="background-color: #ffffff"></a>
+   919) <a name="l919" style="background-color: #ffffff">    integer(kind=int_kind) :: edgecut_total</a>
+   920) <a name="l920" style="background-color: #ffffff">    real(kind=real_kind)   :: lb_nelemd,avg_nelemd</a>
+   921) <a name="l921" style="background-color: #ffffff">    integer(kind=int_kind) :: edgecut_offnode,edgecut_onnode</a>
+   922) <a name="l922" style="background-color: #ffffff">    integer(kind=int_kind) :: TnSend</a>
+   923) <a name="l923" style="background-color: #ffffff">    integer :: nSched</a>
+   924) <a name="l924" style="background-color: #ffffff">    integer :: nelemd0</a>
+   925) <a name="l925" style="background-color: #ffffff"></a>
+   926) <a name="l926" style="background-color: #ffffff">    logical(kind=log_kind),parameter :: Debug=.FALSE.</a>
+   927) <a name="l927" style="background-color: #ffffff"></a>
+   928) <a name="l928" style="background-color: #ffffff">    nSched=SIZE(Schedule)</a>
+   929) <a name="l929" style="background-color: #ffffff">    count(:)%offnode=0</a>
+   930) <a name="l930" style="background-color: #ffffff">    count(:)%onnode=0</a>
+   931) <a name="l931" style="background-color: #ffffff">    count(:)%LB=0</a>
+   932) <a name="l932" style="background-color: #ffffff">    edgecut_offnode=0</a>
+   933) <a name="l933" style="background-color: #ffffff">    edgecut_onnode=0</a>
+   934) <a name="l934" style="background-color: #ffffff">    min_number  = 1000000</a>
+   935) <a name="l935" style="background-color: #ffffff">    max_number  = 0</a>
+   936) <a name="l936" style="background-color: #ffffff">    TnSend=0</a>
+   937) <a name="l937" style="background-color: #ffffff">    do ip=1,nSched</a>
+   938) <a name="l938" style="background-color: #ffffff">       node1=((ip-1)/nmpi_per_node)+1</a>
+   939) <a name="l939" style="background-color: #ffffff">       found_offnode=.FALSE.</a>
+   940) <a name="l940" style="background-color: #ffffff">       found_onnode=.FALSE.</a>
+   941) <a name="l941" style="background-color: #ffffff">       found_lbnode=.FALSE.</a>
+   942) <a name="l942" style="background-color: #ffffff">       nRecv = Schedule(ip)%nRecvCycles</a>
+   943) <a name="l943" style="background-color: #ffffff">       nSend = Schedule(ip)%nSendCycles</a>
+   944) <a name="l944" style="background-color: #ffffff">       nelemd0 = Schedule(ip)%nelemd</a>
+   945) <a name="l945" style="background-color: #ffffff">       do icycle=1,nRecv</a>
+   946) <a name="l946" style="background-color: #ffffff">          nbr = Schedule(ip)%RecvCycle(icycle)%source</a>
+   947) <a name="l947" style="background-color: #ffffff">          node2=((nbr-1)/nmpi_per_node)+1</a>
+   948) <a name="l948" style="background-color: #ffffff">          if(node2 .ne. node1 ) then</a>
+   949) <a name="l949" style="background-color: #ffffff">             ! Message is set off-node</a>
+   950) <a name="l950" style="background-color: #ffffff">             if(nelemd0 .eq. MaxNelemd) found_lbnode = .TRUE.</a>
+   951) <a name="l951" style="background-color: #ffffff">             found_offnode=.TRUE.</a>
+   952) <a name="l952" style="background-color: #ffffff">             edgecut_offnode = edgecut_offnode + 1</a>
+   953) <a name="l953" style="background-color: #ffffff">          else</a>
+   954) <a name="l954" style="background-color: #ffffff">             ! Message is set to an on-node processor </a>
+   955) <a name="l955" style="background-color: #ffffff">             edgecut_onnode = edgecut_onnode + 1</a>
+   956) <a name="l956" style="background-color: #ffffff">          endif</a>
+   957) <a name="l957" style="background-color: #ffffff">          if(node2 .eq. node1 ) found_onnode = .TRUE.</a>
+   958) <a name="l958" style="background-color: #ffffff">       enddo</a>
+   959) <a name="l959" style="background-color: #ffffff">       if(found_offnode) count(node1)%offnode = count(node1)%offnode + 1</a>
+   960) <a name="l960" style="background-color: #ffffff">       if(found_onnode) count(node1)%onnode = count(node1)%onnode + 1</a>
+   961) <a name="l961" style="background-color: #ffffff">       if(found_lbnode) count(node1)%LB = count(node1)%LB + 1</a>
+   962) <a name="l962" style="background-color: #ffffff">       min_number = MIN(min_number,nSend)</a>
+   963) <a name="l963" style="background-color: #ffffff">       max_number = MAX(max_number,nSend)</a>
+   964) <a name="l964" style="background-color: #ffffff">       TnSend=TnSend+nSend</a>
+   965) <a name="l965" style="background-color: #ffffff">    enddo</a>
+   966) <a name="l966" style="background-color: #ffffff">    if(Debug) write(iulog,*)'count(:)%offnode : ',count(:)%offnode</a>
+   967) <a name="l967" style="background-color: #ffffff">    if(Debug) write(iulog,*)'count(:)%LB : ',count(:)%LB</a>
+   968) <a name="l968" style="background-color: #ffffff"></a>
+   969) <a name="l969" style="background-color: #ffffff">    !-------------------------------------------------</a>
+   970) <a name="l970" style="background-color: #ffffff">    ! This Outputs general information about the Graph </a>
+   971) <a name="l971" style="background-color: #ffffff">    !-------------------------------------------------</a>
+   972) <a name="l972" style="background-color: #ffffff">    edgecut_offnode = edgecut_offnode/2</a>
+   973) <a name="l973" style="background-color: #ffffff">    edgecut_onnode  = edgecut_onnode/2</a>
+   974) <a name="l974" style="background-color: #ffffff">    edgecut_total   = edgecut_offnode + edgecut_onnode</a>
+   975) <a name="l975" style="background-color: #ffffff">    avg_nelemd=dble(nelem)/dble(npart)</a>
+   976) <a name="l976" style="background-color: #ffffff">    lb_nelemd=(MaxNelemd-avg_nelemd)/MaxNelemd</a>
+   977) <a name="l977" style="background-color: #ffffff">    avg_number  = dble(TnSend)/dble(npart)</a>
+   978) <a name="l978" style="background-color: #ffffff">    if(iam .eq. 1) then</a>
+   979) <a name="l979" style="background-color: #ffffff">       write(iulog,*)'MessageStats: Number of MPI processes are:  ',npart</a>
+   980) <a name="l980" style="background-color: #ffffff">       write(iulog,100) 'MessageStats: nelemd is {MIN,MAX,AVG,LB}: ',MinNelemd,MaxNelemd,avg_nelemd,lb_nelemd</a>
+   981) <a name="l981" style="background-color: #ffffff">       write(iulog,*) 'MessageStats: number of neighbors  {MIN,MAX,AVG} ',min_number,max_number,avg_number</a>
+   982) <a name="l982" style="background-color: #ffffff">       write(iulog,75) edgecut_total,edgecut_onnode,edgecut_offnode</a>
+   983) <a name="l983" style="background-color: #ffffff">    endif</a>
+   984) <a name="l984" style="background-color: #ffffff"></a>
+   985) <a name="l985" style="background-color: #ffffff">100 format(1x,A,I8,I8,f10.2,f8.5)</a>
+   986) <a name="l986" style="background-color: #ffffff">75  format(&quot; MessageStats: Edgecut   total: &quot;,i10,&quot; onnode: &quot;,i10,&quot; offnode: &quot;,i10)</a>
+   987) <a name="l987" style="background-color: #ffffff"></a>
+   988) <a name="l988" style="background-color: #ffffff">  end subroutine foo</a>
+   989) <a name="l989" style="background-color: #ffffff">#endif</a>
+   990) <a name="l990" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">PrintCycle(Cycle)</a>
+   991) <a name="l991" style="background-color: #ffcccc"></a>
+   992) <a name="l992" style="background-color: #ffcccc">    implicit none </a>
+   993) <a name="l993" style="background-color: #ffcccc">    type (Cycle_t),intent(in),target  ::  Cycle</a>
+   994) <a name="l994" style="background-color: #ffcccc"></a>
+   995) <a name="l995" style="background-color: #ffcccc">    write(*,97) Cycle%edge%number,Cycle%type,Cycle%edge%nmembers, &amp;</a>
+   996) <a name="l996" style="background-color: #ffcccc">         Cycle%lengthP,Cycle%source, Cycle%dest,Cycle%ptrP</a>
+   997) <a name="l997" style="background-color: #ffcccc"></a>
+   998) <a name="l998" style="background-color: #ffcccc">97  format(5x,'METAEDGE #',I2,2x,'TYPE ',I1,2x,'G.EDGES',I4,2x,'WORDS ',I5,2x, &amp;</a>
+   999) <a name="l999" style="background-color: #ffcccc">         'SRC ',I3,2x,'DEST ',I3,2x,'PTR ',I5)</a>
+  1000) <a name="l1000" style="background-color: #ffcccc"></a>
+  1001) <a name="l1001" style="background-color: #ffcccc">  end subroutine PrintCycle</a>
+  1002) <a name="l1002" style="background-color: #ffffff"></a>
+  1003) <a name="l1003" style="background-color: #ffffff">  subroutine SetCycle(elem, schedule,Cycle,Edge)</a>
+  1004) <a name="l1004" style="background-color: #ffffff">    use element_mod, only : element_t</a>
+  1005) <a name="l1005" style="background-color: #ffffff">    use dimensions_mod, only : max_corner_elem, max_neigh_edges</a>
+  1006) <a name="l1006" style="background-color: #ffffff">    use parallel_mod, only : abortmp, iam   </a>
+  1007) <a name="l1007" style="background-color: #ffffff">    implicit none </a>
+  1008) <a name="l1008" style="background-color: #ffffff"></a>
+  1009) <a name="l1009" style="background-color: #ffffff">    type(element_t), intent(inout)        :: elem(:)</a>
+  1010) <a name="l1010" style="background-color: #ffffff">    type (Schedule_t),intent(inout)          :: Schedule</a>
+  1011) <a name="l1011" style="background-color: #ffffff">    type (Cycle_t),intent(inout)             :: Cycle</a>
+  1012) <a name="l1012" style="background-color: #ffffff">    type (MetaEdge_t),intent(in),target      :: Edge</a>
+  1013) <a name="l1013" style="background-color: #ffffff">    integer                                  :: i,il,face, loc, dir</a>
+  1014) <a name="l1014" style="background-color: #ffffff"></a>
+  1015) <a name="l1015" style="background-color: #ffffff"></a>
+  1016) <a name="l1016" style="background-color: #ffffff">#ifndef _PREDICT</a>
+  1017) <a name="l1017" style="background-color: #ffffff">    do i=1,Edge%nmembers</a>
+  1018) <a name="l1018" style="background-color: #ffffff">       !   Setup send index</a>
+  1019) <a name="l1019" style="background-color: #ffffff">       il                     = Global2Local(Edge%members(i)%tail%number)</a>
+  1020) <a name="l1020" style="background-color: #ffffff">       face                   = Edge%members(i)%tail_face</a>
+  1021) <a name="l1021" style="background-color: #ffffff">       !need to convert the location of corner elements for getmap and putmap</a>
+  1022) <a name="l1022" style="background-color: #ffffff">       if (face.ge.5) then ! if a corner element</a>
+  1023) <a name="l1023" style="background-color: #ffffff">          dir = Edge%members(i)%tail_dir</a>
+  1024) <a name="l1024" style="background-color: #ffffff">          loc = MOD(dir,max_corner_elem) !this is the location within that direction</a>
+  1025) <a name="l1025" style="background-color: #ffffff">          dir = (dir - loc)/max_corner_elem !this is the direction (1-8)</a>
+  1026) <a name="l1026" style="background-color: #ffffff">          loc = dir + (dir-5)*(max_corner_elem-1)+loc</a>
+  1027) <a name="l1027" style="background-color: #ffffff">       else</a>
+  1028) <a name="l1028" style="background-color: #ffffff">          loc = face</a>
+  1029) <a name="l1029" style="background-color: #ffffff">       end if</a>
+  1030) <a name="l1030" style="background-color: #ffffff"></a>
+  1031) <a name="l1031" style="background-color: #ffffff">       if(il .gt. 0) then </a>
+  1032) <a name="l1032" style="background-color: #ffffff">          elem(il)%desc%putmapP(loc) = Edge%edgeptrP(i) + Cycle%ptrP - 1  ! offset, so start at 0</a>
+  1033) <a name="l1033" style="background-color: #ffffff">          elem(il)%desc%putmapP_ghost(loc) = Edge%edgeptrP_ghost(i) + Cycle%ptrP_ghost  ! index, start at 1</a>
+  1034) <a name="l1034" style="background-color: #ffffff">          elem(il)%desc%reverse(loc) = Edge%members(i)%reverse</a>
+  1035) <a name="l1035" style="background-color: #ffffff">       endif</a>
+  1036) <a name="l1036" style="background-color: #ffffff"></a>
+  1037) <a name="l1037" style="background-color: #ffffff"></a>
+  1038) <a name="l1038" style="background-color: #ffffff"></a>
+  1039) <a name="l1039" style="background-color: #ffffff">       !   Setup receive index</a>
+  1040) <a name="l1040" style="background-color: #ffffff">       il                     = Global2Local(Edge%members(i)%head%number)</a>
+  1041) <a name="l1041" style="background-color: #ffffff">       face                   = Edge%members(i)%head_face</a>
+  1042) <a name="l1042" style="background-color: #ffffff">       !need to convert the location of corner elements for getmap and putmap</a>
+  1043) <a name="l1043" style="background-color: #ffffff">       if (face.ge.5) then !its a corner</a>
+  1044) <a name="l1044" style="background-color: #ffffff">          dir = Edge%members(i)%head_dir</a>
+  1045) <a name="l1045" style="background-color: #ffffff">          loc = MOD(dir,max_corner_elem) !this is the location within that direction</a>
+  1046) <a name="l1046" style="background-color: #ffffff">          dir = (dir - loc)/max_corner_elem !this is the direction (1-8)</a>
+  1047) <a name="l1047" style="background-color: #ffffff">          loc = dir + (dir-5)*(max_corner_elem-1)+loc</a>
+  1048) <a name="l1048" style="background-color: #ffffff">          if(loc&gt;max_neigh_edges) then</a>
+  1049) <a name="l1049" style="background-color: #ffff99">             print *,__FILE__,__LINE__,iam,face,i,max_corner_elem,edge%members(i)%head_face</a>
+  1050) <a name="l1050" style="background-color: #ffff99">             call abortmp('Face value out of bounds')</a>
+  1051) <a name="l1051" style="background-color: #ffff99">          end if</a>
+  1052) <a name="l1052" style="background-color: #ffff99">       else</a>
+  1053) <a name="l1053" style="background-color: #ffffff">          loc = face</a>
+  1054) <a name="l1054" style="background-color: #ffffff">       end if</a>
+  1055) <a name="l1055" style="background-color: #ffffff"></a>
+  1056) <a name="l1056" style="background-color: #ffffff">       if(il .gt. 0) then </a>
+  1057) <a name="l1057" style="background-color: #ffffff">          elem(il)%desc%getmapP(loc) = Edge%edgeptrP(i) + Cycle%ptrP - 1</a>
+  1058) <a name="l1058" style="background-color: #ffffff">          elem(il)%desc%getmapP_ghost(loc) = Edge%edgeptrP_ghost(i) + Cycle%ptrP_ghost </a>
+  1059) <a name="l1059" style="background-color: #ffffff">          elem(il)%desc%globalID(loc) = Edge%members(i)%tail%number</a>
+  1060) <a name="l1060" style="background-color: #ffffff">       endif</a>
+  1061) <a name="l1061" style="background-color: #ffffff"></a>
+  1062) <a name="l1062" style="background-color: #ffffff"></a>
+  1063) <a name="l1063" style="background-color: #ffffff">    enddo</a>
+  1064) <a name="l1064" style="background-color: #ffffff">#endif</a>
+  1065) <a name="l1065" style="background-color: #ffffff">    Cycle%edge   =&gt; Edge</a>
+  1066) <a name="l1066" style="background-color: #ffffff">    Cycle%type   = Edge%type</a>
+  1067) <a name="l1067" style="background-color: #ffffff">    Cycle%dest   = Edge%HeadVertex</a>
+  1068) <a name="l1068" style="background-color: #ffffff">    Cycle%source = Edge%TailVertex</a>
+  1069) <a name="l1069" style="background-color: #ffffff">    Cycle%tag    = BNDRY_EXCHANGE_MESSAGE</a>
+  1070) <a name="l1070" style="background-color: #ffffff">    Cycle%lengthP = Edge%wgtP</a>
+  1071) <a name="l1071" style="background-color: #ffffff">    Cycle%lengthP_ghost = Edge%wgtP_ghost</a>
+  1072) <a name="l1072" style="background-color: #ffffff"></a>
+  1073) <a name="l1073" style="background-color: #ffffff">  end subroutine SetCycle</a>
+  1074) <a name="l1074" style="background-color: #ffffff"></a>
+  1075) <a name="l1075" style="background-color: #ffffff">  function FindBufferSlot(inbr,length,tmp) result(ptr)</a>
+  1076) <a name="l1076" style="background-color: #ffffff"></a>
+  1077) <a name="l1077" style="background-color: #ffffff">    integer                          :: ptr</a>
+  1078) <a name="l1078" style="background-color: #ffffff">    integer,intent(in)               :: inbr,length</a>
+  1079) <a name="l1079" style="background-color: #ffffff">    integer,intent(inout)    :: tmp(:,:)</a>
+  1080) <a name="l1080" style="background-color: #ffffff"></a>
+  1081) <a name="l1081" style="background-color: #ffffff">    integer                          :: i,n</a>
+  1082) <a name="l1082" style="background-color: #ffffff"></a>
+  1083) <a name="l1083" style="background-color: #ffffff">    n = SIZE(tmp,2)</a>
+  1084) <a name="l1084" style="background-color: #ffffff"></a>
+  1085) <a name="l1085" style="background-color: #ffffff">    ptr = 0</a>
+  1086) <a name="l1086" style="background-color: #ffffff">    do i=1,n</a>
+  1087) <a name="l1087" style="background-color: #ffffff">       if( tmp(1,i) == inbr) then </a>
+  1088) <a name="l1088" style="background-color: #ffffff">          ptr = tmp(2,i)</a>
+  1089) <a name="l1089" style="background-color: #ffffff">          return	</a>
+  1090) <a name="l1090" style="background-color: #ffffff">       endif</a>
+  1091) <a name="l1091" style="background-color: #ffffff">       if( tmp(1,i) == -1 ) then  </a>
+  1092) <a name="l1092" style="background-color: #ffffff">          tmp(1,i) = inbr</a>
+  1093) <a name="l1093" style="background-color: #ffffff">          if(i .eq. 1) tmp(2,i) = 1</a>
+  1094) <a name="l1094" style="background-color: #ffffff">          ptr = tmp(2,i)</a>
+  1095) <a name="l1095" style="background-color: #ffffff">          if(i .ne. n) tmp(2,i+1) = ptr +length</a>
+  1096) <a name="l1096" style="background-color: #ffffff">          return</a>
+  1097) <a name="l1097" style="background-color: #ffffff">       endif</a>
+  1098) <a name="l1098" style="background-color: #ffffff">    enddo</a>
+  1099) <a name="l1099" style="background-color: #ffffff"></a>
+  1100) <a name="l1100" style="background-color: #ffffff">  end function FindBufferSlot</a>
+  1101) <a name="l1101" style="background-color: #ffffff"></a>
+  1102) <a name="l1102" style="background-color: #ffffff">end module schedule_mod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

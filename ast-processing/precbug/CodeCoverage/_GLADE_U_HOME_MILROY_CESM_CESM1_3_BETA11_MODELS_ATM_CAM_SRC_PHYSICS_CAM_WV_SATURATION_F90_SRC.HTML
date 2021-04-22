@@ -1,0 +1,832 @@
+<html>
+<head>
+<title>Listing of wv_saturation.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;wv_saturation.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 93.75&#160;%func&#160;&#160;&#160;&#160; 72.65&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module wv_saturation</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!--------------------------------------------------------------------!</a>
+     4) <a name="l4" style="background-color: #ffffff">! Module Overview:                                                   !</a>
+     5) <a name="l5" style="background-color: #ffffff">!                                                                    !</a>
+     6) <a name="l6" style="background-color: #ffffff">! This module provides an interface to wv_sat_methods, providing     !</a>
+     7) <a name="l7" style="background-color: #ffffff">! saturation vapor pressure and related calculations to CAM.         !</a>
+     8) <a name="l8" style="background-color: #ffffff">!                                                                    !</a>
+     9) <a name="l9" style="background-color: #ffffff">! The original wv_saturation codes were introduced by J. J. Hack,    !</a>
+    10) <a name="l10" style="background-color: #ffffff">! February 1990. The code has been extensively rewritten since then, !</a>
+    11) <a name="l11" style="background-color: #ffffff">! including a total refactoring in Summer 2012.                      !</a>
+    12) <a name="l12" style="background-color: #ffffff">!                                                                    !</a>
+    13) <a name="l13" style="background-color: #ffffff">!--------------------------------------------------------------------!</a>
+    14) <a name="l14" style="background-color: #ffffff">! Methods:                                                           !</a>
+    15) <a name="l15" style="background-color: #ffffff">!                                                                    !</a>
+    16) <a name="l16" style="background-color: #ffffff">! Pure water/ice saturation vapor pressures are calculated on the    !</a>
+    17) <a name="l17" style="background-color: #ffffff">! fly, with the specific method determined by a runtime option.      !</a>
+    18) <a name="l18" style="background-color: #ffffff">! Mixed phase SVP is interpolated from the internal table, estbl,    !</a>
+    19) <a name="l19" style="background-color: #ffffff">! which is created during initialization.                            !</a>
+    20) <a name="l20" style="background-color: #ffffff">!                                                                    !</a>
+    21) <a name="l21" style="background-color: #ffffff">! The default method for calculating SVP is determined by a namelist !</a>
+    22) <a name="l22" style="background-color: #ffffff">! option, and used whenever svp_water/ice or qsat are called.        !</a>
+    23) <a name="l23" style="background-color: #ffffff">!                                                                    !</a>
+    24) <a name="l24" style="background-color: #ffffff">!--------------------------------------------------------------------!</a>
+    25) <a name="l25" style="background-color: #ffffff"></a>
+    26) <a name="l26" style="background-color: #ffffff">use shr_kind_mod, only: r8 =&gt; shr_kind_r8</a>
+    27) <a name="l27" style="background-color: #ffffff">use physconst,    only: epsilo, &amp;</a>
+    28) <a name="l28" style="background-color: #ffffff">                        latvap, &amp;</a>
+    29) <a name="l29" style="background-color: #ffffff">                        latice, &amp;</a>
+    30) <a name="l30" style="background-color: #ffffff">                        rh2o,   &amp;</a>
+    31) <a name="l31" style="background-color: #ffffff">                        cpair,  &amp;</a>
+    32) <a name="l32" style="background-color: #ffffff">                        tmelt,  &amp;</a>
+    33) <a name="l33" style="background-color: #ffffff">                        h2otrip</a>
+    34) <a name="l34" style="background-color: #ffffff"></a>
+    35) <a name="l35" style="background-color: #ffffff">use wv_sat_methods, only: &amp;</a>
+    36) <a name="l36" style="background-color: #ffffff">     svp_to_qsat =&gt; wv_sat_svp_to_qsat</a>
+    37) <a name="l37" style="background-color: #ffffff"></a>
+    38) <a name="l38" style="background-color: #ffffff">implicit none</a>
+    39) <a name="l39" style="background-color: #ffffff">private</a>
+    40) <a name="l40" style="background-color: #ffffff">save</a>
+    41) <a name="l41" style="background-color: #ffffff"></a>
+    42) <a name="l42" style="background-color: #ffffff">! Public interfaces</a>
+    43) <a name="l43" style="background-color: #ffffff">! Namelist, initialization, finalization</a>
+    44) <a name="l44" style="background-color: #ffffff">public wv_sat_readnl</a>
+    45) <a name="l45" style="background-color: #ffffff">public wv_sat_init</a>
+    46) <a name="l46" style="background-color: #ffffff">public wv_sat_final</a>
+    47) <a name="l47" style="background-color: #ffffff"></a>
+    48) <a name="l48" style="background-color: #ffffff">! Saturation vapor pressure calculations</a>
+    49) <a name="l49" style="background-color: #ffffff">public svp_water</a>
+    50) <a name="l50" style="background-color: #ffffff">public svp_ice</a>
+    51) <a name="l51" style="background-color: #ffffff">  </a>
+    52) <a name="l52" style="background-color: #ffffff">! Mixed phase (water + ice) saturation vapor pressure table lookup</a>
+    53) <a name="l53" style="background-color: #ffffff">public estblf</a>
+    54) <a name="l54" style="background-color: #ffffff"></a>
+    55) <a name="l55" style="background-color: #ffffff">public svp_to_qsat</a>
+    56) <a name="l56" style="background-color: #ffffff"></a>
+    57) <a name="l57" style="background-color: #ffffff">! Subroutines that return both SVP and humidity</a>
+    58) <a name="l58" style="background-color: #ffffff">! Optional arguments do temperature derivatives</a>
+    59) <a name="l59" style="background-color: #ffffff">public qsat           ! Mixed phase</a>
+    60) <a name="l60" style="background-color: #ffffff">public qsat_water     ! SVP over water only</a>
+    61) <a name="l61" style="background-color: #ffffff">public qsat_ice       ! SVP over ice only</a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">! Wet bulb temperature solver</a>
+    64) <a name="l64" style="background-color: #ffffff">public :: findsp_vc, findsp</a>
+    65) <a name="l65" style="background-color: #ffffff"></a>
+    66) <a name="l66" style="background-color: #ffffff">! Data</a>
+    67) <a name="l67" style="background-color: #ffffff"></a>
+    68) <a name="l68" style="background-color: #ffffff">! This value is slightly high, but it seems to be the value for the</a>
+    69) <a name="l69" style="background-color: #ffffff">! steam point of water originally (and most frequently) used in the</a>
+    70) <a name="l70" style="background-color: #ffffff">! Goff &amp; Gratch scheme.</a>
+    71) <a name="l71" style="background-color: #ffffff">real(r8), parameter :: tboil = 373.16_r8</a>
+    72) <a name="l72" style="background-color: #ffffff"></a>
+    73) <a name="l73" style="background-color: #ffffff">! Table of saturation vapor pressure values (estbl) from tmin to</a>
+    74) <a name="l74" style="background-color: #ffffff">! tmax+1 Kelvin, in one degree increments.  ttrice defines the</a>
+    75) <a name="l75" style="background-color: #ffffff">! transition region, estbl contains a combination of ice &amp; water</a>
+    76) <a name="l76" style="background-color: #ffffff">! values.</a>
+    77) <a name="l77" style="background-color: #ffffff">! Make these public parameters in case another module wants to see the</a>
+    78) <a name="l78" style="background-color: #ffffff">! extent of the table.</a>
+    79) <a name="l79" style="background-color: #ffffff">  real(r8), public, parameter :: tmin = 127.16_r8</a>
+    80) <a name="l80" style="background-color: #ffffff">  real(r8), public, parameter :: tmax = 375.16_r8</a>
+    81) <a name="l81" style="background-color: #ffffff"></a>
+    82) <a name="l82" style="background-color: #ffffff">  real(r8), parameter :: ttrice = 20.00_r8  ! transition range from es over H2O to es over ice</a>
+    83) <a name="l83" style="background-color: #ffffff"></a>
+    84) <a name="l84" style="background-color: #ffffff">  integer :: plenest                             ! length of estbl</a>
+    85) <a name="l85" style="background-color: #ffffff">  real(r8), allocatable :: estbl(:)              ! table values of saturation vapor pressure</a>
+    86) <a name="l86" style="background-color: #ffffff"></a>
+    87) <a name="l87" style="background-color: #ffffff">  real(r8) :: omeps      ! 1.0_r8 - epsilo</a>
+    88) <a name="l88" style="background-color: #ffffff"></a>
+    89) <a name="l89" style="background-color: #ffffff">  real(r8) :: c3         ! parameter used by findsp</a>
+    90) <a name="l90" style="background-color: #ffffff"></a>
+    91) <a name="l91" style="background-color: #ffffff">  ! Set coefficients for polynomial approximation of difference</a>
+    92) <a name="l92" style="background-color: #ffffff">  ! between saturation vapor press over water and saturation pressure</a>
+    93) <a name="l93" style="background-color: #ffffff">  ! over ice for -ttrice &lt; t &lt; 0 (degrees C). NOTE: polynomial is</a>
+    94) <a name="l94" style="background-color: #ffffff">  ! valid in the range -40 &lt; t &lt; 0 (degrees C).</a>
+    95) <a name="l95" style="background-color: #ffffff">  real(r8) :: pcf(5) = (/ &amp;</a>
+    96) <a name="l96" style="background-color: #ffffff">       5.04469588506e-01_r8, &amp;</a>
+    97) <a name="l97" style="background-color: #ffffff">       -5.47288442819e+00_r8, &amp;</a>
+    98) <a name="l98" style="background-color: #ffffff">       -3.67471858735e-01_r8, &amp;</a>
+    99) <a name="l99" style="background-color: #ffffff">       -8.95963532403e-03_r8, &amp;</a>
+   100) <a name="l100" style="background-color: #ffffff">       -7.78053686625e-05_r8 /)</a>
+   101) <a name="l101" style="background-color: #ffffff"></a>
+   102) <a name="l102" style="background-color: #ffffff">!   --- Degree 6 approximation ---</a>
+   103) <a name="l103" style="background-color: #ffffff">!  real(r8) :: pcf(6) = (/ &amp;</a>
+   104) <a name="l104" style="background-color: #ffffff">!       7.63285250063e-02, &amp;</a>
+   105) <a name="l105" style="background-color: #ffffff">!       5.86048427932e+00, &amp;</a>
+   106) <a name="l106" style="background-color: #ffffff">!       4.38660831780e-01, &amp;</a>
+   107) <a name="l107" style="background-color: #ffffff">!       1.37898276415e-02, &amp;</a>
+   108) <a name="l108" style="background-color: #ffffff">!       2.14444472424e-04, &amp;</a>
+   109) <a name="l109" style="background-color: #ffffff">!       1.36639103771e-06 /)</a>
+   110) <a name="l110" style="background-color: #ffffff"></a>
+   111) <a name="l111" style="background-color: #ffffff">contains</a>
+   112) <a name="l112" style="background-color: #ffffff"></a>
+   113) <a name="l113" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+   114) <a name="l114" style="background-color: #ffffff">! ADMINISTRATIVE FUNCTIONS</a>
+   115) <a name="l115" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+   116) <a name="l116" style="background-color: #ffffff"></a>
+   117) <a name="l117" style="background-color: #ffffff">subroutine wv_sat_readnl(nlfile)</a>
+   118) <a name="l118" style="background-color: #ffffff">  !------------------------------------------------------------------!</a>
+   119) <a name="l119" style="background-color: #ffffff">  ! Purpose:                                                         !</a>
+   120) <a name="l120" style="background-color: #ffffff">  !   Get runtime options for wv_saturation.                         !</a>
+   121) <a name="l121" style="background-color: #ffffff">  !------------------------------------------------------------------!</a>
+   122) <a name="l122" style="background-color: #ffffff"></a>
+   123) <a name="l123" style="background-color: #ffffff">  use wv_sat_methods, only: wv_sat_get_scheme_idx, &amp;</a>
+   124) <a name="l124" style="background-color: #ffffff">                            wv_sat_valid_idx, &amp;</a>
+   125) <a name="l125" style="background-color: #ffffff">                            wv_sat_set_default</a>
+   126) <a name="l126" style="background-color: #ffffff"></a>
+   127) <a name="l127" style="background-color: #ffffff">  use spmd_utils,      only: masterproc</a>
+   128) <a name="l128" style="background-color: #ffffff">  use namelist_utils,  only: find_group_name</a>
+   129) <a name="l129" style="background-color: #ffffff">  use units,           only: getunit, freeunit</a>
+   130) <a name="l130" style="background-color: #ffffff">  use mpishorthand</a>
+   131) <a name="l131" style="background-color: #ffffff">  use abortutils,      only: endrun</a>
+   132) <a name="l132" style="background-color: #ffffff"></a>
+   133) <a name="l133" style="background-color: #ffffff">  character(len=*), intent(in) :: nlfile  ! filepath for file containing namelist input</a>
+   134) <a name="l134" style="background-color: #ffffff">   </a>
+   135) <a name="l135" style="background-color: #ffffff">  ! Local variables</a>
+   136) <a name="l136" style="background-color: #ffffff">  integer :: unitn, ierr</a>
+   137) <a name="l137" style="background-color: #ffffff"></a>
+   138) <a name="l138" style="background-color: #ffffff">  character(len=32) :: wv_sat_scheme = &quot;GoffGratch&quot;</a>
+   139) <a name="l139" style="background-color: #ffffff"></a>
+   140) <a name="l140" style="background-color: #ffffff">  character(len=*), parameter :: subname = 'wv_sat_readnl'</a>
+   141) <a name="l141" style="background-color: #ffffff"></a>
+   142) <a name="l142" style="background-color: #ffffff">  namelist /wv_sat_nl/ wv_sat_scheme</a>
+   143) <a name="l143" style="background-color: #ffffff">  !-----------------------------------------------------------------------------</a>
+   144) <a name="l144" style="background-color: #ffffff"></a>
+   145) <a name="l145" style="background-color: #ffffff">  if (masterproc) then</a>
+   146) <a name="l146" style="background-color: #ffffff">     unitn = getunit()</a>
+   147) <a name="l147" style="background-color: #ffffff">     open( unitn, file=trim(nlfile), status='old' )</a>
+   148) <a name="l148" style="background-color: #ffffff">     call find_group_name(unitn, 'wv_sat_nl', status=ierr)</a>
+   149) <a name="l149" style="background-color: #ffffff">     if (ierr == 0) then</a>
+   150) <a name="l150" style="background-color: #ffff99">        read(unitn, wv_sat_nl, iostat=ierr)</a>
+   151) <a name="l151" style="background-color: #ffff99">        if (ierr /= 0) then</a>
+   152) <a name="l152" style="background-color: #ffff99">           call endrun(subname // ':: ERROR reading namelist')</a>
+   153) <a name="l153" style="background-color: #ffff99">           return</a>
+   154) <a name="l154" style="background-color: #ffff99">        end if</a>
+   155) <a name="l155" style="background-color: #ffff99">     end if</a>
+   156) <a name="l156" style="background-color: #ffff99">     close(</a><a style="background-color: #ffffff">unitn)</a>
+   157) <a name="l157" style="background-color: #ffffff">     call freeunit(unitn)</a>
+   158) <a name="l158" style="background-color: #ffffff"></a>
+   159) <a name="l159" style="background-color: #ffffff">  end if</a>
+   160) <a name="l160" style="background-color: #ffffff"></a>
+   161) <a name="l161" style="background-color: #ffffff">#ifdef SPMD</a>
+   162) <a name="l162" style="background-color: #ffffff">  call mpibcast(wv_sat_scheme, len(wv_sat_scheme) , mpichar, 0, mpicom)</a>
+   163) <a name="l163" style="background-color: #ffffff">#endif</a>
+   164) <a name="l164" style="background-color: #ffffff"></a>
+   165) <a name="l165" style="background-color: #ffffff">  if (.not. wv_sat_set_default(wv_sat_scheme)) then</a>
+   166) <a name="l166" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">endrun('wv_sat_readnl :: Invalid wv_sat_scheme.')</a>
+   167) <a name="l167" style="background-color: #ffff99">     return</a>
+   168) <a name="l168" style="background-color: #ffff99">  end if</a>
+   169) <a name="l169" style="background-color: #ffff99"></a>
+   170) <a name="l170" style="background-color: #ffffff">end subroutine wv_sat_readnl</a>
+   171) <a name="l171" style="background-color: #ffffff"></a>
+   172) <a name="l172" style="background-color: #ffffff">subroutine wv_sat_init</a>
+   173) <a name="l173" style="background-color: #ffffff">  !------------------------------------------------------------------!</a>
+   174) <a name="l174" style="background-color: #ffffff">  ! Purpose:                                                         !</a>
+   175) <a name="l175" style="background-color: #ffffff">  !   Initialize module (e.g. setting parameters, initializing the   !</a>
+   176) <a name="l176" style="background-color: #ffffff">  !   SVP lookup table).                                             !</a>
+   177) <a name="l177" style="background-color: #ffffff">  !------------------------------------------------------------------!</a>
+   178) <a name="l178" style="background-color: #ffffff"></a>
+   179) <a name="l179" style="background-color: #ffffff">  use wv_sat_methods, only: wv_sat_methods_init, &amp;</a>
+   180) <a name="l180" style="background-color: #ffffff">                            wv_sat_get_scheme_idx, &amp;</a>
+   181) <a name="l181" style="background-color: #ffffff">                            wv_sat_valid_idx</a>
+   182) <a name="l182" style="background-color: #ffffff">  use spmd_utils,     only: masterproc</a>
+   183) <a name="l183" style="background-color: #ffffff">  use cam_logfile,    only: iulog</a>
+   184) <a name="l184" style="background-color: #ffffff">  use abortutils,     only: endrun</a>
+   185) <a name="l185" style="background-color: #ffffff">  use shr_assert_mod, only: shr_assert_in_domain</a>
+   186) <a name="l186" style="background-color: #ffffff">  use error_messages, only: handle_errmsg</a>
+   187) <a name="l187" style="background-color: #ffffff"></a>
+   188) <a name="l188" style="background-color: #ffffff">  integer :: status</a>
+   189) <a name="l189" style="background-color: #ffffff"></a>
+   190) <a name="l190" style="background-color: #ffffff">  ! For wv_sat_methods error reporting.</a>
+   191) <a name="l191" style="background-color: #ffffff">  character(len=256) :: errstring</a>
+   192) <a name="l192" style="background-color: #ffffff"></a>
+   193) <a name="l193" style="background-color: #ffffff">  ! For generating internal SVP table.</a>
+   194) <a name="l194" style="background-color: #ffffff">  real(r8) :: t         ! Temperature</a>
+   195) <a name="l195" style="background-color: #ffffff">  integer  :: i         ! Increment counter</a>
+   196) <a name="l196" style="background-color: #ffffff"></a>
+   197) <a name="l197" style="background-color: #ffffff">  ! Precalculated because so frequently used.</a>
+   198) <a name="l198" style="background-color: #ffffff">  omeps  = 1.0_r8 - epsilo</a>
+   199) <a name="l199" style="background-color: #ffffff"></a>
+   200) <a name="l200" style="background-color: #ffffff">  ! Transition range method is only valid for transition temperatures at:</a>
+   201) <a name="l201" style="background-color: #ffffff">  ! -40 deg C &lt; T &lt; 0 deg C</a>
+   202) <a name="l202" style="background-color: #ffffff">  call shr_assert_in_domain(ttrice, ge=0._r8, le=40._r8, varname=&quot;ttrice&quot;,&amp;</a>
+   203) <a name="l203" style="background-color: #ffffff">       msg=&quot;wv_sat_init: Invalid transition temperature range.&quot;)</a>
+   204) <a name="l204" style="background-color: #ffffff"></a>
+   205) <a name="l205" style="background-color: #ffffff">! This parameter uses a hardcoded 287.04_r8?</a>
+   206) <a name="l206" style="background-color: #ffffff">  c3 = 287.04_r8*(7.5_r8*log(10._r8))/cpair</a>
+   207) <a name="l207" style="background-color: #ffffff"></a>
+   208) <a name="l208" style="background-color: #ffffff">! Init &quot;methods&quot; module containing actual SVP formulae.</a>
+   209) <a name="l209" style="background-color: #ffffff"></a>
+   210) <a name="l210" style="background-color: #ffffff">  call wv_sat_methods_init(r8, tmelt, h2otrip, tboil, ttrice, &amp;</a>
+   211) <a name="l211" style="background-color: #ffffff">       epsilo, errstring)</a>
+   212) <a name="l212" style="background-color: #ffffff"></a>
+   213) <a name="l213" style="background-color: #ffffff">  call handle_errmsg(errstring, subname=&quot;wv_sat_methods_init&quot;)</a>
+   214) <a name="l214" style="background-color: #ffffff"></a>
+   215) <a name="l215" style="background-color: #ffffff">  ! Add two to make the table slightly too big, just in case.</a>
+   216) <a name="l216" style="background-color: #ffffff">  plenest = ceiling(tmax-tmin) + 2</a>
+   217) <a name="l217" style="background-color: #ffffff"></a>
+   218) <a name="l218" style="background-color: #ffffff">  ! Allocate SVP table.</a>
+   219) <a name="l219" style="background-color: #fafad2">  allocate(estbl(plenest), stat=status)</a>
+   220) <a name="l220" style="background-color: #fafad2">  if (status /= 0) then </a>
+   221) <a name="l221" style="background-color: #fafad2">     call </a><a style="background-color: #ffff99">endrun('wv_sat_init :: ERROR allocating saturation vapor pressure table')</a>
+   222) <a name="l222" style="background-color: #ffff99">     return</a>
+   223) <a name="l223" style="background-color: #ffff99">  end if</a>
+   224) <a name="l224" style="background-color: #ffff99"></a>
+   225) <a name="l225" style="background-color: #ffffff">  do i = 1, plenest</a>
+   226) <a name="l226" style="background-color: #ffffff">    estbl(i) = svp_trans(tmin + real(i-1,r8))</a>
+   227) <a name="l227" style="background-color: #ffffff">  end do</a>
+   228) <a name="l228" style="background-color: #ffffff"></a>
+   229) <a name="l229" style="background-color: #ffffff">  if (masterproc) then</a>
+   230) <a name="l230" style="background-color: #ffffff">     write(iulog,*)' *** SATURATION VAPOR PRESSURE TABLE COMPLETED ***'</a>
+   231) <a name="l231" style="background-color: #ffffff">  end if</a>
+   232) <a name="l232" style="background-color: #ffffff"></a>
+   233) <a name="l233" style="background-color: #ffffff">end subroutine wv_sat_init</a>
+   234) <a name="l234" style="background-color: #ffffff"></a>
+   235) <a name="l235" style="background-color: #ffffff">subroutine wv_sat_final</a>
+   236) <a name="l236" style="background-color: #ffffff">  !------------------------------------------------------------------!</a>
+   237) <a name="l237" style="background-color: #ffffff">  ! Purpose:                                                         !</a>
+   238) <a name="l238" style="background-color: #ffffff">  !   Deallocate global variables in module.                         !</a>
+   239) <a name="l239" style="background-color: #ffffff">  !------------------------------------------------------------------!</a>
+   240) <a name="l240" style="background-color: #ffffff">  use abortutils,   only: endrun</a>
+   241) <a name="l241" style="background-color: #ffffff"></a>
+   242) <a name="l242" style="background-color: #ffffff">  integer :: status</a>
+   243) <a name="l243" style="background-color: #ffffff"></a>
+   244) <a name="l244" style="background-color: #ffffff">  if (</a><a style="background-color: #fafad2">allocated(estbl)) then</a>
+   245) <a name="l245" style="background-color: #fafad2"></a>
+   246) <a name="l246" style="background-color: #ffffff">     deallocate(estbl, stat=status)</a>
+   247) <a name="l247" style="background-color: #ffffff"></a>
+   248) <a name="l248" style="background-color: #ffffff">     if (status /= 0) then</a>
+   249) <a name="l249" style="background-color: #ffffff">        call </a><a style="background-color: #ffff99">endrun('wv_sat_final :: ERROR deallocating table')</a>
+   250) <a name="l250" style="background-color: #ffff99">        return</a>
+   251) <a name="l251" style="background-color: #ffff99">     end if</a>
+   252) <a name="l252" style="background-color: #ffff99"></a>
+   253) <a name="l253" style="background-color: #ffff99">  end if</a>
+   254) <a name="l254" style="background-color: #ffff99"></a>
+   255) <a name="l255" style="background-color: #ffffff">end subroutine wv_sat_final</a>
+   256) <a name="l256" style="background-color: #ffffff"></a>
+   257) <a name="l257" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+   258) <a name="l258" style="background-color: #ffffff">! DEFAULT SVP FUNCTIONS</a>
+   259) <a name="l259" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+   260) <a name="l260" style="background-color: #ffffff"></a>
+   261) <a name="l261" style="background-color: #ffffff">! Compute saturation vapor pressure over water</a>
+   262) <a name="l262" style="background-color: #ffffff">elemental function svp_water(t) result(es)</a>
+   263) <a name="l263" style="background-color: #ffffff"></a>
+   264) <a name="l264" style="background-color: #ffffff">  use wv_sat_methods, only: &amp;</a>
+   265) <a name="l265" style="background-color: #ffffff">       wv_sat_svp_water</a>
+   266) <a name="l266" style="background-color: #ffffff"></a>
+   267) <a name="l267" style="background-color: #ffffff">  real(r8), intent(in) :: t ! Temperature (K)</a>
+   268) <a name="l268" style="background-color: #ffffff">  real(r8) :: es            ! SVP (Pa)</a>
+   269) <a name="l269" style="background-color: #ffffff"></a>
+   270) <a name="l270" style="background-color: #ffffff">  es = wv_sat_svp_water(T)</a>
+   271) <a name="l271" style="background-color: #ffffff"></a>
+   272) <a name="l272" style="background-color: #ffffff">end function svp_water</a>
+   273) <a name="l273" style="background-color: #ffffff"></a>
+   274) <a name="l274" style="background-color: #ffffff">! Compute saturation vapor pressure over ice</a>
+   275) <a name="l275" style="background-color: #ffffff">elemental function svp_ice(t) result(es)</a>
+   276) <a name="l276" style="background-color: #ffffff"></a>
+   277) <a name="l277" style="background-color: #ffffff">  use wv_sat_methods, only: &amp;</a>
+   278) <a name="l278" style="background-color: #ffffff">       wv_sat_svp_ice</a>
+   279) <a name="l279" style="background-color: #ffffff"></a>
+   280) <a name="l280" style="background-color: #ffffff">  real(r8), intent(in) :: t ! Temperature (K)</a>
+   281) <a name="l281" style="background-color: #ffffff">  real(r8) :: es            ! SVP (Pa)</a>
+   282) <a name="l282" style="background-color: #ffffff"></a>
+   283) <a name="l283" style="background-color: #ffffff">  es = wv_sat_svp_ice(T)</a>
+   284) <a name="l284" style="background-color: #ffffff"></a>
+   285) <a name="l285" style="background-color: #ffffff">end function svp_ice</a>
+   286) <a name="l286" style="background-color: #ffffff"></a>
+   287) <a name="l287" style="background-color: #ffffff">! Compute saturation vapor pressure with an ice-water transition</a>
+   288) <a name="l288" style="background-color: #ffffff">elemental function svp_trans(t) result(es)</a>
+   289) <a name="l289" style="background-color: #ffffff"></a>
+   290) <a name="l290" style="background-color: #ffffff">  use wv_sat_methods, only: &amp;</a>
+   291) <a name="l291" style="background-color: #ffffff">       wv_sat_svp_trans</a>
+   292) <a name="l292" style="background-color: #ffffff"></a>
+   293) <a name="l293" style="background-color: #ffffff">  real(r8), intent(in) :: t ! Temperature (K)</a>
+   294) <a name="l294" style="background-color: #ffffff">  real(r8) :: es            ! SVP (Pa)</a>
+   295) <a name="l295" style="background-color: #ffffff"></a>
+   296) <a name="l296" style="background-color: #ffffff">  es = wv_sat_svp_trans(T)</a>
+   297) <a name="l297" style="background-color: #ffffff"></a>
+   298) <a name="l298" style="background-color: #ffffff">end function svp_trans</a>
+   299) <a name="l299" style="background-color: #ffffff"></a>
+   300) <a name="l300" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+   301) <a name="l301" style="background-color: #ffffff">! UTILITIES</a>
+   302) <a name="l302" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+   303) <a name="l303" style="background-color: #ffffff"></a>
+   304) <a name="l304" style="background-color: #ffffff">! Does linear interpolation from nearest values found</a>
+   305) <a name="l305" style="background-color: #ffffff">! in the table (estbl).</a>
+   306) <a name="l306" style="background-color: #ffffff">elemental function estblf(t) result(es)</a>
+   307) <a name="l307" style="background-color: #ffffff"></a>
+   308) <a name="l308" style="background-color: #ffffff">  real(r8), intent(in) :: t ! Temperature </a>
+   309) <a name="l309" style="background-color: #ffffff">  real(r8) :: es            ! SVP (Pa)</a>
+   310) <a name="l310" style="background-color: #ffffff"></a>
+   311) <a name="l311" style="background-color: #ffffff">  integer  :: i         ! Index for t in the table</a>
+   312) <a name="l312" style="background-color: #ffffff">  real(r8) :: t_tmp     ! intermediate temperature for es look-up</a>
+   313) <a name="l313" style="background-color: #ffffff"></a>
+   314) <a name="l314" style="background-color: #ffffff">  real(r8) :: weight ! Weight for interpolation</a>
+   315) <a name="l315" style="background-color: #ffffff"></a>
+   316) <a name="l316" style="background-color: #ffffff">  t_tmp = max(min(t,tmax)-tmin, 0._r8)   ! Number of table entries above tmin</a>
+   317) <a name="l317" style="background-color: #ffffff">  i = int(t_tmp) + 1                     ! Corresponding index.</a>
+   318) <a name="l318" style="background-color: #ffffff">  weight = t_tmp - aint(t_tmp, r8)       ! Fractional part of t_tmp (for interpolation).</a>
+   319) <a name="l319" style="background-color: #ffffff">  es = (1._r8 - weight)*estbl(i) + weight*estbl(i+1)</a>
+   320) <a name="l320" style="background-color: #ffffff"></a>
+   321) <a name="l321" style="background-color: #ffffff">end function estblf</a>
+   322) <a name="l322" style="background-color: #ffffff"></a>
+   323) <a name="l323" style="background-color: #ffffff">! Get enthalpy based only on temperature</a>
+   324) <a name="l324" style="background-color: #ffffff">! and specific humidity.</a>
+   325) <a name="l325" style="background-color: #ffffff">elemental function tq_enthalpy(t, q, hltalt) result(enthalpy)</a>
+   326) <a name="l326" style="background-color: #ffffff"></a>
+   327) <a name="l327" style="background-color: #ffffff">  real(r8), intent(in) :: t      ! Temperature</a>
+   328) <a name="l328" style="background-color: #ffffff">  real(r8), intent(in) :: q      ! Specific humidity</a>
+   329) <a name="l329" style="background-color: #ffffff">  real(r8), intent(in) :: hltalt ! Modified hlat for T derivatives</a>
+   330) <a name="l330" style="background-color: #ffffff"></a>
+   331) <a name="l331" style="background-color: #ffffff">  real(r8) :: enthalpy</a>
+   332) <a name="l332" style="background-color: #ffffff"></a>
+   333) <a name="l333" style="background-color: #ffffff">  enthalpy = cpair * t + hltalt * q</a>
+   334) <a name="l334" style="background-color: #ffffff">  </a>
+   335) <a name="l335" style="background-color: #ffffff">end function tq_enthalpy</a>
+   336) <a name="l336" style="background-color: #ffffff"></a>
+   337) <a name="l337" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+   338) <a name="l338" style="background-color: #ffffff">! LATENT HEAT OF VAPORIZATION CORRECTIONS</a>
+   339) <a name="l339" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+   340) <a name="l340" style="background-color: #ffffff"></a>
+   341) <a name="l341" style="background-color: #ffffff">elemental subroutine no_ip_hltalt(t, hltalt)</a>
+   342) <a name="l342" style="background-color: #ffffff">  !------------------------------------------------------------------!</a>
+   343) <a name="l343" style="background-color: #ffffff">  ! Purpose:                                                         !</a>
+   344) <a name="l344" style="background-color: #ffffff">  !   Calculate latent heat of vaporization of pure liquid water at  !</a>
+   345) <a name="l345" style="background-color: #ffffff">  !   a given temperature.                                           !</a>
+   346) <a name="l346" style="background-color: #ffffff">  !------------------------------------------------------------------!</a>
+   347) <a name="l347" style="background-color: #ffffff"></a>
+   348) <a name="l348" style="background-color: #ffffff">  ! Inputs</a>
+   349) <a name="l349" style="background-color: #ffffff">  real(r8), intent(in) :: t        ! Temperature</a>
+   350) <a name="l350" style="background-color: #ffffff">  ! Outputs</a>
+   351) <a name="l351" style="background-color: #ffffff">  real(r8), intent(out) :: hltalt  ! Appropriately modified hlat</a>
+   352) <a name="l352" style="background-color: #ffffff"></a>
+   353) <a name="l353" style="background-color: #ffffff">  hltalt = latvap</a>
+   354) <a name="l354" style="background-color: #ffffff"></a>
+   355) <a name="l355" style="background-color: #ffffff">  ! Account for change of latvap with t above freezing where</a>
+   356) <a name="l356" style="background-color: #ffffff">  ! constant slope is given by -2369 j/(kg c) = cpv - cw</a>
+   357) <a name="l357" style="background-color: #ffffff">  if (t &gt;= tmelt) then</a>
+   358) <a name="l358" style="background-color: #ffffff">     hltalt = hltalt - 2369.0_r8*(t-tmelt)</a>
+   359) <a name="l359" style="background-color: #ffffff">  end if</a>
+   360) <a name="l360" style="background-color: #ffffff"></a>
+   361) <a name="l361" style="background-color: #ffffff">end subroutine no_ip_hltalt</a>
+   362) <a name="l362" style="background-color: #ffffff"></a>
+   363) <a name="l363" style="background-color: #ffffff">elemental subroutine calc_hltalt(t, hltalt, tterm)</a>
+   364) <a name="l364" style="background-color: #ffffff">  !------------------------------------------------------------------!</a>
+   365) <a name="l365" style="background-color: #ffffff">  ! Purpose:                                                         !</a>
+   366) <a name="l366" style="background-color: #ffffff">  !   Calculate latent heat of vaporization of water at a given      !</a>
+   367) <a name="l367" style="background-color: #ffffff">  !   temperature, taking into account the ice phase if temperature  !</a>
+   368) <a name="l368" style="background-color: #ffffff">  !   is below freezing.                                             !</a>
+   369) <a name="l369" style="background-color: #ffffff">  !   Optional argument also calculates a term used to calculate     !</a>
+   370) <a name="l370" style="background-color: #ffffff">  !   d(es)/dT within the water-ice transition range.                !</a>
+   371) <a name="l371" style="background-color: #ffffff">  !------------------------------------------------------------------!</a>
+   372) <a name="l372" style="background-color: #ffffff"></a>
+   373) <a name="l373" style="background-color: #ffffff">  ! Inputs</a>
+   374) <a name="l374" style="background-color: #ffffff">  real(r8), intent(in) :: t        ! Temperature</a>
+   375) <a name="l375" style="background-color: #ffffff">  ! Outputs</a>
+   376) <a name="l376" style="background-color: #ffffff">  real(r8), intent(out) :: hltalt  ! Appropriately modified hlat</a>
+   377) <a name="l377" style="background-color: #ffffff">  ! Term to account for d(es)/dT in transition region.</a>
+   378) <a name="l378" style="background-color: #ffffff">  real(r8), intent(out), optional :: tterm</a>
+   379) <a name="l379" style="background-color: #ffffff"></a>
+   380) <a name="l380" style="background-color: #ffffff">  ! Local variables</a>
+   381) <a name="l381" style="background-color: #ffffff">  real(r8) :: tc      ! Temperature in degrees C</a>
+   382) <a name="l382" style="background-color: #ffffff">  real(r8) :: weight  ! Weight for es transition from water to ice</a>
+   383) <a name="l383" style="background-color: #ffffff">  ! Loop iterator</a>
+   384) <a name="l384" style="background-color: #ffffff">  integer :: i</a>
+   385) <a name="l385" style="background-color: #ffffff"></a>
+   386) <a name="l386" style="background-color: #ffffff">  if (present(tterm)) tterm = 0.0_r8</a>
+   387) <a name="l387" style="background-color: #ffffff"></a>
+   388) <a name="l388" style="background-color: #ffffff">  call no_ip_hltalt(t,hltalt)</a>
+   389) <a name="l389" style="background-color: #ffffff">  if (t &lt; tmelt) then</a>
+   390) <a name="l390" style="background-color: #ffffff">     ! Weighting of hlat accounts for transition from water to ice.</a>
+   391) <a name="l391" style="background-color: #ffffff">     tc = t - tmelt</a>
+   392) <a name="l392" style="background-color: #ffffff"></a>
+   393) <a name="l393" style="background-color: #ffffff">     if (tc &gt;= -ttrice) then</a>
+   394) <a name="l394" style="background-color: #ffffff">        weight = -tc/ttrice</a>
+   395) <a name="l395" style="background-color: #ffffff"></a>
+   396) <a name="l396" style="background-color: #ffffff">        ! polynomial expression approximates difference between es</a>
+   397) <a name="l397" style="background-color: #ffffff">        ! over water and es over ice from 0 to -ttrice (C) (max of</a>
+   398) <a name="l398" style="background-color: #ffffff">        ! ttrice is 40): required for accurate estimate of es</a>
+   399) <a name="l399" style="background-color: #ffffff">        ! derivative in transition range from ice to water</a>
+   400) <a name="l400" style="background-color: #ffffff">        if (present(tterm)) then</a>
+   401) <a name="l401" style="background-color: #ffffff">           do i = size(pcf), 1, -1</a>
+   402) <a name="l402" style="background-color: #ffffff">              tterm = pcf(i) + tc*tterm</a>
+   403) <a name="l403" style="background-color: #ffffff">           end do</a>
+   404) <a name="l404" style="background-color: #ffffff">           tterm = tterm/ttrice</a>
+   405) <a name="l405" style="background-color: #ffffff">        end if</a>
+   406) <a name="l406" style="background-color: #ffffff"></a>
+   407) <a name="l407" style="background-color: #ffffff">     else</a>
+   408) <a name="l408" style="background-color: #ffffff">        weight = 1.0_r8</a>
+   409) <a name="l409" style="background-color: #ffffff">     end if</a>
+   410) <a name="l410" style="background-color: #ffffff"></a>
+   411) <a name="l411" style="background-color: #ffffff">     hltalt = hltalt + weight*latice</a>
+   412) <a name="l412" style="background-color: #ffffff"></a>
+   413) <a name="l413" style="background-color: #ffffff">  end if</a>
+   414) <a name="l414" style="background-color: #ffffff"></a>
+   415) <a name="l415" style="background-color: #ffffff">end subroutine calc_hltalt</a>
+   416) <a name="l416" style="background-color: #ffffff"></a>
+   417) <a name="l417" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+   418) <a name="l418" style="background-color: #ffffff">! OPTIONAL OUTPUTS</a>
+   419) <a name="l419" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+   420) <a name="l420" style="background-color: #ffffff"></a>
+   421) <a name="l421" style="background-color: #ffffff">! Temperature derivative outputs, for qsat_*</a>
+   422) <a name="l422" style="background-color: #ffffff">elemental subroutine deriv_outputs(t, p, es, qs, hltalt, tterm, &amp;</a>
+   423) <a name="l423" style="background-color: #ffffff">     gam, dqsdt)</a>
+   424) <a name="l424" style="background-color: #ffffff"></a>
+   425) <a name="l425" style="background-color: #ffffff">  ! Inputs</a>
+   426) <a name="l426" style="background-color: #ffffff">  real(r8), intent(in) :: t      ! Temperature</a>
+   427) <a name="l427" style="background-color: #ffffff">  real(r8), intent(in) :: p      ! Pressure</a>
+   428) <a name="l428" style="background-color: #ffffff">  real(r8), intent(in) :: es     ! Saturation vapor pressure</a>
+   429) <a name="l429" style="background-color: #ffffff">  real(r8), intent(in) :: qs     ! Saturation specific humidity</a>
+   430) <a name="l430" style="background-color: #ffffff">  real(r8), intent(in) :: hltalt ! Modified latent heat</a>
+   431) <a name="l431" style="background-color: #ffffff">  real(r8), intent(in) :: tterm  ! Extra term for d(es)/dT in</a>
+   432) <a name="l432" style="background-color: #ffffff">                                 ! transition region.</a>
+   433) <a name="l433" style="background-color: #ffffff"></a>
+   434) <a name="l434" style="background-color: #ffffff">  ! Outputs</a>
+   435) <a name="l435" style="background-color: #ffffff">  real(r8), intent(out), optional :: gam      ! (hltalt/cpair)*(d(qs)/dt)</a>
+   436) <a name="l436" style="background-color: #ffffff">  real(r8), intent(out), optional :: dqsdt    ! (d(qs)/dt)</a>
+   437) <a name="l437" style="background-color: #ffffff"></a>
+   438) <a name="l438" style="background-color: #ffffff">  ! Local variables</a>
+   439) <a name="l439" style="background-color: #ffffff">  real(r8) :: desdt        ! d(es)/dt</a>
+   440) <a name="l440" style="background-color: #ffffff">  real(r8) :: dqsdt_loc    ! local copy of dqsdt</a>
+   441) <a name="l441" style="background-color: #ffffff"></a>
+   442) <a name="l442" style="background-color: #ffffff">  if (qs == 1.0_r8) then</a>
+   443) <a name="l443" style="background-color: #ffffff">     dqsdt_loc = 0._r8</a>
+   444) <a name="l444" style="background-color: #ffffff">  else</a>
+   445) <a name="l445" style="background-color: #ffffff">     desdt = hltalt*es/(rh2o*t*t) + tterm</a>
+   446) <a name="l446" style="background-color: #ffffff">     dqsdt_loc = qs*p*desdt/(es*(p-omeps*es))</a>
+   447) <a name="l447" style="background-color: #ffffff">  end if</a>
+   448) <a name="l448" style="background-color: #ffffff"></a>
+   449) <a name="l449" style="background-color: #ffffff">  if (present(dqsdt)) dqsdt = dqsdt_loc</a>
+   450) <a name="l450" style="background-color: #ffffff">  if (present(gam))   gam   = dqsdt_loc * (hltalt/cpair)</a>
+   451) <a name="l451" style="background-color: #ffffff"></a>
+   452) <a name="l452" style="background-color: #ffffff">end subroutine deriv_outputs</a>
+   453) <a name="l453" style="background-color: #ffffff"></a>
+   454) <a name="l454" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+   455) <a name="l455" style="background-color: #ffffff">! QSAT (SPECIFIC HUMIDITY) PROCEDURES</a>
+   456) <a name="l456" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+   457) <a name="l457" style="background-color: #ffffff"></a>
+   458) <a name="l458" style="background-color: #ffffff">elemental subroutine qsat(t, p, es, qs, gam, dqsdt, enthalpy)</a>
+   459) <a name="l459" style="background-color: #ffffff">  !------------------------------------------------------------------!</a>
+   460) <a name="l460" style="background-color: #ffffff">  ! Purpose:                                                         !</a>
+   461) <a name="l461" style="background-color: #ffffff">  !   Look up and return saturation vapor pressure from precomputed  !</a>
+   462) <a name="l462" style="background-color: #ffffff">  !   table, then calculate and return saturation specific humidity. !</a>
+   463) <a name="l463" style="background-color: #ffffff">  !   Optionally return various temperature derivatives or enthalpy  !</a>
+   464) <a name="l464" style="background-color: #ffffff">  !   at saturation.                                                 !</a>
+   465) <a name="l465" style="background-color: #ffffff">  !------------------------------------------------------------------!</a>
+   466) <a name="l466" style="background-color: #ffffff"></a>
+   467) <a name="l467" style="background-color: #ffffff">  ! Inputs</a>
+   468) <a name="l468" style="background-color: #ffffff">  real(r8), intent(in) :: t    ! Temperature</a>
+   469) <a name="l469" style="background-color: #ffffff">  real(r8), intent(in) :: p    ! Pressure</a>
+   470) <a name="l470" style="background-color: #ffffff">  ! Outputs</a>
+   471) <a name="l471" style="background-color: #ffffff">  real(r8), intent(out) :: es  ! Saturation vapor pressure</a>
+   472) <a name="l472" style="background-color: #ffffff">  real(r8), intent(out) :: qs  ! Saturation specific humidity</a>
+   473) <a name="l473" style="background-color: #ffffff"></a>
+   474) <a name="l474" style="background-color: #ffffff">  real(r8), intent(out), optional :: gam    ! (l/cpair)*(d(qs)/dt)</a>
+   475) <a name="l475" style="background-color: #ffffff">  real(r8), intent(out), optional :: dqsdt  ! (d(qs)/dt)</a>
+   476) <a name="l476" style="background-color: #ffffff">  real(r8), intent(out), optional :: enthalpy ! cpair*t + hltalt*q</a>
+   477) <a name="l477" style="background-color: #ffffff"></a>
+   478) <a name="l478" style="background-color: #ffffff">  ! Local variables</a>
+   479) <a name="l479" style="background-color: #ffffff">  real(r8) :: hltalt       ! Modified latent heat for T derivatives</a>
+   480) <a name="l480" style="background-color: #ffffff">  real(r8) :: tterm        ! Account for d(es)/dT in transition region</a>
+   481) <a name="l481" style="background-color: #ffffff"></a>
+   482) <a name="l482" style="background-color: #ffffff">  es = estblf(t)</a>
+   483) <a name="l483" style="background-color: #ffffff"></a>
+   484) <a name="l484" style="background-color: #ffffff">  qs = svp_to_qsat(es, p)</a>
+   485) <a name="l485" style="background-color: #ffffff"></a>
+   486) <a name="l486" style="background-color: #ffffff">  ! Ensures returned es is consistent with limiters on qs.</a>
+   487) <a name="l487" style="background-color: #ffffff">  es = min(es, p)</a>
+   488) <a name="l488" style="background-color: #ffffff"></a>
+   489) <a name="l489" style="background-color: #ffffff">  ! Calculate optional arguments.</a>
+   490) <a name="l490" style="background-color: #ffffff">  if (present(gam) .or. </a><a style="background-color: #fafad2">present(dqsdt) .or. </a><a style="background-color: #ffffff">present(enthalpy)) then</a>
+   491) <a name="l491" style="background-color: #ffffff"></a>
+   492) <a name="l492" style="background-color: #ffffff">     ! &quot;generalized&quot; analytic expression for t derivative of es</a>
+   493) <a name="l493" style="background-color: #ffffff">     ! accurate to within 1 percent for 173.16 &lt; t &lt; 373.16</a>
+   494) <a name="l494" style="background-color: #ffffff">     call calc_hltalt(t, hltalt, tterm)</a>
+   495) <a name="l495" style="background-color: #ffffff"></a>
+   496) <a name="l496" style="background-color: #ffffff">     if (present(enthalpy)) enthalpy = tq_enthalpy(t, qs, hltalt)</a>
+   497) <a name="l497" style="background-color: #ffffff"></a>
+   498) <a name="l498" style="background-color: #ffffff">     call deriv_outputs(t, p, es, qs, hltalt, tterm, &amp;</a>
+   499) <a name="l499" style="background-color: #ffffff">          gam=gam, dqsdt=dqsdt)</a>
+   500) <a name="l500" style="background-color: #ffffff"></a>
+   501) <a name="l501" style="background-color: #ffffff">  end if</a>
+   502) <a name="l502" style="background-color: #ffffff"></a>
+   503) <a name="l503" style="background-color: #ffffff">end subroutine qsat</a>
+   504) <a name="l504" style="background-color: #ffffff"></a>
+   505) <a name="l505" style="background-color: #ffffff">elemental subroutine qsat_water(t, p, es, qs, gam, dqsdt, enthalpy)</a>
+   506) <a name="l506" style="background-color: #ffffff">  !------------------------------------------------------------------!</a>
+   507) <a name="l507" style="background-color: #ffffff">  ! Purpose:                                                         !</a>
+   508) <a name="l508" style="background-color: #ffffff">  !   Calculate SVP over water at a given temperature, and then      !</a>
+   509) <a name="l509" style="background-color: #ffffff">  !   calculate and return saturation specific humidity.             !</a>
+   510) <a name="l510" style="background-color: #ffffff">  !   Optionally return various temperature derivatives or enthalpy  !</a>
+   511) <a name="l511" style="background-color: #ffffff">  !   at saturation.                                                 !</a>
+   512) <a name="l512" style="background-color: #ffffff">  !------------------------------------------------------------------!</a>
+   513) <a name="l513" style="background-color: #ffffff"></a>
+   514) <a name="l514" style="background-color: #ffffff">  use wv_sat_methods, only: wv_sat_qsat_water</a>
+   515) <a name="l515" style="background-color: #ffffff"></a>
+   516) <a name="l516" style="background-color: #ffffff">  ! Inputs</a>
+   517) <a name="l517" style="background-color: #ffffff">  real(r8), intent(in) :: t    ! Temperature</a>
+   518) <a name="l518" style="background-color: #ffffff">  real(r8), intent(in) :: p    ! Pressure</a>
+   519) <a name="l519" style="background-color: #ffffff">  ! Outputs</a>
+   520) <a name="l520" style="background-color: #ffffff">  real(r8), intent(out) :: es  ! Saturation vapor pressure</a>
+   521) <a name="l521" style="background-color: #ffffff">  real(r8), intent(out) :: qs  ! Saturation specific humidity</a>
+   522) <a name="l522" style="background-color: #ffffff"></a>
+   523) <a name="l523" style="background-color: #ffffff">  real(r8), intent(out), optional :: gam    ! (l/cpair)*(d(qs)/dt)</a>
+   524) <a name="l524" style="background-color: #ffffff">  real(r8), intent(out), optional :: dqsdt  ! (d(qs)/dt)</a>
+   525) <a name="l525" style="background-color: #ffffff">  real(r8), intent(out), optional :: enthalpy ! cpair*t + hltalt*q</a>
+   526) <a name="l526" style="background-color: #ffffff"></a>
+   527) <a name="l527" style="background-color: #ffffff">  ! Local variables</a>
+   528) <a name="l528" style="background-color: #ffffff">  real(r8) :: hltalt       ! Modified latent heat for T derivatives</a>
+   529) <a name="l529" style="background-color: #ffffff"></a>
+   530) <a name="l530" style="background-color: #ffffff">  call wv_sat_qsat_water(t, p, es, qs)</a>
+   531) <a name="l531" style="background-color: #ffffff"></a>
+   532) <a name="l532" style="background-color: #ffffff">  if (present(gam) .or. present(dqsdt) .or. present(enthalpy)) then</a>
+   533) <a name="l533" style="background-color: #ffffff"></a>
+   534) <a name="l534" style="background-color: #ffffff">     ! &quot;generalized&quot; analytic expression for t derivative of es</a>
+   535) <a name="l535" style="background-color: #ffffff">     ! accurate to within 1 percent for 173.16 &lt; t &lt; 373.16</a>
+   536) <a name="l536" style="background-color: #ffffff">     call no_ip_hltalt(t, hltalt)</a>
+   537) <a name="l537" style="background-color: #ffffff"></a>
+   538) <a name="l538" style="background-color: #ffffff">     if (present(enthalpy)) enthalpy = tq_enthalpy(t, qs, hltalt)</a>
+   539) <a name="l539" style="background-color: #ffffff"></a>
+   540) <a name="l540" style="background-color: #ffffff">     ! For pure water/ice transition term is 0.</a>
+   541) <a name="l541" style="background-color: #ffffff">     call deriv_outputs(t, p, es, qs, hltalt, 0._r8, &amp;</a>
+   542) <a name="l542" style="background-color: #ffffff">          gam=gam, dqsdt=dqsdt)</a>
+   543) <a name="l543" style="background-color: #ffffff"></a>
+   544) <a name="l544" style="background-color: #ffffff">  end if</a>
+   545) <a name="l545" style="background-color: #ffffff"></a>
+   546) <a name="l546" style="background-color: #ffffff">end subroutine qsat_water</a>
+   547) <a name="l547" style="background-color: #ffffff"></a>
+   548) <a name="l548" style="background-color: #ffffff">elemental subroutine </a><a style="background-color: #ffcccc">qsat_ice(t, p, es, qs, gam, dqsdt, enthalpy)</a>
+   549) <a name="l549" style="background-color: #ffcccc">  !------------------------------------------------------------------!</a>
+   550) <a name="l550" style="background-color: #ffcccc">  ! Purpose:                                                         !</a>
+   551) <a name="l551" style="background-color: #ffcccc">  !   Calculate SVP over ice at a given temperature, and then        !</a>
+   552) <a name="l552" style="background-color: #ffcccc">  !   calculate and return saturation specific humidity.             !</a>
+   553) <a name="l553" style="background-color: #ffcccc">  !   Optionally return various temperature derivatives or enthalpy  !</a>
+   554) <a name="l554" style="background-color: #ffcccc">  !   at saturation.                                                 !</a>
+   555) <a name="l555" style="background-color: #ffcccc">  !------------------------------------------------------------------!</a>
+   556) <a name="l556" style="background-color: #ffcccc"></a>
+   557) <a name="l557" style="background-color: #ffcccc">  use wv_sat_methods, only: wv_sat_qsat_ice</a>
+   558) <a name="l558" style="background-color: #ffcccc"></a>
+   559) <a name="l559" style="background-color: #ffcccc">  ! Inputs</a>
+   560) <a name="l560" style="background-color: #ffcccc">  real(r8), intent(in) :: t    ! Temperature</a>
+   561) <a name="l561" style="background-color: #ffcccc">  real(r8), intent(in) :: p    ! Pressure</a>
+   562) <a name="l562" style="background-color: #ffcccc">  ! Outputs</a>
+   563) <a name="l563" style="background-color: #ffcccc">  real(r8), intent(out) :: es  ! Saturation vapor pressure</a>
+   564) <a name="l564" style="background-color: #ffcccc">  real(r8), intent(out) :: qs  ! Saturation specific humidity</a>
+   565) <a name="l565" style="background-color: #ffcccc"></a>
+   566) <a name="l566" style="background-color: #ffcccc">  real(r8), intent(out), optional :: gam    ! (l/cpair)*(d(qs)/dt)</a>
+   567) <a name="l567" style="background-color: #ffcccc">  real(r8), intent(out), optional :: dqsdt  ! (d(qs)/dt)</a>
+   568) <a name="l568" style="background-color: #ffcccc">  real(r8), intent(out), optional :: enthalpy ! cpair*t + hltalt*q</a>
+   569) <a name="l569" style="background-color: #ffcccc"></a>
+   570) <a name="l570" style="background-color: #ffcccc">  ! Local variables</a>
+   571) <a name="l571" style="background-color: #ffcccc">  real(r8) :: hltalt       ! Modified latent heat for T derivatives</a>
+   572) <a name="l572" style="background-color: #ffcccc"></a>
+   573) <a name="l573" style="background-color: #ffcccc">  call wv_sat_qsat_ice(t, p, es, qs)</a>
+   574) <a name="l574" style="background-color: #ffcccc"></a>
+   575) <a name="l575" style="background-color: #ffcccc">  if (present(gam) .or. present(dqsdt) .or. present(enthalpy)) then</a>
+   576) <a name="l576" style="background-color: #ffcccc"></a>
+   577) <a name="l577" style="background-color: #ffcccc">     ! For pure ice, just add latent heats.</a>
+   578) <a name="l578" style="background-color: #ffcccc">     hltalt = latvap + latice</a>
+   579) <a name="l579" style="background-color: #ffcccc"></a>
+   580) <a name="l580" style="background-color: #ffcccc">     if (present(enthalpy)) enthalpy = tq_enthalpy(t, qs, hltalt)</a>
+   581) <a name="l581" style="background-color: #ffcccc"></a>
+   582) <a name="l582" style="background-color: #ffcccc">     ! For pure water/ice transition term is 0.</a>
+   583) <a name="l583" style="background-color: #ffcccc">     call deriv_outputs(t, p, es, qs, hltalt, 0._r8, &amp;</a>
+   584) <a name="l584" style="background-color: #ffcccc">          gam=gam, dqsdt=dqsdt)</a>
+   585) <a name="l585" style="background-color: #ffcccc"></a>
+   586) <a name="l586" style="background-color: #ffcccc">  end if</a>
+   587) <a name="l587" style="background-color: #ffcccc"></a>
+   588) <a name="l588" style="background-color: #ffcccc">end subroutine qsat_ice</a>
+   589) <a name="l589" style="background-color: #ffffff"></a>
+   590) <a name="l590" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+   591) <a name="l591" style="background-color: #ffffff">! FINDSP (WET BULB TEMPERATURE) PROCEDURES</a>
+   592) <a name="l592" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+   593) <a name="l593" style="background-color: #ffffff"></a>
+   594) <a name="l594" style="background-color: #ffffff">subroutine findsp_vc(q, t, p, use_ice, tsp, qsp)</a>
+   595) <a name="l595" style="background-color: #ffffff"></a>
+   596) <a name="l596" style="background-color: #ffffff">  use cam_logfile,  only: iulog</a>
+   597) <a name="l597" style="background-color: #ffffff">  use abortutils,   only: endrun</a>
+   598) <a name="l598" style="background-color: #ffffff">  ! Wrapper for findsp which is 1D and handles the output status.</a>
+   599) <a name="l599" style="background-color: #ffffff">  ! Changing findsp to elemental restricted debugging output.</a>
+   600) <a name="l600" style="background-color: #ffffff">  ! If that output is needed again, it's preferable *not* to copy findsp,</a>
+   601) <a name="l601" style="background-color: #ffffff">  ! but to change the existing version.</a>
+   602) <a name="l602" style="background-color: #ffffff"></a>
+   603) <a name="l603" style="background-color: #ffffff">  ! input arguments</a>
+   604) <a name="l604" style="background-color: #ffffff">  real(r8), intent(in) :: q(:)        ! water vapor (kg/kg)</a>
+   605) <a name="l605" style="background-color: #ffffff">  real(r8), intent(in) :: t(:)        ! temperature (K)</a>
+   606) <a name="l606" style="background-color: #ffffff">  real(r8), intent(in) :: p(:)        ! pressure    (Pa)</a>
+   607) <a name="l607" style="background-color: #ffffff">  logical,  intent(in) :: use_ice     ! flag to include ice phase in calculations</a>
+   608) <a name="l608" style="background-color: #ffffff"></a>
+   609) <a name="l609" style="background-color: #ffffff">  ! output arguments</a>
+   610) <a name="l610" style="background-color: #ffffff">  real(r8), intent(out) :: tsp(:)     ! saturation temp (K)</a>
+   611) <a name="l611" style="background-color: #ffffff">  real(r8), intent(out) :: qsp(:)     ! saturation mixing ratio (kg/kg)</a>
+   612) <a name="l612" style="background-color: #ffffff"></a>
+   613) <a name="l613" style="background-color: #ffffff">  integer :: status(size(q))   ! flag representing state of output</a>
+   614) <a name="l614" style="background-color: #ffffff">                               ! 0 =&gt; Successful convergence</a>
+   615) <a name="l615" style="background-color: #ffffff">                               ! 1 =&gt; No calculation done: pressure or specific</a>
+   616) <a name="l616" style="background-color: #ffffff">                               !      humidity not within usable range</a>
+   617) <a name="l617" style="background-color: #ffffff">                               ! 2 =&gt; Run failed to converge</a>
+   618) <a name="l618" style="background-color: #ffffff">                               ! 4 =&gt; Temperature fell below minimum</a>
+   619) <a name="l619" style="background-color: #ffffff">                               ! 8 =&gt; Enthalpy not conserved</a>
+   620) <a name="l620" style="background-color: #ffffff"></a>
+   621) <a name="l621" style="background-color: #ffffff">  integer :: n, i</a>
+   622) <a name="l622" style="background-color: #ffffff"></a>
+   623) <a name="l623" style="background-color: #ffffff">  n = size(q)</a>
+   624) <a name="l624" style="background-color: #ffffff"></a>
+   625) <a name="l625" style="background-color: #ffffff">  call findsp(q, t, p, use_ice, tsp, qsp, status)</a>
+   626) <a name="l626" style="background-color: #ffffff"></a>
+   627) <a name="l627" style="background-color: #ffffff">  ! Currently, only 2 and 8 seem to be treated as fatal errors.</a>
+   628) <a name="l628" style="background-color: #ffffff">  do i = 1,n</a>
+   629) <a name="l629" style="background-color: #ffffff">     if (status(i) == 2) then</a>
+   630) <a name="l630" style="background-color: #ffff99">        write(iulog,*) ' findsp not converging at i = ', i</a>
+   631) <a name="l631" style="background-color: #ffff99">        write(iulog,*) ' t, q, p ', t(i), q(i), p(i)</a>
+   632) <a name="l632" style="background-color: #ffff99">        write(iulog,*) ' tsp, qsp ', tsp(i), qsp(i)</a>
+   633) <a name="l633" style="background-color: #ffff99">        call endrun ('wv_saturation::FINDSP -- not converging')</a>
+   634) <a name="l634" style="background-color: #ffffff">     else if (status(i) == 8) then</a>
+   635) <a name="l635" style="background-color: #ffff99">        write(iulog,*) ' the enthalpy is not conserved at i = ', i</a>
+   636) <a name="l636" style="background-color: #ffff99">        write(iulog,*) ' t, q, p ', t(i), q(i), p(i)</a>
+   637) <a name="l637" style="background-color: #ffff99">        write(iulog,*) ' tsp, qsp ', tsp(i), qsp(i)</a>
+   638) <a name="l638" style="background-color: #ffff99">        call endrun ('wv_saturation::FINDSP -- enthalpy is not conserved')</a>
+   639) <a name="l639" style="background-color: #ffff99">     endif</a>
+   640) <a name="l640" style="background-color: #ffff99">  end do</a>
+   641) <a name="l641" style="background-color: #ffff99"></a>
+   642) <a name="l642" style="background-color: #ffff99">end subroutine findsp_vc</a>
+   643) <a name="l643" style="background-color: #ffffff"></a>
+   644) <a name="l644" style="background-color: #ffffff">elemental subroutine findsp (q, t, p, use_ice, tsp, qsp, status)</a>
+   645) <a name="l645" style="background-color: #ffffff">!----------------------------------------------------------------------- </a>
+   646) <a name="l646" style="background-color: #ffffff">! </a>
+   647) <a name="l647" style="background-color: #ffffff">! Purpose: </a>
+   648) <a name="l648" style="background-color: #ffffff">!     find the wet bulb temperature for a given t and q</a>
+   649) <a name="l649" style="background-color: #ffffff">!     in a longitude height section</a>
+   650) <a name="l650" style="background-color: #ffffff">!     wet bulb temp is the temperature and spec humidity that is </a>
+   651) <a name="l651" style="background-color: #ffffff">!     just saturated and has the same enthalpy</a>
+   652) <a name="l652" style="background-color: #ffffff">!     if q &gt; qs(t) then tsp &gt; t and qsp = qs(tsp) &lt; q</a>
+   653) <a name="l653" style="background-color: #ffffff">!     if q &lt; qs(t) then tsp &lt; t and qsp = qs(tsp) &gt; q</a>
+   654) <a name="l654" style="background-color: #ffffff">!</a>
+   655) <a name="l655" style="background-color: #ffffff">! Method: </a>
+   656) <a name="l656" style="background-color: #ffffff">! a Newton method is used</a>
+   657) <a name="l657" style="background-color: #ffffff">! first guess uses an algorithm provided by John Petch from the UKMO</a>
+   658) <a name="l658" style="background-color: #ffffff">! we exclude points where the physical situation is unrealistic</a>
+   659) <a name="l659" style="background-color: #ffffff">! e.g. where the temperature is outside the range of validity for the</a>
+   660) <a name="l660" style="background-color: #ffffff">!      saturation vapor pressure, or where the water vapor pressure</a>
+   661) <a name="l661" style="background-color: #ffffff">!      exceeds the ambient pressure, or the saturation specific humidity is </a>
+   662) <a name="l662" style="background-color: #ffffff">!      unrealistic</a>
+   663) <a name="l663" style="background-color: #ffffff">! </a>
+   664) <a name="l664" style="background-color: #ffffff">! Author: P. Rasch</a>
+   665) <a name="l665" style="background-color: #ffffff">! </a>
+   666) <a name="l666" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   667) <a name="l667" style="background-color: #ffffff">!</a>
+   668) <a name="l668" style="background-color: #ffffff">!     input arguments</a>
+   669) <a name="l669" style="background-color: #ffffff">!</a>
+   670) <a name="l670" style="background-color: #ffffff"></a>
+   671) <a name="l671" style="background-color: #ffffff">  real(r8), intent(in) :: q        ! water vapor (kg/kg)</a>
+   672) <a name="l672" style="background-color: #ffffff">  real(r8), intent(in) :: t        ! temperature (K)</a>
+   673) <a name="l673" style="background-color: #ffffff">  real(r8), intent(in) :: p        ! pressure    (Pa)</a>
+   674) <a name="l674" style="background-color: #ffffff">  logical,  intent(in) :: use_ice  ! flag to include ice phase in calculations</a>
+   675) <a name="l675" style="background-color: #ffffff">!</a>
+   676) <a name="l676" style="background-color: #ffffff">! output arguments</a>
+   677) <a name="l677" style="background-color: #ffffff">!</a>
+   678) <a name="l678" style="background-color: #ffffff">  real(r8), intent(out) :: tsp      ! saturation temp (K)</a>
+   679) <a name="l679" style="background-color: #ffffff">  real(r8), intent(out) :: qsp      ! saturation mixing ratio (kg/kg)</a>
+   680) <a name="l680" style="background-color: #ffffff">  integer,  intent(out) :: status   ! flag representing state of output</a>
+   681) <a name="l681" style="background-color: #ffffff">                                    ! 0 =&gt; Successful convergence</a>
+   682) <a name="l682" style="background-color: #ffffff">                                    ! 1 =&gt; No calculation done: pressure or specific</a>
+   683) <a name="l683" style="background-color: #ffffff">                                    !      humidity not within usable range</a>
+   684) <a name="l684" style="background-color: #ffffff">                                    ! 2 =&gt; Run failed to converge</a>
+   685) <a name="l685" style="background-color: #ffffff">                                    ! 4 =&gt; Temperature fell below minimum</a>
+   686) <a name="l686" style="background-color: #ffffff">                                    ! 8 =&gt; Enthalpy not conserved</a>
+   687) <a name="l687" style="background-color: #ffffff">!</a>
+   688) <a name="l688" style="background-color: #ffffff">! local variables</a>
+   689) <a name="l689" style="background-color: #ffffff">!</a>
+   690) <a name="l690" style="background-color: #ffffff">  integer, parameter :: iter = 8    ! max number of times to iterate the calculation</a>
+   691) <a name="l691" style="background-color: #ffffff">  integer :: l                      ! iterator</a>
+   692) <a name="l692" style="background-color: #ffffff"></a>
+   693) <a name="l693" style="background-color: #ffffff">  real(r8) es                   ! sat. vapor pressure</a>
+   694) <a name="l694" style="background-color: #ffffff">  real(r8) gam                  ! change in sat spec. hum. wrt temperature (times hltalt/cpair)</a>
+   695) <a name="l695" style="background-color: #ffffff">  real(r8) dgdt                 ! work variable</a>
+   696) <a name="l696" style="background-color: #ffffff">  real(r8) g                    ! work variable</a>
+   697) <a name="l697" style="background-color: #ffffff">  real(r8) hltalt               ! lat. heat. of vap.</a>
+   698) <a name="l698" style="background-color: #ffffff">  real(r8) qs                   ! spec. hum. of water vapor</a>
+   699) <a name="l699" style="background-color: #ffffff"></a>
+   700) <a name="l700" style="background-color: #ffffff">! work variables</a>
+   701) <a name="l701" style="background-color: #ffffff">  real(r8) t1, q1, dt, dq</a>
+   702) <a name="l702" style="background-color: #ffffff">  real(r8) qvd</a>
+   703) <a name="l703" style="background-color: #ffffff">  real(r8) r1b, c1, c2</a>
+   704) <a name="l704" style="background-color: #ffffff">  real(r8), parameter :: dttol = 1.e-4_r8 ! the relative temp error tolerance required to quit the iteration</a>
+   705) <a name="l705" style="background-color: #ffffff">  real(r8), parameter :: dqtol = 1.e-4_r8 ! the relative moisture error tolerance required to quit the iteration</a>
+   706) <a name="l706" style="background-color: #ffffff">  real(r8) enin, enout</a>
+   707) <a name="l707" style="background-color: #ffffff"></a>
+   708) <a name="l708" style="background-color: #ffffff">  ! Saturation specific humidity at this temperature</a>
+   709) <a name="l709" style="background-color: #ffffff">  if (use_ice) then</a>
+   710) <a name="l710" style="background-color: #ffffff">     call qsat(t, p, es, qs)</a>
+   711) <a name="l711" style="background-color: #ffffff">  else</a>
+   712) <a name="l712" style="background-color: #ffffff">     call qsat_water(t, p, es, qs)</a>
+   713) <a name="l713" style="background-color: #ffffff">  end if</a>
+   714) <a name="l714" style="background-color: #ffffff"></a>
+   715) <a name="l715" style="background-color: #ffffff">  ! make sure a meaningful calculation is possible</a>
+   716) <a name="l716" style="background-color: #ffffff">  if (p &lt;= 5._r8*es .or. qs &lt;= 0._r8 .or. qs &gt;= 0.5_r8 &amp;</a>
+   717) <a name="l717" style="background-color: #ffffff">       .or. t &lt; tmin .or. t &gt; tmax) then</a>
+   718) <a name="l718" style="background-color: #ffffff">     status = 1</a>
+   719) <a name="l719" style="background-color: #ffffff">     ! Keep initial parameters when conditions aren't suitable</a>
+   720) <a name="l720" style="background-color: #ffffff">     tsp = t</a>
+   721) <a name="l721" style="background-color: #ffffff">     qsp = q</a>
+   722) <a name="l722" style="background-color: #ffffff">     enin = 1._r8</a>
+   723) <a name="l723" style="background-color: #ffffff">     enout = 1._r8</a>
+   724) <a name="l724" style="background-color: #ffffff"></a>
+   725) <a name="l725" style="background-color: #ffffff">     return</a>
+   726) <a name="l726" style="background-color: #ffffff">  end if</a>
+   727) <a name="l727" style="background-color: #ffffff"></a>
+   728) <a name="l728" style="background-color: #ffffff">  ! Prepare to iterate</a>
+   729) <a name="l729" style="background-color: #ffffff">  status = 2</a>
+   730) <a name="l730" style="background-color: #ffffff"></a>
+   731) <a name="l731" style="background-color: #ffffff">  ! Get initial enthalpy</a>
+   732) <a name="l732" style="background-color: #ffffff">  if (use_ice) then</a>
+   733) <a name="l733" style="background-color: #ffffff">     call calc_hltalt(t,hltalt)</a>
+   734) <a name="l734" style="background-color: #ffffff">  else</a>
+   735) <a name="l735" style="background-color: #ffffff">     call no_ip_hltalt(t,hltalt)</a>
+   736) <a name="l736" style="background-color: #ffffff">  end if</a>
+   737) <a name="l737" style="background-color: #ffffff">  enin = tq_enthalpy(t, q, hltalt)</a>
+   738) <a name="l738" style="background-color: #ffffff"></a>
+   739) <a name="l739" style="background-color: #ffffff">  ! make a guess at the wet bulb temp using a UKMO algorithm (from J. Petch)</a>
+   740) <a name="l740" style="background-color: #ffffff">  c1 = hltalt*c3</a>
+   741) <a name="l741" style="background-color: #ffffff">  c2 = (t + 36._r8)**2</a>
+   742) <a name="l742" style="background-color: #ffffff">  r1b = c2/(c2 + c1*qs)</a>
+   743) <a name="l743" style="background-color: #ffffff">  qvd = r1b * (q - qs)</a>
+   744) <a name="l744" style="background-color: #ffffff">  tsp = t + ((hltalt/cpair)*qvd)</a>
+   745) <a name="l745" style="background-color: #ffffff"></a>
+   746) <a name="l746" style="background-color: #ffffff">  ! Generate qsp, gam, and enout from tsp.</a>
+   747) <a name="l747" style="background-color: #ffffff">  if (use_ice) then</a>
+   748) <a name="l748" style="background-color: #ffffff">     call qsat(tsp, p, es, qsp, gam=gam, enthalpy=enout)</a>
+   749) <a name="l749" style="background-color: #ffffff">  else</a>
+   750) <a name="l750" style="background-color: #ffffff">     call qsat_water(tsp, p, es, qsp, gam=gam, enthalpy=enout)</a>
+   751) <a name="l751" style="background-color: #ffffff">  end if</a>
+   752) <a name="l752" style="background-color: #ffffff"></a>
+   753) <a name="l753" style="background-color: #ffffff">  ! iterate on first guess</a>
+   754) <a name="l754" style="background-color: #ffffff">  do l = 1, iter</a>
+   755) <a name="l755" style="background-color: #ffffff"></a>
+   756) <a name="l756" style="background-color: #ffffff">     g = enin - enout</a>
+   757) <a name="l757" style="background-color: #ffffff">     dgdt = -cpair * (1 + gam)</a>
+   758) <a name="l758" style="background-color: #ffffff"></a>
+   759) <a name="l759" style="background-color: #ffffff">     ! New tsp</a>
+   760) <a name="l760" style="background-color: #ffffff">     t1 = tsp - g/dgdt</a>
+   761) <a name="l761" style="background-color: #ffffff">     dt = abs(t1 - tsp)/t1</a>
+   762) <a name="l762" style="background-color: #ffffff">     tsp = t1</a>
+   763) <a name="l763" style="background-color: #ffffff"></a>
+   764) <a name="l764" style="background-color: #ffffff">     ! bail out if past end of temperature range</a>
+   765) <a name="l765" style="background-color: #ffffff">     if ( tsp &lt; tmin ) then</a>
+   766) <a name="l766" style="background-color: #ffff99">        tsp = tmin</a>
+   767) <a name="l767" style="background-color: #ffff99">        ! Get latent heat and set qsp to a value</a>
+   768) <a name="l768" style="background-color: #ffff99">        ! that preserves enthalpy.</a>
+   769) <a name="l769" style="background-color: #ffff99">        if (use_ice) then</a>
+   770) <a name="l770" style="background-color: #ffff99">           call calc_hltalt(tsp,hltalt)</a>
+   771) <a name="l771" style="background-color: #ffff99">        else</a>
+   772) <a name="l772" style="background-color: #ffff99">           call no_ip_hltalt(tsp,hltalt)</a>
+   773) <a name="l773" style="background-color: #ffff99">        end if</a>
+   774) <a name="l774" style="background-color: #ffff99">        qsp = (enin - cpair*tsp)/hltalt</a>
+   775) <a name="l775" style="background-color: #ffff99">        enout = tq_enthalpy(tsp, qsp, hltalt)</a>
+   776) <a name="l776" style="background-color: #ffff99">        status = 4</a>
+   777) <a name="l777" style="background-color: #ffff99">        exit</a>
+   778) <a name="l778" style="background-color: #ffff99">     end if</a>
+   779) <a name="l779" style="background-color: #ffff99"></a>
+   780) <a name="l780" style="background-color: #ffff99">     ! Re-generate qsp, gam, and enout from new tsp.</a>
+   781) <a name="l781" style="background-color: #ffffff">     if (use_ice) then</a>
+   782) <a name="l782" style="background-color: #ffffff">        call qsat(tsp, p, es, q1, gam=gam, enthalpy=enout)</a>
+   783) <a name="l783" style="background-color: #ffffff">     else</a>
+   784) <a name="l784" style="background-color: #ffffff">        call qsat_water(tsp, p, es, q1, gam=gam, enthalpy=enout)</a>
+   785) <a name="l785" style="background-color: #ffffff">     end if</a>
+   786) <a name="l786" style="background-color: #ffffff">     dq = abs(q1 - qsp)/max(q1,1.e-12_r8)</a>
+   787) <a name="l787" style="background-color: #ffffff">     qsp = q1</a>
+   788) <a name="l788" style="background-color: #ffffff"></a>
+   789) <a name="l789" style="background-color: #ffffff">     ! if converged at this point, exclude it from more iterations</a>
+   790) <a name="l790" style="background-color: #ffffff">     if (dt &lt; dttol .and. dq &lt; dqtol) then</a>
+   791) <a name="l791" style="background-color: #ffffff">        status = 0</a>
+   792) <a name="l792" style="background-color: #ffffff">        exit</a>
+   793) <a name="l793" style="background-color: #ffffff">     endif</a>
+   794) <a name="l794" style="background-color: #ffffff">  end do</a>
+   795) <a name="l795" style="background-color: #ffffff"></a>
+   796) <a name="l796" style="background-color: #ffffff">  ! Test for enthalpy conservation</a>
+   797) <a name="l797" style="background-color: #ffffff">  if (abs((enin-enout)/(enin+enout)) &gt; 1.e-4_r8) </a><a style="background-color: #ffff99">status = 8</a>
+   798) <a name="l798" style="background-color: #ffff99"></a>
+   799) <a name="l799" style="background-color: #ffffff">end subroutine findsp</a>
+   800) <a name="l800" style="background-color: #ffffff"></a>
+   801) <a name="l801" style="background-color: #ffffff">end module wv_saturation</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

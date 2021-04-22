@@ -1,0 +1,1080 @@
+<html>
+<head>
+<title>Listing of runtime_opts.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;runtime_opts.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 86.96&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module runtime_opts</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!----------------------------------------------------------------------- </a>
+     4) <a name="l4" style="background-color: #ffffff">! </a>
+     5) <a name="l5" style="background-color: #ffffff">! Purpose: This module is responsible for reading CAM namelist cam_inparm </a>
+     6) <a name="l6" style="background-color: #ffffff">!          and broadcasting namelist values if needed.  </a>
+     7) <a name="l7" style="background-color: #ffffff">! </a>
+     8) <a name="l8" style="background-color: #ffffff">! Author:</a>
+     9) <a name="l9" style="background-color: #ffffff">!   Original routines:  CMS</a>
+    10) <a name="l10" style="background-color: #ffffff">!   Module:             T. Henderson, September 2003</a>
+    11) <a name="l11" style="background-color: #ffffff">!</a>
+    12) <a name="l12" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    13) <a name="l13" style="background-color: #ffffff"></a>
+    14) <a name="l14" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    15) <a name="l15" style="background-color: #ffffff">!- use statements ------------------------------------------------------</a>
+    16) <a name="l16" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    17) <a name="l17" style="background-color: #ffffff">use shr_kind_mod,    only: r8 =&gt; shr_kind_r8, SHR_KIND_CL</a>
+    18) <a name="l18" style="background-color: #ffffff">use spmd_utils,      only: masterproc</a>
+    19) <a name="l19" style="background-color: #ffffff">use namelist_utils,  only: find_group_name</a>
+    20) <a name="l20" style="background-color: #ffffff">use pmgrid,          only: plat, plev, plon</a>
+    21) <a name="l21" style="background-color: #ffffff">use cam_instance,    only: inst_suffix</a>
+    22) <a name="l22" style="background-color: #ffffff">use cam_history</a>
+    23) <a name="l23" style="background-color: #ffffff">use cam_control_mod</a>
+    24) <a name="l24" style="background-color: #ffffff">use cam_diagnostics, only: inithist_all</a>
+    25) <a name="l25" style="background-color: #ffffff">use cam_logfile,     only: iulog</a>
+    26) <a name="l26" style="background-color: #ffffff">use pspect</a>
+    27) <a name="l27" style="background-color: #ffffff">use units</a>
+    28) <a name="l28" style="background-color: #ffffff">use constituents,    only: pcnst, readtrace</a>
+    29) <a name="l29" style="background-color: #ffffff">use tracers,         only: tracers_flag</a>
+    30) <a name="l30" style="background-color: #ffffff">use time_manager,    only: dtime</a>
+    31) <a name="l31" style="background-color: #ffffff">use filenames,       only: ncdata, bnd_topo, &amp;</a>
+    32) <a name="l32" style="background-color: #ffffff">                           absems_data, &amp;</a>
+    33) <a name="l33" style="background-color: #ffffff">                           caseid, &amp;</a>
+    34) <a name="l34" style="background-color: #ffffff">                           brnch_retain_casename</a>
+    35) <a name="l35" style="background-color: #ffffff">use dycore,          only: dycore_is</a>
+    36) <a name="l36" style="background-color: #ffffff">use abortutils,      only: endrun</a>
+    37) <a name="l37" style="background-color: #ffffff">use rayleigh_friction, only: rayk0, raykrange, raytau0</a>
+    38) <a name="l38" style="background-color: #ffffff"></a>
+    39) <a name="l39" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    40) <a name="l40" style="background-color: #ffffff">!- module boilerplate --------------------------------------------------</a>
+    41) <a name="l41" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    42) <a name="l42" style="background-color: #ffffff">implicit none</a>
+    43) <a name="l43" style="background-color: #ffffff">private</a>
+    44) <a name="l44" style="background-color: #ffffff">save</a>
+    45) <a name="l45" style="background-color: #ffffff"></a>
+    46) <a name="l46" style="background-color: #ffffff"></a>
+    47) <a name="l47" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    48) <a name="l48" style="background-color: #ffffff">! Public interfaces ----------------------------------------------------</a>
+    49) <a name="l49" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    50) <a name="l50" style="background-color: #ffffff">public read_namelist        ! Set and/or get all runtime options</a>
+    51) <a name="l51" style="background-color: #ffffff"></a>
+    52) <a name="l52" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    53) <a name="l53" style="background-color: #ffffff">! Private data ---------------------------------------------------------</a>
+    54) <a name="l54" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    55) <a name="l55" style="background-color: #ffffff"></a>
+    56) <a name="l56" style="background-color: #ffffff">character(len=SHR_KIND_CL), private :: nlfilename = 'atm_in' ! Namelist filename</a>
+    57) <a name="l57" style="background-color: #ffffff"></a>
+    58) <a name="l58" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    59) <a name="l59" style="background-color: #ffffff">!</a>
+    60) <a name="l60" style="background-color: #ffffff">! SOMEWHAT ALPHABETICAL listing of variables in the cam_inparm namelist:</a>
+    61) <a name="l61" style="background-color: #ffffff">!</a>
+    62) <a name="l62" style="background-color: #ffffff">! variable                description</a>
+    63) <a name="l63" style="background-color: #ffffff">! --------             -----------------</a>
+    64) <a name="l64" style="background-color: #ffffff">!</a>
+    65) <a name="l65" style="background-color: #ffffff">! bnd_topo             Path and filename of topography dataset</a>
+    66) <a name="l66" style="background-color: #ffffff">! </a>
+    67) <a name="l67" style="background-color: #ffffff">! absems_data          Dataset with absorption and emissivity factors.</a>
+    68) <a name="l68" style="background-color: #ffffff">!</a>
+    69) <a name="l69" style="background-color: #ffffff">! dtime = nnnn,        Model time step in seconds. Default is dycore dependent.</a>
+    70) <a name="l70" style="background-color: #ffffff">! </a>
+    71) <a name="l71" style="background-color: #ffffff">! fincl1 = 'field1', 'field2',...</a>
+    72) <a name="l72" style="background-color: #ffffff">!                      List of fields to add to the primary history file.</a>
+    73) <a name="l73" style="background-color: #ffffff">! fincl1lonlat = 'longitude by latitude','longitude by latitude',...</a>
+    74) <a name="l74" style="background-color: #ffffff">!                      List of columns ('longitude_latitude') or contiguous </a>
+    75) <a name="l75" style="background-color: #ffffff">!                      columns ('longitude:longitude_latitude:latitude') at </a>
+    76) <a name="l76" style="background-color: #ffffff">!                      which the fincl1 fields will be output. Individual </a>
+    77) <a name="l77" style="background-color: #ffffff">!                      columns are specified as a string using a longitude</a>
+    78) <a name="l78" style="background-color: #ffffff">!                      degree (greater or equal to 0.) followed by a single </a>
+    79) <a name="l79" style="background-color: #ffffff">!                      character (e)ast/(w)est identifer, an</a>
+    80) <a name="l80" style="background-color: #ffffff">!                      underscore '_' , and a latitude degree followed by a </a>
+    81) <a name="l81" style="background-color: #ffffff">!                      single character (n)orth/(s)outh identifier.</a>
+    82) <a name="l82" style="background-color: #ffffff">!                      example '10e_20n' would pick the model column closest</a>
+    83) <a name="l83" style="background-color: #ffffff">!                      to 10 degrees east longitude by 20 degrees north </a>
+    84) <a name="l84" style="background-color: #ffffff">!                      latitude.  A group of contiguous columns can be </a>
+    85) <a name="l85" style="background-color: #ffffff">!                      specified by using lon lat ranges with their single</a>
+    86) <a name="l86" style="background-color: #ffffff">!                      character east/west or north/south identifiers</a>
+    87) <a name="l87" style="background-color: #ffffff">!                      example '10e:20e_15n:20n'.  Would outfield all </a>
+    88) <a name="l88" style="background-color: #ffffff">!                      fincl1 fields at the model columns which fall</a>
+    89) <a name="l89" style="background-color: #ffffff">!                      with in the longitude range from 10 east to 20 east</a>
+    90) <a name="l90" style="background-color: #ffffff">!                      and the latitude range from 15 north to 20 north</a>
+    91) <a name="l91" style="background-color: #ffffff">!</a>
+    92) <a name="l92" style="background-color: #ffffff">! fincl[2..6] = 'field1', 'field2',...</a>
+    93) <a name="l93" style="background-color: #ffffff">!                      List of fields to add to the auxiliary history file.</a>
+    94) <a name="l94" style="background-color: #ffffff">!</a>
+    95) <a name="l95" style="background-color: #ffffff">! fincl2..6]lonlat = 'longitude by latitude','longitude by latitude',...</a>
+    96) <a name="l96" style="background-color: #ffffff">!                      List of columns ('longitude_latitude') or contiguous </a>
+    97) <a name="l97" style="background-color: #ffffff">!                      columns ('longitude:longitude_latitude:latitude') at </a>
+    98) <a name="l98" style="background-color: #ffffff">!                      which the fincl[2..6] fields will be output. Individual </a>
+    99) <a name="l99" style="background-color: #ffffff">!                      columns are specified as a string using a longitude</a>
+   100) <a name="l100" style="background-color: #ffffff">!                      degree (greater or equal to 0.) followed by a single </a>
+   101) <a name="l101" style="background-color: #ffffff">!                      character (e)ast/(w)est identifer, an</a>
+   102) <a name="l102" style="background-color: #ffffff">!                      underscore '_' , and a latitude degree followed by a </a>
+   103) <a name="l103" style="background-color: #ffffff">!                      singel character (n)orth/(s)outh identifier.</a>
+   104) <a name="l104" style="background-color: #ffffff">!                      example '10e_20n' would pick the model column closest</a>
+   105) <a name="l105" style="background-color: #ffffff">!                      to 10 degrees east longitude by 20 degrees north </a>
+   106) <a name="l106" style="background-color: #ffffff">!                      latitude.  A group of contiguous columns can be </a>
+   107) <a name="l107" style="background-color: #ffffff">!                      specified by using lon lat ranges with their single</a>
+   108) <a name="l108" style="background-color: #ffffff">!                      character east/west or north/south identifiers</a>
+   109) <a name="l109" style="background-color: #ffffff">!                      example '10e:20e_15n:20n'.  Would outfield all </a>
+   110) <a name="l110" style="background-color: #ffffff">!                      fincl[2..6] fields at the model columns which fall</a>
+   111) <a name="l111" style="background-color: #ffffff">!                      with in the longitude range from 10 east to 20 east</a>
+   112) <a name="l112" style="background-color: #ffffff">!                      and the latitude range from 15 north to 20 north</a>
+   113) <a name="l113" style="background-color: #ffffff">!</a>
+   114) <a name="l114" style="background-color: #ffffff">! fexcl1 = 'field1','field2',... </a>
+   115) <a name="l115" style="background-color: #ffffff">!                      List of field names to exclude from default</a>
+   116) <a name="l116" style="background-color: #ffffff">!                      primary history file (default fields on the </a>
+   117) <a name="l117" style="background-color: #ffffff">!                      Master Field List).</a>
+   118) <a name="l118" style="background-color: #ffffff">! </a>
+   119) <a name="l119" style="background-color: #ffffff">! fexcl[2..6] = 'field1','field2',... </a>
+   120) <a name="l120" style="background-color: #ffffff">!                      List of field names to exclude from</a>
+   121) <a name="l121" style="background-color: #ffffff">!                      auxiliary history files.</a>
+   122) <a name="l122" style="background-color: #ffffff">! </a>
+   123) <a name="l123" style="background-color: #ffffff">! lcltod_start = nn,nn,nn,...</a>
+   124) <a name="l124" style="background-color: #ffffff">!                      Array containing the starting time of day for local time history</a>
+   125) <a name="l125" style="background-color: #ffffff">!                      averaging. Used in conjuction with lcltod_stop. If lcltod_stop</a>
+   126) <a name="l126" style="background-color: #ffffff">!                      is less than lcltod_start, then the time range wraps around</a>
+   127) <a name="l127" style="background-color: #ffffff">!                      24 hours. The start time is included in the interval. Time is</a>
+   128) <a name="l128" style="background-color: #ffffff">!                      in seconds and defaults to 39600 (11:00 AM).</a>
+   129) <a name="l129" style="background-color: #ffffff">!                      The first value applies to the primary hist. file,</a>
+   130) <a name="l130" style="background-color: #ffffff">!                      the second to the first aux. hist. file, etc.</a>
+   131) <a name="l131" style="background-color: #ffffff">! </a>
+   132) <a name="l132" style="background-color: #ffffff">! lcltod_stop = nn,nn,nn,...</a>
+   133) <a name="l133" style="background-color: #ffffff">!                      Array containing the stopping time of day for local time history</a>
+   134) <a name="l134" style="background-color: #ffffff">!                      averaging. Used in conjuction with lcltod_start. If lcltod_stop</a>
+   135) <a name="l135" style="background-color: #ffffff">!                      is less than lcltod_start, then the time range wraps around</a>
+   136) <a name="l136" style="background-color: #ffffff">!                      24 hours. The stop time is not included in the interval. Time is</a>
+   137) <a name="l137" style="background-color: #ffffff">!                      in seconds and defaults to 0 (midnight).</a>
+   138) <a name="l138" style="background-color: #ffffff">!                      The first value applies to the primary hist. file,</a>
+   139) <a name="l139" style="background-color: #ffffff">!                      the second to the first aux. hist. file, etc.</a>
+   140) <a name="l140" style="background-color: #ffffff">! </a>
+   141) <a name="l141" style="background-color: #ffffff">! lcltod_start = nn,nn,nn,...</a>
+   142) <a name="l142" style="background-color: #ffffff">!                      Array containing the starting time of day for local time history</a>
+   143) <a name="l143" style="background-color: #ffffff">!                      averaging. Used in conjuction with lcltod_stop. If lcltod_stop</a>
+   144) <a name="l144" style="background-color: #ffffff">!                      is less than lcltod_start, then the time range wraps around</a>
+   145) <a name="l145" style="background-color: #ffffff">!                      24 hours. The start time is included in the interval. Time is</a>
+   146) <a name="l146" style="background-color: #ffffff">!                      in seconds and defaults to 39600 (11:00 AM).</a>
+   147) <a name="l147" style="background-color: #ffffff">!                      The first value applies to the primary hist. file,</a>
+   148) <a name="l148" style="background-color: #ffffff">!                      the second to the first aux. hist. file, etc.</a>
+   149) <a name="l149" style="background-color: #ffffff">! </a>
+   150) <a name="l150" style="background-color: #ffffff">! lcltod_stop = nn,nn,nn,...</a>
+   151) <a name="l151" style="background-color: #ffffff">!                      Array containing the stopping time of day for local time history</a>
+   152) <a name="l152" style="background-color: #ffffff">!                      averaging. Used in conjuction with lcltod_start. If lcltod_stop</a>
+   153) <a name="l153" style="background-color: #ffffff">!                      is less than lcltod_start, then the time range wraps around</a>
+   154) <a name="l154" style="background-color: #ffffff">!                      24 hours. The stop time is not included in the interval. Time is</a>
+   155) <a name="l155" style="background-color: #ffffff">!                      in seconds and defaults to 0 (midnight).</a>
+   156) <a name="l156" style="background-color: #ffffff">!                      The first value applies to the primary hist. file,</a>
+   157) <a name="l157" style="background-color: #ffffff">!                      the second to the first aux. hist. file, etc.</a>
+   158) <a name="l158" style="background-color: #ffffff">! </a>
+   159) <a name="l159" style="background-color: #ffffff">! mfilt = nn,nn,nn     Array containing the maximum number of time </a>
+   160) <a name="l160" style="background-color: #ffffff">!                      samples per disk history file. Defaults to 5.</a>
+   161) <a name="l161" style="background-color: #ffffff">!                      The first value applies to the primary hist. file,</a>
+   162) <a name="l162" style="background-color: #ffffff">!                      the second to the first aux. hist. file, etc.</a>
+   163) <a name="l163" style="background-color: #ffffff">! </a>
+   164) <a name="l164" style="background-color: #ffffff">! ncdata               Path and filename of initial condition dataset.</a>
+   165) <a name="l165" style="background-color: #ffffff">! </a>
+   166) <a name="l166" style="background-color: #ffffff">! nhtfrq = nn,nn,nn,.. Output history frequency for each tape</a>
+   167) <a name="l167" style="background-color: #ffffff">!</a>
+   168) <a name="l168" style="background-color: #ffffff">!                      If = 0 : monthly average</a>
+   169) <a name="l169" style="background-color: #ffffff">!                      If &gt; 0 : output every nhtfrq time steps.</a>
+   170) <a name="l170" style="background-color: #ffffff">!                      If &lt; 0 : output every abs(nhtfrq) hours.</a>
+   171) <a name="l171" style="background-color: #ffffff">! </a>
+   172) <a name="l172" style="background-color: #ffffff">! nlvdry = nn,         Number of layers over which to do dry</a>
+   173) <a name="l173" style="background-color: #ffffff">!                      adjustment. Defaults to 3.</a>
+   174) <a name="l174" style="background-color: #ffffff">! </a>
+   175) <a name="l175" style="background-color: #ffffff">! cam_branch_file      Filepath of restart file to branch from (nsrest=3)</a>
+   176) <a name="l176" style="background-color: #ffffff">!                      Full pathname required.</a>
+   177) <a name="l177" style="background-color: #ffffff">character(len=256) :: cam_branch_file = ' '</a>
+   178) <a name="l178" style="background-color: #ffffff">!</a>
+   179) <a name="l179" style="background-color: #ffffff">! use_64bit_nc         True if new 64-bit netCDF formit, false otherwise (default false)</a>
+   180) <a name="l180" style="background-color: #ffffff">! </a>
+   181) <a name="l181" style="background-color: #ffffff"></a>
+   182) <a name="l182" style="background-color: #ffffff">!------------------------------------------------------------------</a>
+   183) <a name="l183" style="background-color: #ffffff">! The following 3 are specific to Rayleigh friction</a>
+   184) <a name="l184" style="background-color: #ffffff">! integer rayk0         vertical level at which rayleigh friction term is centered</a>
+   185) <a name="l185" style="background-color: #ffffff">! real(r8) raykrange    range of rayleigh friction profile; if 0, range is set automatically</a>
+   186) <a name="l186" style="background-color: #ffffff">! real(r8) raytau0      approximate value of decay time at model top (days);</a>
+   187) <a name="l187" style="background-color: #ffffff">!                       if 0., no rayleigh friction is applied</a>
+   188) <a name="l188" style="background-color: #ffffff">!------------------------------------------------------------------</a>
+   189) <a name="l189" style="background-color: #ffffff">!</a>
+   190) <a name="l190" style="background-color: #ffffff">!</a>
+   191) <a name="l191" style="background-color: #ffffff">! hfilename_spec       Flexible filename specifier for history files</a>
+   192) <a name="l192" style="background-color: #ffffff">!</a>
+   193) <a name="l193" style="background-color: #ffffff">! </a>
+   194) <a name="l194" style="background-color: #ffffff">! pertlim = n.n        Max size of perturbation to apply to initial</a>
+   195) <a name="l195" style="background-color: #ffffff">!                      temperature field.</a>
+   196) <a name="l196" style="background-color: #ffffff">!</a>
+   197) <a name="l197" style="background-color: #ffffff">! phys_alltoall        Dynamics/physics transpose option. See phys_grid module.</a>
+   198) <a name="l198" style="background-color: #ffffff">!</a>
+   199) <a name="l199" style="background-color: #ffffff">integer :: phys_alltoall</a>
+   200) <a name="l200" style="background-color: #ffffff">! </a>
+   201) <a name="l201" style="background-color: #ffffff">! phys_loadbalance     Load balance option for performance tuning of </a>
+   202) <a name="l202" style="background-color: #ffffff">!                      physics chunks.  See phys_grid module.  </a>
+   203) <a name="l203" style="background-color: #ffffff">integer :: phys_loadbalance</a>
+   204) <a name="l204" style="background-color: #ffffff">! </a>
+   205) <a name="l205" style="background-color: #ffffff">! phys_twin_algorithm  Load balance option for performance tuning of </a>
+   206) <a name="l206" style="background-color: #ffffff">!                      physics chunks.  See phys_grid module.  </a>
+   207) <a name="l207" style="background-color: #ffffff">integer :: phys_twin_algorithm</a>
+   208) <a name="l208" style="background-color: #ffffff">! </a>
+   209) <a name="l209" style="background-color: #ffffff">! phys_chnk_per_thd    Performance tuning option for physics chunks.  See </a>
+   210) <a name="l210" style="background-color: #ffffff">!                      phys_grid module.  </a>
+   211) <a name="l211" style="background-color: #ffffff">integer :: phys_chnk_per_thd</a>
+   212) <a name="l212" style="background-color: #ffffff">! </a>
+   213) <a name="l213" style="background-color: #ffffff">! tracers_flag = .F.    If true, implement tracer test code. Number of tracers determined</a>
+   214) <a name="l214" style="background-color: #ffffff">!                      in tracers_suite.F90 must agree with PCNST</a>
+   215) <a name="l215" style="background-color: #ffffff">!</a>
+   216) <a name="l216" style="background-color: #ffffff">! readtrace = .T.      If true, tracer initial conditions obtained from </a>
+   217) <a name="l217" style="background-color: #ffffff">!                      initial file. </a>
+   218) <a name="l218" style="background-color: #ffffff">!</a>
+   219) <a name="l219" style="background-color: #ffffff">! inithist             Generate initial dataset as auxillary history file</a>
+   220) <a name="l220" style="background-color: #ffffff">!                      can be set to '6-HOURLY', 'DAILY', 'MONTHLY', 'YEARLY' or 'NONE'. </a>
+   221) <a name="l221" style="background-color: #ffffff">!                      default: 'YEARLY'</a>
+   222) <a name="l222" style="background-color: #ffffff">!</a>
+   223) <a name="l223" style="background-color: #ffffff">! empty_htapes         true =&gt; no fields by default on history tapes</a>
+   224) <a name="l224" style="background-color: #ffffff">!</a>
+   225) <a name="l225" style="background-color: #ffffff">! print_step_cost      true =&gt; print per timestep cost info</a>
+   226) <a name="l226" style="background-color: #ffffff">!</a>
+   227) <a name="l227" style="background-color: #ffffff">! avgflag_pertape      A, I, X, or M means avg, instantaneous, max or min for all fields on</a>
+   228) <a name="l228" style="background-color: #ffffff">!                      that tape</a>
+   229) <a name="l229" style="background-color: #ffffff">!</a>
+   230) <a name="l230" style="background-color: #ffffff">!</a>
+   231) <a name="l231" style="background-color: #ffffff">!   logical indirect     </a>
+   232) <a name="l232" style="background-color: #ffffff">!                    ! true =&gt; include indirect radiative effects of</a>
+   233) <a name="l233" style="background-color: #ffffff">!                    ! sulfate aerosols.  Default is false.</a>
+   234) <a name="l234" style="background-color: #ffffff">!</a>
+   235) <a name="l235" style="background-color: #ffffff">! inithist_all         .false.:  include only REQUIRED fields on IC file</a>
+   236) <a name="l236" style="background-color: #ffffff">!                      .true. :  include required AND optional fields on IC file</a>
+   237) <a name="l237" style="background-color: #ffffff">!                      default:  .false.</a>
+   238) <a name="l238" style="background-color: #ffffff">!</a>
+   239) <a name="l239" style="background-color: #ffffff">! met_data_file        name of file that contains the offline meteorology data</a>
+   240) <a name="l240" style="background-color: #ffffff">! met_data_path        name of directory that contains the offline meteorology data</a>
+   241) <a name="l241" style="background-color: #ffffff">!</a>
+   242) <a name="l242" style="background-color: #ffffff">! met_filenames_list   name of file that contains names of the offline </a>
+   243) <a name="l243" style="background-color: #ffffff">!                      meteorology data files</a>
+   244) <a name="l244" style="background-color: #ffffff">!</a>
+   245) <a name="l245" style="background-color: #ffffff">! met_remove_file      true =&gt; the offline meteorology file will be removed</a>
+   246) <a name="l246" style="background-color: #ffffff">!</a>
+   247) <a name="l247" style="background-color: #ffffff">! met_cell_wall_winds  true =&gt; the offline meteorology winds are defined on the model</a>
+   248) <a name="l248" style="background-color: #ffffff">!                      grid cell walls</a>
+   249) <a name="l249" style="background-color: #ffffff">! Physics buffer</a>
+   250) <a name="l250" style="background-color: #ffffff">logical :: pbuf_global_allocate       ! allocate all buffers as global (default: .true.)</a>
+   251) <a name="l251" style="background-color: #ffffff"></a>
+   252) <a name="l252" style="background-color: #ffffff"></a>
+   253) <a name="l253" style="background-color: #ffffff">! Conservation checks</a>
+   254) <a name="l254" style="background-color: #ffffff"></a>
+   255) <a name="l255" style="background-color: #ffffff">logical            :: print_energy_errors ! switch for diagnostic output from check_energy module</a>
+   256) <a name="l256" style="background-color: #ffffff"></a>
+   257) <a name="l257" style="background-color: #ffffff">! Radiative heating rate calculation options</a>
+   258) <a name="l258" style="background-color: #ffffff"></a>
+   259) <a name="l259" style="background-color: #ffffff">integer :: iradsw        ! freq. of shortwave radiation calc in time steps (positive)</a>
+   260) <a name="l260" style="background-color: #ffffff">                         ! or hours (negative).  Default: -1</a>
+   261) <a name="l261" style="background-color: #ffffff">integer :: iradlw        ! frequency of longwave rad. calc. in time steps (positive)</a>
+   262) <a name="l262" style="background-color: #ffffff">                         ! or hours (negative).  Default: -1</a>
+   263) <a name="l263" style="background-color: #ffffff">integer :: iradae        ! frequency of absorp/emis calc in time steps (positive)</a>
+   264) <a name="l264" style="background-color: #ffffff">                         ! or hours (negative).  Default: -12</a>
+   265) <a name="l265" style="background-color: #ffffff">integer :: irad_always   ! Specifies length of time in timesteps (positive)</a>
+   266) <a name="l266" style="background-color: #ffffff">                         ! or hours (negative) SW/LW radiation will be run continuously</a>
+   267) <a name="l267" style="background-color: #ffffff">                         ! from the start of an initial run.  Default: 0</a>
+   268) <a name="l268" style="background-color: #ffffff">logical :: spectralflux  ! calculate fluxes (up and down) per band. Default: FALSE</a>
+   269) <a name="l269" style="background-color: #ffffff"></a>
+   270) <a name="l270" style="background-color: #ffffff">! SCM Options</a>
+   271) <a name="l271" style="background-color: #ffffff">logical  :: single_column</a>
+   272) <a name="l272" style="background-color: #ffffff">real(r8) :: scmlat,scmlon</a>
+   273) <a name="l273" style="background-color: #ffffff">integer, parameter :: max_chars = 128</a>
+   274) <a name="l274" style="background-color: #ffffff">character(len=max_chars) iopfile</a>
+   275) <a name="l275" style="background-color: #ffffff">character(len=200) :: scm_clubb_iop_name</a>
+   276) <a name="l276" style="background-color: #ffffff">logical  :: scm_iop_srf_prop</a>
+   277) <a name="l277" style="background-color: #ffffff">logical  :: scm_relaxation</a>
+   278) <a name="l278" style="background-color: #ffffff">logical  :: scm_diurnal_avg</a>
+   279) <a name="l279" style="background-color: #ffffff">logical  :: scm_crm_mode</a>
+   280) <a name="l280" style="background-color: #ffffff"></a>
+   281) <a name="l281" style="background-color: #ffffff">contains</a>
+   282) <a name="l282" style="background-color: #ffffff"></a>
+   283) <a name="l283" style="background-color: #ffffff">!=======================================================================</a>
+   284) <a name="l284" style="background-color: #ffffff"></a>
+   285) <a name="l285" style="background-color: #ffffff">  subroutine read_namelist(single_column_in, scmlon_in, scmlat_in, nlfilename_in )</a>
+   286) <a name="l286" style="background-color: #ffffff"></a>
+   287) <a name="l287" style="background-color: #ffffff">   !----------------------------------------------------------------------- </a>
+   288) <a name="l288" style="background-color: #ffffff">   ! </a>
+   289) <a name="l289" style="background-color: #ffffff">   ! Purpose: </a>
+   290) <a name="l290" style="background-color: #ffffff">   ! Read data from namelist cam_inparm to define the run. Process some of the</a>
+   291) <a name="l291" style="background-color: #ffffff">   ! namelist variables to determine history and restart/branch file path </a>
+   292) <a name="l292" style="background-color: #ffffff">   ! names.  Check input namelist variables for validity and print them</a>
+   293) <a name="l293" style="background-color: #ffffff">   ! to standard output. </a>
+   294) <a name="l294" style="background-color: #ffffff">   ! </a>
+   295) <a name="l295" style="background-color: #ffffff">   ! Method: </a>
+   296) <a name="l296" style="background-color: #ffffff">   ! Important Note for running on SUN systems: &quot;implicit automatic (a-z)&quot;</a>
+   297) <a name="l297" style="background-color: #ffffff">   ! will not work because namelist data must be static.</a>
+   298) <a name="l298" style="background-color: #ffffff">   !</a>
+   299) <a name="l299" style="background-color: #ffffff">   ! Author: </a>
+   300) <a name="l300" style="background-color: #ffffff">   ! Original version:  CCM1</a>
+   301) <a name="l301" style="background-color: #ffffff">   ! Standardized:      L. Bath, June 1992</a>
+   302) <a name="l302" style="background-color: #ffffff">   !                    T. Acker, March 1996</a>
+   303) <a name="l303" style="background-color: #ffffff">   !     </a>
+   304) <a name="l304" style="background-color: #ffffff">   !-----------------------------------------------------------------------</a>
+   305) <a name="l305" style="background-color: #ffffff"></a>
+   306) <a name="l306" style="background-color: #ffffff">   ! Note that the following interfaces are prototypes proposed by Henderson </a>
+   307) <a name="l307" style="background-color: #ffffff">   ! and Eaton.  They minimize coupling with other modules.  Design of these </a>
+   308) <a name="l308" style="background-color: #ffffff">   ! interfaces should be refined via review by other CAM developers.  </a>
+   309) <a name="l309" style="background-color: #ffffff">   ! Interface *_defaultopts() gets default values from the responsible </a>
+   310) <a name="l310" style="background-color: #ffffff">   ! module (Expert) prior to namelist read.  </a>
+   311) <a name="l311" style="background-color: #ffffff">   ! Interface *_setopts() sends values to the responsible module (Expert) </a>
+   312) <a name="l312" style="background-color: #ffffff">   ! after namelist read.  Erroneous values are handled by Experts.  </a>
+   313) <a name="l313" style="background-color: #ffffff">   ! TBH  9/8/03 </a>
+   314) <a name="l314" style="background-color: #ffffff">   !</a>
+   315) <a name="l315" style="background-color: #ffffff">   use phys_grid,        only: phys_grid_defaultopts, phys_grid_setopts</a>
+   316) <a name="l316" style="background-color: #ffffff"></a>
+   317) <a name="l317" style="background-color: #ffffff">   use chem_surfvals,    only: chem_surfvals_readnl</a>
+   318) <a name="l318" style="background-color: #ffffff">   use check_energy,     only: check_energy_defaultopts, check_energy_setopts</a>
+   319) <a name="l319" style="background-color: #ffffff">   use radiation,        only: radiation_defaultopts, radiation_setopts, radiation_printopts</a>
+   320) <a name="l320" style="background-color: #ffffff">   use cam_restart,      only: restart_defaultopts, restart_setopts, restart_printopts</a>
+   321) <a name="l321" style="background-color: #ffffff">   use carma_flags_mod,  only: carma_readnl</a>
+   322) <a name="l322" style="background-color: #ffffff">   use co2_cycle,        only: co2_cycle_readnl</a>
+   323) <a name="l323" style="background-color: #ffffff">   use shr_string_mod,   only: shr_string_toUpper</a>
+   324) <a name="l324" style="background-color: #ffffff">   use scamMod,          only: scam_setopts,scam_default_opts</a>
+   325) <a name="l325" style="background-color: #ffffff"></a>
+   326) <a name="l326" style="background-color: #ffffff">   ! Some modules read their own namelist input.</a>
+   327) <a name="l327" style="background-color: #ffffff">   use spmd_utils,          only: spmd_utils_readnl</a>
+   328) <a name="l328" style="background-color: #ffffff">   use physconst,           only: physconst_readnl</a>
+   329) <a name="l329" style="background-color: #ffffff">   use phys_control,        only: phys_ctl_readnl</a>
+   330) <a name="l330" style="background-color: #ffffff">   use wv_saturation,       only: wv_sat_readnl</a>
+   331) <a name="l331" style="background-color: #ffffff">   use ref_pres,            only: ref_pres_readnl</a>
+   332) <a name="l332" style="background-color: #ffffff">   use cam3_aero_data,      only: cam3_aero_data_readnl</a>
+   333) <a name="l333" style="background-color: #ffffff">   use cam3_ozone_data,     only: cam3_ozone_data_readnl</a>
+   334) <a name="l334" style="background-color: #ffffff">   use macrop_driver,       only: macrop_driver_readnl</a>
+   335) <a name="l335" style="background-color: #ffffff">   use microp_driver,       only: microp_driver_readnl</a>
+   336) <a name="l336" style="background-color: #ffffff">   use microp_aero,         only: microp_aero_readnl</a>
+   337) <a name="l337" style="background-color: #ffffff">   use subcol,              only: subcol_readnl</a>
+   338) <a name="l338" style="background-color: #ffffff">   use cloud_fraction,      only: cldfrc_readnl</a>
+   339) <a name="l339" style="background-color: #ffffff">   use cldwat,              only: cldwat_readnl</a>
+   340) <a name="l340" style="background-color: #ffffff">   use zm_conv,             only: zmconv_readnl</a>
+   341) <a name="l341" style="background-color: #ffffff">   use hk_conv,             only: hkconv_readnl</a>
+   342) <a name="l342" style="background-color: #ffffff">   use uwshcu,              only: uwshcu_readnl</a>
+   343) <a name="l343" style="background-color: #ffffff">   use pkg_cld_sediment,    only: cld_sediment_readnl</a>
+   344) <a name="l344" style="background-color: #ffffff">   use gw_drag,             only: gw_drag_readnl</a>
+   345) <a name="l345" style="background-color: #ffffff">   use qbo,                 only: qbo_readnl</a>
+   346) <a name="l346" style="background-color: #ffffff">   use iondrag,             only: iondrag_readnl</a>
+   347) <a name="l347" style="background-color: #ffffff">   use phys_debug_util,     only: phys_debug_readnl</a>
+   348) <a name="l348" style="background-color: #ffffff">   use conv_water,          only: conv_water_readnl</a>
+   349) <a name="l349" style="background-color: #ffffff">   use rad_constituents,    only: rad_cnst_readnl</a>
+   350) <a name="l350" style="background-color: #ffffff">   use radiation_data,      only: rad_data_readnl</a>
+   351) <a name="l351" style="background-color: #ffffff">   use modal_aer_opt,       only: modal_aer_opt_readnl</a>
+   352) <a name="l352" style="background-color: #ffffff">   use chemistry,           only: chem_readnl</a>
+   353) <a name="l353" style="background-color: #ffffff">   use prescribed_volcaero, only: prescribed_volcaero_readnl</a>
+   354) <a name="l354" style="background-color: #ffffff">   use prescribed_strataero,only: prescribed_strataero_readnl</a>
+   355) <a name="l355" style="background-color: #ffffff">   use aerodep_flx,         only: aerodep_flx_readnl</a>
+   356) <a name="l356" style="background-color: #ffffff">   use solar_data,          only: solar_data_readnl</a>
+   357) <a name="l357" style="background-color: #ffffff">   use tropopause,          only: tropopause_readnl</a>
+   358) <a name="l358" style="background-color: #ffffff">   use aoa_tracers,         only: aoa_tracers_readnl</a>
+   359) <a name="l359" style="background-color: #ffffff">   use prescribed_ozone,    only: prescribed_ozone_readnl</a>
+   360) <a name="l360" style="background-color: #ffffff">   use prescribed_aero,     only: prescribed_aero_readnl</a>
+   361) <a name="l361" style="background-color: #ffffff">   use prescribed_ghg,      only: prescribed_ghg_readnl</a>
+   362) <a name="l362" style="background-color: #ffffff">   use aircraft_emit,       only: aircraft_emit_readnl</a>
+   363) <a name="l363" style="background-color: #ffffff">   use cospsimulator_intr,  only: cospsimulator_intr_readnl</a>
+   364) <a name="l364" style="background-color: #ffffff">   use sat_hist,            only: sat_hist_readnl</a>
+   365) <a name="l365" style="background-color: #ffffff">   use vertical_diffusion,  only: vd_readnl</a>
+   366) <a name="l366" style="background-color: #ffffff">   use cam_history_support, only: fieldname_len, fieldname_lenp2</a>
+   367) <a name="l367" style="background-color: #ffffff">   use cam_diagnostics,     only: diag_readnl</a>
+   368) <a name="l368" style="background-color: #ffffff">   use radheat,             only: radheat_readnl</a>
+   369) <a name="l369" style="background-color: #ffffff">#if ( defined OFFLINE_DYN )</a>
+   370) <a name="l370" style="background-color: #ffffff">   use metdata,             only: metdata_readnl</a>
+   371) <a name="l371" style="background-color: #ffffff">#endif</a>
+   372) <a name="l372" style="background-color: #ffffff">   use offline_driver,      only: offline_driver_readnl</a>
+   373) <a name="l373" style="background-color: #ffffff">   use rate_diags,          only: rate_diags_readnl</a>
+   374) <a name="l374" style="background-color: #ffffff"></a>
+   375) <a name="l375" style="background-color: #ffffff">!---------------------------Arguments-----------------------------------</a>
+   376) <a name="l376" style="background-color: #ffffff"></a>
+   377) <a name="l377" style="background-color: #ffffff">   logical , intent(in), optional :: single_column_in </a>
+   378) <a name="l378" style="background-color: #ffffff">   real(r8), intent(in), optional :: scmlon_in</a>
+   379) <a name="l379" style="background-color: #ffffff">   real(r8), intent(in), optional :: scmlat_in</a>
+   380) <a name="l380" style="background-color: #ffffff">   character(len=*)    , optional :: nlfilename_in</a>
+   381) <a name="l381" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   382) <a name="l382" style="background-color: #ffffff"></a>
+   383) <a name="l383" style="background-color: #ffffff">   include 'netcdf.inc'</a>
+   384) <a name="l384" style="background-color: #ffffff"></a>
+   385) <a name="l385" style="background-color: #ffffff">!---------------------------Local variables-----------------------------</a>
+   386) <a name="l386" style="background-color: #ffffff">   character(len=*), parameter ::  subname = &quot;read_namelist&quot;</a>
+   387) <a name="l387" style="background-color: #ffffff">! </a>
+   388) <a name="l388" style="background-color: #ffffff">   character ctemp*8      ! Temporary character strings</a>
+   389) <a name="l389" style="background-color: #ffffff">   integer ntspdy         ! number of timesteps per day</a>
+   390) <a name="l390" style="background-color: #ffffff">   integer t              ! history tape index</a>
+   391) <a name="l391" style="background-color: #ffffff">   integer lastchar       ! index to last char of a char variable</a>
+   392) <a name="l392" style="background-color: #ffffff">   integer ierr           ! error code</a>
+   393) <a name="l393" style="background-color: #ffffff">   integer unitn          ! namelist unit number</a>
+   394) <a name="l394" style="background-color: #ffffff"></a>
+   395) <a name="l395" style="background-color: #ffffff">   integer f, i</a>
+   396) <a name="l396" style="background-color: #ffffff">   integer, parameter :: max_chars = 128</a>
+   397) <a name="l397" style="background-color: #ffffff"></a>
+   398) <a name="l398" style="background-color: #ffffff">   character(len=fieldname_lenp2) fincl1(pflds)</a>
+   399) <a name="l399" style="background-color: #ffffff">   character(len=fieldname_lenp2) fincl2(pflds)</a>
+   400) <a name="l400" style="background-color: #ffffff">   character(len=fieldname_lenp2) fincl3(pflds)</a>
+   401) <a name="l401" style="background-color: #ffffff">   character(len=fieldname_lenp2) fincl4(pflds)</a>
+   402) <a name="l402" style="background-color: #ffffff">   character(len=fieldname_lenp2) fincl5(pflds)</a>
+   403) <a name="l403" style="background-color: #ffffff">   character(len=fieldname_lenp2) fincl6(pflds)</a>
+   404) <a name="l404" style="background-color: #ffffff">   character(len=fieldname_lenp2) fincl7(pflds)</a>
+   405) <a name="l405" style="background-color: #ffffff">   character(len=fieldname_lenp2) fincl8(pflds)</a>
+   406) <a name="l406" style="background-color: #ffffff">   character(len=fieldname_lenp2) fincl9(pflds)</a>
+   407) <a name="l407" style="background-color: #ffffff">   character(len=fieldname_lenp2) fincl10(pflds)</a>
+   408) <a name="l408" style="background-color: #ffffff"></a>
+   409) <a name="l409" style="background-color: #ffffff">   character(len=max_chars) fincl1lonlat(pflds)</a>
+   410) <a name="l410" style="background-color: #ffffff">   character(len=max_chars) fincl2lonlat(pflds)</a>
+   411) <a name="l411" style="background-color: #ffffff">   character(len=max_chars) fincl3lonlat(pflds)</a>
+   412) <a name="l412" style="background-color: #ffffff">   character(len=max_chars) fincl4lonlat(pflds)</a>
+   413) <a name="l413" style="background-color: #ffffff">   character(len=max_chars) fincl5lonlat(pflds)</a>
+   414) <a name="l414" style="background-color: #ffffff">   character(len=max_chars) fincl6lonlat(pflds)</a>
+   415) <a name="l415" style="background-color: #ffffff">   character(len=max_chars) fincl7lonlat(pflds)</a>
+   416) <a name="l416" style="background-color: #ffffff">   character(len=max_chars) fincl8lonlat(pflds)</a>
+   417) <a name="l417" style="background-color: #ffffff">   character(len=max_chars) fincl9lonlat(pflds)</a>
+   418) <a name="l418" style="background-color: #ffffff">   character(len=max_chars) fincl10lonlat(pflds)</a>
+   419) <a name="l419" style="background-color: #ffffff"></a>
+   420) <a name="l420" style="background-color: #ffffff">   character(len=fieldname_len) fexcl1(pflds)</a>
+   421) <a name="l421" style="background-color: #ffffff">   character(len=fieldname_len) fexcl2(pflds)</a>
+   422) <a name="l422" style="background-color: #ffffff">   character(len=fieldname_len) fexcl3(pflds)</a>
+   423) <a name="l423" style="background-color: #ffffff">   character(len=fieldname_len) fexcl4(pflds)</a>
+   424) <a name="l424" style="background-color: #ffffff">   character(len=fieldname_len) fexcl5(pflds)</a>
+   425) <a name="l425" style="background-color: #ffffff">   character(len=fieldname_len) fexcl6(pflds)</a>
+   426) <a name="l426" style="background-color: #ffffff">   character(len=fieldname_len) fexcl7(pflds)</a>
+   427) <a name="l427" style="background-color: #ffffff">   character(len=fieldname_len) fexcl8(pflds)</a>
+   428) <a name="l428" style="background-color: #ffffff">   character(len=fieldname_len) fexcl9(pflds)</a>
+   429) <a name="l429" style="background-color: #ffffff">   character(len=fieldname_len) fexcl10(pflds)</a>
+   430) <a name="l430" style="background-color: #ffffff"></a>
+   431) <a name="l431" style="background-color: #ffffff"></a>
+   432) <a name="l432" style="background-color: #ffffff">   character(len=fieldname_lenp2) fwrtpr1(pflds)</a>
+   433) <a name="l433" style="background-color: #ffffff">   character(len=fieldname_lenp2) fwrtpr2(pflds)</a>
+   434) <a name="l434" style="background-color: #ffffff">   character(len=fieldname_lenp2) fwrtpr3(pflds)</a>
+   435) <a name="l435" style="background-color: #ffffff">   character(len=fieldname_lenp2) fwrtpr4(pflds)</a>
+   436) <a name="l436" style="background-color: #ffffff">   character(len=fieldname_lenp2) fwrtpr5(pflds)</a>
+   437) <a name="l437" style="background-color: #ffffff">   character(len=fieldname_lenp2) fwrtpr6(pflds)</a>
+   438) <a name="l438" style="background-color: #ffffff">   character(len=fieldname_lenp2) fwrtpr7(pflds)</a>
+   439) <a name="l439" style="background-color: #ffffff">   character(len=fieldname_lenp2) fwrtpr8(pflds)</a>
+   440) <a name="l440" style="background-color: #ffffff">   character(len=fieldname_lenp2) fwrtpr9(pflds)</a>
+   441) <a name="l441" style="background-color: #ffffff">   character(len=fieldname_lenp2) fwrtpr10(pflds)</a>
+   442) <a name="l442" style="background-color: #ffffff"></a>
+   443) <a name="l443" style="background-color: #ffffff">!</a>
+   444) <a name="l444" style="background-color: #ffffff">! Define the cam_inparm namelist</a>
+   445) <a name="l445" style="background-color: #ffffff">! ***NOTE*** If a namelist option is not described in the CAM Users Guide,</a>
+   446) <a name="l446" style="background-color: #ffffff">!            it is not supported.  </a>
+   447) <a name="l447" style="background-color: #ffffff"></a>
+   448) <a name="l448" style="background-color: #ffffff">  namelist /cam_inparm/ ncdata, bnd_topo, &amp;</a>
+   449) <a name="l449" style="background-color: #ffffff">                    cam_branch_file  ,ndens   ,nhtfrq  , &amp;</a>
+   450) <a name="l450" style="background-color: #ffffff">                    mfilt   ,absems_data, &amp;</a>
+   451) <a name="l451" style="background-color: #ffffff">                    lcltod_start, lcltod_stop, &amp;</a>
+   452) <a name="l452" style="background-color: #ffffff">                    fincl1lonlat,fincl2lonlat,fincl3lonlat, &amp;</a>
+   453) <a name="l453" style="background-color: #ffffff">                    fincl4lonlat,fincl5lonlat,fincl6lonlat, &amp;</a>
+   454) <a name="l454" style="background-color: #ffffff">                    fincl7lonlat,fincl8lonlat,fincl9lonlat,fincl10lonlat, &amp;</a>
+   455) <a name="l455" style="background-color: #ffffff">                    collect_column_output, &amp;</a>
+   456) <a name="l456" style="background-color: #ffffff">                    fincl1, fincl2, fincl3, fincl4, fincl5, fincl6, fincl7, fincl8, fincl9, fincl10, &amp;</a>
+   457) <a name="l457" style="background-color: #ffffff">                    fexcl1, fexcl2, fexcl3, fexcl4, fexcl5, fexcl6, fexcl7, fexcl8, fexcl9, fexcl10, &amp;</a>
+   458) <a name="l458" style="background-color: #ffffff">                    hfilename_spec, &amp;</a>
+   459) <a name="l459" style="background-color: #ffffff">                    fwrtpr1,fwrtpr2,fwrtpr3,fwrtpr4,fwrtpr5,fwrtpr6, fwrtpr7,fwrtpr8,fwrtpr9,fwrtpr10,&amp;</a>
+   460) <a name="l460" style="background-color: #ffffff">                    dtime, &amp;</a>
+   461) <a name="l461" style="background-color: #ffffff">                    nlvdry,  &amp;</a>
+   462) <a name="l462" style="background-color: #ffffff">                    pertlim ,&amp;</a>
+   463) <a name="l463" style="background-color: #ffffff">                    readtrace, rayk0, raykrange, raytau0, &amp;</a>
+   464) <a name="l464" style="background-color: #ffffff">                    tracers_flag, &amp;</a>
+   465) <a name="l465" style="background-color: #ffffff">                    inithist, indirect, &amp;</a>
+   466) <a name="l466" style="background-color: #ffffff">                    empty_htapes, use_64bit_nc, &amp;</a>
+   467) <a name="l467" style="background-color: #ffffff">                    print_step_cost, avgflag_pertape, &amp;</a>
+   468) <a name="l468" style="background-color: #ffffff">                    phys_alltoall, phys_loadbalance, phys_twin_algorithm, &amp;</a>
+   469) <a name="l469" style="background-color: #ffffff">                    phys_chnk_per_thd, &amp;</a>
+   470) <a name="l470" style="background-color: #ffffff">                    inithist_all</a>
+   471) <a name="l471" style="background-color: #ffffff"></a>
+   472) <a name="l472" style="background-color: #ffffff">  ! physics buffer</a>
+   473) <a name="l473" style="background-color: #ffffff">  namelist /cam_inparm/ pbuf_global_allocate</a>
+   474) <a name="l474" style="background-color: #ffffff"></a>
+   475) <a name="l475" style="background-color: #ffffff">  ! conservation checks</a>
+   476) <a name="l476" style="background-color: #ffffff">  namelist /cam_inparm/ print_energy_errors</a>
+   477) <a name="l477" style="background-color: #ffffff"></a>
+   478) <a name="l478" style="background-color: #ffffff">  ! radiative heating calculation options</a>
+   479) <a name="l479" style="background-color: #ffffff">  namelist /cam_inparm/ iradsw, iradlw, iradae, irad_always, spectralflux</a>
+   480) <a name="l480" style="background-color: #ffffff"></a>
+   481) <a name="l481" style="background-color: #ffffff">  ! scam</a>
+   482) <a name="l482" style="background-color: #ffffff">  namelist /cam_inparm/ iopfile,scm_iop_srf_prop,scm_relaxation, &amp;</a>
+   483) <a name="l483" style="background-color: #ffffff">                        scm_diurnal_avg,scm_crm_mode, scm_clubb_iop_name</a>
+   484) <a name="l484" style="background-color: #ffffff"></a>
+   485) <a name="l485" style="background-color: #ffffff">! </a>
+   486) <a name="l486" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   487) <a name="l487" style="background-color: #ffffff">  if (</a><a style="background-color: #fafad2">present(nlfilename_in)) then</a>
+   488) <a name="l488" style="background-color: #ffffff">     nlfilename = nlfilename_in</a>
+   489) <a name="l489" style="background-color: #ffffff">  end if</a>
+   490) <a name="l490" style="background-color: #ffffff">!</a>
+   491) <a name="l491" style="background-color: #ffffff">! Determine preset values (this is currently being phased out)</a>
+   492) <a name="l492" style="background-color: #ffffff">!</a>
+   493) <a name="l493" style="background-color: #ffffff">   call preset ()</a>
+   494) <a name="l494" style="background-color: #ffffff">!</a>
+   495) <a name="l495" style="background-color: #ffffff">! Preset sulfate aerosol related variables</a>
+   496) <a name="l496" style="background-color: #ffffff"></a>
+   497) <a name="l497" style="background-color: #ffffff">   indirect  = .false.</a>
+   498) <a name="l498" style="background-color: #ffffff"></a>
+   499) <a name="l499" style="background-color: #ffffff">   ! restart write interval</a>
+   500) <a name="l500" style="background-color: #ffffff">   call restart_defaultopts( &amp;</a>
+   501) <a name="l501" style="background-color: #ffffff">      cam_branch_file_out          =cam_branch_file            )</a>
+   502) <a name="l502" style="background-color: #ffffff"></a>
+   503) <a name="l503" style="background-color: #ffffff">   ! Get default values of runtime options for physics chunking.</a>
+   504) <a name="l504" style="background-color: #ffffff">   call phys_grid_defaultopts(                      &amp;</a>
+   505) <a name="l505" style="background-color: #ffffff">      phys_loadbalance_out    =phys_loadbalance,    &amp;</a>
+   506) <a name="l506" style="background-color: #ffffff">      phys_twin_algorithm_out =phys_twin_algorithm, &amp;</a>
+   507) <a name="l507" style="background-color: #ffffff">      phys_alltoall_out       =phys_alltoall,       &amp;</a>
+   508) <a name="l508" style="background-color: #ffffff">      phys_chnk_per_thd_out   =phys_chnk_per_thd    )</a>
+   509) <a name="l509" style="background-color: #ffffff"></a>
+   510) <a name="l510" style="background-color: #ffffff">   ! conservation</a>
+   511) <a name="l511" style="background-color: #ffffff">   call check_energy_defaultopts( &amp;</a>
+   512) <a name="l512" style="background-color: #ffffff">      print_energy_errors_out = print_energy_errors )</a>
+   513) <a name="l513" style="background-color: #ffffff"></a>
+   514) <a name="l514" style="background-color: #ffffff">   ! radiative heating calcs</a>
+   515) <a name="l515" style="background-color: #ffffff">   call radiation_defaultopts( &amp;</a>
+   516) <a name="l516" style="background-color: #ffffff">      iradsw_out      = iradsw,     &amp;</a>
+   517) <a name="l517" style="background-color: #ffffff">      iradlw_out      = iradlw,     &amp;</a>
+   518) <a name="l518" style="background-color: #ffffff">      iradae_out      = iradae,     &amp;</a>
+   519) <a name="l519" style="background-color: #ffffff">      irad_always_out = irad_always, &amp;</a>
+   520) <a name="l520" style="background-color: #ffffff">      spectralflux_out = spectralflux )</a>
+   521) <a name="l521" style="background-color: #ffffff"></a>
+   522) <a name="l522" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(single_column_in)) then</a>
+   523) <a name="l523" style="background-color: #fafad2">      call </a><a style="background-color: #ffffff">scam_default_opts(scmlat_out=scmlat,scmlon_out=scmlon, &amp;</a>
+   524) <a name="l524" style="background-color: #ffffff">        single_column_out=single_column, &amp;</a>
+   525) <a name="l525" style="background-color: #ffffff">        scm_iop_srf_prop_out=scm_iop_srf_prop,&amp;</a>
+   526) <a name="l526" style="background-color: #ffffff">        scm_relaxation_out=scm_relaxation, &amp;</a>
+   527) <a name="l527" style="background-color: #ffffff">        scm_diurnal_avg_out=scm_diurnal_avg, &amp;</a>
+   528) <a name="l528" style="background-color: #ffffff">        scm_crm_mode_out=scm_crm_mode, &amp;</a>
+   529) <a name="l529" style="background-color: #ffffff">        scm_clubb_iop_name_out=scm_clubb_iop_name)</a>
+   530) <a name="l530" style="background-color: #ffffff">   end if</a>
+   531) <a name="l531" style="background-color: #ffffff"></a>
+   532) <a name="l532" style="background-color: #ffffff">   do f = 1, pflds</a>
+   533) <a name="l533" style="background-color: #ffffff">      fincl1(f) = ' '         </a>
+   534) <a name="l534" style="background-color: #ffffff">      fincl2(f) = ' '         </a>
+   535) <a name="l535" style="background-color: #ffffff">      fincl3(f) = ' '         </a>
+   536) <a name="l536" style="background-color: #ffffff">      fincl4(f) = ' '         </a>
+   537) <a name="l537" style="background-color: #ffffff">      fincl5(f) = ' '         </a>
+   538) <a name="l538" style="background-color: #ffffff">      fincl6(f) = ' '         </a>
+   539) <a name="l539" style="background-color: #ffffff">      fincl7(f) = ' '         </a>
+   540) <a name="l540" style="background-color: #ffffff">      fincl8(f) = ' '         </a>
+   541) <a name="l541" style="background-color: #ffffff">      fincl9(f) = ' '         </a>
+   542) <a name="l542" style="background-color: #ffffff">      fincl10(f) = ' '         </a>
+   543) <a name="l543" style="background-color: #ffffff">      fincl1lonlat(f) = ' '</a>
+   544) <a name="l544" style="background-color: #ffffff">      fincl2lonlat(f) = ' '</a>
+   545) <a name="l545" style="background-color: #ffffff">      fincl3lonlat(f) = ' '</a>
+   546) <a name="l546" style="background-color: #ffffff">      fincl4lonlat(f) = ' '</a>
+   547) <a name="l547" style="background-color: #ffffff">      fincl5lonlat(f) = ' '</a>
+   548) <a name="l548" style="background-color: #ffffff">      fincl6lonlat(f) = ' '</a>
+   549) <a name="l549" style="background-color: #ffffff">      fincl7lonlat(f) = ' '</a>
+   550) <a name="l550" style="background-color: #ffffff">      fincl8lonlat(f) = ' '</a>
+   551) <a name="l551" style="background-color: #ffffff">      fincl9lonlat(f) = ' '</a>
+   552) <a name="l552" style="background-color: #ffffff">      fincl10lonlat(f) = ' '</a>
+   553) <a name="l553" style="background-color: #ffffff">      fexcl1(f) = ' '</a>
+   554) <a name="l554" style="background-color: #ffffff">      fexcl2(f) = ' '</a>
+   555) <a name="l555" style="background-color: #ffffff">      fexcl3(f) = ' '</a>
+   556) <a name="l556" style="background-color: #ffffff">      fexcl4(f) = ' '</a>
+   557) <a name="l557" style="background-color: #ffffff">      fexcl5(f) = ' '</a>
+   558) <a name="l558" style="background-color: #ffffff">      fexcl6(f) = ' '</a>
+   559) <a name="l559" style="background-color: #ffffff">      fexcl7(f) = ' '</a>
+   560) <a name="l560" style="background-color: #ffffff">      fexcl8(f) = ' '</a>
+   561) <a name="l561" style="background-color: #ffffff">      fexcl9(f) = ' '</a>
+   562) <a name="l562" style="background-color: #ffffff">      fexcl10(f) = ' '</a>
+   563) <a name="l563" style="background-color: #ffffff">      fwrtpr1(f) = ' '</a>
+   564) <a name="l564" style="background-color: #ffffff">      fwrtpr2(f) = ' '</a>
+   565) <a name="l565" style="background-color: #ffffff">      fwrtpr3(f) = ' '</a>
+   566) <a name="l566" style="background-color: #ffffff">      fwrtpr4(f) = ' '</a>
+   567) <a name="l567" style="background-color: #ffffff">      fwrtpr5(f) = ' '</a>
+   568) <a name="l568" style="background-color: #ffffff">      fwrtpr6(f) = ' '</a>
+   569) <a name="l569" style="background-color: #ffffff">      fwrtpr7(f) = ' '</a>
+   570) <a name="l570" style="background-color: #ffffff">      fwrtpr8(f) = ' '</a>
+   571) <a name="l571" style="background-color: #ffffff">      fwrtpr9(f) = ' '</a>
+   572) <a name="l572" style="background-color: #ffffff">      fwrtpr10(f) = ' '</a>
+   573) <a name="l573" style="background-color: #ffffff">   enddo</a>
+   574) <a name="l574" style="background-color: #ffffff"></a>
+   575) <a name="l575" style="background-color: #ffffff">   ! Read in the cam_inparm namelist from input filename</a>
+   576) <a name="l576" style="background-color: #ffffff"></a>
+   577) <a name="l577" style="background-color: #ffffff">   if (masterproc) then</a>
+   578) <a name="l578" style="background-color: #ffffff">      write(iulog,*) 'Read in cam_inparm namelist from: ', trim(nlfilename)</a>
+   579) <a name="l579" style="background-color: #ffffff">      unitn = getunit()</a>
+   580) <a name="l580" style="background-color: #ffffff">      open( unitn, file=trim(nlfilename), status='old' )</a>
+   581) <a name="l581" style="background-color: #ffffff"></a>
+   582) <a name="l582" style="background-color: #ffffff">      ! Look for cam_inparm group name in the input file.  If found, leave the</a>
+   583) <a name="l583" style="background-color: #ffffff">      ! file positioned at that namelist group.</a>
+   584) <a name="l584" style="background-color: #ffffff">      call find_group_name(unitn, 'cam_inparm', status=ierr)</a>
+   585) <a name="l585" style="background-color: #ffffff">      if (ierr == 0) then  ! found cam_inparm</a>
+   586) <a name="l586" style="background-color: #ffffff">         read(unitn, cam_inparm, iostat=ierr)  ! read the cam_inparm namelist group</a>
+   587) <a name="l587" style="background-color: #ffffff">         if (ierr /= 0) then</a>
+   588) <a name="l588" style="background-color: #ffffff">            call </a><a style="background-color: #ffff99">endrun( subname//':: namelist read returns an'// &amp;</a>
+   589) <a name="l589" style="background-color: #ffff99">                          ' error condition for cam_inparm' )</a>
+   590) <a name="l590" style="background-color: #ffff99">         end if</a>
+   591) <a name="l591" style="background-color: #ffff99">      else</a>
+   592) <a name="l592" style="background-color: #ffff99">         call endrun(subname // ':: can''t find cam_inparm in file ' // trim(nlfilename))</a>
+   593) <a name="l593" style="background-color: #ffff99">      end if</a>
+   594) <a name="l594" style="background-color: #ffff99">      close( </a><a style="background-color: #ffffff">unitn )</a>
+   595) <a name="l595" style="background-color: #ffffff">      call freeunit( unitn )</a>
+   596) <a name="l596" style="background-color: #ffffff">      !</a>
+   597) <a name="l597" style="background-color: #ffffff">      ! Check CASE namelist variable</a>
+   598) <a name="l598" style="background-color: #ffffff">      !</a>
+   599) <a name="l599" style="background-color: #ffffff">      if (caseid==' ') then</a>
+   600) <a name="l600" style="background-color: #ffffff">         call </a><a style="background-color: #ffff99">endrun ('READ_NAMELIST: Namelist variable CASEID must be set')</a>
+   601) <a name="l601" style="background-color: #ffff99">      end if</a>
+   602) <a name="l602" style="background-color: #ffff99"></a>
+   603) <a name="l603" style="background-color: #ffffff">      lastchar = len(caseid)</a>
+   604) <a name="l604" style="background-color: #ffffff">      if (caseid(lastchar:lastchar) /= ' ') then</a>
+   605) <a name="l605" style="background-color: #ffff99">         write(iulog,*)'READ_NAMELIST: CASEID must not exceed ', len(caseid)-1, ' characters'</a>
+   606) <a name="l606" style="background-color: #ffff99">         call endrun</a>
+   607) <a name="l607" style="background-color: #ffff99">      end if</a>
+   608) <a name="l608" style="background-color: #ffff99"></a>
+   609) <a name="l609" style="background-color: #ffffff">      do f=1, pflds</a>
+   610) <a name="l610" style="background-color: #ffffff">         fincl(f, 1) = fincl1(f)</a>
+   611) <a name="l611" style="background-color: #ffffff">         fincl(f, 2) = fincl2(f)</a>
+   612) <a name="l612" style="background-color: #ffffff">         fincl(f, 3) = fincl3(f)</a>
+   613) <a name="l613" style="background-color: #ffffff">         fincl(f, 4) = fincl4(f)</a>
+   614) <a name="l614" style="background-color: #ffffff">         fincl(f, 5) = fincl5(f)</a>
+   615) <a name="l615" style="background-color: #ffffff">         fincl(f, 6) = fincl6(f)</a>
+   616) <a name="l616" style="background-color: #ffffff">         fincl(f, 7) = fincl7(f)</a>
+   617) <a name="l617" style="background-color: #ffffff">         fincl(f, 8) = fincl8(f)</a>
+   618) <a name="l618" style="background-color: #ffffff">         fincl(f, 9) = fincl9(f)</a>
+   619) <a name="l619" style="background-color: #ffffff">         fincl(f,10) = fincl10(f)</a>
+   620) <a name="l620" style="background-color: #ffffff">         </a>
+   621) <a name="l621" style="background-color: #ffffff">         fincllonlat(f, 1) = fincl1lonlat(f)</a>
+   622) <a name="l622" style="background-color: #ffffff">         fincllonlat(f, 2) = fincl2lonlat(f)</a>
+   623) <a name="l623" style="background-color: #ffffff">         fincllonlat(f, 3) = fincl3lonlat(f)</a>
+   624) <a name="l624" style="background-color: #ffffff">         fincllonlat(f, 4) = fincl4lonlat(f)</a>
+   625) <a name="l625" style="background-color: #ffffff">         fincllonlat(f, 5) = fincl5lonlat(f)</a>
+   626) <a name="l626" style="background-color: #ffffff">         fincllonlat(f, 6) = fincl6lonlat(f)</a>
+   627) <a name="l627" style="background-color: #ffffff">         fincllonlat(f, 7) = fincl7lonlat(f)</a>
+   628) <a name="l628" style="background-color: #ffffff">         fincllonlat(f, 8) = fincl8lonlat(f)</a>
+   629) <a name="l629" style="background-color: #ffffff">         fincllonlat(f, 9) = fincl9lonlat(f)</a>
+   630) <a name="l630" style="background-color: #ffffff">         fincllonlat(f,10) = fincl10lonlat(f)</a>
+   631) <a name="l631" style="background-color: #ffffff"></a>
+   632) <a name="l632" style="background-color: #ffffff">         if(dycore_is('UNSTRUCTURED') ) then</a>
+   633) <a name="l633" style="background-color: #ffffff">            if (any(fincllonlat(f,:) </a><a style="background-color: #fafad2">/= ' ')) then</a>
+   634) <a name="l634" style="background-color: #fafad2">               call </a><a style="background-color: #ffff99">endrun('READ_NAMELIST: Column output is not supported &amp;</a>
+   635) <a name="l635" style="background-color: #ffff99">                    &amp;in unstructured grids.')</a>
+   636) <a name="l636" style="background-color: #ffff99">            end if</a>
+   637) <a name="l637" style="background-color: #ffff99">         end if</a>
+   638) <a name="l638" style="background-color: #ffff99"></a>
+   639) <a name="l639" style="background-color: #ffff99"></a>
+   640) <a name="l640" style="background-color: #ffffff">         fexcl(f, 1) = fexcl1(f)</a>
+   641) <a name="l641" style="background-color: #ffffff">         fexcl(f, 2) = fexcl2(f)</a>
+   642) <a name="l642" style="background-color: #ffffff">         fexcl(f, 3) = fexcl3(f)</a>
+   643) <a name="l643" style="background-color: #ffffff">         fexcl(f, 4) = fexcl4(f)</a>
+   644) <a name="l644" style="background-color: #ffffff">         fexcl(f, 5) = fexcl5(f)</a>
+   645) <a name="l645" style="background-color: #ffffff">         fexcl(f, 6) = fexcl6(f)</a>
+   646) <a name="l646" style="background-color: #ffffff">         fexcl(f, 7) = fexcl7(f)</a>
+   647) <a name="l647" style="background-color: #ffffff">         fexcl(f, 8) = fexcl8(f)</a>
+   648) <a name="l648" style="background-color: #ffffff">         fexcl(f, 9) = fexcl9(f)</a>
+   649) <a name="l649" style="background-color: #ffffff">         fexcl(f,10) = fexcl10(f)</a>
+   650) <a name="l650" style="background-color: #ffffff"></a>
+   651) <a name="l651" style="background-color: #ffffff">         fwrtpr(f, 1) = fwrtpr1(f)</a>
+   652) <a name="l652" style="background-color: #ffffff">         fwrtpr(f, 2) = fwrtpr2(f)</a>
+   653) <a name="l653" style="background-color: #ffffff">         fwrtpr(f, 3) = fwrtpr3(f)</a>
+   654) <a name="l654" style="background-color: #ffffff">         fwrtpr(f, 4) = fwrtpr4(f)</a>
+   655) <a name="l655" style="background-color: #ffffff">         fwrtpr(f, 5) = fwrtpr5(f)</a>
+   656) <a name="l656" style="background-color: #ffffff">         fwrtpr(f, 6) = fwrtpr6(f)</a>
+   657) <a name="l657" style="background-color: #ffffff">         fwrtpr(f, 7) = fwrtpr7(f)</a>
+   658) <a name="l658" style="background-color: #ffffff">         fwrtpr(f, 8) = fwrtpr8(f)</a>
+   659) <a name="l659" style="background-color: #ffffff">         fwrtpr(f, 9) = fwrtpr9(f)</a>
+   660) <a name="l660" style="background-color: #ffffff">         fwrtpr(f,10) = fwrtpr10(f)</a>
+   661) <a name="l661" style="background-color: #ffffff">      enddo</a>
+   662) <a name="l662" style="background-color: #ffffff">   end if</a>
+   663) <a name="l663" style="background-color: #ffffff">!</a>
+   664) <a name="l664" style="background-color: #ffffff">! Scatter namelist data to all processes</a>
+   665) <a name="l665" style="background-color: #ffffff">#if ( defined SPMD )</a>
+   666) <a name="l666" style="background-color: #ffffff">   call distnl ( )</a>
+   667) <a name="l667" style="background-color: #ffffff">#endif</a>
+   668) <a name="l668" style="background-color: #ffffff">!</a>
+   669) <a name="l669" style="background-color: #ffffff">! Auxiliary history files:</a>
+   670) <a name="l670" style="background-color: #ffffff">! Store input auxf values in array aux (from common block /comhst/).</a>
+   671) <a name="l671" style="background-color: #ffffff">!</a>
+   672) <a name="l672" style="background-color: #ffffff">! If generate an initial conditions history file as an auxillary tape:</a>
+   673) <a name="l673" style="background-color: #ffffff">!</a>
+   674) <a name="l674" style="background-color: #ffffff">   ctemp = shr_string_toUpper(inithist) </a>
+   675) <a name="l675" style="background-color: #ffffff">   inithist = trim(ctemp)</a>
+   676) <a name="l676" style="background-color: #ffffff">   if (inithist /= '6-HOURLY' .and. inithist /= 'DAILY' .and. &amp;</a>
+   677) <a name="l677" style="background-color: #ffffff">       inithist /= 'MONTHLY'  .and. inithist /= 'YEARLY' .and. &amp;</a>
+   678) <a name="l678" style="background-color: #ffffff">       inithist /= 'CAMIOP'   .and. inithist /= 'ENDOFRUN') then</a>
+   679) <a name="l679" style="background-color: #ffffff">      inithist = 'NONE'</a>
+   680) <a name="l680" style="background-color: #ffffff">   endif</a>
+   681) <a name="l681" style="background-color: #ffffff">! </a>
+   682) <a name="l682" style="background-color: #ffffff">! History file write up times</a>
+   683) <a name="l683" style="background-color: #ffffff">! Convert write freq. of hist files from hours to timesteps if necessary.</a>
+   684) <a name="l684" style="background-color: #ffffff">! </a>
+   685) <a name="l685" style="background-color: #ffffff">   do t=1,ptapes</a>
+   686) <a name="l686" style="background-color: #ffffff">      if (nhtfrq(t) &lt; 0) then</a>
+   687) <a name="l687" style="background-color: #ffffff">         nhtfrq(t) = nint((-nhtfrq(t)*3600._r8)/dtime)</a>
+   688) <a name="l688" style="background-color: #ffffff">      end if</a>
+   689) <a name="l689" style="background-color: #ffffff">   end do</a>
+   690) <a name="l690" style="background-color: #ffffff">!</a>
+   691) <a name="l691" style="background-color: #ffffff">! Initialize the filename specifier if not already set</a>
+   692) <a name="l692" style="background-color: #ffffff">! This is the format for the history filenames:</a>
+   693) <a name="l693" style="background-color: #ffffff">! %c= caseid, %t=tape no., %y=year, %m=month, %d=day, %s=second, %%=%</a>
+   694) <a name="l694" style="background-color: #ffffff">! See the filenames module for more information</a>
+   695) <a name="l695" style="background-color: #ffffff">!</a>
+   696) <a name="l696" style="background-color: #ffffff">   do t = 1, ptapes</a>
+   697) <a name="l697" style="background-color: #ffffff">      if ( len_trim(hfilename_spec(t)) == 0 )then</a>
+   698) <a name="l698" style="background-color: #ffffff">         if ( nhtfrq(t) == 0 )then</a>
+   699) <a name="l699" style="background-color: #ffff99">            hfilename_spec(t) = '%c.cam' // trim(inst_suffix) // '.h%t.%y-%m.nc'        ! Monthly files</a>
+   700) <a name="l700" style="background-color: #ffff99">         else</a>
+   701) <a name="l701" style="background-color: #ffffff">            hfilename_spec(t) = '%c.cam' // trim(inst_suffix) // '.h%t.%y-%m-%d-%s.nc'</a>
+   702) <a name="l702" style="background-color: #ffffff">         end if</a>
+   703) <a name="l703" style="background-color: #ffffff">      end if</a>
+   704) <a name="l704" style="background-color: #ffffff">!</a>
+   705) <a name="l705" style="background-color: #ffffff">! Only one time sample allowed per monthly average file</a>
+   706) <a name="l706" style="background-color: #ffffff">! </a>
+   707) <a name="l707" style="background-color: #ffffff">      if (nhtfrq(t) == 0) </a><a style="background-color: #ffff99">mfilt(t) = 1</a>
+   708) <a name="l708" style="background-color: #ffff99">   end do</a>
+   709) <a name="l709" style="background-color: #ffff99"></a>
+   710) <a name="l710" style="background-color: #ffff99">   ! Print per-tape averaging flags</a>
+   711) <a name="l711" style="background-color: #ffffff">   if (masterproc) then</a>
+   712) <a name="l712" style="background-color: #ffffff">      do t=1,ptapes</a>
+   713) <a name="l713" style="background-color: #ffffff">         if (avgflag_pertape(t) /= ' ') then</a>
+   714) <a name="l714" style="background-color: #ffffff">            write(iulog,*)'Unless overridden by namelist input on a per-field basis (FINCL),'</a>
+   715) <a name="l715" style="background-color: #ffffff">            write(iulog,*)'All fields on history file ',t,' will have averaging flag ',avgflag_pertape(t)</a>
+   716) <a name="l716" style="background-color: #ffffff">         end if</a>
+   717) <a name="l717" style="background-color: #ffffff">      end do</a>
+   718) <a name="l718" style="background-color: #ffffff">   end if</a>
+   719) <a name="l719" style="background-color: #ffffff"></a>
+   720) <a name="l720" style="background-color: #ffffff">   ! restart write interval</a>
+   721) <a name="l721" style="background-color: #ffffff">   call restart_setopts( nsrest,            &amp;</a>
+   722) <a name="l722" style="background-color: #ffffff">      cam_branch_file_in          =cam_branch_file            )</a>
+   723) <a name="l723" style="background-color: #ffffff"></a>
+   724) <a name="l724" style="background-color: #ffffff"></a>
+   725) <a name="l725" style="background-color: #ffffff">   ! Set runtime options for physics chunking.</a>
+   726) <a name="l726" style="background-color: #ffffff">   call phys_grid_setopts(                          &amp;</a>
+   727) <a name="l727" style="background-color: #ffffff">       phys_loadbalance_in    =phys_loadbalance,    &amp;</a>
+   728) <a name="l728" style="background-color: #ffffff">       phys_twin_algorithm_in =phys_twin_algorithm, &amp;</a>
+   729) <a name="l729" style="background-color: #ffffff">       phys_alltoall_in       =phys_alltoall,       &amp;</a>
+   730) <a name="l730" style="background-color: #ffffff">       phys_chnk_per_thd_in   =phys_chnk_per_thd    )</a>
+   731) <a name="l731" style="background-color: #ffffff"></a>
+   732) <a name="l732" style="background-color: #ffffff">   ! conservation</a>
+   733) <a name="l733" style="background-color: #ffffff">   call check_energy_setopts( &amp;</a>
+   734) <a name="l734" style="background-color: #ffffff">      print_energy_errors_in = print_energy_errors )</a>
+   735) <a name="l735" style="background-color: #ffffff"></a>
+   736) <a name="l736" style="background-color: #ffffff">   call radiation_setopts( dtime, nhtfrq(1), &amp;</a>
+   737) <a name="l737" style="background-color: #ffffff">      iradsw_in      = iradsw,     &amp;</a>
+   738) <a name="l738" style="background-color: #ffffff">      iradlw_in      = iradlw,     &amp;</a>
+   739) <a name="l739" style="background-color: #ffffff">      iradae_in      = iradae,     &amp;</a>
+   740) <a name="l740" style="background-color: #ffffff">      irad_always_in = irad_always, &amp;</a>
+   741) <a name="l741" style="background-color: #ffffff">      spectralflux_in = spectralflux )</a>
+   742) <a name="l742" style="background-color: #ffffff"></a>
+   743) <a name="l743" style="background-color: #ffffff">! </a>
+   744) <a name="l744" style="background-color: #ffffff">! Set runtime options for single column mode</a>
+   745) <a name="l745" style="background-color: #ffffff">!</a>
+   746) <a name="l746" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(single_column_in) </a><a style="background-color: #ffffff">.and. </a><a style="background-color: #fafad2">present(scmlon_in) .and. present(scmlat_in)) then </a>
+   747) <a name="l747" style="background-color: #ffffff">      if (single_column_in) then</a>
+   748) <a name="l748" style="background-color: #ffff99">         single_column = single_column_in</a>
+   749) <a name="l749" style="background-color: #ffff99">         scmlon = scmlon_in</a>
+   750) <a name="l750" style="background-color: #ffff99">         scmlat = scmlat_in</a>
+   751) <a name="l751" style="background-color: #ffff99">         call scam_setopts( scmlat_in=scmlat,scmlon_in=scmlon, &amp;</a>
+   752) <a name="l752" style="background-color: #ffff99">                            iopfile_in=iopfile,single_column_in=single_column,&amp;</a>
+   753) <a name="l753" style="background-color: #ffff99">                            scm_iop_srf_prop_in=scm_iop_srf_prop,&amp;</a>
+   754) <a name="l754" style="background-color: #ffff99">                            scm_relaxation_in=scm_relaxation, &amp;</a>
+   755) <a name="l755" style="background-color: #ffff99">                            scm_diurnal_avg_in=scm_diurnal_avg, &amp;</a>
+   756) <a name="l756" style="background-color: #ffff99">                            scm_crm_mode_in=scm_crm_mode, &amp;</a>
+   757) <a name="l757" style="background-color: #ffff99">                            scm_clubb_iop_name_in=scm_clubb_iop_name)</a>
+   758) <a name="l758" style="background-color: #ffff99">      end if</a>
+   759) <a name="l759" style="background-color: #ffff99">   endif</a>
+   760) <a name="l760" style="background-color: #ffff99"></a>
+   761) <a name="l761" style="background-color: #ffff99">   ! Call subroutines for modules to read their own namelist.</a>
+   762) <a name="l762" style="background-color: #ffff99">   ! In some cases namelist default values may depend on settings from</a>
+   763) <a name="l763" style="background-color: #ffff99">   ! other modules, so there may be an order dependence in the following</a>
+   764) <a name="l764" style="background-color: #ffff99">   ! calls.</a>
+   765) <a name="l765" style="background-color: #ffff99">   ! ***N.B.*** In particular, physconst_readnl should be called before</a>
+   766) <a name="l766" style="background-color: #ffff99">   !            the other readnl methods in case that method is used to set</a>
+   767) <a name="l767" style="background-color: #ffff99">   !            physical constants, some of which are set at runtime</a>
+   768) <a name="l768" style="background-color: #ffff99">   !            by the physconst_readnl method.</a>
+   769) <a name="l769" style="background-color: #ffff99">   ! Modules that read their own namelist are responsible for making sure</a>
+   770) <a name="l770" style="background-color: #ffff99">   ! all processes receive the values.</a>
+   771) <a name="l771" style="background-color: #ffff99"></a>
+   772) <a name="l772" style="background-color: #ffff99">   call </a><a style="background-color: #ffffff">spmd_utils_readnl(nlfilename)</a>
+   773) <a name="l773" style="background-color: #ffffff">   call physconst_readnl(nlfilename)</a>
+   774) <a name="l774" style="background-color: #ffffff">   call chem_surfvals_readnl(nlfilename)</a>
+   775) <a name="l775" style="background-color: #ffffff">   call phys_ctl_readnl(nlfilename)</a>
+   776) <a name="l776" style="background-color: #ffffff">   call wv_sat_readnl(nlfilename)</a>
+   777) <a name="l777" style="background-color: #ffffff">   call ref_pres_readnl(nlfilename)</a>
+   778) <a name="l778" style="background-color: #ffffff">   call cam3_aero_data_readnl(nlfilename)</a>
+   779) <a name="l779" style="background-color: #ffffff">   call cam3_ozone_data_readnl(nlfilename)</a>
+   780) <a name="l780" style="background-color: #ffffff">   call macrop_driver_readnl(nlfilename)</a>
+   781) <a name="l781" style="background-color: #ffffff">   call microp_driver_readnl(nlfilename)</a>
+   782) <a name="l782" style="background-color: #ffffff">   call microp_aero_readnl(nlfilename)</a>
+   783) <a name="l783" style="background-color: #ffffff">   call subcol_readnl(nlfilename)</a>
+   784) <a name="l784" style="background-color: #ffffff">   call cldfrc_readnl(nlfilename)</a>
+   785) <a name="l785" style="background-color: #ffffff">   call zmconv_readnl(nlfilename)</a>
+   786) <a name="l786" style="background-color: #ffffff">   call cldwat_readnl(nlfilename)</a>
+   787) <a name="l787" style="background-color: #ffffff">   call hkconv_readnl(nlfilename)</a>
+   788) <a name="l788" style="background-color: #ffffff">   call uwshcu_readnl(nlfilename)</a>
+   789) <a name="l789" style="background-color: #ffffff">   call cld_sediment_readnl(nlfilename)</a>
+   790) <a name="l790" style="background-color: #ffffff">   call gw_drag_readnl(nlfilename)</a>
+   791) <a name="l791" style="background-color: #ffffff">   call qbo_readnl(nlfilename)</a>
+   792) <a name="l792" style="background-color: #ffffff">   call iondrag_readnl(nlfilename)</a>
+   793) <a name="l793" style="background-color: #ffffff">   call phys_debug_readnl(nlfilename)</a>
+   794) <a name="l794" style="background-color: #ffffff">   call conv_water_readnl(nlfilename)</a>
+   795) <a name="l795" style="background-color: #ffffff">   call rad_cnst_readnl(nlfilename)</a>
+   796) <a name="l796" style="background-color: #ffffff">   call rad_data_readnl(nlfilename)</a>
+   797) <a name="l797" style="background-color: #ffffff">   call modal_aer_opt_readnl(nlfilename)</a>
+   798) <a name="l798" style="background-color: #ffffff">   call chem_readnl(nlfilename)</a>
+   799) <a name="l799" style="background-color: #ffffff">   call prescribed_volcaero_readnl(nlfilename)</a>
+   800) <a name="l800" style="background-color: #ffffff">   call prescribed_strataero_readnl(nlfilename)</a>
+   801) <a name="l801" style="background-color: #ffffff">   call solar_data_readnl(nlfilename)</a>
+   802) <a name="l802" style="background-color: #ffffff">   call carma_readnl(nlfilename)</a>
+   803) <a name="l803" style="background-color: #ffffff">   call tropopause_readnl(nlfilename)</a>
+   804) <a name="l804" style="background-color: #ffffff">   call aoa_tracers_readnl(nlfilename)</a>
+   805) <a name="l805" style="background-color: #ffffff">   call aerodep_flx_readnl(nlfilename)</a>
+   806) <a name="l806" style="background-color: #ffffff">   call prescribed_ozone_readnl(nlfilename)</a>
+   807) <a name="l807" style="background-color: #ffffff">   call prescribed_aero_readnl(nlfilename)</a>
+   808) <a name="l808" style="background-color: #ffffff">   call prescribed_ghg_readnl(nlfilename)</a>
+   809) <a name="l809" style="background-color: #ffffff">   call co2_cycle_readnl(nlfilename)</a>
+   810) <a name="l810" style="background-color: #ffffff">   call aircraft_emit_readnl(nlfilename)</a>
+   811) <a name="l811" style="background-color: #ffffff">   call cospsimulator_intr_readnl(nlfilename)</a>
+   812) <a name="l812" style="background-color: #ffffff">   call sat_hist_readnl(nlfilename, hfilename_spec, mfilt, fincl, nhtfrq, avgflag_pertape)</a>
+   813) <a name="l813" style="background-color: #ffffff">   call diag_readnl(nlfilename)</a>
+   814) <a name="l814" style="background-color: #ffffff">   call radheat_readnl(nlfilename)</a>
+   815) <a name="l815" style="background-color: #ffffff">   call vd_readnl(nlfilename)</a>
+   816) <a name="l816" style="background-color: #ffffff">#if ( defined OFFLINE_DYN )</a>
+   817) <a name="l817" style="background-color: #ffffff">   call metdata_readnl(nlfilename)</a>
+   818) <a name="l818" style="background-color: #ffffff">#endif</a>
+   819) <a name="l819" style="background-color: #ffffff">   call offline_driver_readnl(nlfilename)</a>
+   820) <a name="l820" style="background-color: #ffffff">   call rate_diags_readnl(nlfilename)</a>
+   821) <a name="l821" style="background-color: #ffffff"></a>
+   822) <a name="l822" style="background-color: #ffffff"></a>
+   823) <a name="l823" style="background-color: #ffffff">! </a>
+   824) <a name="l824" style="background-color: #ffffff">! Print cam_inparm input variables to standard output</a>
+   825) <a name="l825" style="background-color: #ffffff">! </a>
+   826) <a name="l826" style="background-color: #ffffff">   if (masterproc) then</a>
+   827) <a name="l827" style="background-color: #ffffff">      write(iulog,*)' ------------------------------------------'</a>
+   828) <a name="l828" style="background-color: #ffffff">      write(iulog,*)'     *** INPUT VARIABLES (CAM_INPARM) ***'</a>
+   829) <a name="l829" style="background-color: #ffffff">      write(iulog,*)' ------------------------------------------'</a>
+   830) <a name="l830" style="background-color: #ffffff">      if (nsrest/=0) then</a>
+   831) <a name="l831" style="background-color: #ffff99">         write(iulog,*) '  Continuation of an earlier run'</a>
+   832) <a name="l832" style="background-color: #ffff99">      else</a>
+   833) <a name="l833" style="background-color: #ffffff">         write(iulog,*) '         Initial run'</a>
+   834) <a name="l834" style="background-color: #ffffff">      end if</a>
+   835) <a name="l835" style="background-color: #ffffff">      write(iulog,*) ' ********** CASE = ',trim(caseid),' **********'</a>
+   836) <a name="l836" style="background-color: #ffffff">      write(iulog,'(1x,a)') ctitle</a>
+   837) <a name="l837" style="background-color: #ffffff">      if (len_trim(ncdata) &gt; 0) then</a>
+   838) <a name="l838" style="background-color: #ffffff">         write(iulog,*) 'Initial dataset is: ',trim(ncdata)</a>
+   839) <a name="l839" style="background-color: #ffffff">      end if</a>
+   840) <a name="l840" style="background-color: #ffffff">      write(iulog,*)'Topography dataset is: ', trim(bnd_topo)</a>
+   841) <a name="l841" style="background-color: #ffffff">      write(iulog,*)'Time-invariant (absorption/emissivity) factor dataset is: ', trim(absems_data)</a>
+   842) <a name="l842" style="background-color: #ffffff"></a>
+   843) <a name="l843" style="background-color: #ffffff">      ! Type of run</a>
+   844) <a name="l844" style="background-color: #ffffff">      write(iulog,*)'Run type flag (NSREST) 0=initial, 1=restart, 3=branch ',nsrest</a>
+   845) <a name="l845" style="background-color: #ffffff"></a>
+   846) <a name="l846" style="background-color: #ffffff">      call restart_printopts()</a>
+   847) <a name="l847" style="background-color: #ffffff"></a>
+   848) <a name="l848" style="background-color: #ffffff">   end if</a>
+   849) <a name="l849" style="background-color: #ffffff">!</a>
+   850) <a name="l850" style="background-color: #ffffff">! History file info </a>
+   851) <a name="l851" style="background-color: #ffffff">!</a>
+   852) <a name="l852" style="background-color: #ffffff">   if (masterproc) then</a>
+   853) <a name="l853" style="background-color: #ffffff">      if (inithist == '6-HOURLY' ) then</a>
+   854) <a name="l854" style="background-color: #ffff99">         write(iulog,*)'Initial conditions history files will be written 6-hourly.'</a>
+   855) <a name="l855" style="background-color: #ffffff">      else if (inithist == 'DAILY' ) then</a>
+   856) <a name="l856" style="background-color: #ffff99">         write(iulog,*)'Initial conditions history files will be written daily.'</a>
+   857) <a name="l857" style="background-color: #ffffff">      else if (inithist == 'MONTHLY' ) then</a>
+   858) <a name="l858" style="background-color: #ffff99">         write(iulog,*)'Initial conditions history files will be written monthly.'</a>
+   859) <a name="l859" style="background-color: #ffffff">      else if (inithist == 'YEARLY' ) then</a>
+   860) <a name="l860" style="background-color: #ffff99">         write(iulog,*)'Initial conditions history files will be written yearly.'</a>
+   861) <a name="l861" style="background-color: #ffffff">      else if (inithist == 'CAMIOP' ) then</a>
+   862) <a name="l862" style="background-color: #ffff99">         write(iulog,*)'Initial conditions history files will be written for IOP.'</a>
+   863) <a name="l863" style="background-color: #ffffff">      else if (inithist == 'ENDOFRUN' ) then</a>
+   864) <a name="l864" style="background-color: #ffff99">         write(iulog,*)'Initial conditions history files will be written at end of run.'</a>
+   865) <a name="l865" style="background-color: #ffff99">      else</a>
+   866) <a name="l866" style="background-color: #ffffff">         write(iulog,*)'Initial conditions history files will not be created'</a>
+   867) <a name="l867" style="background-color: #ffffff">      end if</a>
+   868) <a name="l868" style="background-color: #ffffff"></a>
+   869) <a name="l869" style="background-color: #ffffff">!</a>
+   870) <a name="l870" style="background-color: #ffffff">! Write physics variables from namelist cam_inparm to std. output</a>
+   871) <a name="l871" style="background-color: #ffffff">!</a>
+   872) <a name="l872" style="background-color: #ffffff">      write(iulog,9108) nlvdry</a>
+   873) <a name="l873" style="background-color: #ffffff">9108 format('Lowest level for dry adiabatic adjust (NLVDRY)',i10)</a>
+   874) <a name="l874" style="background-color: #ffffff"></a>
+   875) <a name="l875" style="background-color: #ffffff"></a>
+   876) <a name="l876" style="background-color: #ffffff">      call radiation_printopts()</a>
+   877) <a name="l877" style="background-color: #ffffff"></a>
+   878) <a name="l878" style="background-color: #ffffff">      if ( (</a><a style="background-color: #ffff99">adiabatic </a><a style="background-color: #ffffff">.and. ideal_phys) .or. (</a><a style="background-color: #ffff99">adiabatic .and. aqua_planet) .or. &amp;</a>
+   879) <a name="l879" style="background-color: #ffff99">           (ideal_phys .and. aqua_planet) ) then</a>
+   880) <a name="l880" style="background-color: #ffff99">         call endrun ('READ_NAMELIST: Only one of ADIABATIC, IDEAL_PHYS, or AQUA_PLANET can be .true.')</a>
+   881) <a name="l881" style="background-color: #ffff99">      end if</a>
+   882) <a name="l882" style="background-color: #ffff99"></a>
+   883) <a name="l883" style="background-color: #ffff99">#ifdef COUP_SOM</a>
+   884) <a name="l884" style="background-color: #ffff99">      if (adiabatic .or. ideal_phys .or. aqua_planet )then</a>
+   885) <a name="l885" style="background-color: #ffff99">         call endrun ('READ_NAMELIST: adiabatic, ideal_phys or aqua_planet can not be used with SOM')</a>
+   886) <a name="l886" style="background-color: #ffff99">      end if</a>
+   887) <a name="l887" style="background-color: #ffff99">#else</a>
+   888) <a name="l888" style="background-color: #ffffff">      if (adiabatic)   </a><a style="background-color: #ffff99">write(iulog,*) 'Model will run ADIABATICALLY (i.e. no physics)'</a>
+   889) <a name="l889" style="background-color: #ffffff">      if (ideal_phys)  </a><a style="background-color: #ffff99">write(iulog,*) 'Run ONLY the &quot;idealized&quot; dynamical core of the ', &amp;</a>
+   890) <a name="l890" style="background-color: #ffff99">                                  'model  (dynamics + Held&amp;Suarez-specified physics)'</a>
+   891) <a name="l891" style="background-color: #ffffff">      if (aqua_planet) </a><a style="background-color: #ffff99">write(iulog,*) 'Run model in &quot;AQUA_PLANET&quot; mode'</a>
+   892) <a name="l892" style="background-color: #ffff99">#endif</a>
+   893) <a name="l893" style="background-color: #ffff99">   end if</a>
+   894) <a name="l894" style="background-color: #ffff99"></a>
+   895) <a name="l895" style="background-color: #ffff99">   ! set public data in cam_control_mod</a>
+   896) <a name="l896" style="background-color: #ffffff">   moist_physics = (.not. adiabatic) .and. (.not. ideal_phys)</a>
+   897) <a name="l897" style="background-color: #ffffff"></a>
+   898) <a name="l898" style="background-color: #ffffff">#ifdef PERGRO</a>
+   899) <a name="l899" style="background-color: #ffffff">   if (masterproc) then</a>
+   900) <a name="l900" style="background-color: #ffffff">      write(iulog,*)'pergro for cloud water is true'</a>
+   901) <a name="l901" style="background-color: #ffffff">   end if</a>
+   902) <a name="l902" style="background-color: #ffffff">#endif</a>
+   903) <a name="l903" style="background-color: #ffffff"></a>
+   904) <a name="l904" style="background-color: #ffffff">   ntspdy = nint(86400._r8/dtime) ! no. timesteps per day</a>
+   905) <a name="l905" style="background-color: #ffffff"></a>
+   906) <a name="l906" style="background-color: #ffffff"></a>
+   907) <a name="l907" style="background-color: #ffffff">end subroutine read_namelist</a>
+   908) <a name="l908" style="background-color: #ffffff"></a>
+   909) <a name="l909" style="background-color: #ffffff"></a>
+   910) <a name="l910" style="background-color: #ffffff">!=======================================================================</a>
+   911) <a name="l911" style="background-color: #ffffff"></a>
+   912) <a name="l912" style="background-color: #ffffff">#ifdef SPMD</a>
+   913) <a name="l913" style="background-color: #ffffff">subroutine distnl</a>
+   914) <a name="l914" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   915) <a name="l915" style="background-color: #ffffff">!     </a>
+   916) <a name="l916" style="background-color: #ffffff">! Purpose:     </a>
+   917) <a name="l917" style="background-color: #ffffff">! Distribute namelist data to all processors.</a>
+   918) <a name="l918" style="background-color: #ffffff">!</a>
+   919) <a name="l919" style="background-color: #ffffff">! The cpp SPMD definition provides for the funnelling of all program i/o</a>
+   920) <a name="l920" style="background-color: #ffffff">! through the master processor. Processor 0 either reads restart/history</a>
+   921) <a name="l921" style="background-color: #ffffff">! data from the disk and distributes it to all processors, or collects</a>
+   922) <a name="l922" style="background-color: #ffffff">! data from all processors and writes it to disk.</a>
+   923) <a name="l923" style="background-color: #ffffff">!     </a>
+   924) <a name="l924" style="background-color: #ffffff">!---------------------------Code history-------------------------------</a>
+   925) <a name="l925" style="background-color: #ffffff">!</a>
+   926) <a name="l926" style="background-color: #ffffff">! Original version:  CCM2</a>
+   927) <a name="l927" style="background-color: #ffffff">! Standardized:      J. Rosinski, Oct 1995</a>
+   928) <a name="l928" style="background-color: #ffffff">!                    J. Truesdale, Feb. 1996</a>
+   929) <a name="l929" style="background-color: #ffffff">!</a>
+   930) <a name="l930" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   931) <a name="l931" style="background-color: #ffffff">   use mpishorthand</a>
+   932) <a name="l932" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   933) <a name="l933" style="background-color: #ffffff"></a>
+   934) <a name="l934" style="background-color: #ffffff">!</a>
+   935) <a name="l935" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   936) <a name="l936" style="background-color: #ffffff">! </a>
+   937) <a name="l937" style="background-color: #ffffff">   call mpibcast (dtime,       1,mpiint,0,mpicom)</a>
+   938) <a name="l938" style="background-color: #ffffff">   call mpibcast (ndens   ,ptapes,mpiint,0,mpicom)</a>
+   939) <a name="l939" style="background-color: #ffffff">   call mpibcast (nhtfrq  ,ptapes,mpiint,0,mpicom)</a>
+   940) <a name="l940" style="background-color: #ffffff">   call mpibcast (mfilt   ,ptapes,mpiint,0,mpicom)</a>
+   941) <a name="l941" style="background-color: #ffffff">   call mpibcast (lcltod_start ,ptapes,mpiint,0,mpicom)</a>
+   942) <a name="l942" style="background-color: #ffffff">   call mpibcast (lcltod_stop  ,ptapes,mpiint,0,mpicom)</a>
+   943) <a name="l943" style="background-color: #ffffff">   call mpibcast (nsrest  ,1,mpiint,0,mpicom)</a>
+   944) <a name="l944" style="background-color: #ffffff">   call mpibcast (nlvdry  ,1,mpiint,0,mpicom)</a>
+   945) <a name="l945" style="background-color: #ffffff"></a>
+   946) <a name="l946" style="background-color: #ffffff">   call mpibcast (rayk0    ,1,mpiint,0,mpicom)</a>
+   947) <a name="l947" style="background-color: #ffffff">   call mpibcast (raykrange,1,mpir8,0,mpicom)</a>
+   948) <a name="l948" style="background-color: #ffffff">   call mpibcast (raytau0  ,1,mpir8,0,mpicom)</a>
+   949) <a name="l949" style="background-color: #ffffff"></a>
+   950) <a name="l950" style="background-color: #ffffff">   call mpibcast (collect_column_output,ptapes,mpilog,0,mpicom)</a>
+   951) <a name="l951" style="background-color: #ffffff"></a>
+   952) <a name="l952" style="background-color: #ffffff">   call mpibcast (tracers_flag,1,mpilog,0,mpicom)</a>
+   953) <a name="l953" style="background-color: #ffffff">   call mpibcast (readtrace   ,1,mpilog,0,mpicom)</a>
+   954) <a name="l954" style="background-color: #ffffff">   call mpibcast (adiabatic   ,1,mpilog,0,mpicom)</a>
+   955) <a name="l955" style="background-color: #ffffff">   call mpibcast (ideal_phys  ,1,mpilog,0,mpicom)</a>
+   956) <a name="l956" style="background-color: #ffffff">   call mpibcast (aqua_planet ,1,mpilog,0,mpicom)</a>
+   957) <a name="l957" style="background-color: #ffffff"></a>
+   958) <a name="l958" style="background-color: #ffffff">   call mpibcast (empty_htapes,1,mpilog,0,mpicom)</a>
+   959) <a name="l959" style="background-color: #ffffff">   call mpibcast (use_64bit_nc,1,mpilog,0,mpicom)</a>
+   960) <a name="l960" style="background-color: #ffffff">   call mpibcast (print_step_cost,1,mpilog,0,mpicom)</a>
+   961) <a name="l961" style="background-color: #ffffff">   call mpibcast (inithist_all   ,1,mpilog,0,mpicom)</a>
+   962) <a name="l962" style="background-color: #ffffff">   call mpibcast (pertlim     ,1, mpir8,  0, mpicom )</a>
+   963) <a name="l963" style="background-color: #ffffff"></a>
+   964) <a name="l964" style="background-color: #ffffff">   call mpibcast (caseid  ,len(caseid) ,mpichar,0,mpicom)</a>
+   965) <a name="l965" style="background-color: #ffffff">   call mpibcast (avgflag_pertape, ptapes, mpichar,0,mpicom)</a>
+   966) <a name="l966" style="background-color: #ffffff">   call mpibcast (ctitle  ,len(ctitle),mpichar,0,mpicom)</a>
+   967) <a name="l967" style="background-color: #ffffff">   call mpibcast (ncdata  ,len(ncdata) ,mpichar,0,mpicom)</a>
+   968) <a name="l968" style="background-color: #ffffff">   call mpibcast (bnd_topo  ,len(bnd_topo) ,mpichar,0,mpicom)</a>
+   969) <a name="l969" style="background-color: #ffffff">   call mpibcast (absems_data,len(absems_data),mpichar,0,mpicom)</a>
+   970) <a name="l970" style="background-color: #ffffff">   call mpibcast (cam_branch_file  ,len(cam_branch_file) ,mpichar,0,mpicom)</a>
+   971) <a name="l971" style="background-color: #ffffff">   call mpibcast (inithist,len(inithist)  ,mpichar,0,mpicom)</a>
+   972) <a name="l972" style="background-color: #ffffff">   call mpibcast (hfilename_spec, len(hfilename_spec(1))*ptapes, mpichar, 0, mpicom)</a>
+   973) <a name="l973" style="background-color: #ffffff">   call mpibcast (fincl   ,len(fincl (1,1))*pflds*ptapes,mpichar,0,mpicom)</a>
+   974) <a name="l974" style="background-color: #ffffff">   call mpibcast (fexcl   ,len(fexcl (1,1))*pflds*ptapes,mpichar,0,mpicom)</a>
+   975) <a name="l975" style="background-color: #ffffff"></a>
+   976) <a name="l976" style="background-color: #ffffff">   call mpibcast (fincllonlat   ,len(fincllonlat (1,1))*pflds*ptapes,mpichar,0,mpicom)</a>
+   977) <a name="l977" style="background-color: #ffffff"></a>
+   978) <a name="l978" style="background-color: #ffffff">   call mpibcast (fwrtpr  ,len(fwrtpr(1,1))*pflds*ptapes,mpichar,0,mpicom)</a>
+   979) <a name="l979" style="background-color: #ffffff"></a>
+   980) <a name="l980" style="background-color: #ffffff">   call mpibcast (indirect     , 1 ,mpilog, 0,mpicom)</a>
+   981) <a name="l981" style="background-color: #ffffff"></a>
+   982) <a name="l982" style="background-color: #ffffff">   ! Physics chunk tuning</a>
+   983) <a name="l983" style="background-color: #ffffff">   call mpibcast (phys_loadbalance   ,1,mpiint,0,mpicom)</a>
+   984) <a name="l984" style="background-color: #ffffff">   call mpibcast (phys_twin_algorithm,1,mpiint,0,mpicom)</a>
+   985) <a name="l985" style="background-color: #ffffff">   call mpibcast (phys_alltoall      ,1,mpiint,0,mpicom)</a>
+   986) <a name="l986" style="background-color: #ffffff">   call mpibcast (phys_chnk_per_thd  ,1,mpiint,0,mpicom)</a>
+   987) <a name="l987" style="background-color: #ffffff"></a>
+   988) <a name="l988" style="background-color: #ffffff">   ! Physics buffer</a>
+   989) <a name="l989" style="background-color: #ffffff">   call mpibcast (pbuf_global_allocate, 1, mpilog, 0, mpicom)</a>
+   990) <a name="l990" style="background-color: #ffffff"></a>
+   991) <a name="l991" style="background-color: #ffffff">   ! Conservation</a>
+   992) <a name="l992" style="background-color: #ffffff">   call mpibcast (print_energy_errors, 1, mpilog, 0, mpicom)</a>
+   993) <a name="l993" style="background-color: #ffffff"></a>
+   994) <a name="l994" style="background-color: #ffffff">   ! Radiative heating calculation</a>
+   995) <a name="l995" style="background-color: #ffffff">   call mpibcast (iradsw,     1, mpiint, 0, mpicom)</a>
+   996) <a name="l996" style="background-color: #ffffff">   call mpibcast (iradlw,     1, mpiint, 0, mpicom)</a>
+   997) <a name="l997" style="background-color: #ffffff">   call mpibcast (iradae,     1, mpiint, 0, mpicom)</a>
+   998) <a name="l998" style="background-color: #ffffff">   call mpibcast (irad_always,1, mpiint, 0, mpicom)</a>
+   999) <a name="l999" style="background-color: #ffffff">   call mpibcast (spectralflux,1, mpilog, 0, mpicom)</a>
+  1000) <a name="l1000" style="background-color: #ffffff"></a>
+  1001) <a name="l1001" style="background-color: #ffffff">end subroutine distnl</a>
+  1002) <a name="l1002" style="background-color: #ffffff">#endif</a>
+  1003) <a name="l1003" style="background-color: #ffffff"></a>
+  1004) <a name="l1004" style="background-color: #ffffff"></a>
+  1005) <a name="l1005" style="background-color: #ffffff"></a>
+  1006) <a name="l1006" style="background-color: #ffffff">subroutine preset</a>
+  1007) <a name="l1007" style="background-color: #ffffff">!----------------------------------------------------------------------- </a>
+  1008) <a name="l1008" style="background-color: #ffffff">! </a>
+  1009) <a name="l1009" style="background-color: #ffffff">! Purpose: Preset namelist CAM_INPARM input variables and initialize some other variables</a>
+  1010) <a name="l1010" style="background-color: #ffffff">! </a>
+  1011) <a name="l1011" style="background-color: #ffffff">! Method: Hardwire the values</a>
+  1012) <a name="l1012" style="background-color: #ffffff">! </a>
+  1013) <a name="l1013" style="background-color: #ffffff">! Author: CCM Core Group</a>
+  1014) <a name="l1014" style="background-color: #ffffff">! </a>
+  1015) <a name="l1015" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1016) <a name="l1016" style="background-color: #ffffff">   use cam_history,  only: fincl, fexcl, fwrtpr, fincllonlat, collect_column_output</a>
+  1017) <a name="l1017" style="background-color: #ffffff">   use rgrid</a>
+  1018) <a name="l1018" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1019) <a name="l1019" style="background-color: #ffffff">   include 'netcdf.inc'</a>
+  1020) <a name="l1020" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1021) <a name="l1021" style="background-color: #ffffff">!</a>
+  1022) <a name="l1022" style="background-color: #ffffff">! Preset character history variables here because module initialization of character arrays</a>
+  1023) <a name="l1023" style="background-color: #ffffff">! does not work on all machines</a>
+  1024) <a name="l1024" style="background-color: #ffffff">! $$$ TBH:  is this still true?  12/14/03</a>
+  1025) <a name="l1025" style="background-color: #ffffff">!</a>
+  1026) <a name="l1026" style="background-color: #ffffff">   fincl(:,:)  = ' '</a>
+  1027) <a name="l1027" style="background-color: #ffffff">   fincllonlat(:,:)  = ' '</a>
+  1028) <a name="l1028" style="background-color: #ffffff">   fexcl(:,:)  = ' '</a>
+  1029) <a name="l1029" style="background-color: #ffffff">   fwrtpr(:,:) = ' '</a>
+  1030) <a name="l1030" style="background-color: #ffffff">!</a>
+  1031) <a name="l1031" style="background-color: #ffffff">! Flags</a>
+  1032) <a name="l1032" style="background-color: #ffffff">!</a>
+  1033) <a name="l1033" style="background-color: #ffffff">   print_step_cost = .false.   ! print per timestep cost info</a>
+  1034) <a name="l1034" style="background-color: #ffffff">   collect_column_output = .false.</a>
+  1035) <a name="l1035" style="background-color: #ffffff">!</a>
+  1036) <a name="l1036" style="background-color: #ffffff">! rgrid: set default to full grid</a>
+  1037) <a name="l1037" style="background-color: #ffffff">!</a>
+  1038) <a name="l1038" style="background-color: #ffffff">   nlon(:) = plon</a>
+  1039) <a name="l1039" style="background-color: #ffffff">!!</a>
+  1040) <a name="l1040" style="background-color: #ffffff">!! Unit numbers: set to invalid</a>
+  1041) <a name="l1041" style="background-color: #ffffff">!!</a>
+  1042) <a name="l1042" style="background-color: #ffffff">!   ncid_ini = -1</a>
+  1043) <a name="l1043" style="background-color: #ffffff">!   ncid_sst = -1</a>
+  1044) <a name="l1044" style="background-color: #ffffff">!   ncid_trc = -1</a>
+  1045) <a name="l1045" style="background-color: #ffffff">!</a>
+  1046) <a name="l1046" style="background-color: #ffffff">   return</a>
+  1047) <a name="l1047" style="background-color: #ffffff">end subroutine preset</a>
+  1048) <a name="l1048" style="background-color: #ffffff"></a>
+  1049) <a name="l1049" style="background-color: #ffffff">end module runtime_opts</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

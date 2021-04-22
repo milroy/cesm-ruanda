@@ -1,0 +1,386 @@
+<html>
+<head>
+<title>Listing of shr_megan_mod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;shr_megan_mod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 28.57&#160;%func&#160;&#160;&#160;&#160; 27.72&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!================================================================================</a>
+     2) <a name="l2" style="background-color: #ffffff">! Handles MEGAN VOC emissions metadata for CLM produced chemical emissions</a>
+     3) <a name="l3" style="background-color: #ffffff">! MEGAN = Model of Emissions of Gases and Aerosols from Nature</a>
+     4) <a name="l4" style="background-color: #ffffff">!</a>
+     5) <a name="l5" style="background-color: #ffffff">! This reads the megan_emis_nl namelist in drv_flds_in and makes the relavent </a>
+     6) <a name="l6" style="background-color: #ffffff">! information available to CAM, CLM, and driver. The driver sets up CLM to CAM </a>
+     7) <a name="l7" style="background-color: #ffffff">! communication for the  VOC flux fields. CLM needs to know what specific VOC</a>
+     8) <a name="l8" style="background-color: #ffffff">! fluxes need to be passed to the coupler and how to assimble the fluxes.  </a>
+     9) <a name="l9" style="background-color: #ffffff">! CAM needs to know what specific VOC fluxes to expect from CLM.</a>
+    10) <a name="l10" style="background-color: #ffffff">!</a>
+    11) <a name="l11" style="background-color: #ffffff">! Francis Vitt -- 26 Oct 2011</a>
+    12) <a name="l12" style="background-color: #ffffff">!================================================================================</a>
+    13) <a name="l13" style="background-color: #ffffff">module shr_megan_mod</a>
+    14) <a name="l14" style="background-color: #ffffff"></a>
+    15) <a name="l15" style="background-color: #ffffff">  use shr_kind_mod,only : r8 =&gt; shr_kind_r8</a>
+    16) <a name="l16" style="background-color: #ffffff">  use shr_kind_mod,only : CL =&gt; SHR_KIND_CL, CX =&gt; SHR_KIND_CX, CS =&gt; SHR_KIND_CS</a>
+    17) <a name="l17" style="background-color: #ffffff">  use shr_sys_mod, only : shr_sys_abort</a>
+    18) <a name="l18" style="background-color: #ffffff">  use shr_log_mod, only : loglev  =&gt; shr_log_Level</a>
+    19) <a name="l19" style="background-color: #ffffff">  use shr_log_mod, only : logunit =&gt; shr_log_Unit</a>
+    20) <a name="l20" style="background-color: #ffffff"></a>
+    21) <a name="l21" style="background-color: #ffffff">  implicit none</a>
+    22) <a name="l22" style="background-color: #ffffff">  save</a>
+    23) <a name="l23" style="background-color: #ffffff">  private</a>
+    24) <a name="l24" style="background-color: #ffffff"></a>
+    25) <a name="l25" style="background-color: #ffffff">  public :: shr_megan_readnl           ! reads megan_emis_nl namelist</a>
+    26) <a name="l26" style="background-color: #ffffff">  public :: shr_megan_mechcomps        ! points to an array of chemical compounds (in CAM-Chem mechanism) than have MEGAN emissions</a>
+    27) <a name="l27" style="background-color: #ffffff">  public :: shr_megan_mechcomps_n      ! number of unique compounds in the CAM chemical mechanism  than have MEGAN emissions</a>
+    28) <a name="l28" style="background-color: #ffffff">  public :: shr_megan_megcomps_n       ! number of unique MEGAN compounds</a>
+    29) <a name="l29" style="background-color: #ffffff">  public :: shr_megan_megcomp_t        ! MEGAN compound data type</a>
+    30) <a name="l30" style="background-color: #ffffff">  public :: shr_megan_mechcomp_t       ! data type for chemical compound in CAM mechanism than has MEGAN emissions</a>
+    31) <a name="l31" style="background-color: #ffffff">  public :: shr_megan_linkedlist       ! points to linked list of shr_megan_comp_t objects</a>
+    32) <a name="l32" style="background-color: #ffffff">  public :: shr_megan_mapped_emisfctrs ! switch to use mapped emission factors</a>
+    33) <a name="l33" style="background-color: #ffffff">  public :: shr_megan_comp_ptr</a>
+    34) <a name="l34" style="background-color: #ffffff"></a>
+    35) <a name="l35" style="background-color: #ffffff">  character(len=CS), public :: shr_megan_fields_token = ''   ! First drydep fields token</a>
+    36) <a name="l36" style="background-color: #ffffff">  character(len=CL), public :: shr_megan_factors_file = ''</a>
+    37) <a name="l37" style="background-color: #ffffff"></a>
+    38) <a name="l38" style="background-color: #ffffff">  ! MEGAN compound data structure (or user defined type)</a>
+    39) <a name="l39" style="background-color: #ffffff">  type shr_megan_megcomp_t</a>
+    40) <a name="l40" style="background-color: #ffffff">     character(len=16)     :: name            ! MEGAN compound name (in MEGAN input table)</a>
+    41) <a name="l41" style="background-color: #ffffff">     integer               :: index</a>
+    42) <a name="l42" style="background-color: #ffffff">     real(r8), pointer     :: emis_factors(:) ! function of plant-function-type (PFT)</a>
+    43) <a name="l43" style="background-color: #ffffff">     integer               :: class_number    ! MEGAN class number</a>
+    44) <a name="l44" style="background-color: #ffffff">     real(r8)              :: molec_weight    ! molecular weight of the MEGAN compound (g/mole)</a>
+    45) <a name="l45" style="background-color: #ffffff">     type(shr_megan_megcomp_t), pointer :: next_megcomp ! points to next member in the linked list</a>
+    46) <a name="l46" style="background-color: #ffffff">  endtype shr_megan_megcomp_t</a>
+    47) <a name="l47" style="background-color: #ffffff"></a>
+    48) <a name="l48" style="background-color: #ffffff">  type shr_megan_comp_ptr</a>
+    49) <a name="l49" style="background-color: #ffffff">    type(shr_megan_megcomp_t), pointer :: ptr</a>
+    50) <a name="l50" style="background-color: #ffffff">  endtype shr_megan_comp_ptr</a>
+    51) <a name="l51" style="background-color: #ffffff"></a>
+    52) <a name="l52" style="background-color: #ffffff">  ! chemical compound in CAM mechanism than has MEGAN emissions</a>
+    53) <a name="l53" style="background-color: #ffffff">  type shr_megan_mechcomp_t</a>
+    54) <a name="l54" style="background-color: #ffffff">     character(len=16)             :: name           ! compound name</a>
+    55) <a name="l55" style="background-color: #ffffff">     type(shr_megan_comp_ptr), pointer :: megan_comps(:) ! an array of pointers to megan emis compounds </a>
+    56) <a name="l56" style="background-color: #ffffff">     integer                       :: n_megan_comps  ! number of megan emis compounds than make up the emissions for this mechanis compound</a>
+    57) <a name="l57" style="background-color: #ffffff">  end type shr_megan_mechcomp_t</a>
+    58) <a name="l58" style="background-color: #ffffff"></a>
+    59) <a name="l59" style="background-color: #ffffff">  type(shr_megan_mechcomp_t), pointer :: shr_megan_mechcomps(:) ! array of chemical compounds (in CAM mechanism) than have MEGAN emissions</a>
+    60) <a name="l60" style="background-color: #ffffff">  type(shr_megan_megcomp_t),  pointer :: shr_megan_linkedlist   ! points to linked list top</a>
+    61) <a name="l61" style="background-color: #ffffff"></a>
+    62) <a name="l62" style="background-color: #ffffff">  integer :: shr_megan_megcomps_n  = 0          ! number of unique megan compounds</a>
+    63) <a name="l63" style="background-color: #ffffff">  integer :: shr_megan_mechcomps_n = 0          ! number of unique compounds in the CAM chemical mechanism  than have MEGAN emissions</a>
+    64) <a name="l64" style="background-color: #ffffff"></a>
+    65) <a name="l65" style="background-color: #ffffff">  ! switch to use mapped emission factors</a>
+    66) <a name="l66" style="background-color: #ffffff">  logical :: shr_megan_mapped_emisfctrs = .false.</a>
+    67) <a name="l67" style="background-color: #ffffff"></a>
+    68) <a name="l68" style="background-color: #ffffff">  ! private data </a>
+    69) <a name="l69" style="background-color: #ffffff">  type parser_items_t</a>
+    70) <a name="l70" style="background-color: #ffffff">     character(len=16),pointer :: megan_comp_names(:)</a>
+    71) <a name="l71" style="background-color: #ffffff">     character(len=16) :: mech_comp_name</a>
+    72) <a name="l72" style="background-color: #ffffff">     integer :: n_megan_comps</a>
+    73) <a name="l73" style="background-color: #ffffff">  end type parser_items_t</a>
+    74) <a name="l74" style="background-color: #ffffff"></a>
+    75) <a name="l75" style="background-color: #ffffff">contains</a>
+    76) <a name="l76" style="background-color: #ffffff"></a>
+    77) <a name="l77" style="background-color: #ffffff">  !-------------------------------------------------------------------------</a>
+    78) <a name="l78" style="background-color: #ffffff">  ! </a>
+    79) <a name="l79" style="background-color: #ffffff">  ! This reads the megan_emis_nl namelist group in drv_flds_in and parses the</a>
+    80) <a name="l80" style="background-color: #ffffff">  ! namelist information for the driver, CLM, and CAM.</a>
+    81) <a name="l81" style="background-color: #ffffff">  !</a>
+    82) <a name="l82" style="background-color: #ffffff">  ! Namelist variables:</a>
+    83) <a name="l83" style="background-color: #ffffff">  !   megan_specifier, megan_mapped_emisfctrs, megan_factors_file</a>
+    84) <a name="l84" style="background-color: #ffffff">  !</a>
+    85) <a name="l85" style="background-color: #ffffff">  ! megan_specifier is a series of strings where each string contains one </a>
+    86) <a name="l86" style="background-color: #ffffff">  !  CAM chemistry constituent name (left of = sign) and one or more MEGAN </a>
+    87) <a name="l87" style="background-color: #ffffff">  !  compounds (seperated by + sign if more than one).  The specification of </a>
+    88) <a name="l88" style="background-color: #ffffff">  !  the MEGAN compounds to the right of the = signs tells the MEGAN VOC </a>
+    89) <a name="l89" style="background-color: #ffffff">  !  model within CLM how to construct the VOC fluxes using the factors in </a>
+    90) <a name="l90" style="background-color: #ffffff">  !  megan_factors_file and land surface state.</a>
+    91) <a name="l91" style="background-color: #ffffff">  !</a>
+    92) <a name="l92" style="background-color: #ffffff">  ! megan_factors_file read by CLM contains valid MEGAN compound names,</a>
+    93) <a name="l93" style="background-color: #ffffff">  !  MEGAN class groupings and scalar emission factors</a>
+    94) <a name="l94" style="background-color: #ffffff">  ! </a>
+    95) <a name="l95" style="background-color: #ffffff">  ! megan_mapped_emisfctrs switch is used to tell the MEGAN model to use </a>
+    96) <a name="l96" style="background-color: #ffffff">  !  mapped emission factors read in from the CLM surface data input file</a>
+    97) <a name="l97" style="background-color: #ffffff">  !  rather than the scalar factors from megan_factors_file</a>
+    98) <a name="l98" style="background-color: #ffffff">  !</a>
+    99) <a name="l99" style="background-color: #ffffff">  ! Example:</a>
+   100) <a name="l100" style="background-color: #ffffff">  ! &amp;megan_emis_nl</a>
+   101) <a name="l101" style="background-color: #ffffff">  !  megan_specifier = 'ISOP = isoprene',</a>
+   102) <a name="l102" style="background-color: #ffffff">  !     'C10H16 = myrcene + sabinene + limonene + carene_3 + ocimene_t_b + pinene_b + ...',</a>
+   103) <a name="l103" style="background-color: #ffffff">  !     'CH3OH = methanol',</a>
+   104) <a name="l104" style="background-color: #ffffff">  !     'C2H5OH = ethanol',</a>
+   105) <a name="l105" style="background-color: #ffffff">  !     'CH2O = formaldehyde',</a>
+   106) <a name="l106" style="background-color: #ffffff">  !     'CH3CHO = acetaldehyde',</a>
+   107) <a name="l107" style="background-color: #ffffff">  ! ...</a>
+   108) <a name="l108" style="background-color: #ffffff">  !  megan_factors_file = '$datapath/megan_emis_factors.nc'</a>
+   109) <a name="l109" style="background-color: #ffffff">  ! /</a>
+   110) <a name="l110" style="background-color: #ffffff">  !-------------------------------------------------------------------------</a>
+   111) <a name="l111" style="background-color: #ffffff">  subroutine shr_megan_readnl( NLFileName, megan_fields )</a>
+   112) <a name="l112" style="background-color: #ffffff"></a>
+   113) <a name="l113" style="background-color: #ffffff">    use shr_nl_mod,     only : shr_nl_find_group_name</a>
+   114) <a name="l114" style="background-color: #ffffff">    use shr_file_mod,   only : shr_file_getUnit, shr_file_freeUnit</a>
+   115) <a name="l115" style="background-color: #ffffff"></a>
+   116) <a name="l116" style="background-color: #ffffff">    character(len=*), intent(in)  :: NLFileName</a>
+   117) <a name="l117" style="background-color: #ffffff">    character(len=*), intent(out) :: megan_fields	</a>
+   118) <a name="l118" style="background-color: #ffffff"></a>
+   119) <a name="l119" style="background-color: #ffffff">    integer :: unitn            ! namelist unit number</a>
+   120) <a name="l120" style="background-color: #ffffff">    integer :: ierr             ! error code</a>
+   121) <a name="l121" style="background-color: #ffffff">    logical :: exists           ! if file exists or not</a>
+   122) <a name="l122" style="background-color: #ffffff"></a>
+   123) <a name="l123" style="background-color: #ffffff">    integer, parameter :: maxspc = 100</a>
+   124) <a name="l124" style="background-color: #ffffff"></a>
+   125) <a name="l125" style="background-color: #ffffff">    character(len=2*CX) :: megan_specifier(maxspc) = ' '</a>
+   126) <a name="l126" style="background-color: #ffffff">    logical           :: megan_mapped_emisfctrs = .false.</a>
+   127) <a name="l127" style="background-color: #ffffff">    character(len=CL) :: megan_factors_file = ' '</a>
+   128) <a name="l128" style="background-color: #ffffff"></a>
+   129) <a name="l129" style="background-color: #ffffff">    character(*),parameter :: F00   = &quot;('(seq_drydep_read) ',2a)&quot; </a>
+   130) <a name="l130" style="background-color: #ffffff"></a>
+   131) <a name="l131" style="background-color: #ffffff">    namelist /megan_emis_nl/ megan_specifier, megan_factors_file, megan_mapped_emisfctrs</a>
+   132) <a name="l132" style="background-color: #ffffff"></a>
+   133) <a name="l133" style="background-color: #ffffff">    inquire( file=trim(NLFileName), exist=exists)</a>
+   134) <a name="l134" style="background-color: #ffffff"></a>
+   135) <a name="l135" style="background-color: #ffffff">    if ( exists ) then</a>
+   136) <a name="l136" style="background-color: #ffffff"></a>
+   137) <a name="l137" style="background-color: #ffffff">       unitn = shr_file_getUnit()</a>
+   138) <a name="l138" style="background-color: #ffffff">       open( unitn, file=trim(NLFilename), status='old' )</a>
+   139) <a name="l139" style="background-color: #ffffff">       if ( loglev &gt; 0 ) write(logunit,F00) &amp;</a>
+   140) <a name="l140" style="background-color: #ffffff">            'Read in megan_emis_readnl namelist from: ', trim(NLFilename)</a>
+   141) <a name="l141" style="background-color: #ffffff"></a>
+   142) <a name="l142" style="background-color: #ffffff">       call shr_nl_find_group_name(unitn, 'megan_emis_nl', status=ierr)</a>
+   143) <a name="l143" style="background-color: #ffffff">       ! If ierr /= 0, no namelist present.</a>
+   144) <a name="l144" style="background-color: #ffffff"></a>
+   145) <a name="l145" style="background-color: #ffffff">       if (ierr == 0) then</a>
+   146) <a name="l146" style="background-color: #ffffff">          read(unitn, megan_emis_nl, iostat=ierr)</a>
+   147) <a name="l147" style="background-color: #ffffff"></a>
+   148) <a name="l148" style="background-color: #ffffff">          if (ierr &gt; 0) then</a>
+   149) <a name="l149" style="background-color: #ffffff">             call </a><a style="background-color: #ffff99">shr_sys_abort( 'problem on read of megan_emis_nl namelist in shr_megan_readnl' )</a>
+   150) <a name="l150" style="background-color: #ffff99">          endif</a>
+   151) <a name="l151" style="background-color: #ffff99">       endif</a>
+   152) <a name="l152" style="background-color: #ffff99"></a>
+   153) <a name="l153" style="background-color: #ffffff">       shr_megan_factors_file = megan_factors_file</a>
+   154) <a name="l154" style="background-color: #ffffff">       shr_megan_mapped_emisfctrs = megan_mapped_emisfctrs</a>
+   155) <a name="l155" style="background-color: #ffffff"></a>
+   156) <a name="l156" style="background-color: #ffffff">       ! parse the namelist info and initialize the module data</a>
+   157) <a name="l157" style="background-color: #ffffff">       call shr_megan_init( megan_specifier, megan_fields )</a>
+   158) <a name="l158" style="background-color: #ffffff"></a>
+   159) <a name="l159" style="background-color: #ffffff">       close( unitn )</a>
+   160) <a name="l160" style="background-color: #ffffff">       call shr_file_freeUnit( unitn )</a>
+   161) <a name="l161" style="background-color: #ffffff"></a>
+   162) <a name="l162" style="background-color: #ffffff">    end if</a>
+   163) <a name="l163" style="background-color: #ffffff"></a>
+   164) <a name="l164" style="background-color: #ffffff">  end subroutine shr_megan_readnl</a>
+   165) <a name="l165" style="background-color: #ffffff"></a>
+   166) <a name="l166" style="background-color: #ffffff">  !-------------------------------------------------------------------------</a>
+   167) <a name="l167" style="background-color: #ffffff">  ! module data initializer</a>
+   168) <a name="l168" style="background-color: #ffffff">  !-------------------------------------------------------------------------</a>
+   169) <a name="l169" style="background-color: #ffffff">  subroutine shr_megan_init( specifier, megan_fields )</a>
+   170) <a name="l170" style="background-color: #ffffff"></a>
+   171) <a name="l171" style="background-color: #ffffff">    character(len=*), intent(in) :: specifier(:)</a>
+   172) <a name="l172" style="background-color: #ffffff">    character(len=*), intent(out) :: megan_fields	</a>
+   173) <a name="l173" style="background-color: #ffffff"></a>
+   174) <a name="l174" style="background-color: #ffffff">    integer :: n_entries</a>
+   175) <a name="l175" style="background-color: #ffffff">    integer :: i, j, k</a>
+   176) <a name="l176" style="background-color: #ffffff">    integer :: spc_len</a>
+   177) <a name="l177" style="background-color: #ffffff">    type(parser_items_t), pointer :: items</a>
+   178) <a name="l178" style="background-color: #ffffff"></a>
+   179) <a name="l179" style="background-color: #ffffff">    character(len=12) :: token   ! megan field name to add</a>
+   180) <a name="l180" style="background-color: #ffffff"></a>
+   181) <a name="l181" style="background-color: #ffffff">    nullify(shr_megan_linkedlist)</a>
+   182) <a name="l182" style="background-color: #ffffff"></a>
+   183) <a name="l183" style="background-color: #ffffff">    n_entries = size(specifier)</a>
+   184) <a name="l184" style="background-color: #fafad2">    allocate(shr_megan_mechcomps(n_entries))</a>
+   185) <a name="l185" style="background-color: #ffffff">    shr_megan_mechcomps(:)%n_megan_comps = 0</a>
+   186) <a name="l186" style="background-color: #ffffff"></a>
+   187) <a name="l187" style="background-color: #ffffff">    megan_fields = ''</a>
+   188) <a name="l188" style="background-color: #ffffff"></a>
+   189) <a name="l189" style="background-color: #ffffff">    do i = 1,n_entries</a>
+   190) <a name="l190" style="background-color: #ffffff">       spc_len=len_trim(specifier(i))</a>
+   191) <a name="l191" style="background-color: #ffffff">       if ( spc_len &gt; 0 ) then</a>
+   192) <a name="l192" style="background-color: #ffffff"></a>
+   193) <a name="l193" style="background-color: #ffff99">          items =&gt; get_parser_items( specifier(i) )</a>
+   194) <a name="l194" style="background-color: #ffff99"></a>
+   195) <a name="l195" style="background-color: #ffff99">          do k=1,shr_megan_mechcomps_n</a>
+   196) <a name="l196" style="background-color: #ffff99">             if ( trim(shr_megan_mechcomps(k)%name) == trim(items%mech_comp_name) ) then</a>
+   197) <a name="l197" style="background-color: #ffff99">                call shr_sys_abort( 'shr_megan_init : duplicate compound names : '//trim(items%mech_comp_name))</a>
+   198) <a name="l198" style="background-color: #ffff99">             endif</a>
+   199) <a name="l199" style="background-color: #ffff99">          enddo</a>
+   200) <a name="l200" style="background-color: #ffff99"></a>
+   201) <a name="l201" style="background-color: #ffff99">          shr_megan_mechcomps(i)%name = items%mech_comp_name</a>
+   202) <a name="l202" style="background-color: #ffff99">          shr_megan_mechcomps(i)%n_megan_comps = items%n_megan_comps</a>
+   203) <a name="l203" style="background-color: #ffff99">          allocate(shr_megan_mechcomps(i)%megan_comps(items%n_megan_comps))</a>
+   204) <a name="l204" style="background-color: #ffff99"></a>
+   205) <a name="l205" style="background-color: #ffff99">          do j = 1,items%n_megan_comps</a>
+   206) <a name="l206" style="background-color: #ffff99">             shr_megan_mechcomps(i)%megan_comps(j)%ptr =&gt; add_megan_comp( items%megan_comp_names(j) )</a>
+   207) <a name="l207" style="background-color: #ffff99">          enddo</a>
+   208) <a name="l208" style="background-color: #ffff99">          shr_megan_mechcomps_n = shr_megan_mechcomps_n+1</a>
+   209) <a name="l209" style="background-color: #ffff99"></a>
+   210) <a name="l210" style="background-color: #ffff99">          call destroy_parser_items( items )</a>
+   211) <a name="l211" style="background-color: #ffff99"></a>
+   212) <a name="l212" style="background-color: #ffff99">          write(token,333) shr_megan_mechcomps_n</a>
+   213) <a name="l213" style="background-color: #ffff99"></a>
+   214) <a name="l214" style="background-color: #ffff99">          if ( shr_megan_mechcomps_n == 1 ) then</a>
+   215) <a name="l215" style="background-color: #ffff99">             ! no not prepend &quot;:&quot; to the string for the first token</a>
+   216) <a name="l216" style="background-color: #ffff99">             megan_fields = trim(token)</a>
+   217) <a name="l217" style="background-color: #ffff99">             shr_megan_fields_token = token</a>
+   218) <a name="l218" style="background-color: #ffff99">          else</a>
+   219) <a name="l219" style="background-color: #ffff99">             megan_fields = trim(megan_fields)//':'//trim(token)                 </a>
+   220) <a name="l220" style="background-color: #ffff99">          endif</a>
+   221) <a name="l221" style="background-color: #ffff99"></a>
+   222) <a name="l222" style="background-color: #ffff99">       endif</a>
+   223) <a name="l223" style="background-color: #ffff99"></a>
+   224) <a name="l224" style="background-color: #ffff99">    enddo</a>
+   225) <a name="l225" style="background-color: #ffff99"></a>
+   226) <a name="l226" style="background-color: #ffff99">    ! Need to explicitly add Fl_ based on naming convention</a>
+   227) <a name="l227" style="background-color: #ffff99">333 format ('Fall_voc',i3.3)</a>
+   228) <a name="l228" style="background-color: #ffff99"></a>
+   229) <a name="l229" style="background-color: #ffffff">  end subroutine shr_megan_init</a>
+   230) <a name="l230" style="background-color: #ffffff"></a>
+   231) <a name="l231" style="background-color: #ffffff">  !-------------------------------------------------------------------------</a>
+   232) <a name="l232" style="background-color: #ffffff">  ! private methods...</a>
+   233) <a name="l233" style="background-color: #ffffff"></a>
+   234) <a name="l234" style="background-color: #ffffff">  !-------------------------------------------------------------------------</a>
+   235) <a name="l235" style="background-color: #ffffff">  !-------------------------------------------------------------------------</a>
+   236) <a name="l236" style="background-color: #ffffff">  function </a><a style="background-color: #ffcccc">get_parser_items( spec_entry ) result(items)</a>
+   237) <a name="l237" style="background-color: #ffcccc"></a>
+   238) <a name="l238" style="background-color: #ffcccc">    character(len=*), intent(in) :: spec_entry</a>
+   239) <a name="l239" style="background-color: #ffcccc"></a>
+   240) <a name="l240" style="background-color: #ffcccc">    type(parser_items_t), pointer :: items ! items returned</a>
+   241) <a name="l241" style="background-color: #ffcccc"></a>
+   242) <a name="l242" style="background-color: #ffcccc">    integer :: ndxs(512)</a>
+   243) <a name="l243" style="background-color: #ffcccc">    integer :: nelem, j, i</a>
+   244) <a name="l244" style="background-color: #ffcccc">    character(len=CL) :: tmp_str</a>
+   245) <a name="l245" style="background-color: #ffcccc"></a>
+   246) <a name="l246" style="background-color: #ffcccc">    j = scan( spec_entry, '=' )</a>
+   247) <a name="l247" style="background-color: #ffcccc"></a>
+   248) <a name="l248" style="background-color: #ffcccc">    nelem = 1</a>
+   249) <a name="l249" style="background-color: #ffcccc">    ndxs(nelem) = j</a>
+   250) <a name="l250" style="background-color: #ffcccc"></a>
+   251) <a name="l251" style="background-color: #ffcccc">    tmp_str = trim( spec_entry(j+1:) )</a>
+   252) <a name="l252" style="background-color: #ffcccc">    j = scan( tmp_str, '+' )</a>
+   253) <a name="l253" style="background-color: #ffcccc"></a>
+   254) <a name="l254" style="background-color: #ffcccc">    do while(j&gt;0)</a>
+   255) <a name="l255" style="background-color: #ffcccc"></a>
+   256) <a name="l256" style="background-color: #ffcccc">       nelem = nelem+1</a>
+   257) <a name="l257" style="background-color: #ffcccc">       ndxs(nelem) = ndxs(nelem-1) + j</a>
+   258) <a name="l258" style="background-color: #ffcccc"></a>
+   259) <a name="l259" style="background-color: #ffcccc">       tmp_str = tmp_str(j+1:)</a>
+   260) <a name="l260" style="background-color: #ffcccc">       j = scan( tmp_str, '+' )</a>
+   261) <a name="l261" style="background-color: #ffcccc"></a>
+   262) <a name="l262" style="background-color: #ffcccc">    enddo</a>
+   263) <a name="l263" style="background-color: #ffcccc">    ndxs(nelem+1) = len(spec_entry)+1</a>
+   264) <a name="l264" style="background-color: #ffcccc"></a>
+   265) <a name="l265" style="background-color: #ffcccc">    allocate(items)</a>
+   266) <a name="l266" style="background-color: #ffcccc">    allocate(items%megan_comp_names(nelem))</a>
+   267) <a name="l267" style="background-color: #ffcccc">    items%mech_comp_name = trim(adjustl( spec_entry(:ndxs(1)-1)))</a>
+   268) <a name="l268" style="background-color: #ffcccc">    items%n_megan_comps = nelem</a>
+   269) <a name="l269" style="background-color: #ffcccc">    do i = 1,nelem </a>
+   270) <a name="l270" style="background-color: #ffcccc">       items%megan_comp_names(i) = trim(adjustl( spec_entry(ndxs(i)+1:ndxs(i+1)-1)))</a>
+   271) <a name="l271" style="background-color: #ffcccc">    enddo</a>
+   272) <a name="l272" style="background-color: #ffcccc"></a>
+   273) <a name="l273" style="background-color: #ffcccc">  endfunction get_parser_items</a>
+   274) <a name="l274" style="background-color: #ffffff"></a>
+   275) <a name="l275" style="background-color: #ffffff">  !-------------------------------------------------------------------------</a>
+   276) <a name="l276" style="background-color: #ffffff">  !-------------------------------------------------------------------------</a>
+   277) <a name="l277" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">destroy_parser_items( items )</a>
+   278) <a name="l278" style="background-color: #ffcccc">    type(parser_items_t), pointer :: items</a>
+   279) <a name="l279" style="background-color: #ffcccc"></a>
+   280) <a name="l280" style="background-color: #ffcccc">    deallocate( items%megan_comp_names )</a>
+   281) <a name="l281" style="background-color: #ffcccc">    deallocate( items )</a>
+   282) <a name="l282" style="background-color: #ffcccc">    nullify( items )</a>
+   283) <a name="l283" style="background-color: #ffcccc">  endsubroutine destroy_parser_items</a>
+   284) <a name="l284" style="background-color: #ffffff"></a>
+   285) <a name="l285" style="background-color: #ffffff">  !-------------------------------------------------------------------------</a>
+   286) <a name="l286" style="background-color: #ffffff">  !-------------------------------------------------------------------------</a>
+   287) <a name="l287" style="background-color: #ffffff">  function </a><a style="background-color: #ffcccc">add_megan_comp( name ) result(megan_comp)</a>
+   288) <a name="l288" style="background-color: #ffcccc"></a>
+   289) <a name="l289" style="background-color: #ffcccc">    character(len=16), intent(in) :: name</a>
+   290) <a name="l290" style="background-color: #ffcccc">    type(shr_megan_megcomp_t), pointer :: megan_comp</a>
+   291) <a name="l291" style="background-color: #ffcccc"></a>
+   292) <a name="l292" style="background-color: #ffcccc">    megan_comp =&gt; get_megan_comp_by_name(shr_megan_linkedlist, name)</a>
+   293) <a name="l293" style="background-color: #ffcccc">    if(associated(megan_comp)) then</a>
+   294) <a name="l294" style="background-color: #ffcccc">       ! already in the list so return...</a>
+   295) <a name="l295" style="background-color: #ffcccc">       return</a>
+   296) <a name="l296" style="background-color: #ffcccc">    endif</a>
+   297) <a name="l297" style="background-color: #ffcccc"></a>
+   298) <a name="l298" style="background-color: #ffcccc">    ! create new megan compound and add it to the list</a>
+   299) <a name="l299" style="background-color: #ffcccc">    allocate(megan_comp)</a>
+   300) <a name="l300" style="background-color: #ffcccc"></a>
+   301) <a name="l301" style="background-color: #ffcccc">    !    element%index = lookup_element( name )</a>
+   302) <a name="l302" style="background-color: #ffcccc">    !    element%emis_factors = get_factors( list_elem%index )</a>
+   303) <a name="l303" style="background-color: #ffcccc"></a>
+   304) <a name="l304" style="background-color: #ffcccc">    megan_comp%index = shr_megan_megcomps_n+1</a>
+   305) <a name="l305" style="background-color: #ffcccc"></a>
+   306) <a name="l306" style="background-color: #ffcccc">    megan_comp%name = trim(name)</a>
+   307) <a name="l307" style="background-color: #ffcccc">    nullify(megan_comp%next_megcomp)</a>
+   308) <a name="l308" style="background-color: #ffcccc"></a>
+   309) <a name="l309" style="background-color: #ffcccc">    call add_megan_comp_to_list(megan_comp)</a>
+   310) <a name="l310" style="background-color: #ffcccc"></a>
+   311) <a name="l311" style="background-color: #ffcccc">  end function add_megan_comp</a>
+   312) <a name="l312" style="background-color: #ffffff"></a>
+   313) <a name="l313" style="background-color: #ffffff">  !-------------------------------------------------------------------------</a>
+   314) <a name="l314" style="background-color: #ffffff">  !-------------------------------------------------------------------------</a>
+   315) <a name="l315" style="background-color: #ffffff">  recursive function </a><a style="background-color: #ffcccc">get_megan_comp_by_name(list_comp, name) result(megan_comp)</a>
+   316) <a name="l316" style="background-color: #ffcccc"></a>
+   317) <a name="l317" style="background-color: #ffcccc">    type(shr_megan_megcomp_t), pointer  :: list_comp</a>
+   318) <a name="l318" style="background-color: #ffcccc">    character(len=*), intent(in) :: name  ! variable name</a>
+   319) <a name="l319" style="background-color: #ffcccc">    type(shr_megan_megcomp_t), pointer  :: megan_comp ! returned object</a>
+   320) <a name="l320" style="background-color: #ffcccc"></a>
+   321) <a name="l321" style="background-color: #ffcccc">    if(associated(list_comp)) then</a>
+   322) <a name="l322" style="background-color: #ffcccc">       if(list_comp%name .eq. name) then</a>
+   323) <a name="l323" style="background-color: #ffcccc">          megan_comp =&gt; list_comp</a>
+   324) <a name="l324" style="background-color: #ffcccc">       else</a>
+   325) <a name="l325" style="background-color: #ffcccc">          megan_comp =&gt; get_megan_comp_by_name(list_comp%next_megcomp, name)</a>
+   326) <a name="l326" style="background-color: #ffcccc">       end if</a>
+   327) <a name="l327" style="background-color: #ffcccc">    else</a>
+   328) <a name="l328" style="background-color: #ffcccc">       nullify(megan_comp)</a>
+   329) <a name="l329" style="background-color: #ffcccc">    end if</a>
+   330) <a name="l330" style="background-color: #ffcccc"></a>
+   331) <a name="l331" style="background-color: #ffcccc">  end function get_megan_comp_by_name</a>
+   332) <a name="l332" style="background-color: #ffffff"></a>
+   333) <a name="l333" style="background-color: #ffffff">  !-------------------------------------------------------------------------</a>
+   334) <a name="l334" style="background-color: #ffffff">  !-------------------------------------------------------------------------</a>
+   335) <a name="l335" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">add_megan_comp_to_list( new_megan_comp )</a>
+   336) <a name="l336" style="background-color: #ffcccc"></a>
+   337) <a name="l337" style="background-color: #ffcccc">    type(shr_megan_megcomp_t), target, intent(in) :: new_megan_comp</a>
+   338) <a name="l338" style="background-color: #ffcccc"></a>
+   339) <a name="l339" style="background-color: #ffcccc">    type(shr_megan_megcomp_t), pointer :: list_comp</a>
+   340) <a name="l340" style="background-color: #ffcccc"></a>
+   341) <a name="l341" style="background-color: #ffcccc">    if(associated(shr_megan_linkedlist)) then</a>
+   342) <a name="l342" style="background-color: #ffcccc">       list_comp =&gt; shr_megan_linkedlist</a>
+   343) <a name="l343" style="background-color: #ffcccc">       do while(associated(list_comp%next_megcomp))</a>
+   344) <a name="l344" style="background-color: #ffcccc">          list_comp =&gt; list_comp%next_megcomp</a>
+   345) <a name="l345" style="background-color: #ffcccc">       end do</a>
+   346) <a name="l346" style="background-color: #ffcccc">       list_comp%next_megcomp =&gt; new_megan_comp</a>
+   347) <a name="l347" style="background-color: #ffcccc">    else</a>
+   348) <a name="l348" style="background-color: #ffcccc">       shr_megan_linkedlist =&gt; new_megan_comp</a>
+   349) <a name="l349" style="background-color: #ffcccc">    end if</a>
+   350) <a name="l350" style="background-color: #ffcccc"></a>
+   351) <a name="l351" style="background-color: #ffcccc">    shr_megan_megcomps_n = shr_megan_megcomps_n + 1</a>
+   352) <a name="l352" style="background-color: #ffcccc"></a>
+   353) <a name="l353" style="background-color: #ffcccc">  end subroutine add_megan_comp_to_list</a>
+   354) <a name="l354" style="background-color: #ffffff"></a>
+   355) <a name="l355" style="background-color: #ffffff">endmodule shr_megan_mod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

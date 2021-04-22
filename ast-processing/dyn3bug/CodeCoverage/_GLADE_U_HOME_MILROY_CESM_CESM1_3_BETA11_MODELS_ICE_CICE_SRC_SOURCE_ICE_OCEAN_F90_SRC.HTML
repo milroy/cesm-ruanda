@@ -1,0 +1,274 @@
+<html>
+<head>
+<title>Listing of ice_ocean.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;ice_ocean.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!=======================================================================</a>
+     2) <a name="l2" style="background-color: #ffffff">!BOP</a>
+     3) <a name="l3" style="background-color: #ffffff">!</a>
+     4) <a name="l4" style="background-color: #ffffff">! !MODULE: ice_ocean - ocean mixed layer internal to sea ice model</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! Ocean mixed layer calculation (internal to sea ice model).</a>
+     9) <a name="l9" style="background-color: #ffffff">! Allows heat storage in ocean for uncoupled runs.</a>
+    10) <a name="l10" style="background-color: #ffffff">!</a>
+    11) <a name="l11" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    12) <a name="l12" style="background-color: #ffffff">!  SVN:$Id: ice_ocean.F90 131 2008-05-30 16:53:40Z eclare $</a>
+    13) <a name="l13" style="background-color: #ffffff">!</a>
+    14) <a name="l14" style="background-color: #ffffff">! authors:   John Weatherly, CRREL</a>
+    15) <a name="l15" style="background-color: #ffffff">!            C.M. Bitz, UW</a>
+    16) <a name="l16" style="background-color: #ffffff">!            Elizabeth C. Hunke, LANL</a>
+    17) <a name="l17" style="background-color: #ffffff">!            Bruce P. Briegleb, NCAR</a>
+    18) <a name="l18" style="background-color: #ffffff">!            William H. Lipscomb, LANL</a>
+    19) <a name="l19" style="background-color: #ffffff">!</a>
+    20) <a name="l20" style="background-color: #ffffff">! 2004: Block structure added by William Lipscomb</a>
+    21) <a name="l21" style="background-color: #ffffff">! 2005: Ocean-to-atmosphere fluxes added as 3D arrays, William Lipscomb</a>
+    22) <a name="l22" style="background-color: #ffffff">! 2006: Converted to free source form (F90) by Elizabeth Hunke</a>
+    23) <a name="l23" style="background-color: #ffffff">!</a>
+    24) <a name="l24" style="background-color: #ffffff">! !INTERFACE:</a>
+    25) <a name="l25" style="background-color: #ffffff">!</a>
+    26) <a name="l26" style="background-color: #ffffff">      module ice_ocean</a>
+    27) <a name="l27" style="background-color: #ffffff">!</a>
+    28) <a name="l28" style="background-color: #ffffff">! !USES:</a>
+    29) <a name="l29" style="background-color: #ffffff">!</a>
+    30) <a name="l30" style="background-color: #ffffff">      use ice_kinds_mod</a>
+    31) <a name="l31" style="background-color: #ffffff">      use ice_constants</a>
+    32) <a name="l32" style="background-color: #ffffff">!</a>
+    33) <a name="l33" style="background-color: #ffffff">!EOP</a>
+    34) <a name="l34" style="background-color: #ffffff">!</a>
+    35) <a name="l35" style="background-color: #ffffff">      implicit none</a>
+    36) <a name="l36" style="background-color: #ffffff">      save</a>
+    37) <a name="l37" style="background-color: #ffffff"></a>
+    38) <a name="l38" style="background-color: #ffffff">      logical (kind=log_kind) :: &amp;</a>
+    39) <a name="l39" style="background-color: #ffffff">         oceanmixed_ice           ! if true, use ocean mixed layer</a>
+    40) <a name="l40" style="background-color: #ffffff"></a>
+    41) <a name="l41" style="background-color: #ffffff">      real (kind=dbl_kind), parameter :: &amp;</a>
+    42) <a name="l42" style="background-color: #ffffff">         cprho = cp_ocn*rhow</a>
+    43) <a name="l43" style="background-color: #ffffff"></a>
+    44) <a name="l44" style="background-color: #ffffff">!=======================================================================</a>
+    45) <a name="l45" style="background-color: #ffffff"></a>
+    46) <a name="l46" style="background-color: #ffffff">      contains</a>
+    47) <a name="l47" style="background-color: #ffffff"></a>
+    48) <a name="l48" style="background-color: #ffffff">!=======================================================================</a>
+    49) <a name="l49" style="background-color: #ffffff">!BOP</a>
+    50) <a name="l50" style="background-color: #ffffff">!</a>
+    51) <a name="l51" style="background-color: #ffffff">! !ROUTINE: ocean_mixed_layer - compute SST and freeze/melt potential</a>
+    52) <a name="l52" style="background-color: #ffffff">!</a>
+    53) <a name="l53" style="background-color: #ffffff">! !DESCRIPTION:</a>
+    54) <a name="l54" style="background-color: #ffffff">!</a>
+    55) <a name="l55" style="background-color: #ffffff">! Compute the mixed layer heat balance and update the SST.</a>
+    56) <a name="l56" style="background-color: #ffffff">! Compute the energy available to freeze or melt ice.</a>
+    57) <a name="l57" style="background-color: #ffffff">! NOTE: SST changes due to fluxes through the ice are computed in</a>
+    58) <a name="l58" style="background-color: #ffffff">!       ice_therm_vertical.</a>
+    59) <a name="l59" style="background-color: #ffffff">!</a>
+    60) <a name="l60" style="background-color: #ffffff">! !REVISION HISTORY: same as module</a>
+    61) <a name="l61" style="background-color: #ffffff">!</a>
+    62) <a name="l62" style="background-color: #ffffff">! !INTERFACE:</a>
+    63) <a name="l63" style="background-color: #ffffff">!</a>
+    64) <a name="l64" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">ocean_mixed_layer (dt)</a>
+    65) <a name="l65" style="background-color: #ffcccc">!</a>
+    66) <a name="l66" style="background-color: #ffcccc">! !USES:</a>
+    67) <a name="l67" style="background-color: #ffcccc">!</a>
+    68) <a name="l68" style="background-color: #ffcccc">      use ice_blocks</a>
+    69) <a name="l69" style="background-color: #ffcccc">      use ice_domain</a>
+    70) <a name="l70" style="background-color: #ffcccc">      use ice_state, only: aice, uvel, vvel</a>
+    71) <a name="l71" style="background-color: #ffcccc">      use ice_flux</a>
+    72) <a name="l72" style="background-color: #ffcccc">      use ice_grid, only: tmask</a>
+    73) <a name="l73" style="background-color: #ffcccc">      use ice_atmo, only: atmo_boundary_layer, atmbndy, atmo_boundary_const</a>
+    74) <a name="l74" style="background-color: #ffcccc">!</a>
+    75) <a name="l75" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+    76) <a name="l76" style="background-color: #ffcccc">!</a>
+    77) <a name="l77" style="background-color: #ffcccc">      real (kind=dbl_kind), intent(in) :: &amp;</a>
+    78) <a name="l78" style="background-color: #ffcccc">         dt      ! time step</a>
+    79) <a name="l79" style="background-color: #ffcccc">!</a>
+    80) <a name="l80" style="background-color: #ffcccc">!EOP</a>
+    81) <a name="l81" style="background-color: #ffcccc">!</a>
+    82) <a name="l82" style="background-color: #ffcccc">      real (kind=dbl_kind) :: &amp;</a>
+    83) <a name="l83" style="background-color: #ffcccc">         TsfK , &amp; ! surface temperature (K)</a>
+    84) <a name="l84" style="background-color: #ffcccc">         swabs    ! surface absorbed shortwave heat flux (W/m^2)</a>
+    85) <a name="l85" style="background-color: #ffcccc"></a>
+    86) <a name="l86" style="background-color: #ffcccc">      real (kind=dbl_kind), parameter :: &amp;</a>
+    87) <a name="l87" style="background-color: #ffcccc">         frzmlt_max = c1000   ! max magnitude of frzmlt (W/m^2)</a>
+    88) <a name="l88" style="background-color: #ffcccc"></a>
+    89) <a name="l89" style="background-color: #ffcccc">      integer (kind=int_kind) :: &amp;</a>
+    90) <a name="l90" style="background-color: #ffcccc">         i, j           , &amp; ! horizontal indices</a>
+    91) <a name="l91" style="background-color: #ffcccc">         ij             , &amp; ! combined ij index</a>
+    92) <a name="l92" style="background-color: #ffcccc">         iblk           , &amp; ! block index</a>
+    93) <a name="l93" style="background-color: #ffcccc">         ilo,ihi,jlo,jhi    ! beginning and end of physical domain</a>
+    94) <a name="l94" style="background-color: #ffcccc"></a>
+    95) <a name="l95" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension(nx_block,ny_block) :: &amp;</a>
+    96) <a name="l96" style="background-color: #ffcccc">         delt  , &amp; ! potential temperature difference   (K)</a>
+    97) <a name="l97" style="background-color: #ffcccc">         delq  , &amp; ! specific humidity difference   (kg/kg)</a>
+    98) <a name="l98" style="background-color: #ffcccc">         shcoef, &amp; ! transfer coefficient for sensible heat</a>
+    99) <a name="l99" style="background-color: #ffcccc">         lhcoef    ! transfer coefficient for latent heat</a>
+   100) <a name="l100" style="background-color: #ffcccc"></a>
+   101) <a name="l101" style="background-color: #ffcccc">      integer (kind=int_kind), save :: &amp;</a>
+   102) <a name="l102" style="background-color: #ffcccc">         icells    ! number of ocean cells</a>
+   103) <a name="l103" style="background-color: #ffcccc"></a>
+   104) <a name="l104" style="background-color: #ffcccc">      integer (kind=int_kind), dimension(nx_block*ny_block), save :: &amp;</a>
+   105) <a name="l105" style="background-color: #ffcccc">         indxi, indxj    ! compressed indices for ocean cells</a>
+   106) <a name="l106" style="background-color: #ffcccc"></a>
+   107) <a name="l107" style="background-color: #ffcccc">      type (block) :: &amp;</a>
+   108) <a name="l108" style="background-color: #ffcccc">         this_block           ! block information for current block</a>
+   109) <a name="l109" style="background-color: #ffcccc"></a>
+   110) <a name="l110" style="background-color: #ffcccc">      do iblk = 1, nblocks</a>
+   111) <a name="l111" style="background-color: #ffcccc"></a>
+   112) <a name="l112" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+   113) <a name="l113" style="background-color: #ffcccc">      ! Identify ocean cells.</a>
+   114) <a name="l114" style="background-color: #ffcccc">      ! Set fluxes to zero in land cells.</a>
+   115) <a name="l115" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+   116) <a name="l116" style="background-color: #ffcccc"></a>
+   117) <a name="l117" style="background-color: #ffcccc">         icells = 0</a>
+   118) <a name="l118" style="background-color: #ffcccc">         do j = 1, ny_block</a>
+   119) <a name="l119" style="background-color: #ffcccc">         do i = 1, nx_block</a>
+   120) <a name="l120" style="background-color: #ffcccc">            if (tmask(i,j,iblk)) then</a>
+   121) <a name="l121" style="background-color: #ffcccc">               icells = icells + 1</a>
+   122) <a name="l122" style="background-color: #ffcccc">               indxi(icells) = i</a>
+   123) <a name="l123" style="background-color: #ffcccc">               indxj(icells) = j</a>
+   124) <a name="l124" style="background-color: #ffcccc">            else</a>
+   125) <a name="l125" style="background-color: #ffcccc">               sst       (i,j,iblk) = c0</a>
+   126) <a name="l126" style="background-color: #ffcccc">               frzmlt    (i,j,iblk) = c0</a>
+   127) <a name="l127" style="background-color: #ffcccc">               flwout_ocn(i,j,iblk) = c0</a>
+   128) <a name="l128" style="background-color: #ffcccc">               fsens_ocn (i,j,iblk) = c0</a>
+   129) <a name="l129" style="background-color: #ffcccc">               flat_ocn  (i,j,iblk) = c0</a>
+   130) <a name="l130" style="background-color: #ffcccc">               evap_ocn  (i,j,iblk) = c0</a>
+   131) <a name="l131" style="background-color: #ffcccc">            endif</a>
+   132) <a name="l132" style="background-color: #ffcccc">         enddo                  ! i</a>
+   133) <a name="l133" style="background-color: #ffcccc">         enddo                  ! j</a>
+   134) <a name="l134" style="background-color: #ffcccc"></a>
+   135) <a name="l135" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+   136) <a name="l136" style="background-color: #ffcccc">      ! Compute boundary layer quantities</a>
+   137) <a name="l137" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+   138) <a name="l138" style="background-color: #ffcccc"></a>
+   139) <a name="l139" style="background-color: #ffcccc">         if (trim(atmbndy) == 'constant') then</a>
+   140) <a name="l140" style="background-color: #ffcccc">            call atmo_boundary_const (nx_block,  ny_block,   &amp;</a>
+   141) <a name="l141" style="background-color: #ffcccc">                                      'ice',     icells,     &amp;</a>
+   142) <a name="l142" style="background-color: #ffcccc">                                      indxi,     indxj,      &amp;</a>
+   143) <a name="l143" style="background-color: #ffcccc">                                      uatm       (:,:,iblk), &amp;   </a>
+   144) <a name="l144" style="background-color: #ffcccc">                                      vatm       (:,:,iblk), &amp;   </a>
+   145) <a name="l145" style="background-color: #ffcccc">                                      wind       (:,:,iblk), &amp;   </a>
+   146) <a name="l146" style="background-color: #ffcccc">                                      rhoa       (:,:,iblk), &amp;</a>
+   147) <a name="l147" style="background-color: #ffcccc">                                      strairx_ocn(:,:,iblk), &amp; </a>
+   148) <a name="l148" style="background-color: #ffcccc">                                      strairy_ocn(:,:,iblk), &amp; </a>
+   149) <a name="l149" style="background-color: #ffcccc">                                      lhcoef     (:,:),      &amp;</a>
+   150) <a name="l150" style="background-color: #ffcccc">                                      shcoef     (:,:) )</a>
+   151) <a name="l151" style="background-color: #ffcccc">         else ! default</a>
+   152) <a name="l152" style="background-color: #ffcccc">            call atmo_boundary_layer (nx_block,  ny_block,   &amp;</a>
+   153) <a name="l153" style="background-color: #ffcccc">                                      'ocn',     icells,     &amp;</a>
+   154) <a name="l154" style="background-color: #ffcccc">                                      indxi,     indxj,      &amp;</a>
+   155) <a name="l155" style="background-color: #ffcccc">                                      sst        (:,:,iblk), &amp;    </a>
+   156) <a name="l156" style="background-color: #ffcccc">                                      potT       (:,:,iblk), &amp;</a>
+   157) <a name="l157" style="background-color: #ffcccc">                                      uatm       (:,:,iblk), &amp;   </a>
+   158) <a name="l158" style="background-color: #ffcccc">                                      vatm       (:,:,iblk), &amp;   </a>
+   159) <a name="l159" style="background-color: #ffcccc">                                      uvel       (:,:,iblk), &amp;   </a>
+   160) <a name="l160" style="background-color: #ffcccc">                                      vvel       (:,:,iblk), &amp;   </a>
+   161) <a name="l161" style="background-color: #ffcccc">                                      wind       (:,:,iblk), &amp;   </a>
+   162) <a name="l162" style="background-color: #ffcccc">                                      zlvl       (:,:,iblk), &amp;   </a>
+   163) <a name="l163" style="background-color: #ffcccc">                                      Qa         (:,:,iblk), &amp;     </a>
+   164) <a name="l164" style="background-color: #ffcccc">                                      rhoa       (:,:,iblk), &amp;</a>
+   165) <a name="l165" style="background-color: #ffcccc">                                      strairx_ocn(:,:,iblk), &amp; </a>
+   166) <a name="l166" style="background-color: #ffcccc">                                      strairy_ocn(:,:,iblk), &amp; </a>
+   167) <a name="l167" style="background-color: #ffcccc">                                      Uref_ocn   (:,:,iblk), &amp;</a>
+   168) <a name="l168" style="background-color: #ffcccc">                                      Tref_ocn   (:,:,iblk), &amp; </a>
+   169) <a name="l169" style="background-color: #ffcccc">                                      Qref_ocn   (:,:,iblk), &amp; </a>
+   170) <a name="l170" style="background-color: #ffcccc">                                      delt       (:,:),      &amp;    </a>
+   171) <a name="l171" style="background-color: #ffcccc">                                      delq       (:,:),      &amp;</a>
+   172) <a name="l172" style="background-color: #ffcccc">                                      lhcoef     (:,:),      &amp;</a>
+   173) <a name="l173" style="background-color: #ffcccc">                                      shcoef     (:,:) )</a>
+   174) <a name="l174" style="background-color: #ffcccc">         endif</a>
+   175) <a name="l175" style="background-color: #ffcccc"></a>
+   176) <a name="l176" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+   177) <a name="l177" style="background-color: #ffcccc">      ! Ocean  albedo</a>
+   178) <a name="l178" style="background-color: #ffcccc">      ! For now, assume albedo = albocn in each spectral band.</a>
+   179) <a name="l179" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+   180) <a name="l180" style="background-color: #ffcccc"></a>
+   181) <a name="l181" style="background-color: #ffcccc">         alvdr_ocn(:,:,iblk) = albocn</a>
+   182) <a name="l182" style="background-color: #ffcccc">         alidr_ocn(:,:,iblk) = albocn</a>
+   183) <a name="l183" style="background-color: #ffcccc">         alvdf_ocn(:,:,iblk) = albocn</a>
+   184) <a name="l184" style="background-color: #ffcccc">         alidf_ocn(:,:,iblk) = albocn</a>
+   185) <a name="l185" style="background-color: #ffcccc"></a>
+   186) <a name="l186" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+   187) <a name="l187" style="background-color: #ffcccc">      ! Compute ocean fluxes and update SST</a>
+   188) <a name="l188" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+   189) <a name="l189" style="background-color: #ffcccc"></a>
+   190) <a name="l190" style="background-color: #ffcccc">!DIR$ CONCURRENT !Cray</a>
+   191) <a name="l191" style="background-color: #ffcccc">!cdir nodep      !NEC</a>
+   192) <a name="l192" style="background-color: #ffcccc">!ocl novrec      !Fujitsu</a>
+   193) <a name="l193" style="background-color: #ffcccc">      do ij = 1, icells</a>
+   194) <a name="l194" style="background-color: #ffcccc">         i = indxi(ij)</a>
+   195) <a name="l195" style="background-color: #ffcccc">         j = indxj(ij)</a>
+   196) <a name="l196" style="background-color: #ffcccc"></a>
+   197) <a name="l197" style="background-color: #ffcccc">         ! shortwave radiative flux</a>
+   198) <a name="l198" style="background-color: #ffcccc">         swabs = (c1-alvdr_ocn(i,j,iblk)) * swvdr(i,j,iblk) &amp;</a>
+   199) <a name="l199" style="background-color: #ffcccc">               + (c1-alidr_ocn(i,j,iblk)) * swidr(i,j,iblk) &amp;</a>
+   200) <a name="l200" style="background-color: #ffcccc">               + (c1-alvdf_ocn(i,j,iblk)) * swvdf(i,j,iblk) &amp;</a>
+   201) <a name="l201" style="background-color: #ffcccc">               + (c1-alidf_ocn(i,j,iblk)) * swidf(i,j,iblk) </a>
+   202) <a name="l202" style="background-color: #ffcccc"></a>
+   203) <a name="l203" style="background-color: #ffcccc">         ! ocean surface temperature in Kelvin</a>
+   204) <a name="l204" style="background-color: #ffcccc">         TsfK = sst(i,j,iblk) + Tffresh</a>
+   205) <a name="l205" style="background-color: #ffcccc"></a>
+   206) <a name="l206" style="background-color: #ffcccc">         ! longwave radiative flux</a>
+   207) <a name="l207" style="background-color: #ffcccc">         flwout_ocn(i,j,iblk) = -stefan_boltzmann * TsfK**4</a>
+   208) <a name="l208" style="background-color: #ffcccc"></a>
+   209) <a name="l209" style="background-color: #ffcccc">         ! downward latent and sensible heat fluxes</a>
+   210) <a name="l210" style="background-color: #ffcccc">         fsens_ocn(i,j,iblk) =  shcoef(i,j) * delt(i,j)</a>
+   211) <a name="l211" style="background-color: #ffcccc">         flat_ocn (i,j,iblk) =  lhcoef(i,j) * delq(i,j)</a>
+   212) <a name="l212" style="background-color: #ffcccc">         evap_ocn (i,j,iblk) = -flat_ocn(i,j,iblk) / Lvap</a>
+   213) <a name="l213" style="background-color: #ffcccc"></a>
+   214) <a name="l214" style="background-color: #ffcccc">         ! Compute sst change due to exchange with atm/ice above</a>
+   215) <a name="l215" style="background-color: #ffcccc">         sst(i,j,iblk) = sst(i,j,iblk) + dt * ( &amp;</a>
+   216) <a name="l216" style="background-color: #ffcccc">              (fsens_ocn(i,j,iblk) + flat_ocn(i,j,iblk) + flwout_ocn(i,j,iblk) &amp;</a>
+   217) <a name="l217" style="background-color: #ffcccc">             + flw(i,j,iblk) + swabs) * (c1-aice(i,j,iblk)) &amp;</a>
+   218) <a name="l218" style="background-color: #ffcccc">             + fhocn(i,j,iblk) + fswthru(i,j,iblk))         &amp;  ! these are *aice</a>
+   219) <a name="l219" style="background-color: #ffcccc">             / (cprho*hmix(i,j,iblk))</a>
+   220) <a name="l220" style="background-color: #ffcccc"></a>
+   221) <a name="l221" style="background-color: #ffcccc">         ! adjust qdp if cooling of mixed layer would occur when sst &lt;= Tf</a>
+   222) <a name="l222" style="background-color: #ffcccc">         if (sst(i,j,iblk) &lt;= Tf(i,j,iblk) .and. qdp(i,j,iblk) &gt; c0) qdp(i,j,iblk) = c0</a>
+   223) <a name="l223" style="background-color: #ffcccc"></a>
+   224) <a name="l224" style="background-color: #ffcccc">         ! computed T change due to exchange with deep layers:</a>
+   225) <a name="l225" style="background-color: #ffcccc">         sst(i,j,iblk) = sst(i,j,iblk) - qdp(i,j,iblk)*dt/(cprho*hmix(i,j,iblk))</a>
+   226) <a name="l226" style="background-color: #ffcccc"></a>
+   227) <a name="l227" style="background-color: #ffcccc">         ! compute potential to freeze or melt ice</a>
+   228) <a name="l228" style="background-color: #ffcccc">         frzmlt(i,j,iblk) = (Tf(i,j,iblk)-sst(i,j,iblk))*cprho*hmix(i,j,iblk)/dt</a>
+   229) <a name="l229" style="background-color: #ffcccc">         frzmlt(i,j,iblk) = min(max(frzmlt(i,j,iblk),-frzmlt_max),frzmlt_max)</a>
+   230) <a name="l230" style="background-color: #ffcccc"></a>
+   231) <a name="l231" style="background-color: #ffcccc">         ! if sst is below freezing, reset sst to Tf</a>
+   232) <a name="l232" style="background-color: #ffcccc">         if (sst(i,j,iblk) &lt;= Tf(i,j,iblk)) sst(i,j,iblk) = Tf(i,j,iblk)</a>
+   233) <a name="l233" style="background-color: #ffcccc"></a>
+   234) <a name="l234" style="background-color: #ffcccc">      enddo                     ! ij</a>
+   235) <a name="l235" style="background-color: #ffcccc">      enddo                     ! iblk</a>
+   236) <a name="l236" style="background-color: #ffcccc"></a>
+   237) <a name="l237" style="background-color: #ffcccc">      end subroutine ocean_mixed_layer</a>
+   238) <a name="l238" style="background-color: #ffffff"></a>
+   239) <a name="l239" style="background-color: #ffffff">!=======================================================================</a>
+   240) <a name="l240" style="background-color: #ffffff"></a>
+   241) <a name="l241" style="background-color: #ffffff">      end module ice_ocean</a>
+   242) <a name="l242" style="background-color: #ffffff"></a>
+   243) <a name="l243" style="background-color: #ffffff">!=======================================================================</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

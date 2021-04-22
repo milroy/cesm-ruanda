@@ -1,0 +1,1269 @@
+<html>
+<head>
+<title>Listing of cam_history_support.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;cam_history_support.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 60.87&#160;%func&#160;&#160;&#160;&#160; 40.31&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module cam_history_support</a>
+     2) <a name="l2" style="background-color: #ffffff">  use shr_kind_mod, only: r8=&gt;shr_kind_r8, i8=&gt;shr_kind_i8, shr_kind_cl</a>
+     3) <a name="l3" style="background-color: #ffffff">  use pio,          only: var_desc_t, file_desc_t</a>
+     4) <a name="l4" style="background-color: #ffffff">  use abortutils,   only: endrun</a>
+     5) <a name="l5" style="background-color: #ffffff">  use cam_logfile,  only: iulog</a>
+     6) <a name="l6" style="background-color: #ffffff">  use spmd_utils,   only: masterproc</a>
+     7) <a name="l7" style="background-color: #ffffff"></a>
+     8) <a name="l8" style="background-color: #ffffff">  implicit none</a>
+     9) <a name="l9" style="background-color: #ffffff">  private</a>
+    10) <a name="l10" style="background-color: #ffffff"></a>
+    11) <a name="l11" style="background-color: #ffffff">  integer, parameter, public :: max_string_len = 256   ! Length of strings</a>
+    12) <a name="l12" style="background-color: #ffffff">  integer, parameter, public :: max_chars = shr_kind_cl         ! max chars for char variables</a>
+    13) <a name="l13" style="background-color: #ffffff">  integer, parameter, public :: fieldname_len = 24   ! max chars for field name</a>
+    14) <a name="l14" style="background-color: #ffffff">  integer, parameter, public :: fieldname_suffix_len =  3 ! length of field name suffix (&quot;&amp;IC&quot;)</a>
+    15) <a name="l15" style="background-color: #ffffff">  integer, parameter, public :: fieldname_lenp2      = fieldname_len + 2 ! allow for extra characters</a>
+    16) <a name="l16" style="background-color: #ffffff">  integer, parameter, public :: max_fieldname_len    = fieldname_len + fieldname_suffix_len ! max chars for field name (including suffix)</a>
+    17) <a name="l17" style="background-color: #ffffff">  integer, parameter         :: max_mdimname_len     = 16</a>
+    18) <a name="l18" style="background-color: #ffffff"></a>
+    19) <a name="l19" style="background-color: #ffffff">  integer, parameter, public :: pflds = 1000       ! max number of fields for namelist entries fincl and fexcl</a>
+    20) <a name="l20" style="background-color: #ffffff">                                                   ! also used in write restart</a>
+    21) <a name="l21" style="background-color: #ffffff">  integer, parameter, public :: ptapes = 12        ! max number of tapes</a>
+    22) <a name="l22" style="background-color: #ffffff"></a>
+    23) <a name="l23" style="background-color: #ffffff"></a>
+    24) <a name="l24" style="background-color: #ffffff">  type, public :: column_info</a>
+    25) <a name="l25" style="background-color: #ffffff">    character(len=max_chars) :: lat_name ! latitude name for this column or columns</a>
+    26) <a name="l26" style="background-color: #ffffff">    character(len=max_chars) :: lon_name ! latitude name for this column or columns</a>
+    27) <a name="l27" style="background-color: #ffffff">    integer :: num_lats            ! number of lats in a group of contiguous columns</a>
+    28) <a name="l28" style="background-color: #ffffff">    integer :: num_lons            ! number of lons in a group of contiguous columns</a>
+    29) <a name="l29" style="background-color: #ffffff">    integer :: columnlat(2)       ! beginning and ending latitude (range) dimensioned by groups</a>
+    30) <a name="l30" style="background-color: #ffffff">    integer :: columnlon(2)       ! beginning and ending longitude (range) dimensioned by groups</a>
+    31) <a name="l31" style="background-color: #ffffff">    integer, pointer :: hmask(:,:)</a>
+    32) <a name="l32" style="background-color: #ffffff">    integer, pointer :: hmask_dyn(:,:)</a>
+    33) <a name="l33" style="background-color: #ffffff">    integer :: column_cnt</a>
+    34) <a name="l34" style="background-color: #ffffff">    integer :: htape             ! need to keep track of which tape we are writing for iodesc reuse</a>
+    35) <a name="l35" style="background-color: #ffffff">  end type column_info</a>
+    36) <a name="l36" style="background-color: #ffffff"></a>
+    37) <a name="l37" style="background-color: #ffffff">  type, public :: field_info</a>
+    38) <a name="l38" style="background-color: #ffffff"></a>
+    39) <a name="l39" style="background-color: #ffffff">    ! (i.e., how often &quot;outfld&quot; is called):  every other; only during LW/SW</a>
+    40) <a name="l40" style="background-color: #ffffff">    ! radiation calcs; etc.</a>
+    41) <a name="l41" style="background-color: #ffffff">    logical :: flag_xyfill                    ! non-applicable xy points flagged with fillvalue</a>
+    42) <a name="l42" style="background-color: #ffffff">    logical :: is_subcol                      ! .true. iff field output as subcol</a>
+    43) <a name="l43" style="background-color: #ffffff">    integer, pointer :: mdims(:)              ! indicies into hist_coords list</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">    real(r8) :: fillvalue                     ! fillvalue for this variable, set to default if not explicit in addfld</a>
+    46) <a name="l46" style="background-color: #ffffff"></a>
+    47) <a name="l47" style="background-color: #ffffff">    integer :: numlev                         ! vertical dimension (.nc file and internal arr)</a>
+    48) <a name="l48" style="background-color: #ffffff"></a>
+    49) <a name="l49" style="background-color: #ffffff">    integer :: begdim1                        ! on-node dim1 start index</a>
+    50) <a name="l50" style="background-color: #ffffff">    integer :: enddim1                        ! on-node dim1 end index</a>
+    51) <a name="l51" style="background-color: #ffffff"></a>
+    52) <a name="l52" style="background-color: #ffffff">    integer :: begdim2                        ! on-node dim2 start index</a>
+    53) <a name="l53" style="background-color: #ffffff">    integer :: enddim2                        ! on-node dim2 end index</a>
+    54) <a name="l54" style="background-color: #ffffff"></a>
+    55) <a name="l55" style="background-color: #ffffff">    integer :: begdim3                        ! on-node chunk or lat start index</a>
+    56) <a name="l56" style="background-color: #ffffff">    integer :: enddim3                        ! on-node chunk or lat end index</a>
+    57) <a name="l57" style="background-color: #ffffff"></a>
+    58) <a name="l58" style="background-color: #ffffff">    integer :: decomp_type                    ! type of decomposition (physics or dynamics)</a>
+    59) <a name="l59" style="background-color: #ffffff"></a>
+    60) <a name="l60" style="background-color: #ffffff">    integer :: vector_compliment              ! id for vector compliment for interpolation</a>
+    61) <a name="l61" style="background-color: #ffffff">    integer, pointer :: colperdim3(:)         ! number of valid elements per chunk or lat</a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">    character(len=max_fieldname_len) :: name     ! field name</a>
+    64) <a name="l64" style="background-color: #ffffff">    character(len=max_chars) :: long_name        ! long name</a>
+    65) <a name="l65" style="background-color: #ffffff">    character(len=max_chars) :: units            ! units</a>
+    66) <a name="l66" style="background-color: #ffffff">    character(len=max_chars) :: sampling_seq     ! sampling sequence - if not every timestep, how often field is sampled</a>
+    67) <a name="l67" style="background-color: #ffffff">  end type field_info</a>
+    68) <a name="l68" style="background-color: #ffffff"></a>
+    69) <a name="l69" style="background-color: #ffffff">  real(r8), parameter, public :: fillvalue = 1.e36_r8     ! fill value for netcdf fields</a>
+    70) <a name="l70" style="background-color: #ffffff"></a>
+    71) <a name="l71" style="background-color: #ffffff"></a>
+    72) <a name="l72" style="background-color: #ffffff">  !---------------------------------------------------------------------------</a>
+    73) <a name="l73" style="background-color: #ffffff">  !</a>
+    74) <a name="l74" style="background-color: #ffffff">  ! hentry: elements of an entry in the list of active fields on a single history file</a>
+    75) <a name="l75" style="background-color: #ffffff">  !</a>
+    76) <a name="l76" style="background-color: #ffffff">  !---------------------------------------------------------------------------</a>
+    77) <a name="l77" style="background-color: #ffffff">  type, public:: hentry</a>
+    78) <a name="l78" style="background-color: #ffffff">    type (field_info)     :: field            ! field information</a>
+    79) <a name="l79" style="background-color: #ffffff">    character(len=1)      :: avgflag          ! averaging flag</a>
+    80) <a name="l80" style="background-color: #ffffff">    character(len=max_chars) :: time_op          ! time operator (e.g. max, min, avg)</a>
+    81) <a name="l81" style="background-color: #ffffff">    character(len=max_chars),pointer :: field_column_name(:) ! names of column groups written to tape</a>
+    82) <a name="l82" style="background-color: #ffffff"></a>
+    83) <a name="l83" style="background-color: #ffffff">    integer :: hwrt_prec                      ! history output precision</a>
+    84) <a name="l84" style="background-color: #ffffff">    real(r8), pointer :: hbuf(:,:,:)</a>
+    85) <a name="l85" style="background-color: #ffffff">    type(var_desc_t), pointer :: varid(:)      ! variable ids</a>
+    86) <a name="l86" style="background-color: #ffffff">    integer, pointer :: nacs(:,:)             ! accumulation counter</a>
+    87) <a name="l87" style="background-color: #ffffff">    type(var_desc_t) :: nacs_varid </a>
+    88) <a name="l88" style="background-color: #ffffff">  end type hentry</a>
+    89) <a name="l89" style="background-color: #ffffff"></a>
+    90) <a name="l90" style="background-color: #ffffff">  !---------------------------------------------------------------------------</a>
+    91) <a name="l91" style="background-color: #ffffff">  !</a>
+    92) <a name="l92" style="background-color: #ffffff">  !  active_entry: vehicle for producing a ragged array</a>
+    93) <a name="l93" style="background-color: #ffffff">  !</a>
+    94) <a name="l94" style="background-color: #ffffff">  !---------------------------------------------------------------------------</a>
+    95) <a name="l95" style="background-color: #ffffff">  type, public:: active_entry</a>
+    96) <a name="l96" style="background-color: #ffffff"></a>
+    97) <a name="l97" style="background-color: #ffffff"></a>
+    98) <a name="l98" style="background-color: #ffffff">    type(hentry), pointer :: hlist(:)</a>
+    99) <a name="l99" style="background-color: #ffffff"></a>
+   100) <a name="l100" style="background-color: #ffffff">    type (column_info),pointer :: column   (:) ! array of history tape column entries</a>
+   101) <a name="l101" style="background-color: #ffffff">    type (column_info),pointer :: column_st(:) ! array of history tape column entries for staggered grid (FV)</a>
+   102) <a name="l102" style="background-color: #ffffff"></a>
+   103) <a name="l103" style="background-color: #ffffff"></a>
+   104) <a name="l104" style="background-color: #ffffff">    !</a>
+   105) <a name="l105" style="background-color: #ffffff">    ! PIO ids</a>
+   106) <a name="l106" style="background-color: #ffffff">    !</a>
+   107) <a name="l107" style="background-color: #ffffff"></a>
+   108) <a name="l108" style="background-color: #ffffff">    type(file_desc_t) :: File            ! PIO file id</a>
+   109) <a name="l109" style="background-color: #ffffff"></a>
+   110) <a name="l110" style="background-color: #ffffff">    type(var_desc_t) :: mdtid            ! var id for timestep</a>
+   111) <a name="l111" style="background-color: #ffffff">    type(var_desc_t) :: ndbaseid         ! var id for base day</a>
+   112) <a name="l112" style="background-color: #ffffff">    type(var_desc_t) :: nsbaseid         ! var id for base seconds of base day</a>
+   113) <a name="l113" style="background-color: #ffffff">    type(var_desc_t) :: nbdateid         ! var id for base date</a>
+   114) <a name="l114" style="background-color: #ffffff">    type(var_desc_t) :: nbsecid          ! var id for base seconds of base date</a>
+   115) <a name="l115" style="background-color: #ffffff">    type(var_desc_t) :: ndcurid          ! var id for current day</a>
+   116) <a name="l116" style="background-color: #ffffff">    type(var_desc_t) :: nscurid          ! var id for current seconds of current day</a>
+   117) <a name="l117" style="background-color: #ffffff">    type(var_desc_t) :: dateid           ! var id for current date</a>
+   118) <a name="l118" style="background-color: #ffffff">    type(var_desc_t) :: co2vmrid         ! var id for co2 volume mixing ratio</a>
+   119) <a name="l119" style="background-color: #ffffff">    type(var_desc_t) :: ch4vmrid         ! var id for ch4 volume mixing ratio</a>
+   120) <a name="l120" style="background-color: #ffffff">    type(var_desc_t) :: n2ovmrid         ! var id for n2o volume mixing ratio</a>
+   121) <a name="l121" style="background-color: #ffffff">    type(var_desc_t) :: f11vmrid         ! var id for f11 volume mixing ratio</a>
+   122) <a name="l122" style="background-color: #ffffff">    type(var_desc_t) :: f12vmrid         ! var id for f12 volume mixing ratio</a>
+   123) <a name="l123" style="background-color: #ffffff">    type(var_desc_t) :: sol_tsiid        ! var id for total solar irradiance (W/m2)</a>
+   124) <a name="l124" style="background-color: #ffffff">    type(var_desc_t) :: datesecid        ! var id for curent seconds of current date</a>
+   125) <a name="l125" style="background-color: #ffffff">#if ( defined BFB_CAM_SCAM_IOP )</a>
+   126) <a name="l126" style="background-color: #ffffff">    type(var_desc_t) :: bdateid         ! var id for base date</a>
+   127) <a name="l127" style="background-color: #ffffff">    type(var_desc_t) :: tsecid        ! var id for curent seconds of current date</a>
+   128) <a name="l128" style="background-color: #ffffff">#endif</a>
+   129) <a name="l129" style="background-color: #ffffff">    type(var_desc_t) :: nstephid         ! var id for current timestep</a>
+   130) <a name="l130" style="background-color: #ffffff">    type(var_desc_t) :: timeid           ! var id for time</a>
+   131) <a name="l131" style="background-color: #ffffff">    type(var_desc_t) :: tbndid           ! var id for time_bnds</a>
+   132) <a name="l132" style="background-color: #ffffff">    type(var_desc_t) :: date_writtenid   ! var id for date time sample written</a>
+   133) <a name="l133" style="background-color: #ffffff">    type(var_desc_t) :: time_writtenid   ! var id for time time sample written</a>
+   134) <a name="l134" style="background-color: #ffffff">    type(var_desc_t) :: nlonid           ! var id for number of longitudes</a>
+   135) <a name="l135" style="background-color: #ffffff">    type(var_desc_t) :: wnummaxid        ! var id for cutoff fourier wavenumber (reduced grid)</a>
+   136) <a name="l136" style="background-color: #ffffff">    type(var_desc_t) :: f107id           ! var id for f107</a>
+   137) <a name="l137" style="background-color: #ffffff">    type(var_desc_t) :: f107aid          ! var id for f107a</a>
+   138) <a name="l138" style="background-color: #ffffff">    type(var_desc_t) :: kpid             ! var id for kp</a>
+   139) <a name="l139" style="background-color: #ffffff">    type(var_desc_t) :: apid             ! var id for ap</a>
+   140) <a name="l140" style="background-color: #ffffff"></a>
+   141) <a name="l141" style="background-color: #ffffff">  end type active_entry</a>
+   142) <a name="l142" style="background-color: #ffffff"></a>
+   143) <a name="l143" style="background-color: #ffffff">  !---------------------------------------------------------------------------</a>
+   144) <a name="l144" style="background-color: #ffffff">  !</a>
+   145) <a name="l145" style="background-color: #ffffff">  !  formula_terms_t: Information for formula terms (CF convention) variables</a>
+   146) <a name="l146" style="background-color: #ffffff">  !                   Used to add a formula-terms variable to the history file</a>
+   147) <a name="l147" style="background-color: #ffffff">  !                   Also adds a string, '&lt;name&gt;: &lt;var_name&gt;' to the parent</a>
+   148) <a name="l148" style="background-color: #ffffff">  !                   mdim's 'formula_terms' attribute.</a>
+   149) <a name="l149" style="background-color: #ffffff">  !</a>
+   150) <a name="l150" style="background-color: #ffffff">  !---------------------------------------------------------------------------</a>
+   151) <a name="l151" style="background-color: #ffffff">  type, public :: formula_terms_t</a>
+   152) <a name="l152" style="background-color: #ffffff">    character(len=max_fieldname_len) :: a_name = ''   ! 'A' term variable name</a>
+   153) <a name="l153" style="background-color: #ffffff">    character(len=max_string_len)    :: a_long_name = '' ! 'A' long name</a>
+   154) <a name="l154" style="background-color: #ffffff">    real(r8), pointer                :: a_values(:) =&gt; null() ! 'A' variable values</a>
+   155) <a name="l155" style="background-color: #ffffff">    character(len=max_fieldname_len) :: b_name = ''   ! 'B' term variable name</a>
+   156) <a name="l156" style="background-color: #ffffff">    character(len=max_string_len)    :: b_long_name = '' ! 'B' long name</a>
+   157) <a name="l157" style="background-color: #ffffff">    real(r8), pointer                :: b_values(:) =&gt; null() ! 'B' variable values</a>
+   158) <a name="l158" style="background-color: #ffffff">    character(len=max_fieldname_len) :: p0_name = ''  ! 'p0' term variable name</a>
+   159) <a name="l159" style="background-color: #ffffff">    character(len=max_string_len)    :: p0_long_name = '' ! 'p0' long name</a>
+   160) <a name="l160" style="background-color: #ffffff">    character(len=max_chars)         :: p0_units = '' ! 'p0' variable units</a>
+   161) <a name="l161" style="background-color: #ffffff">    real(r8)                         :: p0_value = fillvalue ! 'p0' variable values</a>
+   162) <a name="l162" style="background-color: #ffffff">    character(len=max_fieldname_len) :: ps_name = ''  ! 'ps' term variable name</a>
+   163) <a name="l163" style="background-color: #ffffff">  end type formula_terms_t</a>
+   164) <a name="l164" style="background-color: #ffffff"></a>
+   165) <a name="l165" style="background-color: #ffffff">  !---------------------------------------------------------------------------</a>
+   166) <a name="l166" style="background-color: #ffffff">  !</a>
+   167) <a name="l167" style="background-color: #ffffff">  !  hist_coord_t: Information for history variable dimension attributes</a>
+   168) <a name="l168" style="background-color: #ffffff">  !</a>
+   169) <a name="l169" style="background-color: #ffffff">  !---------------------------------------------------------------------------</a>
+   170) <a name="l170" style="background-color: #ffffff">  type, public :: hist_coord_t</a>
+   171) <a name="l171" style="background-color: #ffffff">    character(len=max_mdimname_len) :: name = ''  ! dimension name</a>
+   172) <a name="l172" style="background-color: #ffffff">    integer                  :: dimsize = 0       ! size of dimension</a>
+   173) <a name="l173" style="background-color: #ffffff">    character(len=max_chars) :: long_name = ''    ! 'long_name' attribute</a>
+   174) <a name="l174" style="background-color: #ffffff">    character(len=max_chars) :: units = ''        ! 'units' attribute</a>
+   175) <a name="l175" style="background-color: #ffffff">    character(len=max_chars) :: bounds_name = ''  ! 'bounds' attribute (&amp; name of bounds variable)</a>
+   176) <a name="l176" style="background-color: #ffffff">    character(len=max_chars) :: standard_name = ''! 'standard_name' attribute</a>
+   177) <a name="l177" style="background-color: #ffffff">    character(len=4)         :: positive = ''     ! 'positive' attribute ('up' or 'down')</a>
+   178) <a name="l178" style="background-color: #ffffff">    integer,  pointer        :: integer_values(:) =&gt; null() ! dim values if integral</a>
+   179) <a name="l179" style="background-color: #ffffff">    real(r8), pointer        :: real_values(:) =&gt; null() ! dim values if real</a>
+   180) <a name="l180" style="background-color: #ffffff">    real(r8), pointer        :: bounds(:,:) =&gt; null() ! dim bounds</a>
+   181) <a name="l181" style="background-color: #ffffff">    type(formula_terms_t)    :: formula_terms     ! vars for formula terms</a>
+   182) <a name="l182" style="background-color: #ffffff">    logical                  :: integer_dim       ! .true. iff dim has integral values</a>
+   183) <a name="l183" style="background-color: #ffffff">  end type hist_coord_t</a>
+   184) <a name="l184" style="background-color: #ffffff"></a>
+   185) <a name="l185" style="background-color: #ffffff">  integer, public                     :: registeredmdims=0, maxvarmdims=1</a>
+   186) <a name="l186" style="background-color: #ffffff">  character(len=9), parameter, public :: mdim_var_name = 'mdimnames'</a>
+   187) <a name="l187" style="background-color: #ffffff">  integer, parameter                  :: maxmdims = 25    ! arbitrary limit</a>
+   188) <a name="l188" style="background-color: #ffffff">  type(hist_coord_t), public, save    :: hist_coords(maxmdims)</a>
+   189) <a name="l189" style="background-color: #ffffff"></a>
+   190) <a name="l190" style="background-color: #ffffff">  public             :: add_hist_coord, add_vert_coord</a>
+   191) <a name="l191" style="background-color: #ffffff">  public             :: write_hist_coord_attrs, write_hist_coord_vars</a>
+   192) <a name="l192" style="background-color: #ffffff">  public             :: lookup_hist_coord_indices</a>
+   193) <a name="l193" style="background-color: #ffffff">  public             :: get_hist_coord_index</a>
+   194) <a name="l194" style="background-color: #ffffff">  public             :: sec2hms, date2yyyymmdd</a>
+   195) <a name="l195" style="background-color: #ffffff"></a>
+   196) <a name="l196" style="background-color: #ffffff">  interface add_hist_coord</a>
+   197) <a name="l197" style="background-color: #ffffff">    module procedure add_hist_coord_regonly</a>
+   198) <a name="l198" style="background-color: #ffffff">    module procedure add_hist_coord_int</a>
+   199) <a name="l199" style="background-color: #ffffff">    module procedure add_hist_coord_r8</a>
+   200) <a name="l200" style="background-color: #ffffff">  end interface</a>
+   201) <a name="l201" style="background-color: #ffffff"></a>
+   202) <a name="l202" style="background-color: #ffffff">  interface assignment(=)</a>
+   203) <a name="l203" style="background-color: #ffffff">    module procedure field_copy</a>
+   204) <a name="l204" style="background-color: #ffffff">    module procedure formula_terms_copy</a>
+   205) <a name="l205" style="background-color: #ffffff">  end interface</a>
+   206) <a name="l206" style="background-color: #ffffff"></a>
+   207) <a name="l207" style="background-color: #ffffff">  interface check_hist_coord</a>
+   208) <a name="l208" style="background-color: #ffffff">    ! NB: This is supposed to be a private interface</a>
+   209) <a name="l209" style="background-color: #ffffff">    ! check_hist_coord: returns 0 if &lt;name&gt; is not registered as an mdim</a>
+   210) <a name="l210" style="background-color: #ffffff">    !                   returns i if &lt;name&gt; is registered with compatible values</a>
+   211) <a name="l211" style="background-color: #ffffff">    !              calls endrun if &lt;name&gt; is registered with incompatible values</a>
+   212) <a name="l212" style="background-color: #ffffff">    ! Versions without the &lt;name&gt; argument return .true. or .false.</a>
+   213) <a name="l213" style="background-color: #ffffff">    module procedure check_hist_coord_char</a>
+   214) <a name="l214" style="background-color: #ffffff">    module procedure check_hist_coord_int</a>
+   215) <a name="l215" style="background-color: #ffffff">    module procedure check_hist_coord_int1</a>
+   216) <a name="l216" style="background-color: #ffffff">    module procedure check_hist_coord_r8</a>
+   217) <a name="l217" style="background-color: #ffffff">    module procedure check_hist_coord_r81</a>
+   218) <a name="l218" style="background-color: #ffffff">    module procedure check_hist_coord_r82</a>
+   219) <a name="l219" style="background-color: #ffffff">    module procedure check_hist_coord_ft</a>
+   220) <a name="l220" style="background-color: #ffffff">    module procedure check_hist_coord_all</a>
+   221) <a name="l221" style="background-color: #ffffff">  end interface</a>
+   222) <a name="l222" style="background-color: #ffffff"></a>
+   223) <a name="l223" style="background-color: #ffffff">!!---------------------------------------------------------------------------</a>
+   224) <a name="l224" style="background-color: #ffffff"></a>
+   225) <a name="l225" style="background-color: #ffffff">contains</a>
+   226) <a name="l226" style="background-color: #ffffff"></a>
+   227) <a name="l227" style="background-color: #ffffff"></a>
+   228) <a name="l228" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">field_copy(f_out, f_in)</a>
+   229) <a name="l229" style="background-color: #ffcccc">    type(field_info), intent(in) :: f_in</a>
+   230) <a name="l230" style="background-color: #ffcccc">    type(field_info), intent(out) :: f_out</a>
+   231) <a name="l231" style="background-color: #ffcccc"></a>
+   232) <a name="l232" style="background-color: #ffcccc">    f_out%flag_xyfill = f_in%flag_xyfill</a>
+   233) <a name="l233" style="background-color: #ffcccc">    f_out%is_subcol = f_in%is_subcol</a>
+   234) <a name="l234" style="background-color: #ffcccc">    f_out%fillvalue = f_in%fillvalue</a>
+   235) <a name="l235" style="background-color: #ffcccc">    f_out%numlev =  f_in%numlev                      ! vertical dimension (.nc file and internal arr)</a>
+   236) <a name="l236" style="background-color: #ffcccc">    f_out%begdim1 = f_in%begdim1                     ! on-node dim1 start index</a>
+   237) <a name="l237" style="background-color: #ffcccc">    f_out%enddim1 = f_in%enddim1                     ! on-node dim1 end index</a>
+   238) <a name="l238" style="background-color: #ffcccc">    f_out%begdim2 = f_in%begdim2                     ! on-node dim2 start index</a>
+   239) <a name="l239" style="background-color: #ffcccc">    f_out%enddim2 = f_in%enddim2                     ! on-node dim2 end index</a>
+   240) <a name="l240" style="background-color: #ffcccc">    f_out%begdim3 = f_in%begdim3                     ! on-node chunk or lat start index</a>
+   241) <a name="l241" style="background-color: #ffcccc">    f_out%enddim3 = f_in%enddim3                     ! on-node chunk or lat end index</a>
+   242) <a name="l242" style="background-color: #ffcccc">    f_out%decomp_type = f_in%decomp_type             ! type of decomposition (physics or dynamics)</a>
+   243) <a name="l243" style="background-color: #ffcccc"></a>
+   244) <a name="l244" style="background-color: #ffcccc">    f_out%vector_compliment = f_in%vector_compliment ! id for vector compliment for interpolation</a>
+   245) <a name="l245" style="background-color: #ffcccc"></a>
+   246) <a name="l246" style="background-color: #ffcccc">    f_out%name = f_in%name                           ! field name</a>
+   247) <a name="l247" style="background-color: #ffcccc">    f_out%long_name = f_in%long_name                 ! long name</a>
+   248) <a name="l248" style="background-color: #ffcccc">    f_out%units = f_in%units                         ! units</a>
+   249) <a name="l249" style="background-color: #ffcccc">    f_out%sampling_seq =  f_in%sampling_seq          ! sampling sequence - if not every timestep, how often field is sampled</a>
+   250) <a name="l250" style="background-color: #ffcccc"></a>
+   251) <a name="l251" style="background-color: #ffcccc">    if(associated(f_in%mdims)) then</a>
+   252) <a name="l252" style="background-color: #ffcccc">      f_out%mdims=&gt;f_in%mdims</a>
+   253) <a name="l253" style="background-color: #ffcccc">    else</a>
+   254) <a name="l254" style="background-color: #ffcccc">      nullify(f_out%mdims)</a>
+   255) <a name="l255" style="background-color: #ffcccc">    end if</a>
+   256) <a name="l256" style="background-color: #ffcccc">    if(associated(f_in%colperdim3)) then</a>
+   257) <a name="l257" style="background-color: #ffcccc">      f_out%colperdim3=&gt;f_in%colperdim3</a>
+   258) <a name="l258" style="background-color: #ffcccc">    else</a>
+   259) <a name="l259" style="background-color: #ffcccc">      nullify(f_out%colperdim3)</a>
+   260) <a name="l260" style="background-color: #ffcccc">    end if</a>
+   261) <a name="l261" style="background-color: #ffcccc"></a>
+   262) <a name="l262" style="background-color: #ffcccc">  end subroutine field_copy</a>
+   263) <a name="l263" style="background-color: #ffffff"></a>
+   264) <a name="l264" style="background-color: #ffffff">  subroutine formula_terms_copy(f_out, f_in)</a>
+   265) <a name="l265" style="background-color: #ffffff">    type(formula_terms_t), intent(in) :: f_in</a>
+   266) <a name="l266" style="background-color: #ffffff">    type(formula_terms_t), intent(out) :: f_out</a>
+   267) <a name="l267" style="background-color: #ffffff"></a>
+   268) <a name="l268" style="background-color: #ffffff">    f_out%a_name = f_in%a_name</a>
+   269) <a name="l269" style="background-color: #ffffff">    f_out%a_long_name = f_in%a_long_name</a>
+   270) <a name="l270" style="background-color: #ffffff">    f_out%a_values =&gt; f_in%a_values</a>
+   271) <a name="l271" style="background-color: #ffffff">    f_out%b_name = f_in%b_name</a>
+   272) <a name="l272" style="background-color: #ffffff">    f_out%b_long_name = f_in%b_long_name</a>
+   273) <a name="l273" style="background-color: #ffffff">    f_out%b_values =&gt; f_in%b_values</a>
+   274) <a name="l274" style="background-color: #ffffff">    f_out%p0_name = f_in%p0_name</a>
+   275) <a name="l275" style="background-color: #ffffff">    f_out%p0_long_name = f_in%p0_long_name</a>
+   276) <a name="l276" style="background-color: #ffffff">    f_out%p0_units = f_in%p0_units</a>
+   277) <a name="l277" style="background-color: #ffffff">    f_out%p0_value = f_in%p0_value</a>
+   278) <a name="l278" style="background-color: #ffffff">    f_out%ps_name = f_in%ps_name</a>
+   279) <a name="l279" style="background-color: #ffffff">  end subroutine formula_terms_copy</a>
+   280) <a name="l280" style="background-color: #ffffff"></a>
+   281) <a name="l281" style="background-color: #ffffff">  subroutine handle_pio_error(ierr, errorstr)</a>
+   282) <a name="l282" style="background-color: #ffffff">    use abortutils,   only: endrun</a>
+   283) <a name="l283" style="background-color: #ffffff">    use pio,          only: pio_noerr</a>
+   284) <a name="l284" style="background-color: #ffffff">    implicit none</a>
+   285) <a name="l285" style="background-color: #ffffff"></a>
+   286) <a name="l286" style="background-color: #ffffff">    ! Input variables</a>
+   287) <a name="l287" style="background-color: #ffffff">    integer,          intent(in)  :: ierr</a>
+   288) <a name="l288" style="background-color: #ffffff">    character(len=*), intent(in)  :: errorstr</a>
+   289) <a name="l289" style="background-color: #ffffff"></a>
+   290) <a name="l290" style="background-color: #ffffff">    ! Local variables</a>
+   291) <a name="l291" style="background-color: #ffffff">    character(len=256) :: errormsg</a>
+   292) <a name="l292" style="background-color: #ffffff"></a>
+   293) <a name="l293" style="background-color: #ffffff">    if (ierr /= PIO_NOERR) then</a>
+   294) <a name="l294" style="background-color: #ffff99">      write(errormsg, *) trim(errorstr), ierr</a>
+   295) <a name="l295" style="background-color: #ffff99">      call endrun(errormsg)</a>
+   296) <a name="l296" style="background-color: #ffff99">    end if</a>
+   297) <a name="l297" style="background-color: #ffff99">    </a>
+   298) <a name="l298" style="background-color: #ffffff">  end subroutine handle_pio_error</a>
+   299) <a name="l299" style="background-color: #ffffff"></a>
+   300) <a name="l300" style="background-color: #ffffff">  integer function get_hist_coord_index(mdimname)</a>
+   301) <a name="l301" style="background-color: #ffffff">    implicit none</a>
+   302) <a name="l302" style="background-color: #ffffff">    ! Input variables</a>
+   303) <a name="l303" style="background-color: #ffffff">    character(len=*), intent(in)            :: mdimname</a>
+   304) <a name="l304" style="background-color: #ffffff">    ! Local variables</a>
+   305) <a name="l305" style="background-color: #ffffff">    character(len=120) :: errormsg</a>
+   306) <a name="l306" style="background-color: #ffffff">    integer :: i</a>
+   307) <a name="l307" style="background-color: #ffffff">    </a>
+   308) <a name="l308" style="background-color: #ffffff">    get_hist_coord_index = -1</a>
+   309) <a name="l309" style="background-color: #ffffff">    do i=1,registeredmdims</a>
+   310) <a name="l310" style="background-color: #ffffff">      if(trim(mdimname) == trim(hist_coords(i)%name)) then</a>
+   311) <a name="l311" style="background-color: #ffffff">        get_hist_coord_index = i</a>
+   312) <a name="l312" style="background-color: #ffffff">        exit</a>
+   313) <a name="l313" style="background-color: #ffffff">      end if</a>
+   314) <a name="l314" style="background-color: #ffffff">    end do</a>
+   315) <a name="l315" style="background-color: #ffffff"></a>
+   316) <a name="l316" style="background-color: #ffffff">  end function get_hist_coord_index</a>
+   317) <a name="l317" style="background-color: #ffffff"></a>
+   318) <a name="l318" style="background-color: #ffffff">  ! Functions to check consistent term definition for hist coords</a>
+   319) <a name="l319" style="background-color: #ffffff">  logical function </a><a style="background-color: #ffcccc">check_hist_coord_char(defined, input)</a>
+   320) <a name="l320" style="background-color: #ffcccc">    implicit none</a>
+   321) <a name="l321" style="background-color: #ffcccc"></a>
+   322) <a name="l322" style="background-color: #ffcccc">    ! Input variables</a>
+   323) <a name="l323" style="background-color: #ffcccc">    character(len=*), intent(in)            :: defined</a>
+   324) <a name="l324" style="background-color: #ffcccc">    character(len=*), intent(in), optional  :: input</a>
+   325) <a name="l325" style="background-color: #ffcccc"></a>
+   326) <a name="l326" style="background-color: #ffcccc">    if (len_trim(defined) == 0) then</a>
+   327) <a name="l327" style="background-color: #ffcccc">      ! In this case, we assume the current value is undefined so any input OK</a>
+   328) <a name="l328" style="background-color: #ffcccc">      check_hist_coord_char = .true.</a>
+   329) <a name="l329" style="background-color: #ffcccc">    else if (present(input)) then</a>
+   330) <a name="l330" style="background-color: #ffcccc">      ! We have to match definitions</a>
+   331) <a name="l331" style="background-color: #ffcccc">      check_hist_coord_char = (trim(input) == trim(defined))</a>
+   332) <a name="l332" style="background-color: #ffcccc">    else</a>
+   333) <a name="l333" style="background-color: #ffcccc">      ! Not sure here. We have a value and are redefining without one?</a>
+   334) <a name="l334" style="background-color: #ffcccc">      check_hist_coord_char = .false.</a>
+   335) <a name="l335" style="background-color: #ffcccc">    end if</a>
+   336) <a name="l336" style="background-color: #ffcccc">  end function check_hist_coord_char</a>
+   337) <a name="l337" style="background-color: #ffffff"></a>
+   338) <a name="l338" style="background-color: #ffffff">  logical function </a><a style="background-color: #ffcccc">check_hist_coord_int(defined, input)</a>
+   339) <a name="l339" style="background-color: #ffcccc">    implicit none</a>
+   340) <a name="l340" style="background-color: #ffcccc"></a>
+   341) <a name="l341" style="background-color: #ffcccc">    ! Input variables</a>
+   342) <a name="l342" style="background-color: #ffcccc">    integer, intent(in)            :: defined</a>
+   343) <a name="l343" style="background-color: #ffcccc">    integer, intent(in), optional  :: input</a>
+   344) <a name="l344" style="background-color: #ffcccc"></a>
+   345) <a name="l345" style="background-color: #ffcccc">    if (defined == 0) then</a>
+   346) <a name="l346" style="background-color: #ffcccc">      ! In this case, we assume the current value is undefined so any input OK</a>
+   347) <a name="l347" style="background-color: #ffcccc">      check_hist_coord_int = .true.</a>
+   348) <a name="l348" style="background-color: #ffcccc">    else if (present(input)) then</a>
+   349) <a name="l349" style="background-color: #ffcccc">      ! We have to match definitions</a>
+   350) <a name="l350" style="background-color: #ffcccc">      check_hist_coord_int = (input == defined)</a>
+   351) <a name="l351" style="background-color: #ffcccc">    else</a>
+   352) <a name="l352" style="background-color: #ffcccc">      ! Not sure here. We have a value and are redefining without one?</a>
+   353) <a name="l353" style="background-color: #ffcccc">      check_hist_coord_int = .false.</a>
+   354) <a name="l354" style="background-color: #ffcccc">    end if</a>
+   355) <a name="l355" style="background-color: #ffcccc">  end function check_hist_coord_int</a>
+   356) <a name="l356" style="background-color: #ffffff"></a>
+   357) <a name="l357" style="background-color: #ffffff">  logical function </a><a style="background-color: #ffcccc">check_hist_coord_int1(defined, input)</a>
+   358) <a name="l358" style="background-color: #ffcccc">    implicit none</a>
+   359) <a name="l359" style="background-color: #ffcccc"></a>
+   360) <a name="l360" style="background-color: #ffcccc">    ! Input variables</a>
+   361) <a name="l361" style="background-color: #ffcccc">    integer,             pointer            :: defined(:)</a>
+   362) <a name="l362" style="background-color: #ffcccc">    integer, intent(in),          optional  :: input(:)</a>
+   363) <a name="l363" style="background-color: #ffcccc"></a>
+   364) <a name="l364" style="background-color: #ffcccc">    ! Local variables</a>
+   365) <a name="l365" style="background-color: #ffcccc">    integer                                 :: i</a>
+   366) <a name="l366" style="background-color: #ffcccc"></a>
+   367) <a name="l367" style="background-color: #ffcccc">    if (.not. associated(defined)) then</a>
+   368) <a name="l368" style="background-color: #ffcccc">      ! In this case, we assume the current value is undefined so any input OK</a>
+   369) <a name="l369" style="background-color: #ffcccc">      check_hist_coord_int1 = .true.</a>
+   370) <a name="l370" style="background-color: #ffcccc">    else if (present(input)) then</a>
+   371) <a name="l371" style="background-color: #ffcccc">      ! We have to match definitions</a>
+   372) <a name="l372" style="background-color: #ffcccc">      check_hist_coord_int1 = (size(input) == size(defined))</a>
+   373) <a name="l373" style="background-color: #ffcccc">    else</a>
+   374) <a name="l374" style="background-color: #ffcccc">      ! Not sure here. We have a value and are redefining without one?</a>
+   375) <a name="l375" style="background-color: #ffcccc">      check_hist_coord_int1 = .false.</a>
+   376) <a name="l376" style="background-color: #ffcccc">    end if</a>
+   377) <a name="l377" style="background-color: #ffcccc">    if (check_hist_coord_int1 .and. associated(defined)) then</a>
+   378) <a name="l378" style="background-color: #ffcccc">      ! Need to check the values</a>
+   379) <a name="l379" style="background-color: #ffcccc">      do i = 1, size(defined)</a>
+   380) <a name="l380" style="background-color: #ffcccc">        if (defined(i) /= input(i)) then</a>
+   381) <a name="l381" style="background-color: #ffcccc">          check_hist_coord_int1 = .false.</a>
+   382) <a name="l382" style="background-color: #ffcccc">          exit</a>
+   383) <a name="l383" style="background-color: #ffcccc">        end if</a>
+   384) <a name="l384" style="background-color: #ffcccc">      end do</a>
+   385) <a name="l385" style="background-color: #ffcccc">    end if</a>
+   386) <a name="l386" style="background-color: #ffcccc">  end function check_hist_coord_int1</a>
+   387) <a name="l387" style="background-color: #ffffff"></a>
+   388) <a name="l388" style="background-color: #ffffff">  logical function </a><a style="background-color: #ffcccc">check_hist_coord_r8(defined, input)</a>
+   389) <a name="l389" style="background-color: #ffcccc">    implicit none</a>
+   390) <a name="l390" style="background-color: #ffcccc"></a>
+   391) <a name="l391" style="background-color: #ffcccc">    ! Input variables</a>
+   392) <a name="l392" style="background-color: #ffcccc">    real(r8), intent(in)            :: defined</a>
+   393) <a name="l393" style="background-color: #ffcccc">    real(r8), intent(in), optional  :: input</a>
+   394) <a name="l394" style="background-color: #ffcccc"></a>
+   395) <a name="l395" style="background-color: #ffcccc">    if (defined == fillvalue) then</a>
+   396) <a name="l396" style="background-color: #ffcccc">      ! In this case, we assume the current value is undefined so any input OK</a>
+   397) <a name="l397" style="background-color: #ffcccc">      check_hist_coord_r8 = .true.</a>
+   398) <a name="l398" style="background-color: #ffcccc">    else if (present(input)) then</a>
+   399) <a name="l399" style="background-color: #ffcccc">      ! We have to match definitions</a>
+   400) <a name="l400" style="background-color: #ffcccc">      check_hist_coord_r8 = (input == defined)</a>
+   401) <a name="l401" style="background-color: #ffcccc">    else</a>
+   402) <a name="l402" style="background-color: #ffcccc">      ! Not sure here. We have a value and are redefining without one?</a>
+   403) <a name="l403" style="background-color: #ffcccc">      check_hist_coord_r8 = .false.</a>
+   404) <a name="l404" style="background-color: #ffcccc">    end if</a>
+   405) <a name="l405" style="background-color: #ffcccc">  end function check_hist_coord_r8</a>
+   406) <a name="l406" style="background-color: #ffffff"></a>
+   407) <a name="l407" style="background-color: #ffffff">  logical function </a><a style="background-color: #ffcccc">check_hist_coord_r81(defined, input)</a>
+   408) <a name="l408" style="background-color: #ffcccc">    implicit none</a>
+   409) <a name="l409" style="background-color: #ffcccc"></a>
+   410) <a name="l410" style="background-color: #ffcccc">    ! Input variables</a>
+   411) <a name="l411" style="background-color: #ffcccc">    real(r8),             pointer            :: defined(:)</a>
+   412) <a name="l412" style="background-color: #ffcccc">    real(r8), intent(in),          optional  :: input(:)</a>
+   413) <a name="l413" style="background-color: #ffcccc"></a>
+   414) <a name="l414" style="background-color: #ffcccc">    ! Local variables</a>
+   415) <a name="l415" style="background-color: #ffcccc">    integer                                  :: i</a>
+   416) <a name="l416" style="background-color: #ffcccc"></a>
+   417) <a name="l417" style="background-color: #ffcccc">    if (.not. associated(defined)) then</a>
+   418) <a name="l418" style="background-color: #ffcccc">      ! In this case, we assume the current value is undefined so any input OK</a>
+   419) <a name="l419" style="background-color: #ffcccc">      check_hist_coord_r81 = .true.</a>
+   420) <a name="l420" style="background-color: #ffcccc">    else if (present(input)) then</a>
+   421) <a name="l421" style="background-color: #ffcccc">      ! We have to match definitions</a>
+   422) <a name="l422" style="background-color: #ffcccc">      check_hist_coord_r81 = (size(input) == size(defined))</a>
+   423) <a name="l423" style="background-color: #ffcccc">    else</a>
+   424) <a name="l424" style="background-color: #ffcccc">      ! Not sure here. We have a value and are redefining without one?</a>
+   425) <a name="l425" style="background-color: #ffcccc">      check_hist_coord_r81 = .false.</a>
+   426) <a name="l426" style="background-color: #ffcccc">    end if</a>
+   427) <a name="l427" style="background-color: #ffcccc">    if (check_hist_coord_r81 .and. associated(defined)) then</a>
+   428) <a name="l428" style="background-color: #ffcccc">      ! Need to check the values</a>
+   429) <a name="l429" style="background-color: #ffcccc">      do i = 1, size(defined)</a>
+   430) <a name="l430" style="background-color: #ffcccc">        if (defined(i) /= input(i)) then</a>
+   431) <a name="l431" style="background-color: #ffcccc">          check_hist_coord_r81 = .false.</a>
+   432) <a name="l432" style="background-color: #ffcccc">          exit</a>
+   433) <a name="l433" style="background-color: #ffcccc">        end if</a>
+   434) <a name="l434" style="background-color: #ffcccc">      end do</a>
+   435) <a name="l435" style="background-color: #ffcccc">    end if</a>
+   436) <a name="l436" style="background-color: #ffcccc">  end function check_hist_coord_r81</a>
+   437) <a name="l437" style="background-color: #ffffff"></a>
+   438) <a name="l438" style="background-color: #ffffff">  logical function </a><a style="background-color: #ffcccc">check_hist_coord_r82(defined, input)</a>
+   439) <a name="l439" style="background-color: #ffcccc">    implicit none</a>
+   440) <a name="l440" style="background-color: #ffcccc"></a>
+   441) <a name="l441" style="background-color: #ffcccc">    ! Input variables</a>
+   442) <a name="l442" style="background-color: #ffcccc">    real(r8),             pointer            :: defined(:,:)</a>
+   443) <a name="l443" style="background-color: #ffcccc">    real(r8), intent(in),          optional  :: input(:,:)</a>
+   444) <a name="l444" style="background-color: #ffcccc"></a>
+   445) <a name="l445" style="background-color: #ffcccc">    ! Local variables</a>
+   446) <a name="l446" style="background-color: #ffcccc">    integer                                  :: i, j</a>
+   447) <a name="l447" style="background-color: #ffcccc"></a>
+   448) <a name="l448" style="background-color: #ffcccc">    if (.not. associated(defined)) then</a>
+   449) <a name="l449" style="background-color: #ffcccc">      ! In this case, we assume the current value is undefined so any input OK</a>
+   450) <a name="l450" style="background-color: #ffcccc">      check_hist_coord_r82 = .true.</a>
+   451) <a name="l451" style="background-color: #ffcccc">    else if (present(input)) then</a>
+   452) <a name="l452" style="background-color: #ffcccc">      ! We have to match definitions</a>
+   453) <a name="l453" style="background-color: #ffcccc">      check_hist_coord_r82 = ((size(input, 1) == size(defined, 1)) .and.    &amp;</a>
+   454) <a name="l454" style="background-color: #ffcccc">                              (size(input, 2) == size(defined, 2)))</a>
+   455) <a name="l455" style="background-color: #ffcccc">    else</a>
+   456) <a name="l456" style="background-color: #ffcccc">      ! Not sure here. We have a value and are redefining without one?</a>
+   457) <a name="l457" style="background-color: #ffcccc">      check_hist_coord_r82 = .false.</a>
+   458) <a name="l458" style="background-color: #ffcccc">    end if</a>
+   459) <a name="l459" style="background-color: #ffcccc">    if (check_hist_coord_r82 .and. associated(defined)) then</a>
+   460) <a name="l460" style="background-color: #ffcccc">      ! Need to check the values</a>
+   461) <a name="l461" style="background-color: #ffcccc">      do j = 1, size(defined, 2)</a>
+   462) <a name="l462" style="background-color: #ffcccc">        do i = 1, size(defined, 1)</a>
+   463) <a name="l463" style="background-color: #ffcccc">          if (defined(i, j) /= input(i, j)) then</a>
+   464) <a name="l464" style="background-color: #ffcccc">            check_hist_coord_r82 = .false.</a>
+   465) <a name="l465" style="background-color: #ffcccc">            exit</a>
+   466) <a name="l466" style="background-color: #ffcccc">          end if</a>
+   467) <a name="l467" style="background-color: #ffcccc">        end do</a>
+   468) <a name="l468" style="background-color: #ffcccc">      end do</a>
+   469) <a name="l469" style="background-color: #ffcccc">    end if</a>
+   470) <a name="l470" style="background-color: #ffcccc">  end function check_hist_coord_r82</a>
+   471) <a name="l471" style="background-color: #ffffff"></a>
+   472) <a name="l472" style="background-color: #ffffff">  logical function </a><a style="background-color: #ffcccc">check_hist_coord_ft(defined, input)</a>
+   473) <a name="l473" style="background-color: #ffcccc">    implicit none</a>
+   474) <a name="l474" style="background-color: #ffcccc"></a>
+   475) <a name="l475" style="background-color: #ffcccc">    ! Input variables</a>
+   476) <a name="l476" style="background-color: #ffcccc">    type(formula_terms_t), intent(in)           :: defined</a>
+   477) <a name="l477" style="background-color: #ffcccc">    type(formula_terms_t), intent(in), optional :: input</a>
+   478) <a name="l478" style="background-color: #ffcccc"></a>
+   479) <a name="l479" style="background-color: #ffcccc">    ! We will assume that if formula_terms has been defined, a_name has a value</a>
+   480) <a name="l480" style="background-color: #ffcccc">    if (len_trim(defined%a_name) == 0) then</a>
+   481) <a name="l481" style="background-color: #ffcccc">      ! In this case, we assume the current value is undefined so any input OK</a>
+   482) <a name="l482" style="background-color: #ffcccc">      check_hist_coord_ft = .true.</a>
+   483) <a name="l483" style="background-color: #ffcccc">    else if (present(input)) then</a>
+   484) <a name="l484" style="background-color: #ffcccc">      ! We have to match definitions</a>
+   485) <a name="l485" style="background-color: #ffcccc">      ! Need to check the values</a>
+   486) <a name="l486" style="background-color: #ffcccc">      check_hist_coord_ft =                                                   &amp;</a>
+   487) <a name="l487" style="background-color: #ffcccc">           check_hist_coord(defined%a_name,       input%a_name)         .and. &amp;</a>
+   488) <a name="l488" style="background-color: #ffcccc">           check_hist_coord(defined%a_long_name,  input%a_long_name)    .and. &amp;</a>
+   489) <a name="l489" style="background-color: #ffcccc">           check_hist_coord(defined%a_values,     input%a_values)       .and. &amp;</a>
+   490) <a name="l490" style="background-color: #ffcccc">           check_hist_coord(defined%b_name,       input%b_name)         .and. &amp;</a>
+   491) <a name="l491" style="background-color: #ffcccc">           check_hist_coord(defined%b_long_name,  input%b_long_name)    .and. &amp;</a>
+   492) <a name="l492" style="background-color: #ffcccc">           check_hist_coord(defined%b_values,     input%b_values)       .and. &amp;</a>
+   493) <a name="l493" style="background-color: #ffcccc">           check_hist_coord(defined%p0_name,      input%p0_name)        .and. &amp;</a>
+   494) <a name="l494" style="background-color: #ffcccc">           check_hist_coord(defined%p0_long_name, input%p0_long_name)   .and. &amp;</a>
+   495) <a name="l495" style="background-color: #ffcccc">           check_hist_coord(defined%p0_units,     input%p0_units)       .and. &amp;</a>
+   496) <a name="l496" style="background-color: #ffcccc">           check_hist_coord(defined%p0_value,     input%p0_value)       .and. &amp;</a>
+   497) <a name="l497" style="background-color: #ffcccc">           check_hist_coord(defined%ps_name,      input%ps_name)</a>
+   498) <a name="l498" style="background-color: #ffcccc">    else</a>
+   499) <a name="l499" style="background-color: #ffcccc">      ! Not sure here. We have a value and are redefining without one?</a>
+   500) <a name="l500" style="background-color: #ffcccc">      check_hist_coord_ft = .false.</a>
+   501) <a name="l501" style="background-color: #ffcccc">    end if</a>
+   502) <a name="l502" style="background-color: #ffcccc">  end function check_hist_coord_ft</a>
+   503) <a name="l503" style="background-color: #ffffff"></a>
+   504) <a name="l504" style="background-color: #ffffff">  ! check_hist_coord: returns 0 if &lt;name&gt; is not registered as a hist coord</a>
+   505) <a name="l505" style="background-color: #ffffff">  !                   returns i if &lt;name&gt; is registered with compatible values</a>
+   506) <a name="l506" style="background-color: #ffffff">  !                   calls endrun if &lt;name&gt; is registered with incompatible values</a>
+   507) <a name="l507" style="background-color: #ffffff">  integer function check_hist_coord_all(name, vlen, long_name, units, bounds, &amp;</a>
+   508) <a name="l508" style="background-color: #ffffff">       i_values, r_values, bounds_name, positive, standard_name, formula_terms)</a>
+   509) <a name="l509" style="background-color: #ffffff">    implicit none</a>
+   510) <a name="l510" style="background-color: #ffffff"></a>
+   511) <a name="l511" style="background-color: #ffffff">    ! Input variables</a>
+   512) <a name="l512" style="background-color: #ffffff">    character(len=*),      intent(in)            :: name</a>
+   513) <a name="l513" style="background-color: #ffffff">    integer,               intent(in)            :: vlen</a>
+   514) <a name="l514" style="background-color: #ffffff">    character(len=*),      intent(in),  optional :: long_name</a>
+   515) <a name="l515" style="background-color: #ffffff">    character(len=*),      intent(in),  optional :: units</a>
+   516) <a name="l516" style="background-color: #ffffff">    character(len=*),      intent(in),  optional :: bounds_name</a>
+   517) <a name="l517" style="background-color: #ffffff">    integer,               intent(in),  optional :: i_values(:)</a>
+   518) <a name="l518" style="background-color: #ffffff">    real(r8),              intent(in),  optional :: r_values(:)</a>
+   519) <a name="l519" style="background-color: #ffffff">    real(r8),              intent(in),  optional :: bounds(:,:)</a>
+   520) <a name="l520" style="background-color: #ffffff">    character(len=*),      intent(in),  optional :: positive</a>
+   521) <a name="l521" style="background-color: #ffffff">    character(len=*),      intent(in),  optional :: standard_name</a>
+   522) <a name="l522" style="background-color: #ffffff">    type(formula_terms_t), intent(in),  optional :: formula_terms</a>
+   523) <a name="l523" style="background-color: #ffffff"></a>
+   524) <a name="l524" style="background-color: #ffffff">    ! Local variables</a>
+   525) <a name="l525" style="background-color: #ffffff">    character(len=120)                           :: errormsg</a>
+   526) <a name="l526" style="background-color: #ffffff">    integer                                      :: i</a>
+   527) <a name="l527" style="background-color: #ffffff"></a>
+   528) <a name="l528" style="background-color: #ffffff">    i = get_hist_coord_index(trim(name))</a>
+   529) <a name="l529" style="background-color: #ffffff">    ! If i &gt; 0, this mdim has already been registered</a>
+   530) <a name="l530" style="background-color: #ffffff">    if (i &gt; 0) then</a>
+   531) <a name="l531" style="background-color: #ffff99">      check_hist_coord_all = i</a>
+   532) <a name="l532" style="background-color: #ffff99">      if (.not. check_hist_coord(hist_coords(i)%dimsize, vlen)) then</a>
+   533) <a name="l533" style="background-color: #ffff99">        write(errormsg, *) 'ERROR: Attempt to register dimension, '//trim(name)//' with incompatible size'</a>
+   534) <a name="l534" style="background-color: #ffff99">        call endrun(errormsg)</a>
+   535) <a name="l535" style="background-color: #ffff99">      end if</a>
+   536) <a name="l536" style="background-color: #ffff99">      if (.not. check_hist_coord(hist_coords(i)%long_name, long_name)) then</a>
+   537) <a name="l537" style="background-color: #ffff99">        write(errormsg, *) 'ERROR: Attempt to register dimension, ',trim(name),' with a different long_name'</a>
+   538) <a name="l538" style="background-color: #ffff99">        call endrun(errormsg)</a>
+   539) <a name="l539" style="background-color: #ffff99">      end if</a>
+   540) <a name="l540" style="background-color: #ffff99">      if (.not. check_hist_coord(hist_coords(i)%units, units)) then</a>
+   541) <a name="l541" style="background-color: #ffff99">        write(errormsg, *) 'ERROR: Attempt to register dimension, ',trim(name),' with different units'</a>
+   542) <a name="l542" style="background-color: #ffff99">        call endrun(errormsg)</a>
+   543) <a name="l543" style="background-color: #ffff99">      end if</a>
+   544) <a name="l544" style="background-color: #ffff99">      if (.not. check_hist_coord(hist_coords(i)%bounds_name, bounds_name)) then</a>
+   545) <a name="l545" style="background-color: #ffff99">        write(errormsg, *) 'ERROR: Attempt to register dimension, ',trim(name),' with a different bounds_name'</a>
+   546) <a name="l546" style="background-color: #ffff99">        call endrun(errormsg)</a>
+   547) <a name="l547" style="background-color: #ffff99">      end if</a>
+   548) <a name="l548" style="background-color: #ffff99">      if (.not. check_hist_coord(hist_coords(i)%standard_name, standard_name)) then</a>
+   549) <a name="l549" style="background-color: #ffff99">        write(errormsg, *) 'ERROR: Attempt to register dimension, ',trim(name),' with a different standard_name'</a>
+   550) <a name="l550" style="background-color: #ffff99">        call endrun(errormsg)</a>
+   551) <a name="l551" style="background-color: #ffff99">      end if</a>
+   552) <a name="l552" style="background-color: #ffff99">      if (.not. check_hist_coord(hist_coords(i)%positive, positive)) then</a>
+   553) <a name="l553" style="background-color: #ffff99">        write(errormsg, *) 'ERROR: Attempt to register dimension, ',trim(name),' with a different value of positive'</a>
+   554) <a name="l554" style="background-color: #ffff99">        call endrun(errormsg)</a>
+   555) <a name="l555" style="background-color: #ffff99">      end if</a>
+   556) <a name="l556" style="background-color: #ffff99">      ! Since the integer_dim defaults to .true., double check which to check</a>
+   557) <a name="l557" style="background-color: #ffff99">      if ((.not. hist_coords(i)%integer_dim) .or.                             &amp;</a>
+   558) <a name="l558" style="background-color: #ffff99">           associated(hist_coords(i)%real_values)) then</a>
+   559) <a name="l559" style="background-color: #ffff99">        if (.not. check_hist_coord(hist_coords(i)%real_values, r_values)) then</a>
+   560) <a name="l560" style="background-color: #ffff99">          write(errormsg, *) 'ERROR: Attempt to register dimension, ',trim(name),' with different values'</a>
+   561) <a name="l561" style="background-color: #ffff99">          call endrun(errormsg)</a>
+   562) <a name="l562" style="background-color: #ffff99">        else if (present(i_values)) then</a>
+   563) <a name="l563" style="background-color: #ffff99">          write(errormsg, *) 'ERROR: Attempt to register integer values for real dimension'</a>
+   564) <a name="l564" style="background-color: #ffff99">          call endrun(errormsg)</a>
+   565) <a name="l565" style="background-color: #ffff99">        end if</a>
+   566) <a name="l566" style="background-color: #ffff99">      else</a>
+   567) <a name="l567" style="background-color: #ffff99">        if (.not. check_hist_coord(hist_coords(i)%integer_values, i_values)) then</a>
+   568) <a name="l568" style="background-color: #ffff99">          write(errormsg, *) 'ERROR: Attempt to register dimension, ',trim(name),' with different values'</a>
+   569) <a name="l569" style="background-color: #ffff99">          call endrun(errormsg)</a>
+   570) <a name="l570" style="background-color: #ffff99">        else if (present(i_values) .and. present(r_values)) then</a>
+   571) <a name="l571" style="background-color: #ffff99">          write(errormsg, *) 'ERROR: Attempt to register real values for integer dimension'</a>
+   572) <a name="l572" style="background-color: #ffff99">          call endrun(errormsg)</a>
+   573) <a name="l573" style="background-color: #ffff99">        end if</a>
+   574) <a name="l574" style="background-color: #ffff99">      end if</a>
+   575) <a name="l575" style="background-color: #ffff99">      if (.not. check_hist_coord(hist_coords(i)%bounds, bounds)) then</a>
+   576) <a name="l576" style="background-color: #ffff99">        write(errormsg, *) 'ERROR: Attempt to register dimension, ',trim(name),' with different bounds'</a>
+   577) <a name="l577" style="background-color: #ffff99">        call endrun(errormsg)</a>
+   578) <a name="l578" style="background-color: #ffff99">      end if</a>
+   579) <a name="l579" style="background-color: #ffff99">      if (.not. check_hist_coord(hist_coords(i)%formula_terms, formula_terms)) then</a>
+   580) <a name="l580" style="background-color: #ffff99">        write(errormsg, *) 'ERROR: Attempt to register dimension, ',trim(name),' with different formula_terms'</a>
+   581) <a name="l581" style="background-color: #ffff99">        call endrun(errormsg)</a>
+   582) <a name="l582" style="background-color: #ffff99">      end if</a>
+   583) <a name="l583" style="background-color: #ffff99">    else</a>
+   584) <a name="l584" style="background-color: #ffffff">      check_hist_coord_all = 0</a>
+   585) <a name="l585" style="background-color: #ffffff">    end if</a>
+   586) <a name="l586" style="background-color: #ffffff">  end function check_hist_coord_all</a>
+   587) <a name="l587" style="background-color: #ffffff"></a>
+   588) <a name="l588" style="background-color: #ffffff">  subroutine add_hist_coord_regonly(name, index)</a>
+   589) <a name="l589" style="background-color: #ffffff">    implicit none</a>
+   590) <a name="l590" style="background-color: #ffffff"></a>
+   591) <a name="l591" style="background-color: #ffffff">    ! Input variable</a>
+   592) <a name="l592" style="background-color: #ffffff">    character(len=*),  intent(in)    :: name</a>
+   593) <a name="l593" style="background-color: #ffffff">    integer, optional, intent(out)   :: index</a>
+   594) <a name="l594" style="background-color: #ffffff"></a>
+   595) <a name="l595" style="background-color: #ffffff">    ! Local variables</a>
+   596) <a name="l596" style="background-color: #ffffff">    character(len=120)               :: errormsg</a>
+   597) <a name="l597" style="background-color: #ffffff">    integer                          :: i</a>
+   598) <a name="l598" style="background-color: #ffffff"></a>
+   599) <a name="l599" style="background-color: #ffffff">    i = get_hist_coord_index(trim(name))</a>
+   600) <a name="l600" style="background-color: #ffffff">    ! If i &gt; 0, this mdim has already been registered</a>
+   601) <a name="l601" style="background-color: #ffffff">    if (i &lt;= 0) then</a>
+   602) <a name="l602" style="background-color: #ffffff">      registeredmdims = registeredmdims + 1</a>
+   603) <a name="l603" style="background-color: #ffffff">      if (registeredmdims &gt; maxmdims) then</a>
+   604) <a name="l604" style="background-color: #ffffff">        call </a><a style="background-color: #ffff99">endrun('Too many dimensions in add_hist_coord.')</a>
+   605) <a name="l605" style="background-color: #ffff99">      end if</a>
+   606) <a name="l606" style="background-color: #ffff99">      if (</a><a style="background-color: #ffffff">len_trim(name) &gt; max_mdimname_len) then</a>
+   607) <a name="l607" style="background-color: #ffff99">        write(errormsg,'(a,i3,a)') 'History coord name exceeds the ',         &amp;</a>
+   608) <a name="l608" style="background-color: #ffff99">             max_mdimname_len, ' character length limit'</a>
+   609) <a name="l609" style="background-color: #ffff99">        call endrun(errormsg)</a>
+   610) <a name="l610" style="background-color: #ffff99">      end if</a>
+   611) <a name="l611" style="background-color: #ffffff">      hist_coords(registeredmdims)%name = trim(name)</a>
+   612) <a name="l612" style="background-color: #ffffff">      hist_coords(registeredmdims)%dimsize = 0</a>
+   613) <a name="l613" style="background-color: #ffffff">      hist_coords(registeredmdims)%long_name = ''</a>
+   614) <a name="l614" style="background-color: #ffffff">      hist_coords(registeredmdims)%units = ''</a>
+   615) <a name="l615" style="background-color: #ffffff">      hist_coords(registeredmdims)%integer_dim = .true.</a>
+   616) <a name="l616" style="background-color: #ffffff">      hist_coords(registeredmdims)%positive = ''</a>
+   617) <a name="l617" style="background-color: #ffffff">      hist_coords(registeredmdims)%standard_name = ''</a>
+   618) <a name="l618" style="background-color: #ffffff">      if (</a><a style="background-color: #fafad2">present(index)) then</a>
+   619) <a name="l619" style="background-color: #ffffff">        index = registeredmdims</a>
+   620) <a name="l620" style="background-color: #ffffff">      end if</a>
+   621) <a name="l621" style="background-color: #ffffff">    else</a>
+   622) <a name="l622" style="background-color: #ffff99">      if (present(index)) then</a>
+   623) <a name="l623" style="background-color: #ffff99">        index = i</a>
+   624) <a name="l624" style="background-color: #ffff99">      end if</a>
+   625) <a name="l625" style="background-color: #ffff99">    end if</a>
+   626) <a name="l626" style="background-color: #ffff99"></a>
+   627) <a name="l627" style="background-color: #ffffff">  end subroutine add_hist_coord_regonly</a>
+   628) <a name="l628" style="background-color: #ffffff"></a>
+   629) <a name="l629" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">add_hist_coord_int(name, vlen, long_name, units, values,         &amp;</a>
+   630) <a name="l630" style="background-color: #ffcccc">       positive, standard_name)</a>
+   631) <a name="l631" style="background-color: #ffcccc">    implicit none</a>
+   632) <a name="l632" style="background-color: #ffcccc"></a>
+   633) <a name="l633" style="background-color: #ffcccc">    ! Input variables</a>
+   634) <a name="l634" style="background-color: #ffcccc">    character(len=*), intent(in)                    :: name</a>
+   635) <a name="l635" style="background-color: #ffcccc">    integer,          intent(in)                    :: vlen</a>
+   636) <a name="l636" style="background-color: #ffcccc">    character(len=*), intent(in)                    :: long_name</a>
+   637) <a name="l637" style="background-color: #ffcccc">    character(len=*), intent(in),          optional :: units</a>
+   638) <a name="l638" style="background-color: #ffcccc">    integer,          intent(in),  target, optional :: values(:)</a>
+   639) <a name="l639" style="background-color: #ffcccc">    character(len=*), intent(in),          optional :: positive</a>
+   640) <a name="l640" style="background-color: #ffcccc">    character(len=*), intent(in),          optional :: standard_name</a>
+   641) <a name="l641" style="background-color: #ffcccc"></a>
+   642) <a name="l642" style="background-color: #ffcccc">    ! Local variables</a>
+   643) <a name="l643" style="background-color: #ffcccc">    integer                                         :: i</a>
+   644) <a name="l644" style="background-color: #ffcccc"></a>
+   645) <a name="l645" style="background-color: #ffcccc">    ! First, check to see if it is OK to add this coord</a>
+   646) <a name="l646" style="background-color: #ffcccc">    i = check_hist_coord(name, vlen=vlen, long_name=long_name, units=units,   &amp;</a>
+   647) <a name="l647" style="background-color: #ffcccc">         i_values=values, positive=positive, standard_name=standard_name)</a>
+   648) <a name="l648" style="background-color: #ffcccc">    ! Register the name if necessary</a>
+   649) <a name="l649" style="background-color: #ffcccc">    if (i == 0) then</a>
+   650) <a name="l650" style="background-color: #ffcccc">      call add_hist_coord(trim(name), i)</a>
+   651) <a name="l651" style="background-color: #ffcccc">      !  if(masterproc) write(iulog,*) 'Registering hist coord',name,'(',i,') with length: ',vlen</a>
+   652) <a name="l652" style="background-color: #ffcccc">    end if</a>
+   653) <a name="l653" style="background-color: #ffcccc"></a>
+   654) <a name="l654" style="background-color: #ffcccc">    ! Set the coord's values</a>
+   655) <a name="l655" style="background-color: #ffcccc">    hist_coords(i)%dimsize = vlen</a>
+   656) <a name="l656" style="background-color: #ffcccc">    if (len_trim(long_name) &gt; max_chars) then</a>
+   657) <a name="l657" style="background-color: #ffcccc">      if(masterproc) then</a>
+   658) <a name="l658" style="background-color: #ffcccc">        write(iulog,*) 'WARNING: long_name for ',trim(name),' too long'</a>
+   659) <a name="l659" style="background-color: #ffcccc">      end if</a>
+   660) <a name="l660" style="background-color: #ffcccc">    end if</a>
+   661) <a name="l661" style="background-color: #ffcccc">    hist_coords(i)%long_name = trim(long_name)</a>
+   662) <a name="l662" style="background-color: #ffcccc">    if (present(units)) then</a>
+   663) <a name="l663" style="background-color: #ffcccc">      hist_coords(i)%units = trim(units)</a>
+   664) <a name="l664" style="background-color: #ffcccc">    else</a>
+   665) <a name="l665" style="background-color: #ffcccc">      hist_coords(i)%units = ''</a>
+   666) <a name="l666" style="background-color: #ffcccc">    end if</a>
+   667) <a name="l667" style="background-color: #ffcccc">    hist_coords(i)%integer_dim = .true.</a>
+   668) <a name="l668" style="background-color: #ffcccc">    if (present(values)) then</a>
+   669) <a name="l669" style="background-color: #ffcccc">      hist_coords(i)%integer_values =&gt; values</a>
+   670) <a name="l670" style="background-color: #ffcccc">    endif</a>
+   671) <a name="l671" style="background-color: #ffcccc">    if (present(positive)) then</a>
+   672) <a name="l672" style="background-color: #ffcccc">      hist_coords(i)%positive = trim(positive)</a>
+   673) <a name="l673" style="background-color: #ffcccc">    end if</a>
+   674) <a name="l674" style="background-color: #ffcccc">    if (present(standard_name)) then</a>
+   675) <a name="l675" style="background-color: #ffcccc">      hist_coords(i)%standard_name = trim(standard_name)</a>
+   676) <a name="l676" style="background-color: #ffcccc">    end if</a>
+   677) <a name="l677" style="background-color: #ffcccc"></a>
+   678) <a name="l678" style="background-color: #ffcccc">  end subroutine add_hist_coord_int</a>
+   679) <a name="l679" style="background-color: #ffffff"></a>
+   680) <a name="l680" style="background-color: #ffffff">  subroutine add_hist_coord_r8(name, vlen, long_name, units, values,         &amp;</a>
+   681) <a name="l681" style="background-color: #ffffff">       bounds_name, bounds, positive, standard_name)</a>
+   682) <a name="l682" style="background-color: #ffffff">    implicit none</a>
+   683) <a name="l683" style="background-color: #ffffff"></a>
+   684) <a name="l684" style="background-color: #ffffff">    ! Input variables</a>
+   685) <a name="l685" style="background-color: #ffffff">    character(len=*),      intent(in)                    :: name</a>
+   686) <a name="l686" style="background-color: #ffffff">    integer,               intent(in)                    :: vlen</a>
+   687) <a name="l687" style="background-color: #ffffff">    character(len=*),      intent(in)                    :: long_name</a>
+   688) <a name="l688" style="background-color: #ffffff">    character(len=*),      intent(in)                    :: units</a>
+   689) <a name="l689" style="background-color: #ffffff">    real(r8),              intent(in), target            :: values(:)</a>
+   690) <a name="l690" style="background-color: #ffffff">    character(len=*),      intent(in),          optional :: bounds_name</a>
+   691) <a name="l691" style="background-color: #ffffff">    real(r8),              intent(in), target,  optional :: bounds(:,:)</a>
+   692) <a name="l692" style="background-color: #ffffff">    character(len=*),      intent(in),          optional :: positive</a>
+   693) <a name="l693" style="background-color: #ffffff">    character(len=*),      intent(in),          optional :: standard_name</a>
+   694) <a name="l694" style="background-color: #ffffff"></a>
+   695) <a name="l695" style="background-color: #ffffff">    ! Local variables</a>
+   696) <a name="l696" style="background-color: #ffffff">    character(len=120)                                   :: errormsg</a>
+   697) <a name="l697" style="background-color: #ffffff">    integer                                              :: i</a>
+   698) <a name="l698" style="background-color: #ffffff"></a>
+   699) <a name="l699" style="background-color: #ffffff">    ! First, check to see if it is OK to add this coord</a>
+   700) <a name="l700" style="background-color: #ffffff">    i = check_hist_coord(name, vlen=vlen, long_name=long_name, units=units,   &amp;</a>
+   701) <a name="l701" style="background-color: #ffffff">         r_values=values, positive=positive, standard_name=standard_name,     &amp;</a>
+   702) <a name="l702" style="background-color: #ffffff">         bounds_name=bounds_name, bounds=bounds)</a>
+   703) <a name="l703" style="background-color: #ffffff">    ! Register the name if necessary</a>
+   704) <a name="l704" style="background-color: #ffffff">    if (i == 0) then</a>
+   705) <a name="l705" style="background-color: #ffffff">      call add_hist_coord(trim(name), i)</a>
+   706) <a name="l706" style="background-color: #ffffff">      !  if(masterproc) write(iulog,*) 'Registering hist coord',name,'(',i,') with length: ',vlen</a>
+   707) <a name="l707" style="background-color: #ffffff">    end if</a>
+   708) <a name="l708" style="background-color: #ffffff"></a>
+   709) <a name="l709" style="background-color: #ffffff">    ! Set the coord's size</a>
+   710) <a name="l710" style="background-color: #ffffff">    hist_coords(i)%dimsize = vlen</a>
+   711) <a name="l711" style="background-color: #ffffff">    if (len_trim(long_name) &gt; max_chars) then</a>
+   712) <a name="l712" style="background-color: #ffff99">      if(masterproc) then</a>
+   713) <a name="l713" style="background-color: #ffff99">        write(iulog,*) 'WARNING: long_name for ',trim(name),' too long'</a>
+   714) <a name="l714" style="background-color: #ffff99">      end if</a>
+   715) <a name="l715" style="background-color: #ffff99">    end if</a>
+   716) <a name="l716" style="background-color: #ffffff">    hist_coords(i)%long_name = trim(long_name)</a>
+   717) <a name="l717" style="background-color: #ffffff">    if (len_trim(units) &gt; 0) then</a>
+   718) <a name="l718" style="background-color: #ffffff">      hist_coords(i)%units = trim(units)</a>
+   719) <a name="l719" style="background-color: #ffffff">    else</a>
+   720) <a name="l720" style="background-color: #ffff99">      hist_coords(i)%units = '1'</a>
+   721) <a name="l721" style="background-color: #ffff99">    end if</a>
+   722) <a name="l722" style="background-color: #ffffff">    hist_coords(i)%integer_dim = .false.</a>
+   723) <a name="l723" style="background-color: #ffffff">    hist_coords(i)%real_values =&gt; values</a>
+   724) <a name="l724" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(positive)) then</a>
+   725) <a name="l725" style="background-color: #ffffff">      hist_coords(i)%positive = trim(positive)</a>
+   726) <a name="l726" style="background-color: #ffffff">    end if</a>
+   727) <a name="l727" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(standard_name)) then</a>
+   728) <a name="l728" style="background-color: #ffffff">      hist_coords(i)%standard_name = trim(standard_name)</a>
+   729) <a name="l729" style="background-color: #ffffff">    end if</a>
+   730) <a name="l730" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(bounds_name)) then</a>
+   731) <a name="l731" style="background-color: #ffff99">      hist_coords(i)%bounds_name = trim(bounds_name)</a>
+   732) <a name="l732" style="background-color: #ffff99">      if (.not. present(bounds)) then</a>
+   733) <a name="l733" style="background-color: #ffff99">        write(errormsg,*) 'bounds must be present for ',trim(bounds_name)</a>
+   734) <a name="l734" style="background-color: #ffff99">        call endrun(errormsg)</a>
+   735) <a name="l735" style="background-color: #ffff99">      end if</a>
+   736) <a name="l736" style="background-color: #ffff99">      hist_coords(i)%bounds =&gt; bounds</a>
+   737) <a name="l737" style="background-color: #ffffff">    else if (</a><a style="background-color: #fafad2">present(bounds)) then</a>
+   738) <a name="l738" style="background-color: #ffff99">      write(errormsg,*) 'bounds_name must be present for bounds values'</a>
+   739) <a name="l739" style="background-color: #ffff99">      call endrun(errormsg)</a>
+   740) <a name="l740" style="background-color: #ffff99">    else</a>
+   741) <a name="l741" style="background-color: #ffffff">      hist_coords(i)%bounds_name = ''</a>
+   742) <a name="l742" style="background-color: #ffffff">    end if</a>
+   743) <a name="l743" style="background-color: #ffffff"></a>
+   744) <a name="l744" style="background-color: #ffffff">  end subroutine add_hist_coord_r8</a>
+   745) <a name="l745" style="background-color: #ffffff"></a>
+   746) <a name="l746" style="background-color: #ffffff">  subroutine add_vert_coord(name, vlen, long_name, units, values,            &amp;</a>
+   747) <a name="l747" style="background-color: #ffffff">       positive, standard_name, formula_terms)</a>
+   748) <a name="l748" style="background-color: #ffffff">    implicit none</a>
+   749) <a name="l749" style="background-color: #ffffff"></a>
+   750) <a name="l750" style="background-color: #ffffff">    ! Input variables</a>
+   751) <a name="l751" style="background-color: #ffffff">    character(len=*),      intent(in)                    :: name</a>
+   752) <a name="l752" style="background-color: #ffffff">    integer,               intent(in)                    :: vlen</a>
+   753) <a name="l753" style="background-color: #ffffff">    character(len=*),      intent(in)                    :: long_name</a>
+   754) <a name="l754" style="background-color: #ffffff">    character(len=*),      intent(in)                    :: units</a>
+   755) <a name="l755" style="background-color: #ffffff">    real(r8),              intent(in), target            :: values(:)</a>
+   756) <a name="l756" style="background-color: #ffffff">    character(len=*),      intent(in),          optional :: positive</a>
+   757) <a name="l757" style="background-color: #ffffff">    character(len=*),      intent(in),          optional :: standard_name</a>
+   758) <a name="l758" style="background-color: #ffffff">    type(formula_terms_t), intent(in),          optional :: formula_terms</a>
+   759) <a name="l759" style="background-color: #ffffff"></a>
+   760) <a name="l760" style="background-color: #ffffff">    ! Local variables</a>
+   761) <a name="l761" style="background-color: #ffffff">    character(len=120)                                   :: errormsg</a>
+   762) <a name="l762" style="background-color: #ffffff">    integer                                              :: i</a>
+   763) <a name="l763" style="background-color: #ffffff"></a>
+   764) <a name="l764" style="background-color: #ffffff">    ! First, check to see if it is OK to add this coord</a>
+   765) <a name="l765" style="background-color: #ffffff">    i = check_hist_coord(name, vlen=vlen, long_name=long_name, units=units,   &amp;</a>
+   766) <a name="l766" style="background-color: #ffffff">         r_values=values, positive=positive, standard_name=standard_name,     &amp;</a>
+   767) <a name="l767" style="background-color: #ffffff">         formula_terms=formula_terms)</a>
+   768) <a name="l768" style="background-color: #ffffff">    ! Register the name and hist_coord values if necessary</a>
+   769) <a name="l769" style="background-color: #ffffff">    if (i == 0) then</a>
+   770) <a name="l770" style="background-color: #ffffff">      call add_hist_coord(trim(name), vlen, long_name, units, values,         &amp;</a>
+   771) <a name="l771" style="background-color: #ffffff">           positive=positive, standard_name=standard_name)</a>
+   772) <a name="l772" style="background-color: #ffffff">      i = get_hist_coord_index(trim(name))</a>
+   773) <a name="l773" style="background-color: #ffffff">      !  if(masterproc) write(iulog,*) 'Registering hist coord',name,'(',i,') with length: ',vlen</a>
+   774) <a name="l774" style="background-color: #ffffff">    end if</a>
+   775) <a name="l775" style="background-color: #ffffff"></a>
+   776) <a name="l776" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(formula_terms)) then</a>
+   777) <a name="l777" style="background-color: #ffffff">      hist_coords(i)%formula_terms = formula_terms</a>
+   778) <a name="l778" style="background-color: #ffffff">    end if</a>
+   779) <a name="l779" style="background-color: #ffffff"></a>
+   780) <a name="l780" style="background-color: #ffffff">  end subroutine add_vert_coord</a>
+   781) <a name="l781" style="background-color: #ffffff"></a>
+   782) <a name="l782" style="background-color: #ffffff">  subroutine write_hist_coord_att(File, mdimind, boundsdim, dimonly, mdimid)</a>
+   783) <a name="l783" style="background-color: #ffffff">    use pio, only: file_desc_t, var_desc_t, pio_put_att, pio_noerr,           &amp;</a>
+   784) <a name="l784" style="background-color: #ffffff">                   pio_int, pio_double, pio_inq_varid, pio_inq_dimid,         &amp;</a>
+   785) <a name="l785" style="background-color: #ffffff">                   pio_def_dim, pio_def_var</a>
+   786) <a name="l786" style="background-color: #ffffff">    implicit none</a>
+   787) <a name="l787" style="background-color: #ffffff"></a>
+   788) <a name="l788" style="background-color: #ffffff">    ! Input variables</a>
+   789) <a name="l789" style="background-color: #ffffff">    type(file_desc_t), intent(inout) :: File           ! PIO file Handle</a>
+   790) <a name="l790" style="background-color: #ffffff">    integer,           intent(in)    :: mdimind        ! Internal dim index</a>
+   791) <a name="l791" style="background-color: #ffffff">    integer,           intent(in)    :: boundsdim      ! Bounds dimension ID</a>
+   792) <a name="l792" style="background-color: #ffffff">    logical,           intent(in)    :: dimonly        ! No def_var if .true.</a>
+   793) <a name="l793" style="background-color: #ffffff">    integer, optional, intent(out)   :: mdimid</a>
+   794) <a name="l794" style="background-color: #ffffff"></a>
+   795) <a name="l795" style="background-color: #ffffff">    ! Local variables</a>
+   796) <a name="l796" style="background-color: #ffffff">    integer                          :: dimid          ! PIO dimension ID</a>
+   797) <a name="l797" style="background-color: #ffffff">    type(var_desc_t)                 :: vardesc        ! PIO variable descriptor</a>
+   798) <a name="l798" style="background-color: #ffffff">    character(len=120)               :: errormsg</a>
+   799) <a name="l799" style="background-color: #ffffff">    character(len=max_chars)         :: formula_terms  ! Constructed string</a>
+   800) <a name="l800" style="background-color: #ffffff">    integer                          :: ierr</a>
+   801) <a name="l801" style="background-color: #ffffff">    logical                          :: defvar         ! True if var exists</a>
+   802) <a name="l802" style="background-color: #ffffff"></a>
+   803) <a name="l803" style="background-color: #ffffff">    ! Check to see if the dimension already exists in the file</a>
+   804) <a name="l804" style="background-color: #ffffff">    ierr = pio_inq_dimid(File, trim(hist_coords(mdimind)%name), dimid)</a>
+   805) <a name="l805" style="background-color: #ffffff">    if (ierr == PIO_NOERR) then</a>
+   806) <a name="l806" style="background-color: #ffff99">      write(errormsg, *) 'WARNING: A dimension already exists for ',          &amp;</a>
+   807) <a name="l807" style="background-color: #ffff99">           trim(hist_coords(mdimind)%name)</a>
+   808) <a name="l808" style="background-color: #ffff99">      call endrun(errormsg)</a>
+   809) <a name="l809" style="background-color: #ffff99">    else</a>
+   810) <a name="l810" style="background-color: #ffff99">      ! Define the dimension</a>
+   811) <a name="l811" style="background-color: #ffffff">      ierr = pio_def_dim(File, trim(hist_coords(mdimind)%name),               &amp;</a>
+   812) <a name="l812" style="background-color: #ffffff">           hist_coords(mdimind)%dimsize, dimid)</a>
+   813) <a name="l813" style="background-color: #ffffff">      call handle_pio_error(ierr, 'Unable to define dimension in write_hist_coord_att')</a>
+   814) <a name="l814" style="background-color: #ffffff">    end if</a>
+   815) <a name="l815" style="background-color: #ffffff">    ! If the caller wants to know the NetCDF dimension ID, set it here</a>
+   816) <a name="l816" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(mdimid)) then</a>
+   817) <a name="l817" style="background-color: #ffffff">      mdimid = dimid</a>
+   818) <a name="l818" style="background-color: #ffffff">    end if</a>
+   819) <a name="l819" style="background-color: #ffffff">    if (.not. dimonly) then</a>
+   820) <a name="l820" style="background-color: #ffffff">      ! Check to see if the variable already exists in the file</a>
+   821) <a name="l821" style="background-color: #ffffff">      ierr = pio_inq_varid(File, hist_coords(mdimind)%name, vardesc)</a>
+   822) <a name="l822" style="background-color: #ffffff">      if (ierr == PIO_NOERR) then</a>
+   823) <a name="l823" style="background-color: #ffff99">        write(errormsg, *) 'WARNING: A variable already exists for ',         &amp;</a>
+   824) <a name="l824" style="background-color: #ffff99">             trim(hist_coords(mdimind)%name)</a>
+   825) <a name="l825" style="background-color: #ffff99">        call endrun(errormsg)</a>
+   826) <a name="l826" style="background-color: #ffff99">      end if</a>
+   827) <a name="l827" style="background-color: #ffff99">      ! Time to define the variable (only if there are values)</a>
+   828) <a name="l828" style="background-color: #ffffff">      if (</a><a style="background-color: #ffff99">hist_coords(mdimind)%integer_dim .and.                              &amp;</a>
+   829) <a name="l829" style="background-color: #ffff99">           associated(hist_coords(mdimind)%integer_values)) then</a>
+   830) <a name="l830" style="background-color: #ffff99">        ierr = pio_def_var(File, trim(hist_coords(mdimind)%name), pio_int,    &amp;</a>
+   831) <a name="l831" style="background-color: #ffff99">             (/dimid/), vardesc)</a>
+   832) <a name="l832" style="background-color: #ffff99">        defvar = .true.</a>
+   833) <a name="l833" style="background-color: #ffffff">      else if (</a><a style="background-color: #fafad2">associated(hist_coords(mdimind)%real_values)) then</a>
+   834) <a name="l834" style="background-color: #ffffff">        ierr = pio_def_var(File, trim(hist_coords(mdimind)%name), pio_double, &amp;</a>
+   835) <a name="l835" style="background-color: #ffffff">             (/dimid/), vardesc)</a>
+   836) <a name="l836" style="background-color: #ffffff">        defvar = .true.</a>
+   837) <a name="l837" style="background-color: #ffffff">      else</a>
+   838) <a name="l838" style="background-color: #ffff99">        ierr = PIO_NOERR ! No variable to write</a>
+   839) <a name="l839" style="background-color: #ffff99">        defvar = .false.</a>
+   840) <a name="l840" style="background-color: #ffff99">      end if</a>
+   841) <a name="l841" style="background-color: #ffff99">      call </a><a style="background-color: #ffffff">handle_pio_error(ierr, 'Unable to define variable in write_hist_coord_att')</a>
+   842) <a name="l842" style="background-color: #ffffff">      if (defvar) then</a>
+   843) <a name="l843" style="background-color: #ffffff">        ! long_name</a>
+   844) <a name="l844" style="background-color: #ffffff">        ierr=pio_put_att(File, vardesc, 'long_name', trim(hist_coords(mdimind)%long_name))</a>
+   845) <a name="l845" style="background-color: #ffffff">        call handle_pio_error(ierr, 'Error writing &quot;long_name&quot; attr in write_hist_coord_att')</a>
+   846) <a name="l846" style="background-color: #ffffff">        ! units</a>
+   847) <a name="l847" style="background-color: #ffffff">        if(len_trim(hist_coords(mdimind)%units) &gt; 0) then</a>
+   848) <a name="l848" style="background-color: #ffffff">          ierr=pio_put_att(File, vardesc, 'units',                            &amp;</a>
+   849) <a name="l849" style="background-color: #ffffff">               trim(hist_coords(mdimind)%units))</a>
+   850) <a name="l850" style="background-color: #ffffff">          call handle_pio_error(ierr, 'Error writing &quot;units&quot; attr in write_hist_coord_att')</a>
+   851) <a name="l851" style="background-color: #ffffff">        end if</a>
+   852) <a name="l852" style="background-color: #ffffff">        ! positive</a>
+   853) <a name="l853" style="background-color: #ffffff">        if(len_trim(hist_coords(mdimind)%positive) &gt; 0) then</a>
+   854) <a name="l854" style="background-color: #ffffff">          ierr=pio_put_att(File, vardesc, 'positive',                         &amp;</a>
+   855) <a name="l855" style="background-color: #ffffff">               trim(hist_coords(mdimind)%positive))</a>
+   856) <a name="l856" style="background-color: #ffffff">          call handle_pio_error(ierr, 'Error writing &quot;positive&quot; attr in write_hist_coord_att')</a>
+   857) <a name="l857" style="background-color: #ffffff">        end if</a>
+   858) <a name="l858" style="background-color: #ffffff">        ! standard_name</a>
+   859) <a name="l859" style="background-color: #ffffff">        if(len_trim(hist_coords(mdimind)%standard_name) &gt; 0) then</a>
+   860) <a name="l860" style="background-color: #ffffff">          ierr=pio_put_att(File, vardesc, 'standard_name',                    &amp;</a>
+   861) <a name="l861" style="background-color: #ffffff">               trim(hist_coords(mdimind)%standard_name))</a>
+   862) <a name="l862" style="background-color: #ffffff">          call handle_pio_error(ierr, 'Error writing &quot;standard_name&quot; attr in write_hist_coord_att')</a>
+   863) <a name="l863" style="background-color: #ffffff">        end if</a>
+   864) <a name="l864" style="background-color: #ffffff">        ! formula_terms</a>
+   865) <a name="l865" style="background-color: #ffffff">        if(len_trim(hist_coords(mdimind)%formula_terms%a_name) &gt; 0) then</a>
+   866) <a name="l866" style="background-color: #ffffff">          write(formula_terms, '(&quot;a: &quot;,a,&quot; b: &quot;,a,&quot; p0: &quot;,a,&quot; ps: &quot;,a)')      &amp;</a>
+   867) <a name="l867" style="background-color: #ffffff">               trim(hist_coords(mdimind)%formula_terms%a_name),               &amp;</a>
+   868) <a name="l868" style="background-color: #ffffff">               trim(hist_coords(mdimind)%formula_terms%b_name),               &amp;</a>
+   869) <a name="l869" style="background-color: #ffffff">               trim(hist_coords(mdimind)%formula_terms%p0_name),              &amp;</a>
+   870) <a name="l870" style="background-color: #ffffff">               trim(hist_coords(mdimind)%formula_terms%ps_name)</a>
+   871) <a name="l871" style="background-color: #ffffff">          ierr=pio_put_att(File, vardesc, 'formula_terms', trim(formula_terms))</a>
+   872) <a name="l872" style="background-color: #ffffff">          call handle_pio_error(ierr, 'Error writing &quot;formula_terms&quot; attr in write_hist_coord_att')</a>
+   873) <a name="l873" style="background-color: #ffffff">        end if</a>
+   874) <a name="l874" style="background-color: #ffffff">        ! bounds</a>
+   875) <a name="l875" style="background-color: #ffffff">        if (</a><a style="background-color: #fafad2">associated(hist_coords(mdimind)%bounds)) then</a>
+   876) <a name="l876" style="background-color: #fafad2">          ! Write name of the bounds variable</a>
+   877) <a name="l877" style="background-color: #ffff99">          ierr=pio_put_att(File, vardesc, 'bounds', trim(hist_coords(mdimind)%bounds_name))</a>
+   878) <a name="l878" style="background-color: #ffff99">          call handle_pio_error(ierr, 'Error writing &quot;bounds&quot; attr in write_hist_coord_att')</a>
+   879) <a name="l879" style="background-color: #ffff99">        end if</a>
+   880) <a name="l880" style="background-color: #ffff99">      end if</a>
+   881) <a name="l881" style="background-color: #ffff99"></a>
+   882) <a name="l882" style="background-color: #ffff99">      ! Now, we need to define and populate the associated bounds variable</a>
+   883) <a name="l883" style="background-color: #ffff99">      ! NB: Reusing vardesc, no longer assocated with main variable</a>
+   884) <a name="l884" style="background-color: #ffffff">      if (</a><a style="background-color: #fafad2">associated(hist_coords(mdimind)%bounds)) then</a>
+   885) <a name="l885" style="background-color: #ffff99">        if (size(hist_coords(mdimind)%bounds,2) /= hist_coords(mdimind)%dimsize) then</a>
+   886) <a name="l886" style="background-color: #ffff99">          ! If anyone hits this check, add a new dimension for this case</a>
+   887) <a name="l887" style="background-color: #ffff99">          write(errormsg, *) 'The bounds variable, ',                         &amp;</a>
+   888) <a name="l888" style="background-color: #ffff99">               trim(hist_coords(mdimind)%bounds_name),                        &amp;</a>
+   889) <a name="l889" style="background-color: #ffff99">               ', needs to have dimension (2,', hist_coords(mdimind)%dimsize</a>
+   890) <a name="l890" style="background-color: #ffff99">          call endrun(errormsg)</a>
+   891) <a name="l891" style="background-color: #ffff99">        end if</a>
+   892) <a name="l892" style="background-color: #ffff99">        ierr = pio_def_var(File, trim(hist_coords(mdimind)%bounds_name),      &amp;</a>
+   893) <a name="l893" style="background-color: #ffff99">             pio_double, (/boundsdim,dimid/), vardesc)</a>
+   894) <a name="l894" style="background-color: #ffff99">        call handle_pio_error(ierr, 'Unable to define bounds variable in write_hist_coord_att')</a>
+   895) <a name="l895" style="background-color: #ffff99">      end if</a>
+   896) <a name="l896" style="background-color: #ffff99"></a>
+   897) <a name="l897" style="background-color: #ffff99">      ! See if we have formula_terms variables to define</a>
+   898) <a name="l898" style="background-color: #ffff99">      ! Define the &quot;a&quot; variable name</a>
+   899) <a name="l899" style="background-color: #ffff99">      ! NB: Reusing vardesc, no longer assocated with previous variables</a>
+   900) <a name="l900" style="background-color: #ffffff">      if (</a><a style="background-color: #fafad2">associated(hist_coords(mdimind)%formula_terms%a_values)) then</a>
+   901) <a name="l901" style="background-color: #ffffff">        if (size(hist_coords(mdimind)%formula_terms%a_values) /= hist_coords(mdimind)%dimsize) then</a>
+   902) <a name="l902" style="background-color: #ffff99">          write(errormsg, *) 'The forumla_terms variable, ',                  &amp;</a>
+   903) <a name="l903" style="background-color: #ffff99">               trim(hist_coords(mdimind)%formula_terms%a_name),               &amp;</a>
+   904) <a name="l904" style="background-color: #ffff99">               ', needs to have dimension', hist_coords(mdimind)%dimsize</a>
+   905) <a name="l905" style="background-color: #ffff99">          call endrun(errormsg)</a>
+   906) <a name="l906" style="background-color: #ffff99">        end if</a>
+   907) <a name="l907" style="background-color: #ffffff">        ierr = pio_def_var(File, trim(hist_coords(mdimind)%formula_terms%a_name), &amp;</a>
+   908) <a name="l908" style="background-color: #ffffff">             pio_double, (/dimid/), vardesc)</a>
+   909) <a name="l909" style="background-color: #ffffff">        call handle_pio_error(ierr, 'Unable to define &quot;a&quot; formula_terms variable in write_hist_coord_att')</a>
+   910) <a name="l910" style="background-color: #ffffff">        ierr = pio_put_att(File, vardesc, 'long_name', trim(hist_coords(mdimind)%formula_terms%a_long_name))</a>
+   911) <a name="l911" style="background-color: #ffffff">        call handle_pio_error(ierr, 'Error writing &quot;long_name&quot; attr for &quot;a&quot; formula_term in write_hist_coord_att')</a>
+   912) <a name="l912" style="background-color: #ffffff">      end if</a>
+   913) <a name="l913" style="background-color: #ffffff">      ! Define the &quot;b&quot; variable name</a>
+   914) <a name="l914" style="background-color: #ffffff">      ! NB: Reusing vardesc, no longer assocated with previous variables</a>
+   915) <a name="l915" style="background-color: #ffffff">      if (</a><a style="background-color: #fafad2">associated(hist_coords(mdimind)%formula_terms%b_values)) then</a>
+   916) <a name="l916" style="background-color: #ffffff">        if (size(hist_coords(mdimind)%formula_terms%b_values) /= hist_coords(mdimind)%dimsize) then</a>
+   917) <a name="l917" style="background-color: #ffff99">          write(errormsg, *) 'The forumla_terms variable, ',                  &amp;</a>
+   918) <a name="l918" style="background-color: #ffff99">               trim(hist_coords(mdimind)%formula_terms%b_name),               &amp;</a>
+   919) <a name="l919" style="background-color: #ffff99">               ', needs to have dimension', hist_coords(mdimind)%dimsize</a>
+   920) <a name="l920" style="background-color: #ffff99">          call endrun(errormsg)</a>
+   921) <a name="l921" style="background-color: #ffff99">        end if</a>
+   922) <a name="l922" style="background-color: #ffffff">        ierr = pio_def_var(File, trim(hist_coords(mdimind)%formula_terms%b_name), &amp;</a>
+   923) <a name="l923" style="background-color: #ffffff">             pio_double, (/dimid/), vardesc)</a>
+   924) <a name="l924" style="background-color: #ffffff">        call handle_pio_error(ierr, 'Unable to define &quot;b&quot; formula_terms variable in write_hist_coord_att')</a>
+   925) <a name="l925" style="background-color: #ffffff">        ierr = pio_put_att(File, vardesc, 'long_name', trim(hist_coords(mdimind)%formula_terms%b_long_name))</a>
+   926) <a name="l926" style="background-color: #ffffff">        call handle_pio_error(ierr, 'Error writing &quot;long_name&quot; attr for &quot;b&quot; formula_term in write_hist_coord_att')</a>
+   927) <a name="l927" style="background-color: #ffffff">      end if</a>
+   928) <a name="l928" style="background-color: #ffffff">      ! Maybe define the p0 variable (this may be defined already which is OK)</a>
+   929) <a name="l929" style="background-color: #ffffff">      ! NB: Reusing vardesc, no longer assocated with previous variables</a>
+   930) <a name="l930" style="background-color: #ffffff">      if (hist_coords(mdimind)%formula_terms%p0_value /= fillvalue) then</a>
+   931) <a name="l931" style="background-color: #ffffff">        ierr = pio_inq_varid(File, trim(hist_coords(mdimind)%formula_terms%p0_name), vardesc)</a>
+   932) <a name="l932" style="background-color: #ffffff">        if (ierr /= PIO_NOERR) then</a>
+   933) <a name="l933" style="background-color: #ffffff">          ierr = pio_def_var(File, trim(hist_coords(mdimind)%formula_terms%p0_name), &amp;</a>
+   934) <a name="l934" style="background-color: #ffffff">               pio_double, vardesc)</a>
+   935) <a name="l935" style="background-color: #ffffff">          call handle_pio_error(ierr, 'Unable to define &quot;p0&quot; formula_terms variable in write_hist_coord_att')</a>
+   936) <a name="l936" style="background-color: #ffffff">          ierr = pio_put_att(File, vardesc, 'long_name', trim(hist_coords(mdimind)%formula_terms%p0_long_name))</a>
+   937) <a name="l937" style="background-color: #ffffff">          call handle_pio_error(ierr, 'Error writing &quot;long_name&quot; attr for &quot;p0&quot; formula_term in write_hist_coord_att')</a>
+   938) <a name="l938" style="background-color: #ffffff">          ierr = pio_put_att(File, vardesc, 'units', trim(hist_coords(mdimind)%formula_terms%p0_units))</a>
+   939) <a name="l939" style="background-color: #ffffff">          call handle_pio_error(ierr, 'Error writing &quot;units&quot; attr for &quot;p0&quot; formula_term in write_hist_coord_att')</a>
+   940) <a name="l940" style="background-color: #ffffff">        end if</a>
+   941) <a name="l941" style="background-color: #ffffff">      end if</a>
+   942) <a name="l942" style="background-color: #ffffff">      ! PS is not our responsibility</a>
+   943) <a name="l943" style="background-color: #ffffff">    end if ! (.not. dimonly)</a>
+   944) <a name="l944" style="background-color: #ffffff"></a>
+   945) <a name="l945" style="background-color: #ffffff">  end subroutine write_hist_coord_att</a>
+   946) <a name="l946" style="background-color: #ffffff"></a>
+   947) <a name="l947" style="background-color: #ffffff">  subroutine write_hist_coord_attrs(File, boundsdim, </a><a style="background-color: #fafad2">mdimids, writemdims_in)</a>
+   948) <a name="l948" style="background-color: #fafad2">    use pio, only: file_desc_t, var_desc_t, pio_put_att, pio_def_var,         &amp;</a>
+   949) <a name="l949" style="background-color: #fafad2">                   pio_bcast_error, pio_internal_error, pio_seterrorhandling, &amp;</a>
+   950) <a name="l950" style="background-color: #fafad2">                   pio_char, pio_def_dim</a>
+   951) <a name="l951" style="background-color: #fafad2">    implicit none</a>
+   952) <a name="l952" style="background-color: #fafad2"></a>
+   953) <a name="l953" style="background-color: #fafad2">    ! Input variables</a>
+   954) <a name="l954" style="background-color: #fafad2">    type(file_desc_t), intent(inout) :: File           ! PIO file Handle</a>
+   955) <a name="l955" style="background-color: #fafad2">    integer,           intent(in)    :: boundsdim      ! Bounds dimension ID</a>
+   956) <a name="l956" style="background-color: #fafad2">    integer, optional, allocatable, intent(out)   :: mdimids(:) ! NetCDF dim IDs</a>
+   957) <a name="l957" style="background-color: #fafad2">    logical, optional, intent(in)    :: writemdims_in  ! Write mdim variable</a>
+   958) <a name="l958" style="background-color: #fafad2"></a>
+   959) <a name="l959" style="background-color: #fafad2">    ! Local variables</a>
+   960) <a name="l960" style="background-color: #fafad2">    integer                          :: i</a>
+   961) <a name="l961" style="background-color: #fafad2">    integer                          :: ierr</a>
+   962) <a name="l962" style="background-color: #fafad2">    integer                          :: dimids(2)      ! PIO dimension IDs</a>
+   963) <a name="l963" style="background-color: #fafad2">    logical                          :: writemdims     ! Define an mdim variable</a>
+   964) <a name="l964" style="background-color: #fafad2">    type(var_desc_t)                 :: vardesc        ! PIO variable descriptor</a>
+   965) <a name="l965" style="background-color: #fafad2"></a>
+   966) <a name="l966" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(mdimids)) then</a>
+   967) <a name="l967" style="background-color: #fafad2">      allocate(mdimids(registeredmdims))</a>
+   968) <a name="l968" style="background-color: #fafad2">    end if</a>
+   969) <a name="l969" style="background-color: #fafad2"></a>
+   970) <a name="l970" style="background-color: #fafad2">    ! We will handle errors for this routine</a>
+   971) <a name="l971" style="background-color: #fafad2">    call </a><a style="background-color: #ffffff">pio_seterrorhandling(File, PIO_BCAST_ERROR)</a>
+   972) <a name="l972" style="background-color: #ffffff"></a>
+   973) <a name="l973" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(writemdims_in)) then</a>
+   974) <a name="l974" style="background-color: #ffffff">      writemdims = writemdims_in</a>
+   975) <a name="l975" style="background-color: #ffffff">    else</a>
+   976) <a name="l976" style="background-color: #ffff99">      writemdims = .false.</a>
+   977) <a name="l977" style="background-color: #ffff99">    end if</a>
+   978) <a name="l978" style="background-color: #ffff99"></a>
+   979) <a name="l979" style="background-color: #ffff99">    ! NB: Currently, writemdims is for restart and we don't need to write</a>
+   980) <a name="l980" style="background-color: #ffff99">    ! these out in a history-restart file. This could change in the future.</a>
+   981) <a name="l981" style="background-color: #ffff99">    ! which would require a change to the function of the fourth argument</a>
+   982) <a name="l982" style="background-color: #ffff99">    ! Fill in the attribute information for each mdim</a>
+   983) <a name="l983" style="background-color: #ffffff">    do i = 1, registeredmdims</a>
+   984) <a name="l984" style="background-color: #ffffff">      if (</a><a style="background-color: #fafad2">present(mdimids)) then</a>
+   985) <a name="l985" style="background-color: #fafad2">        call write_hist_coord_att(File, i, boundsdim, writemdims, mdimids(i))</a>
+   986) <a name="l986" style="background-color: #fafad2">      else</a>
+   987) <a name="l987" style="background-color: #fafad2">        call </a><a style="background-color: #ffff99">write_hist_coord_att(File, i, boundsdim, writemdims)</a>
+   988) <a name="l988" style="background-color: #ffff99">      end if</a>
+   989) <a name="l989" style="background-color: #ffff99">    end do</a>
+   990) <a name="l990" style="background-color: #ffff99"></a>
+   991) <a name="l991" style="background-color: #ffffff">    if (writemdims) then</a>
+   992) <a name="l992" style="background-color: #ffff99">      ierr = pio_def_dim(File, 'mdimslen', max_mdimname_len, dimids(1))</a>
+   993) <a name="l993" style="background-color: #ffff99">      call handle_pio_error(ierr, 'Unable to define len dimension for mdimnames in write_hist_coord_attrs')</a>
+   994) <a name="l994" style="background-color: #ffff99">      ierr = pio_def_dim(File, 'num_mdims', registeredmdims, dimids(2))</a>
+   995) <a name="l995" style="background-color: #ffff99">      call handle_pio_error(ierr, 'Unable to define dimension for mdimnames in write_hist_coord_attrs')</a>
+   996) <a name="l996" style="background-color: #ffff99">      ierr = pio_def_var(File, mdim_var_name, pio_char, dimids, vardesc)</a>
+   997) <a name="l997" style="background-color: #ffff99">      call handle_pio_error(ierr, 'Unable to define mdimnames in write_hist_coord_attrs')</a>
+   998) <a name="l998" style="background-color: #ffff99">      ierr = pio_put_att(File, vardesc, 'long_name', 'mdim dimension names')</a>
+   999) <a name="l999" style="background-color: #ffff99">      call handle_pio_error(ierr, 'Error writing &quot;long_name&quot; attr for mdimnames in write_hist_coord_attrs')</a>
+  1000) <a name="l1000" style="background-color: #ffff99">    end if</a>
+  1001) <a name="l1001" style="background-color: #ffff99"></a>
+  1002) <a name="l1002" style="background-color: #ffff99">    ! Back to I/O or die trying</a>
+  1003) <a name="l1003" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">pio_seterrorhandling(File, PIO_INTERNAL_ERROR)</a>
+  1004) <a name="l1004" style="background-color: #ffffff"></a>
+  1005) <a name="l1005" style="background-color: #ffffff">  end subroutine write_hist_coord_attrs</a>
+  1006) <a name="l1006" style="background-color: #ffffff"></a>
+  1007) <a name="l1007" style="background-color: #ffffff">  subroutine write_hist_coord_var(File, mdimind)</a>
+  1008) <a name="l1008" style="background-color: #ffffff">    use pio, only: file_desc_t, var_desc_t, pio_put_var, pio_inq_varid, PIO_NOERR</a>
+  1009) <a name="l1009" style="background-color: #ffffff">    implicit none</a>
+  1010) <a name="l1010" style="background-color: #ffffff"></a>
+  1011) <a name="l1011" style="background-color: #ffffff">    ! Input variables</a>
+  1012) <a name="l1012" style="background-color: #ffffff">    type(file_desc_t), intent(inout) :: File           ! PIO file Handle</a>
+  1013) <a name="l1013" style="background-color: #ffffff">    integer,           intent(in)    :: mdimind        ! Internal dim index</a>
+  1014) <a name="l1014" style="background-color: #ffffff"></a>
+  1015) <a name="l1015" style="background-color: #ffffff">    ! Local variables</a>
+  1016) <a name="l1016" style="background-color: #ffffff">    type(var_desc_t)                 :: vardesc        ! PIO variable descriptor</a>
+  1017) <a name="l1017" style="background-color: #ffffff">    character(len=120)               :: errormsg</a>
+  1018) <a name="l1018" style="background-color: #ffffff">    integer                          :: ierr</a>
+  1019) <a name="l1019" style="background-color: #ffffff"></a>
+  1020) <a name="l1020" style="background-color: #ffffff">    if ((</a><a style="background-color: #ffff99">hist_coords(mdimind)%integer_dim </a><a style="background-color: #ffffff">.and.                               &amp;</a>
+  1021) <a name="l1021" style="background-color: #ffff99">         associated(hist_coords(mdimind)%integer_values)) .or.                &amp;</a>
+  1022) <a name="l1022" style="background-color: #ffff99">         ((</a><a style="background-color: #ffffff">.not. hist_coords(mdimind)%integer_dim) .and.                      &amp;</a>
+  1023) <a name="l1023" style="background-color: #fafad2">         associated(hist_coords(mdimind)%real_values))) then</a>
+  1024) <a name="l1024" style="background-color: #fafad2">      ! Check to make sure the variable already exists in the file</a>
+  1025) <a name="l1025" style="background-color: #ffffff">      ierr = pio_inq_varid(File, trim(hist_coords(mdimind)%name), vardesc)</a>
+  1026) <a name="l1026" style="background-color: #ffffff">      call handle_pio_error(ierr, 'Error writing values for nonexistent dimension variable write_hist_coord_var')</a>
+  1027) <a name="l1027" style="background-color: #ffffff">      ! Write out the values for this dimension variable</a>
+  1028) <a name="l1028" style="background-color: #ffffff">      if (hist_coords(mdimind)%integer_dim) then</a>
+  1029) <a name="l1029" style="background-color: #ffff99">        ierr = pio_put_var(File, vardesc, hist_coords(mdimind)%integer_values)</a>
+  1030) <a name="l1030" style="background-color: #ffff99">      else</a>
+  1031) <a name="l1031" style="background-color: #ffffff">        ierr = pio_put_var(File, vardesc, hist_coords(mdimind)%real_values)</a>
+  1032) <a name="l1032" style="background-color: #ffffff">      end if</a>
+  1033) <a name="l1033" style="background-color: #ffffff">      call handle_pio_error(ierr, 'Error writing variable values in write_hist_coord_var')</a>
+  1034) <a name="l1034" style="background-color: #ffffff">    end if</a>
+  1035) <a name="l1035" style="background-color: #ffffff"></a>
+  1036) <a name="l1036" style="background-color: #ffffff">    ! Now, we need to possibly write values for the associated bounds variable</a>
+  1037) <a name="l1037" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(hist_coords(mdimind)%bounds)) then</a>
+  1038) <a name="l1038" style="background-color: #fafad2">      ! Check to make sure the variable already exists in the file</a>
+  1039) <a name="l1039" style="background-color: #fafad2">      ! NB: Reusing vardesc, no longer assocated with previous variables</a>
+  1040) <a name="l1040" style="background-color: #ffff99">      ierr = pio_inq_varid(File, trim(hist_coords(mdimind)%bounds_name), vardesc)</a>
+  1041) <a name="l1041" style="background-color: #ffff99">      call handle_pio_error(ierr, 'Error writing values for nonexistent bounds variable write_hist_coord_var')</a>
+  1042) <a name="l1042" style="background-color: #ffff99">    ! Write out the values for this bounds variable</a>
+  1043) <a name="l1043" style="background-color: #ffff99">      ierr = pio_put_var(File, vardesc, hist_coords(mdimind)%bounds)</a>
+  1044) <a name="l1044" style="background-color: #ffff99">      call handle_pio_error(ierr, 'Error writing bounds values in write_hist_coord_var')</a>
+  1045) <a name="l1045" style="background-color: #ffff99">    end if</a>
+  1046) <a name="l1046" style="background-color: #ffff99"></a>
+  1047) <a name="l1047" style="background-color: #ffff99">    ! Write values for the &quot;a&quot; variable name</a>
+  1048) <a name="l1048" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(hist_coords(mdimind)%formula_terms%a_values)) then</a>
+  1049) <a name="l1049" style="background-color: #fafad2">      ! Check to make sure the variable already exists in the file</a>
+  1050) <a name="l1050" style="background-color: #fafad2">      ! NB: Reusing vardesc, no longer assocated with previous variables</a>
+  1051) <a name="l1051" style="background-color: #ffffff">      ierr = pio_inq_varid(File, trim(hist_coords(mdimind)%formula_terms%a_name), vardesc)</a>
+  1052) <a name="l1052" style="background-color: #ffffff">      call handle_pio_error(ierr, 'Error writing values for nonexistent &quot;a&quot; formula_terms variable write_hist_coord_var')</a>
+  1053) <a name="l1053" style="background-color: #ffffff">    ! Write out the values for this &quot;a&quot; formula_terms variable</a>
+  1054) <a name="l1054" style="background-color: #ffffff">      ierr = pio_put_var(File, vardesc, hist_coords(mdimind)%formula_terms%a_values)</a>
+  1055) <a name="l1055" style="background-color: #ffffff">      call handle_pio_error(ierr, 'Error writing &quot;a&quot; formula_terms values in write_hist_coord_var')</a>
+  1056) <a name="l1056" style="background-color: #ffffff">    end if</a>
+  1057) <a name="l1057" style="background-color: #ffffff">    ! Write values for the &quot;b&quot; variable name</a>
+  1058) <a name="l1058" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(hist_coords(mdimind)%formula_terms%b_values)) then</a>
+  1059) <a name="l1059" style="background-color: #fafad2">      ! Check to make sure the variable already exists in the file</a>
+  1060) <a name="l1060" style="background-color: #fafad2">      ! NB: Reusing vardesc, no longer assocated with previous variables</a>
+  1061) <a name="l1061" style="background-color: #ffffff">      ierr = pio_inq_varid(File, trim(hist_coords(mdimind)%formula_terms%b_name), vardesc)</a>
+  1062) <a name="l1062" style="background-color: #ffffff">      call handle_pio_error(ierr, 'Error writing values for nonexistent &quot;b&quot; formula_terms variable write_hist_coord_var')</a>
+  1063) <a name="l1063" style="background-color: #ffffff">    ! Write out the values for this &quot;b&quot; formula_terms variable</a>
+  1064) <a name="l1064" style="background-color: #ffffff">      ierr = pio_put_var(File, vardesc, hist_coords(mdimind)%formula_terms%b_values)</a>
+  1065) <a name="l1065" style="background-color: #ffffff">      call handle_pio_error(ierr, 'Error writing &quot;b&quot; formula_terms values in write_hist_coord_var')</a>
+  1066) <a name="l1066" style="background-color: #ffffff">    end if</a>
+  1067) <a name="l1067" style="background-color: #ffffff">    ! Write values for the &quot;p0&quot; variable name (this may be an overwrite, too bad)</a>
+  1068) <a name="l1068" style="background-color: #ffffff">    if (hist_coords(mdimind)%formula_terms%p0_value /= fillvalue) then</a>
+  1069) <a name="l1069" style="background-color: #ffffff">      ! Check to make sure the variable already exists in the file</a>
+  1070) <a name="l1070" style="background-color: #ffffff">      ! NB: Reusing vardesc, no longer assocated with previous variables</a>
+  1071) <a name="l1071" style="background-color: #ffffff">      ierr = pio_inq_varid(File, trim(hist_coords(mdimind)%formula_terms%p0_name), vardesc)</a>
+  1072) <a name="l1072" style="background-color: #ffffff">      call handle_pio_error(ierr, 'Error writing values for nonexistent &quot;p0&quot; formula_terms variable write_hist_coord_var')</a>
+  1073) <a name="l1073" style="background-color: #ffffff">    ! Write out the values for this &quot;p0&quot; formula_terms variable</a>
+  1074) <a name="l1074" style="background-color: #ffffff">      ierr = pio_put_var(File, vardesc, hist_coords(mdimind)%formula_terms%p0_value)</a>
+  1075) <a name="l1075" style="background-color: #ffffff">      call handle_pio_error(ierr, 'Error writing &quot;p0&quot; formula_terms values in write_hist_coord_var')</a>
+  1076) <a name="l1076" style="background-color: #ffffff">    end if</a>
+  1077) <a name="l1077" style="background-color: #ffffff"></a>
+  1078) <a name="l1078" style="background-color: #ffffff">  end subroutine write_hist_coord_var</a>
+  1079) <a name="l1079" style="background-color: #ffffff"></a>
+  1080) <a name="l1080" style="background-color: #ffffff">  subroutine write_hist_coord_vars(File, writemdims_in)</a>
+  1081) <a name="l1081" style="background-color: #ffffff">   use pio, only: file_desc_t, var_desc_t, pio_put_var,                       &amp;</a>
+  1082) <a name="l1082" style="background-color: #ffffff">                  pio_bcast_error, pio_internal_error,                        &amp;</a>
+  1083) <a name="l1083" style="background-color: #ffffff">                  pio_seterrorhandling, pio_inq_varid</a>
+  1084) <a name="l1084" style="background-color: #ffffff">    implicit none</a>
+  1085) <a name="l1085" style="background-color: #ffffff"></a>
+  1086) <a name="l1086" style="background-color: #ffffff">    ! Input variables</a>
+  1087) <a name="l1087" style="background-color: #ffffff">    type(file_desc_t), intent(inout) :: File           ! PIO file Handle</a>
+  1088) <a name="l1088" style="background-color: #ffffff">    logical, optional, intent(in)    :: writemdims_in  ! Write mdim variable</a>
+  1089) <a name="l1089" style="background-color: #ffffff"></a>
+  1090) <a name="l1090" style="background-color: #ffffff">    ! Local variables</a>
+  1091) <a name="l1091" style="background-color: #ffffff">    integer                          :: i</a>
+  1092) <a name="l1092" style="background-color: #ffffff">    integer                          :: ierr</a>
+  1093) <a name="l1093" style="background-color: #ffffff">    logical                          :: writemdims     ! Define an mdim variable</a>
+  1094) <a name="l1094" style="background-color: #ffffff">    type(var_desc_t)                 :: vardesc        ! PIO variable descriptor</a>
+  1095) <a name="l1095" style="background-color: #ffffff">    character(len=max_mdimname_len), allocatable :: mdimnames(:)</a>
+  1096) <a name="l1096" style="background-color: #ffffff"></a>
+  1097) <a name="l1097" style="background-color: #ffffff">    ! We will handle errors for this routine</a>
+  1098) <a name="l1098" style="background-color: #ffffff">    call pio_seterrorhandling(File, PIO_BCAST_ERROR)</a>
+  1099) <a name="l1099" style="background-color: #ffffff"></a>
+  1100) <a name="l1100" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(writemdims_in)) then</a>
+  1101) <a name="l1101" style="background-color: #ffffff">      writemdims = writemdims_in</a>
+  1102) <a name="l1102" style="background-color: #ffffff">    else</a>
+  1103) <a name="l1103" style="background-color: #ffff99">      writemdims = .false.</a>
+  1104) <a name="l1104" style="background-color: #ffff99">    end if</a>
+  1105) <a name="l1105" style="background-color: #ffff99"></a>
+  1106) <a name="l1106" style="background-color: #ffffff">    if (writemdims) then</a>
+  1107) <a name="l1107" style="background-color: #ffff99">      allocate(mdimnames(registeredmdims))</a>
+  1108) <a name="l1108" style="background-color: #ffff99">    end if</a>
+  1109) <a name="l1109" style="background-color: #ffff99"></a>
+  1110) <a name="l1110" style="background-color: #ffff99">    ! Write out the variable values for each mdim</a>
+  1111) <a name="l1111" style="background-color: #ffffff">    do i = 1, registeredmdims</a>
+  1112) <a name="l1112" style="background-color: #ffffff">      if (.not. writemdims) then</a>
+  1113) <a name="l1113" style="background-color: #ffffff">        ! NB: Currently, writemdims is for restart and we don't need to write</a>
+  1114) <a name="l1114" style="background-color: #ffffff">        ! these out in a history-restart file. This could change in the future</a>
+  1115) <a name="l1115" style="background-color: #ffffff">        ! which is why it is a separate if block</a>
+  1116) <a name="l1116" style="background-color: #ffffff">        ! Fill in the attribute information for each mdim</a>
+  1117) <a name="l1117" style="background-color: #ffffff">        call write_hist_coord_var(File, i)</a>
+  1118) <a name="l1118" style="background-color: #ffffff">      end if</a>
+  1119) <a name="l1119" style="background-color: #ffffff">      if (writemdims) then</a>
+  1120) <a name="l1120" style="background-color: #ffff99">        mdimnames(i) = trim(hist_coords(i)%name)</a>
+  1121) <a name="l1121" style="background-color: #ffff99">      end if</a>
+  1122) <a name="l1122" style="background-color: #ffff99">    end do</a>
+  1123) <a name="l1123" style="background-color: #ffff99"></a>
+  1124) <a name="l1124" style="background-color: #ffffff">    if (writemdims) then</a>
+  1125) <a name="l1125" style="background-color: #ffff99">      ierr = pio_inq_varid(File, mdim_var_name, vardesc)</a>
+  1126) <a name="l1126" style="background-color: #ffff99">      call handle_pio_error(ierr, 'Error writing values for nonexistent mdimnames variable in write_hist_coord_vars')</a>
+  1127) <a name="l1127" style="background-color: #ffff99">      ! Write out the values for mdim names</a>
+  1128) <a name="l1128" style="background-color: #ffff99">      ierr = pio_put_var(File, vardesc, mdimnames)</a>
+  1129) <a name="l1129" style="background-color: #ffff99">      call handle_pio_error(ierr, 'Error writing values for mdimnames variable in write_hist_coord_vars')</a>
+  1130) <a name="l1130" style="background-color: #ffff99">      deallocate(mdimnames)</a>
+  1131) <a name="l1131" style="background-color: #ffff99">    end if</a>
+  1132) <a name="l1132" style="background-color: #ffff99"></a>
+  1133) <a name="l1133" style="background-color: #ffff99">    ! Back to I/O or die trying</a>
+  1134) <a name="l1134" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">pio_seterrorhandling(File, PIO_INTERNAL_ERROR)</a>
+  1135) <a name="l1135" style="background-color: #ffffff"></a>
+  1136) <a name="l1136" style="background-color: #fafad2">  end subroutine write_hist_coord_vars</a>
+  1137) <a name="l1137" style="background-color: #ffffff"></a>
+  1138) <a name="l1138" style="background-color: #ffffff">  subroutine lookup_hist_coord_indices(mdimnames, mdimindicies)</a>
+  1139) <a name="l1139" style="background-color: #ffffff">    character(len=*), intent(in) :: mdimnames(:)</a>
+  1140) <a name="l1140" style="background-color: #ffffff">    integer, intent(out) :: mdimindicies(:)</a>
+  1141) <a name="l1141" style="background-color: #ffffff"></a>
+  1142) <a name="l1142" style="background-color: #ffffff">    integer :: i, j</a>
+  1143) <a name="l1143" style="background-color: #ffffff">    integer :: cnt</a>
+  1144) <a name="l1144" style="background-color: #ffffff">    character(len=120) :: errormsg</a>
+  1145) <a name="l1145" style="background-color: #ffffff">    character(len=16) :: name</a>
+  1146) <a name="l1146" style="background-color: #ffffff"></a>
+  1147) <a name="l1147" style="background-color: #ffffff"></a>
+  1148) <a name="l1148" style="background-color: #ffffff">    cnt = size(mdimnames)</a>
+  1149) <a name="l1149" style="background-color: #ffffff">    mdimindicies = -1</a>
+  1150) <a name="l1150" style="background-color: #ffffff"></a>
+  1151) <a name="l1151" style="background-color: #ffffff"></a>
+  1152) <a name="l1152" style="background-color: #ffffff">    do j=1,cnt</a>
+  1153) <a name="l1153" style="background-color: #ffffff">      name = mdimnames(j)</a>
+  1154) <a name="l1154" style="background-color: #ffffff">      do i=1,registeredmdims</a>
+  1155) <a name="l1155" style="background-color: #ffffff">        if(name .eq. hist_coords(i)%name) then</a>
+  1156) <a name="l1156" style="background-color: #ffffff">          mdimindicies(j)=i</a>
+  1157) <a name="l1157" style="background-color: #ffffff">        end if</a>
+  1158) <a name="l1158" style="background-color: #ffffff">      end do</a>
+  1159) <a name="l1159" style="background-color: #ffffff">    end do</a>
+  1160) <a name="l1160" style="background-color: #ffffff">    do j=1,cnt</a>
+  1161) <a name="l1161" style="background-color: #ffffff">      if(mdimindicies(j)&lt;0) then</a>
+  1162) <a name="l1162" style="background-color: #ffff99">        do i=1,registeredmdims		</a>
+  1163) <a name="l1163" style="background-color: #ffff99">          print *,__FILE__,__LINE__,i,hist_coords(i)%name</a>
+  1164) <a name="l1164" style="background-color: #ffff99">        end do</a>
+  1165) <a name="l1165" style="background-color: #ffff99">        write(errormsg,*) 'Name ',mdimnames(j),' not in registered mdimnames'</a>
+  1166) <a name="l1166" style="background-color: #ffff99">        call endrun(errormsg)</a>
+  1167) <a name="l1167" style="background-color: #ffff99">      end if</a>
+  1168) <a name="l1168" style="background-color: #ffff99">    end do</a>
+  1169) <a name="l1169" style="background-color: #ffff99"></a>
+  1170) <a name="l1170" style="background-color: #ffff99"></a>
+  1171) <a name="l1171" style="background-color: #ffffff">  end subroutine lookup_hist_coord_indices</a>
+  1172) <a name="l1172" style="background-color: #ffffff"></a>
+  1173) <a name="l1173" style="background-color: #ffffff">  !#######################################################################</a>
+  1174) <a name="l1174" style="background-color: #ffffff"></a>
+  1175) <a name="l1175" style="background-color: #ffffff">  character(len=8) function sec2hms (seconds)</a>
+  1176) <a name="l1176" style="background-color: #ffffff"></a>
+  1177) <a name="l1177" style="background-color: #ffffff">    ! Input arguments</a>
+  1178) <a name="l1178" style="background-color: #ffffff"></a>
+  1179) <a name="l1179" style="background-color: #ffffff">    integer, intent(in) :: seconds</a>
+  1180) <a name="l1180" style="background-color: #ffffff"></a>
+  1181) <a name="l1181" style="background-color: #ffffff">    ! Local workspace</a>
+  1182) <a name="l1182" style="background-color: #ffffff"></a>
+  1183) <a name="l1183" style="background-color: #ffffff">    integer :: hours     ! hours of hh:mm:ss</a>
+  1184) <a name="l1184" style="background-color: #ffffff">    integer :: minutes   ! minutes of hh:mm:ss</a>
+  1185) <a name="l1185" style="background-color: #ffffff">    integer :: secs      ! seconds of hh:mm:ss</a>
+  1186) <a name="l1186" style="background-color: #ffffff"></a>
+  1187) <a name="l1187" style="background-color: #ffffff">    if (seconds &lt; 0 .or. seconds &gt; 86400) then</a>
+  1188) <a name="l1188" style="background-color: #ffff99">      write(iulog,*)'SEC2HRS: bad input seconds:', seconds</a>
+  1189) <a name="l1189" style="background-color: #ffff99">      call endrun ()</a>
+  1190) <a name="l1190" style="background-color: #ffff99">    end if</a>
+  1191) <a name="l1191" style="background-color: #ffff99"></a>
+  1192) <a name="l1192" style="background-color: #ffffff">    hours   = seconds / 3600</a>
+  1193) <a name="l1193" style="background-color: #ffffff">    minutes = (seconds - hours*3600) / 60</a>
+  1194) <a name="l1194" style="background-color: #ffffff">    secs    = (seconds - hours*3600 - minutes*60)</a>
+  1195) <a name="l1195" style="background-color: #ffffff"></a>
+  1196) <a name="l1196" style="background-color: #ffffff">    if (minutes &lt; 0 .or. minutes &gt; 60) then</a>
+  1197) <a name="l1197" style="background-color: #ffff99">      write(iulog,*)'SEC2HRS: bad minutes = ',minutes</a>
+  1198) <a name="l1198" style="background-color: #ffff99">      call endrun ()</a>
+  1199) <a name="l1199" style="background-color: #ffff99">    end if</a>
+  1200) <a name="l1200" style="background-color: #ffff99"></a>
+  1201) <a name="l1201" style="background-color: #ffffff">    if (secs &lt; 0 .or. secs &gt; 60) then</a>
+  1202) <a name="l1202" style="background-color: #ffff99">      write(iulog,*)'SEC2HRS: bad secs = ',secs</a>
+  1203) <a name="l1203" style="background-color: #ffff99">      call endrun ()</a>
+  1204) <a name="l1204" style="background-color: #ffff99">    end if</a>
+  1205) <a name="l1205" style="background-color: #ffff99"></a>
+  1206) <a name="l1206" style="background-color: #ffffff">    write(sec2hms,80) hours, minutes, secs</a>
+  1207) <a name="l1207" style="background-color: #ffffff">80  format(i2.2,':',i2.2,':',i2.2)</a>
+  1208) <a name="l1208" style="background-color: #ffffff">    return</a>
+  1209) <a name="l1209" style="background-color: #ffffff">  end function sec2hms</a>
+  1210) <a name="l1210" style="background-color: #ffffff">  character(len=10) function date2yyyymmdd (date)</a>
+  1211) <a name="l1211" style="background-color: #ffffff"></a>
+  1212) <a name="l1212" style="background-color: #ffffff">    ! Input arguments</a>
+  1213) <a name="l1213" style="background-color: #ffffff"></a>
+  1214) <a name="l1214" style="background-color: #ffffff">    integer, intent(in) :: date</a>
+  1215) <a name="l1215" style="background-color: #ffffff"></a>
+  1216) <a name="l1216" style="background-color: #ffffff">    ! Local workspace</a>
+  1217) <a name="l1217" style="background-color: #ffffff"></a>
+  1218) <a name="l1218" style="background-color: #ffffff">    integer :: year    ! year of yyyy-mm-dd</a>
+  1219) <a name="l1219" style="background-color: #ffffff">    integer :: month   ! month of yyyy-mm-dd</a>
+  1220) <a name="l1220" style="background-color: #ffffff">    integer :: day     ! day of yyyy-mm-dd</a>
+  1221) <a name="l1221" style="background-color: #ffffff"></a>
+  1222) <a name="l1222" style="background-color: #ffffff">    if (date &lt; 0) then</a>
+  1223) <a name="l1223" style="background-color: #ffffff">      call </a><a style="background-color: #ffff99">endrun ('DATE2YYYYMMDD: negative date not allowed')</a>
+  1224) <a name="l1224" style="background-color: #ffff99">    end if</a>
+  1225) <a name="l1225" style="background-color: #ffff99"></a>
+  1226) <a name="l1226" style="background-color: #ffffff">    year  = date / 10000</a>
+  1227) <a name="l1227" style="background-color: #ffffff">    month = (date - year*10000) / 100</a>
+  1228) <a name="l1228" style="background-color: #ffffff">    day   = date - year*10000 - month*100</a>
+  1229) <a name="l1229" style="background-color: #ffffff"></a>
+  1230) <a name="l1230" style="background-color: #ffffff">    write(date2yyyymmdd,80) year, month, day</a>
+  1231) <a name="l1231" style="background-color: #ffffff">80  format(i4.4,'-',i2.2,'-',i2.2)</a>
+  1232) <a name="l1232" style="background-color: #ffffff">    return</a>
+  1233) <a name="l1233" style="background-color: #ffffff">  end function date2yyyymmdd</a>
+  1234) <a name="l1234" style="background-color: #ffffff"></a>
+  1235) <a name="l1235" style="background-color: #ffffff">  !#######################################################################</a>
+  1236) <a name="l1236" style="background-color: #ffffff"></a>
+  1237) <a name="l1237" style="background-color: #ffffff"></a>
+  1238) <a name="l1238" style="background-color: #ffffff">end module cam_history_support</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

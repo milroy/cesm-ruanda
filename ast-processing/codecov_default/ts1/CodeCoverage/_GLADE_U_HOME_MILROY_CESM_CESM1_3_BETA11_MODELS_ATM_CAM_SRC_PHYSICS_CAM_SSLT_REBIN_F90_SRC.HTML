@@ -1,0 +1,173 @@
+<html>
+<head>
+<title>Listing of sslt_rebin.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;sslt_rebin.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 41.38&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+     2) <a name="l2" style="background-color: #ffffff">! rebins the 4 sea salt bins into 2 bins for the radiation</a>
+     3) <a name="l3" style="background-color: #ffffff">!</a>
+     4) <a name="l4" style="background-color: #ffffff">!  N.B. This code looks for the constituents of SSLTA and SSLTC</a>
+     5) <a name="l5" style="background-color: #ffffff">!       in the physics buffer first, and uses those if found.</a>
+     6) <a name="l6" style="background-color: #ffffff">!       Consequently, it is not possible to have prognostic sea</a>
+     7) <a name="l7" style="background-color: #ffffff">!       salt be radiatively active if the prescribed sea salt is</a>
+     8) <a name="l8" style="background-color: #ffffff">!       also present.  The current (cam3_5_52) chemistry configurations</a>
+     9) <a name="l9" style="background-color: #ffffff">!       don't allow both prescribed and prognostic to be present</a>
+    10) <a name="l10" style="background-color: #ffffff">!       simultaneously, but a more flexible chemistry package that</a>
+    11) <a name="l11" style="background-color: #ffffff">!       allows this would break this code.</a>
+    12) <a name="l12" style="background-color: #ffffff">!</a>
+    13) <a name="l13" style="background-color: #ffffff">! Created by: Francis Vitt</a>
+    14) <a name="l14" style="background-color: #ffffff">! Date: 9 May 2008</a>
+    15) <a name="l15" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+    16) <a name="l16" style="background-color: #ffffff">module sslt_rebin</a>
+    17) <a name="l17" style="background-color: #ffffff"></a>
+    18) <a name="l18" style="background-color: #ffffff">  use shr_kind_mod,   only: r8 =&gt; shr_kind_r8</a>
+    19) <a name="l19" style="background-color: #ffffff"></a>
+    20) <a name="l20" style="background-color: #ffffff">  implicit none</a>
+    21) <a name="l21" style="background-color: #ffffff"></a>
+    22) <a name="l22" style="background-color: #ffffff">  integer :: indices(4)</a>
+    23) <a name="l23" style="background-color: #ffffff">  integer :: sslta_idx, ssltc_idx</a>
+    24) <a name="l24" style="background-color: #ffffff"></a>
+    25) <a name="l25" style="background-color: #ffffff">  logical :: has_sslt = .false.</a>
+    26) <a name="l26" style="background-color: #ffffff">  character(len=1) :: source</a>
+    27) <a name="l27" style="background-color: #ffffff">  character(len=1), parameter :: DATA = 'D'</a>
+    28) <a name="l28" style="background-color: #ffffff">  character(len=1), parameter :: PROG = 'P'</a>
+    29) <a name="l29" style="background-color: #ffffff"></a>
+    30) <a name="l30" style="background-color: #ffffff">  private</a>
+    31) <a name="l31" style="background-color: #ffffff">  public :: sslt_rebin_init, sslt_rebin_adv, sslt_rebin_register</a>
+    32) <a name="l32" style="background-color: #ffffff">contains</a>
+    33) <a name="l33" style="background-color: #ffffff"></a>
+    34) <a name="l34" style="background-color: #ffffff"></a>
+    35) <a name="l35" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+    36) <a name="l36" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+    37) <a name="l37" style="background-color: #ffffff">  subroutine sslt_rebin_register</a>
+    38) <a name="l38" style="background-color: #ffffff">    use ppgrid,       only : pver,pcols</a>
+    39) <a name="l39" style="background-color: #ffffff">    </a>
+    40) <a name="l40" style="background-color: #ffffff">    use physics_buffer, only : pbuf_add_field, dtype_r8</a>
+    41) <a name="l41" style="background-color: #ffffff"></a>
+    42) <a name="l42" style="background-color: #ffffff">    ! add SSLTA and SSLTC to physics buffer</a>
+    43) <a name="l43" style="background-color: #ffffff">    call pbuf_add_field('SSLTA','physpkg',dtype_r8,(/pcols,pver/),sslta_idx)</a>
+    44) <a name="l44" style="background-color: #ffffff">    call pbuf_add_field('SSLTC','physpkg',dtype_r8,(/pcols,pver/),ssltc_idx)</a>
+    45) <a name="l45" style="background-color: #ffffff"></a>
+    46) <a name="l46" style="background-color: #ffffff">  endsubroutine sslt_rebin_register</a>
+    47) <a name="l47" style="background-color: #ffffff"></a>
+    48) <a name="l48" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+    49) <a name="l49" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+    50) <a name="l50" style="background-color: #ffffff">  subroutine sslt_rebin_init()</a>
+    51) <a name="l51" style="background-color: #ffffff"></a>
+    52) <a name="l52" style="background-color: #ffffff">    use constituents, only : cnst_get_ind</a>
+    53) <a name="l53" style="background-color: #ffffff">    </a>
+    54) <a name="l54" style="background-color: #ffffff">    use physics_buffer, only : pbuf_get_index, pbuf_set_field, physics_buffer_desc</a>
+    55) <a name="l55" style="background-color: #ffffff">    use ppgrid,       only : pver</a>
+    56) <a name="l56" style="background-color: #ffffff">    use cam_history,  only : addfld, phys_decomp</a>
+    57) <a name="l57" style="background-color: #ffffff"></a>
+    58) <a name="l58" style="background-color: #ffffff">    implicit none</a>
+    59) <a name="l59" style="background-color: #ffffff"></a>
+    60) <a name="l60" style="background-color: #ffffff">    integer :: errcode</a>
+    61) <a name="l61" style="background-color: #ffffff"></a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">    indices(1) = pbuf_get_index('sslt1',errcode)</a>
+    64) <a name="l64" style="background-color: #ffffff">    indices(2) = pbuf_get_index('sslt2',errcode)</a>
+    65) <a name="l65" style="background-color: #ffffff">    indices(3) = pbuf_get_index('sslt3',errcode)</a>
+    66) <a name="l66" style="background-color: #ffffff">    indices(4) = pbuf_get_index('sslt4',errcode)</a>
+    67) <a name="l67" style="background-color: #ffffff"></a>
+    68) <a name="l68" style="background-color: #ffffff">    has_sslt = all( indices(:) </a><a style="background-color: #fafad2">&gt; 0 )</a>
+    69) <a name="l69" style="background-color: #fafad2">    if ( has_sslt ) </a><a style="background-color: #ffff99">source = DATA</a>
+    70) <a name="l70" style="background-color: #ffff99"></a>
+    71) <a name="l71" style="background-color: #ffffff">    if ( .not. has_sslt ) then</a>
+    72) <a name="l72" style="background-color: #ffffff">       call cnst_get_ind ('SSLT01', indices(1), abort=.false.)</a>
+    73) <a name="l73" style="background-color: #ffffff">       call cnst_get_ind ('SSLT02', indices(2), abort=.false.)</a>
+    74) <a name="l74" style="background-color: #ffffff">       call cnst_get_ind ('SSLT03', indices(3), abort=.false.)</a>
+    75) <a name="l75" style="background-color: #ffffff">       call cnst_get_ind ('SSLT04', indices(4), abort=.false.)</a>
+    76) <a name="l76" style="background-color: #ffffff">       has_sslt = all( indices(:) </a><a style="background-color: #fafad2">&gt; 0 )</a>
+    77) <a name="l77" style="background-color: #fafad2">       if ( has_sslt ) </a><a style="background-color: #ffff99">source = PROG</a>
+    78) <a name="l78" style="background-color: #ffff99">    endif</a>
+    79) <a name="l79" style="background-color: #ffff99"></a>
+    80) <a name="l80" style="background-color: #ffffff">    if ( has_sslt ) then</a>
+    81) <a name="l81" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">addfld('SSLTA','kg/kg', pver, 'A', 'sea salt', phys_decomp )</a>
+    82) <a name="l82" style="background-color: #ffff99">       call addfld('SSLTC','kg/kg', pver, 'A', 'sea salt', phys_decomp )</a>
+    83) <a name="l83" style="background-color: #ffff99">    endif</a>
+    84) <a name="l84" style="background-color: #ffff99"></a>
+    85) <a name="l85" style="background-color: #ffffff">  end subroutine sslt_rebin_init</a>
+    86) <a name="l86" style="background-color: #ffffff">  </a>
+    87) <a name="l87" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+    88) <a name="l88" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+    89) <a name="l89" style="background-color: #ffffff">  subroutine sslt_rebin_adv(pbuf,  phys_state)</a>
+    90) <a name="l90" style="background-color: #ffffff"></a>
+    91) <a name="l91" style="background-color: #ffffff">    use physics_types,only : physics_state</a>
+    92) <a name="l92" style="background-color: #ffffff">    </a>
+    93) <a name="l93" style="background-color: #ffffff">    use ppgrid,       only : pver, pcols</a>
+    94) <a name="l94" style="background-color: #ffffff">    use cam_history,  only : outfld</a>
+    95) <a name="l95" style="background-color: #ffffff">    use physics_buffer, only : physics_buffer_desc, pbuf_get_field</a>
+    96) <a name="l96" style="background-color: #ffffff"></a>
+    97) <a name="l97" style="background-color: #ffffff">    implicit none</a>
+    98) <a name="l98" style="background-color: #ffffff"></a>
+    99) <a name="l99" style="background-color: #ffffff">    </a>
+   100) <a name="l100" style="background-color: #ffffff">    type(physics_state), target, intent(in) :: phys_state</a>
+   101) <a name="l101" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf(:)</a>
+   102) <a name="l102" style="background-color: #ffffff"></a>
+   103) <a name="l103" style="background-color: #ffffff">!++ changed wgt_sscm declaration for roundoff validation with earlier code</a>
+   104) <a name="l104" style="background-color: #ffffff">!    real(r8), parameter :: wgt_sscm = 6.0_r8 / 7.0_r8 ! Fraction of total seasalt mass in coarse mode </a>
+   105) <a name="l105" style="background-color: #ffffff">    real(r8), parameter :: wgt_sscm = 6.0_r8 / 7.0_r8 ! Fraction of total seasalt mass in coarse mode </a>
+   106) <a name="l106" style="background-color: #ffffff"></a>
+   107) <a name="l107" style="background-color: #ffffff">    real(r8), dimension(:,:), pointer :: sslt1, sslt2, sslt3, sslt4</a>
+   108) <a name="l108" style="background-color: #ffffff">    real(r8), dimension(:,:), pointer :: sslta, ssltc</a>
+   109) <a name="l109" style="background-color: #ffffff">    integer :: lchnk, ncol</a>
+   110) <a name="l110" style="background-color: #ffffff">    real(r8) :: sslt_sum(pcols,pver)</a>
+   111) <a name="l111" style="background-color: #ffffff"></a>
+   112) <a name="l112" style="background-color: #ffffff">    lchnk = phys_state%lchnk</a>
+   113) <a name="l113" style="background-color: #ffffff">    ncol = phys_state%ncol</a>
+   114) <a name="l114" style="background-color: #ffffff"></a>
+   115) <a name="l115" style="background-color: #ffffff">    if (.not. has_sslt) return</a>
+   116) <a name="l116" style="background-color: #ffffff"></a>
+   117) <a name="l117" style="background-color: #ffff99">    select case( source )</a>
+   118) <a name="l118" style="background-color: #ffff99">    case (PROG)</a>
+   119) <a name="l119" style="background-color: #ffff99">       sslt1 =&gt; phys_state%q(:,:,indices(1))</a>
+   120) <a name="l120" style="background-color: #ffff99">       sslt2 =&gt; phys_state%q(:,:,indices(2))</a>
+   121) <a name="l121" style="background-color: #ffff99">       sslt3 =&gt; phys_state%q(:,:,indices(3))</a>
+   122) <a name="l122" style="background-color: #ffff99">       sslt4 =&gt; phys_state%q(:,:,indices(4))</a>
+   123) <a name="l123" style="background-color: #ffff99">    case (DATA)</a>
+   124) <a name="l124" style="background-color: #ffff99">       call pbuf_get_field(pbuf, indices(1), sslt1)</a>
+   125) <a name="l125" style="background-color: #ffff99">       call pbuf_get_field(pbuf, indices(2), sslt2)</a>
+   126) <a name="l126" style="background-color: #ffff99">       call pbuf_get_field(pbuf, indices(3), sslt3)</a>
+   127) <a name="l127" style="background-color: #ffff99">       call pbuf_get_field(pbuf, indices(4), sslt4)</a>
+   128) <a name="l128" style="background-color: #ffff99">    end select</a>
+   129) <a name="l129" style="background-color: #ffff99"></a>
+   130) <a name="l130" style="background-color: #ffff99">    call pbuf_get_field(pbuf, sslta_idx, sslta )</a>
+   131) <a name="l131" style="background-color: #ffff99">    call pbuf_get_field(pbuf, ssltc_idx, ssltc )</a>
+   132) <a name="l132" style="background-color: #ffff99"></a>
+   133) <a name="l133" style="background-color: #ffff99">    sslt_sum(:ncol,:) = sslt1(:ncol,:) + sslt2(:ncol,:) + sslt3(:ncol,:) + sslt4(:ncol,:)</a>
+   134) <a name="l134" style="background-color: #ffff99">    sslta(:ncol,:) = (1._r8-wgt_sscm)*sslt_sum(:ncol,:) ! fraction of seasalt mass in accumulation mode</a>
+   135) <a name="l135" style="background-color: #ffff99">    ssltc(:ncol,:) = wgt_sscm*sslt_sum(:ncol,:) ! fraction of seasalt mass in coagulation mode</a>
+   136) <a name="l136" style="background-color: #ffff99"></a>
+   137) <a name="l137" style="background-color: #ffff99">    call outfld( 'SSLTA', sslta(:ncol,:), ncol, lchnk )</a>
+   138) <a name="l138" style="background-color: #ffff99">    call outfld( 'SSLTC', ssltc(:ncol,:), ncol, lchnk )</a>
+   139) <a name="l139" style="background-color: #ffff99"></a>
+   140) <a name="l140" style="background-color: #ffffff">  end subroutine sslt_rebin_adv</a>
+   141) <a name="l141" style="background-color: #ffffff"></a>
+   142) <a name="l142" style="background-color: #ffffff">end module sslt_rebin</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

@@ -1,0 +1,132 @@
+<html>
+<head>
+<title>Listing of spmd_dyn.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;spmd_dyn.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 50.00&#160;%func&#160;&#160;&#160;&#160; 64.44&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module spmd_dyn</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">  !----------------------------------------------------------------------- </a>
+     4) <a name="l4" style="background-color: #ffffff">  ! </a>
+     5) <a name="l5" style="background-color: #ffffff">  ! Purpose: SPMD implementation of CAM SE finite element dynamics.</a>
+     6) <a name="l6" style="background-color: #ffffff">  ! </a>
+     7) <a name="l7" style="background-color: #ffffff">  !-----------------------------------------------------------------------</a>
+     8) <a name="l8" style="background-color: #ffffff"></a>
+     9) <a name="l9" style="background-color: #ffffff">  use parallel_mod, only: initmp,  par</a>
+    10) <a name="l10" style="background-color: #ffffff">  use abortutils,   only: endrun</a>
+    11) <a name="l11" style="background-color: #ffffff">  use spmd_utils,   only: masterproc, npes</a>
+    12) <a name="l12" style="background-color: #ffffff"></a>
+    13) <a name="l13" style="background-color: #ffffff">  implicit none</a>
+    14) <a name="l14" style="background-color: #ffffff">  private</a>
+    15) <a name="l15" style="background-color: #ffffff"></a>
+    16) <a name="l16" style="background-color: #ffffff">  public spmd_readnl, spmdbuf</a>
+    17) <a name="l17" style="background-color: #ffffff"></a>
+    18) <a name="l18" style="background-color: #ffffff">  ! These variables are not used locally, but are set and used in phys_grid.</a>
+    19) <a name="l19" style="background-color: #ffffff">  ! They probably should be moved there.</a>
+    20) <a name="l20" style="background-color: #ffffff">  logical, public :: local_dp_map=.true.  ! flag indicates that mapping between dynamics </a>
+    21) <a name="l21" style="background-color: #ffffff">                                          ! and physics decompositions does not require </a>
+    22) <a name="l22" style="background-color: #ffffff">                                          ! interprocess communication</a>
+    23) <a name="l23" style="background-color: #ffffff">  integer, public :: block_buf_nrecs      ! number of local grid points (lon,lat,lev)</a>
+    24) <a name="l24" style="background-color: #ffffff">                                          !  in dynamics decomposition (including level 0)</a>
+    25) <a name="l25" style="background-color: #ffffff">  integer, public :: chunk_buf_nrecs      ! number of local grid points (lon,lat,lev)</a>
+    26) <a name="l26" style="background-color: #ffffff">                                          !  in physics decomposition (including level 0)</a>
+    27) <a name="l27" style="background-color: #ffffff">                                          ! assigned in phys_grid.F90</a>
+    28) <a name="l28" style="background-color: #ffffff"></a>
+    29) <a name="l29" style="background-color: #ffffff">!========================================================================</a>
+    30) <a name="l30" style="background-color: #ffffff">CONTAINS</a>
+    31) <a name="l31" style="background-color: #ffffff">!========================================================================</a>
+    32) <a name="l32" style="background-color: #ffffff"></a>
+    33) <a name="l33" style="background-color: #ffffff">  subroutine spmd_readnl(nlfilename, dyn_npes)</a>
+    34) <a name="l34" style="background-color: #ffffff"></a>
+    35) <a name="l35" style="background-color: #ffffff">    use namelist_utils,  only: find_group_name</a>
+    36) <a name="l36" style="background-color: #ffffff">    use units,           only: getunit, freeunit</a>
+    37) <a name="l37" style="background-color: #ffffff">    use cam_logfile,     only: iulog</a>
+    38) <a name="l38" style="background-color: #ffffff">    use mpishorthand</a>
+    39) <a name="l39" style="background-color: #ffffff"></a>
+    40) <a name="l40" style="background-color: #ffffff">    implicit none</a>
+    41) <a name="l41" style="background-color: #ffffff"></a>
+    42) <a name="l42" style="background-color: #ffffff">    character(len=*), intent(in) :: nlfilename</a>
+    43) <a name="l43" style="background-color: #ffffff">    integer, intent(out) :: dyn_npes</a>
+    44) <a name="l44" style="background-color: #ffffff">    integer :: ierr           ! error code</a>
+    45) <a name="l45" style="background-color: #ffffff">    integer :: unitn          ! namelist unit number</a>
+    46) <a name="l46" style="background-color: #ffffff">    integer :: color, nproc_tmp</a>
+    47) <a name="l47" style="background-color: #ffffff">    character(len=*), parameter ::  subname = &quot;spmd_readnl&quot;</a>
+    48) <a name="l48" style="background-color: #ffffff"></a>
+    49) <a name="l49" style="background-color: #ffffff">    logical :: dyn_equi_by_col</a>
+    50) <a name="l50" style="background-color: #ffffff">    integer :: dyn_alltoall</a>
+    51) <a name="l51" style="background-color: #ffffff">    integer :: dyn_npes_stride</a>
+    52) <a name="l52" style="background-color: #ffffff">    integer :: dyn_allgather</a>
+    53) <a name="l53" style="background-color: #ffffff"></a>
+    54) <a name="l54" style="background-color: #ffffff"></a>
+    55) <a name="l55" style="background-color: #ffffff"></a>
+    56) <a name="l56" style="background-color: #ffffff">!   Note that only dyn_npes is currently used by the SE dycore</a>
+    57) <a name="l57" style="background-color: #ffffff">    namelist /spmd_dyn_inparm/ </a><a style="background-color: #ffff99">dyn_alltoall, &amp;</a>
+    58) <a name="l58" style="background-color: #ffff99">             dyn_allgather,  &amp;</a>
+    59) <a name="l59" style="background-color: #ffff99">             dyn_equi_by_col,&amp;</a>
+    60) <a name="l60" style="background-color: #ffff99">             dyn_npes,       &amp;</a>
+    61) <a name="l61" style="background-color: #ffff99">             dyn_npes_stride </a>
+    62) <a name="l62" style="background-color: #ffff99"></a>
+    63) <a name="l63" style="background-color: #ffff99"></a>
+    64) <a name="l64" style="background-color: #ffff99"></a>
+    65) <a name="l65" style="background-color: #ffffff">    dyn_npes = npes</a>
+    66) <a name="l66" style="background-color: #ffffff"></a>
+    67) <a name="l67" style="background-color: #ffffff">    if (masterproc) then</a>
+    68) <a name="l68" style="background-color: #ffffff">       write(iulog,*) 'Read in spmd_dyn_inparm namelist from: ', trim(nlfilename)</a>
+    69) <a name="l69" style="background-color: #ffffff">       unitn = getunit()</a>
+    70) <a name="l70" style="background-color: #ffffff">       open( unitn, file=trim(nlfilename), status='old' )</a>
+    71) <a name="l71" style="background-color: #ffffff">       ! Look for spmd_dyn_inparm group name in the input file.  If found, leave the</a>
+    72) <a name="l72" style="background-color: #ffffff">       ! file positioned at that namelist group.</a>
+    73) <a name="l73" style="background-color: #ffffff">       call find_group_name(unitn, 'spmd_dyn_inparm', status=ierr)</a>
+    74) <a name="l74" style="background-color: #ffffff">       if (ierr == 0) then  ! found spmd_dyn_inparm</a>
+    75) <a name="l75" style="background-color: #ffff99">          read(unitn, spmd_dyn_inparm, iostat=ierr)  ! read the spmd_dyn_inparm namelist group</a>
+    76) <a name="l76" style="background-color: #ffff99">          if (ierr /= 0) then</a>
+    77) <a name="l77" style="background-color: #ffff99">             call endrun( subname//':: namelist read returns an'// &amp;</a>
+    78) <a name="l78" style="background-color: #ffff99">                  ' error condition for spmd_dyn_inparm' )</a>
+    79) <a name="l79" style="background-color: #ffff99">          end if</a>
+    80) <a name="l80" style="background-color: #ffff99">       end if</a>
+    81) <a name="l81" style="background-color: #ffffff">       if (dyn_npes .lt. 1 .or. dyn_npes .gt. npes) then</a>
+    82) <a name="l82" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">endrun( subname//':: namelist read returns a'// &amp;</a>
+    83) <a name="l83" style="background-color: #ffff99">               ' bad value for dyn_npes' )</a>
+    84) <a name="l84" style="background-color: #ffff99">       endif</a>
+    85) <a name="l85" style="background-color: #ffffff">       write (iulog,*) 'SE will use ', dyn_npes, '  tasks'</a>
+    86) <a name="l86" style="background-color: #ffffff">       close( unitn )</a>
+    87) <a name="l87" style="background-color: #ffffff">       call freeunit( unitn )</a>
+    88) <a name="l88" style="background-color: #ffffff">    endif</a>
+    89) <a name="l89" style="background-color: #ffffff"></a>
+    90) <a name="l90" style="background-color: #ffffff">    call mpibcast (dyn_npes,1,mpiint,0,mpicom)</a>
+    91) <a name="l91" style="background-color: #ffffff"></a>
+    92) <a name="l92" style="background-color: #ffffff">  end subroutine spmd_readnl</a>
+    93) <a name="l93" style="background-color: #ffffff"></a>
+    94) <a name="l94" style="background-color: #ffffff">!================================================================================================</a>
+    95) <a name="l95" style="background-color: #ffffff"></a>
+    96) <a name="l96" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">spmdbuf</a>
+    97) <a name="l97" style="background-color: #ffcccc">end subroutine spmdbuf</a>
+    98) <a name="l98" style="background-color: #ffffff"></a>
+    99) <a name="l99" style="background-color: #ffffff">!================================================================================================</a>
+   100) <a name="l100" style="background-color: #ffffff"></a>
+   101) <a name="l101" style="background-color: #ffffff">end module spmd_dyn</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

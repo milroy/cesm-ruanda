@@ -1,0 +1,292 @@
+<html>
+<head>
+<title>Listing of hybvcoord_mod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;hybvcoord_mod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">#ifdef HAVE_CONFIG_H</a>
+     2) <a name="l2" style="background-color: #ffffff">#include &quot;config.h&quot;</a>
+     3) <a name="l3" style="background-color: #ffffff">#endif</a>
+     4) <a name="l4" style="background-color: #ffffff"></a>
+     5) <a name="l5" style="background-color: #ffffff">module hybvcoord_mod</a>
+     6) <a name="l6" style="background-color: #ffffff"> ! -------------------------------------------------------</a>
+     7) <a name="l7" style="background-color: #ffffff"> use kinds,     only : r8 =&gt; real_kind, iulog</a>
+     8) <a name="l8" style="background-color: #ffffff"> ! -------------------------------------------------------</a>
+     9) <a name="l9" style="background-color: #ffffff"> use dimensions_mod,   only : plev =&gt; nlev, plevp =&gt; nlevp</a>
+    10) <a name="l10" style="background-color: #ffffff"> ! -------------------------------------------------------</a>
+    11) <a name="l11" style="background-color: #ffffff"> use physical_constants,        only : p0</a>
+    12) <a name="l12" style="background-color: #ffffff"> ! -------------------------------------------------------</a>
+    13) <a name="l13" style="background-color: #ffffff">implicit none</a>
+    14) <a name="l14" style="background-color: #ffffff">private</a>
+    15) <a name="l15" style="background-color: #ffffff"></a>
+    16) <a name="l16" style="background-color: #ffffff">!----------------------------------------------------------------------- </a>
+    17) <a name="l17" style="background-color: #ffffff">! </a>
+    18) <a name="l18" style="background-color: #ffffff">! Purpose: Hybrid level definitions: p = a*p0 + b*ps</a>
+    19) <a name="l19" style="background-color: #ffffff">!          interfaces   p(k) = hyai(k)*ps0 + hybi(k)*ps</a>
+    20) <a name="l20" style="background-color: #ffffff">!          midpoints    p(k) = hyam(k)*ps0 + hybm(k)*ps</a>
+    21) <a name="l21" style="background-color: #ffffff">! </a>
+    22) <a name="l22" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    23) <a name="l23" style="background-color: #ffffff">  type, public :: hvcoord_t</a>
+    24) <a name="l24" style="background-color: #ffffff">      real(r8) ps0          ! base state sfc pressure for level definitions</a>
+    25) <a name="l25" style="background-color: #ffffff">      real(r8) hyai(plevp)  ! ps0 component of hybrid coordinate - interfaces</a>
+    26) <a name="l26" style="background-color: #ffffff">      real(r8) hyam(plev)   ! ps0 component of hybrid coordinate - midpoints</a>
+    27) <a name="l27" style="background-color: #ffffff">      real(r8) hybi(plevp)  ! ps component of hybrid coordinate - interfaces</a>
+    28) <a name="l28" style="background-color: #ffffff">      real(r8) hybm(plev)   ! ps component of hybrid coordinate - midpoints</a>
+    29) <a name="l29" style="background-color: #ffffff">      real(r8) hybd(plev)   ! difference  in b (hybi) across layers</a>
+    30) <a name="l30" style="background-color: #ffffff">      real(r8) prsfac       ! log pressure extrapolation factor (time, space independent)</a>
+    31) <a name="l31" style="background-color: #ffffff">      real(r8) etam(plev)   ! eta.  stored for conviencience</a>
+    32) <a name="l32" style="background-color: #ffffff">      real(r8) etai(plevp)  ! </a>
+    33) <a name="l33" style="background-color: #ffffff">      integer  nprlev       ! number of pure pressure levels at top  </a>
+    34) <a name="l34" style="background-color: #ffffff">      integer  pad</a>
+    35) <a name="l35" style="background-color: #ffffff">  end type</a>
+    36) <a name="l36" style="background-color: #ffffff"></a>
+    37) <a name="l37" style="background-color: #ffffff">  public :: hvcoord_init</a>
+    38) <a name="l38" style="background-color: #ffffff">  </a>
+    39) <a name="l39" style="background-color: #ffffff">contains</a>
+    40) <a name="l40" style="background-color: #ffffff"></a>
+    41) <a name="l41" style="background-color: #ffffff">  ! =============================================================</a>
+    42) <a name="l42" style="background-color: #ffffff">  ! hvcoord_init: Initialize hybrid vertical coordinate system...</a>
+    43) <a name="l43" style="background-color: #ffffff">  ! returns: hv coordinate structure, ierr=0 means success</a>
+    44) <a name="l44" style="background-color: #ffffff">  ! </a>
+    45) <a name="l45" style="background-color: #ffffff">  ! After Boville's hycoef</a>
+    46) <a name="l46" style="background-color: #ffffff">  ! =============================================================</a>
+    47) <a name="l47" style="background-color: #ffffff"></a>
+    48) <a name="l48" style="background-color: #ffffff">  function </a><a style="background-color: #ffcccc">hvcoord_init(hvfile_mid, hvfile_int, lprint, masterproc, ierr) result(hvcoord)</a>
+    49) <a name="l49" style="background-color: #ffcccc"></a>
+    50) <a name="l50" style="background-color: #ffcccc">    character(len=*), intent(in) :: hvfile_mid     ! file containing mid levels vertical coordinate system </a>
+    51) <a name="l51" style="background-color: #ffcccc">    character(len=*), intent(in) :: hvfile_int     ! file containing interface levels vertical coordinate system </a>
+    52) <a name="l52" style="background-color: #ffcccc">    logical, intent(in)          :: lprint</a>
+    53) <a name="l53" style="background-color: #ffcccc">    logical, intent(in)          :: masterproc</a>
+    54) <a name="l54" style="background-color: #ffcccc">    integer, intent(out)         :: ierr</a>
+    55) <a name="l55" style="background-color: #ffcccc">    type (hvcoord_t)             :: hvcoord</a>
+    56) <a name="l56" style="background-color: #ffcccc"></a>
+    57) <a name="l57" style="background-color: #ffcccc">    ! ===================================</a>
+    58) <a name="l58" style="background-color: #ffcccc">    ! Local variables</a>
+    59) <a name="l59" style="background-color: #ffcccc">    ! ===================================</a>
+    60) <a name="l60" style="background-color: #ffcccc">  </a>
+    61) <a name="l61" style="background-color: #ffcccc">    integer k</a>
+    62) <a name="l62" style="background-color: #ffcccc">    integer ierr11,ierr12, plevp_in,plev_in,ln</a>
+    63) <a name="l63" style="background-color: #ffcccc">    real(r8) amean,bmean,atest,btest,eps</a>
+    64) <a name="l64" style="background-color: #ffcccc"></a>
+    65) <a name="l65" style="background-color: #ffcccc">    ierr=0</a>
+    66) <a name="l66" style="background-color: #ffcccc">    hvcoord%ps0    = p0            ! Base state surface pressure (millibars)</a>
+    67) <a name="l67" style="background-color: #ffcccc">#if (! defined ELEMENT_OPENMP)</a>
+    68) <a name="l68" style="background-color: #ffcccc">!$OMP CRITICAL</a>
+    69) <a name="l69" style="background-color: #ffcccc">#endif</a>
+    70) <a name="l70" style="background-color: #ffcccc">    ln=len(trim(hvfile_int))</a>
+    71) <a name="l71" style="background-color: #ffcccc">    ! check if file name ends with .ascii</a>
+    72) <a name="l72" style="background-color: #ffcccc">    if ( hvfile_int(ln-4:ln) == 'ascii' ) then</a>
+    73) <a name="l73" style="background-color: #ffcccc">       open(UNIT=11,FILE=hvfile_int, form='formatted',status='old',iostat=ierr11)</a>
+    74) <a name="l74" style="background-color: #ffcccc">       if (ierr11 /= 0) then</a>
+    75) <a name="l75" style="background-color: #ffcccc">          write(iulog,*)'open() error:', __FILE__,__LINE__,hvfile_int</a>
+    76) <a name="l76" style="background-color: #ffcccc">          ierr=ierr11</a>
+    77) <a name="l77" style="background-color: #ffcccc">       end if</a>
+    78) <a name="l78" style="background-color: #ffcccc">       </a>
+    79) <a name="l79" style="background-color: #ffcccc">       open(UNIT=12,FILE=hvfile_mid, form='formatted',access='sequential',status='old',iostat=ierr12)</a>
+    80) <a name="l80" style="background-color: #ffcccc">       if (ierr12 /= 0) then</a>
+    81) <a name="l81" style="background-color: #ffcccc">          write(iulog,*)'open() error:', __FILE__,__LINE__,hvfile_mid</a>
+    82) <a name="l82" style="background-color: #ffcccc">          ierr=ierr12</a>
+    83) <a name="l83" style="background-color: #ffcccc">       end if</a>
+    84) <a name="l84" style="background-color: #ffcccc"></a>
+    85) <a name="l85" style="background-color: #ffcccc"></a>
+    86) <a name="l86" style="background-color: #ffcccc">       if(ierr==0) then	</a>
+    87) <a name="l87" style="background-color: #ffcccc">          read(11,*) plevp_in</a>
+    88) <a name="l88" style="background-color: #ffcccc">          if (plevp_in .ne. plevp) then</a>
+    89) <a name="l89" style="background-color: #ffcccc">             write(iulog,*) 'Error: hyai input file and HOMME plevp do not match',plevp,plevp_in</a>
+    90) <a name="l90" style="background-color: #ffcccc">             ierr=1</a>
+    91) <a name="l91" style="background-color: #ffcccc">          endif</a>
+    92) <a name="l92" style="background-color: #ffcccc">          read(11,*)hvcoord%hyai(1:plevp_in)</a>
+    93) <a name="l93" style="background-color: #ffcccc"></a>
+    94) <a name="l94" style="background-color: #ffcccc">          read(11,*) plevp_in</a>
+    95) <a name="l95" style="background-color: #ffcccc">          if (plevp_in .ne. plevp) then</a>
+    96) <a name="l96" style="background-color: #ffcccc">             write(iulog,*) 'Error: hybi input file and HOMME plevp do not match',plevp,plevp_in</a>
+    97) <a name="l97" style="background-color: #ffcccc">             ierr=1</a>
+    98) <a name="l98" style="background-color: #ffcccc">          endif</a>
+    99) <a name="l99" style="background-color: #ffcccc">          read(11,*)hvcoord%hybi(1:plevp_in)</a>
+   100) <a name="l100" style="background-color: #ffcccc"></a>
+   101) <a name="l101" style="background-color: #ffcccc">          read(12,*) plev_in</a>
+   102) <a name="l102" style="background-color: #ffcccc">          if (plev_in .ne. plev) then</a>
+   103) <a name="l103" style="background-color: #ffcccc">             write(iulog,*) 'Error: hyam input file and HOMME plev do not match',plev,plev_in</a>
+   104) <a name="l104" style="background-color: #ffcccc">             ierr=1</a>
+   105) <a name="l105" style="background-color: #ffcccc">          endif</a>
+   106) <a name="l106" style="background-color: #ffcccc">          read(12,*) hvcoord%hyam(1:plev_in)</a>
+   107) <a name="l107" style="background-color: #ffcccc"></a>
+   108) <a name="l108" style="background-color: #ffcccc">          read(12,*) plev_in</a>
+   109) <a name="l109" style="background-color: #ffcccc">          if (plev_in .ne. plev) then</a>
+   110) <a name="l110" style="background-color: #ffcccc">             write(iulog,*) 'Error: hybm input file and HOMME plev do not match',plev,plev_in</a>
+   111) <a name="l111" style="background-color: #ffcccc">             ierr=1</a>
+   112) <a name="l112" style="background-color: #ffcccc">          endif</a>
+   113) <a name="l113" style="background-color: #ffcccc">          read(12,*)hvcoord%hybm(1:plev_in)</a>
+   114) <a name="l114" style="background-color: #ffcccc"></a>
+   115) <a name="l115" style="background-color: #ffcccc">          close(11)</a>
+   116) <a name="l116" style="background-color: #ffcccc">          close(12)</a>
+   117) <a name="l117" style="background-color: #ffcccc">       end if</a>
+   118) <a name="l118" style="background-color: #ffcccc">    else</a>
+   119) <a name="l119" style="background-color: #ffcccc">       open(UNIT=11,FILE=hvfile_int, form='unformatted',status='old',iostat=ierr11)</a>
+   120) <a name="l120" style="background-color: #ffcccc">       if (ierr11 /= 0) then</a>
+   121) <a name="l121" style="background-color: #ffcccc">          write(iulog,*)'open() error:', __FILE__,__LINE__,hvfile_int</a>
+   122) <a name="l122" style="background-color: #ffcccc">          ierr=ierr11</a>
+   123) <a name="l123" style="background-color: #ffcccc">       end if</a>
+   124) <a name="l124" style="background-color: #ffcccc">       </a>
+   125) <a name="l125" style="background-color: #ffcccc">       open(UNIT=12,FILE=hvfile_mid, form='unformatted',access='sequential',status='old',iostat=ierr12)</a>
+   126) <a name="l126" style="background-color: #ffcccc">       if (ierr12 /= 0) then</a>
+   127) <a name="l127" style="background-color: #ffcccc">          write(iulog,*)'open() error:', __FILE__,__LINE__,hvfile_mid</a>
+   128) <a name="l128" style="background-color: #ffcccc">          ierr=ierr12</a>
+   129) <a name="l129" style="background-color: #ffcccc">       end if</a>
+   130) <a name="l130" style="background-color: #ffcccc"></a>
+   131) <a name="l131" style="background-color: #ffcccc"></a>
+   132) <a name="l132" style="background-color: #ffcccc">       if(ierr==0) then	</a>
+   133) <a name="l133" style="background-color: #ffcccc">          !   write(iulog,*)&quot;plevp=&quot;,plevp</a>
+   134) <a name="l134" style="background-color: #ffcccc">          !   write(iulog,*)&quot;Ai,Bi=&quot;</a>
+   135) <a name="l135" style="background-color: #ffcccc">          do k=1,plevp</a>
+   136) <a name="l136" style="background-color: #ffcccc">             read(11)hvcoord%hyai(k)</a>
+   137) <a name="l137" style="background-color: #ffcccc">             read(11)hvcoord%hybi(k)</a>
+   138) <a name="l138" style="background-color: #ffcccc">             !      write(iulog,*)hvcoord%hyai(k),hvcoord%hybi(k)</a>
+   139) <a name="l139" style="background-color: #ffcccc">          end do</a>
+   140) <a name="l140" style="background-color: #ffcccc">          </a>
+   141) <a name="l141" style="background-color: #ffcccc">          !   write(iulog,*)&quot;plev=&quot;,plev</a>
+   142) <a name="l142" style="background-color: #ffcccc">          !   write(iulog,*)&quot;Am,Bm=&quot;</a>
+   143) <a name="l143" style="background-color: #ffcccc">          do k=1,plev</a>
+   144) <a name="l144" style="background-color: #ffcccc">             read(12)hvcoord%hyam(k)</a>
+   145) <a name="l145" style="background-color: #ffcccc">             read(12)hvcoord%hybm(k)</a>
+   146) <a name="l146" style="background-color: #ffcccc">             !      write(iulog,*)hvcoord%hyam(k),hvcoord%hybm(k)</a>
+   147) <a name="l147" style="background-color: #ffcccc">          end do</a>
+   148) <a name="l148" style="background-color: #ffcccc">          </a>
+   149) <a name="l149" style="background-color: #ffcccc">          close(11)</a>
+   150) <a name="l150" style="background-color: #ffcccc">          close(12)</a>
+   151) <a name="l151" style="background-color: #ffcccc">       end if</a>
+   152) <a name="l152" style="background-color: #ffcccc">    endif</a>
+   153) <a name="l153" style="background-color: #ffcccc">#if (! defined ELEMENT_OPENMP)</a>
+   154) <a name="l154" style="background-color: #ffcccc">!$OMP END CRITICAL</a>
+   155) <a name="l155" style="background-color: #ffcccc">#endif</a>
+   156) <a name="l156" style="background-color: #ffcccc">  if(ierr&gt;0) return</a>
+   157) <a name="l157" style="background-color: #ffcccc"></a>
+   158) <a name="l158" style="background-color: #ffcccc">  eps            = 1.D-05</a>
+   159) <a name="l159" style="background-color: #ffcccc">  hvcoord%nprlev = 0</a>
+   160) <a name="l160" style="background-color: #ffcccc"></a>
+   161) <a name="l161" style="background-color: #ffcccc">  do k=1,plev</a>
+   162) <a name="l162" style="background-color: #ffcccc">     hvcoord%etam(k)=hvcoord%hyam(k)+hvcoord%hybm(k)</a>
+   163) <a name="l163" style="background-color: #ffcccc">  end do</a>
+   164) <a name="l164" style="background-color: #ffcccc">  do k=1,plevp</a>
+   165) <a name="l165" style="background-color: #ffcccc">     hvcoord%etai(k)=hvcoord%hyai(k)+hvcoord%hybi(k)</a>
+   166) <a name="l166" style="background-color: #ffcccc">  enddo</a>
+   167) <a name="l167" style="background-color: #ffcccc"></a>
+   168) <a name="l168" style="background-color: #ffcccc"></a>
+   169) <a name="l169" style="background-color: #ffcccc">  ! ==================================</a>
+   170) <a name="l170" style="background-color: #ffcccc">  ! Set layer locations</a>
+   171) <a name="l171" style="background-color: #ffcccc">  ! ==================================</a>
+   172) <a name="l172" style="background-color: #ffcccc"></a>
+   173) <a name="l173" style="background-color: #ffcccc">  ! ===============================================================</a>
+   174) <a name="l174" style="background-color: #ffcccc">  ! Interfaces. Set nprlev to the interface above, the first time a </a>
+   175) <a name="l175" style="background-color: #ffcccc">  ! nonzero surface pressure contribution is found. &quot;nprlev&quot; </a>
+   176) <a name="l176" style="background-color: #ffcccc">  ! identifies the lowest pure pressure interface.</a>
+   177) <a name="l177" style="background-color: #ffcccc">  ! ===============================================================</a>
+   178) <a name="l178" style="background-color: #ffcccc"></a>
+   179) <a name="l179" style="background-color: #ffcccc">  do k=1,plev</a>
+   180) <a name="l180" style="background-color: #ffcccc">     if (hvcoord%nprlev==0 .and. hvcoord%hybi(k).ne.0.0) hvcoord%nprlev = k - 1</a>
+   181) <a name="l181" style="background-color: #ffcccc">  end do</a>
+   182) <a name="l182" style="background-color: #ffcccc">!</a>
+   183) <a name="l183" style="background-color: #ffcccc">! Set nprlev if no nonzero b's have been found. All interfaces are </a>
+   184) <a name="l184" style="background-color: #ffcccc">! pure pressure. A pure pressure model requires other changes as well. </a>
+   185) <a name="l185" style="background-color: #ffcccc">!</a>
+   186) <a name="l186" style="background-color: #ffcccc">  if (hvcoord%nprlev==0) hvcoord%nprlev = plev + 2</a>
+   187) <a name="l187" style="background-color: #ffcccc"></a>
+   188) <a name="l188" style="background-color: #ffcccc">  ! =======================================</a>
+   189) <a name="l189" style="background-color: #ffcccc">  ! Set delta sigma part of layer thickness</a>
+   190) <a name="l190" style="background-color: #ffcccc">  ! pressures</a>
+   191) <a name="l191" style="background-color: #ffcccc">  ! =======================================</a>
+   192) <a name="l192" style="background-color: #ffcccc"></a>
+   193) <a name="l193" style="background-color: #ffcccc">  do k=1,plev</a>
+   194) <a name="l194" style="background-color: #ffcccc">     hvcoord%hybd(k) = hvcoord%hybi(k+1) - hvcoord%hybi(k)</a>
+   195) <a name="l195" style="background-color: #ffcccc">  end do</a>
+   196) <a name="l196" style="background-color: #ffcccc"></a>
+   197) <a name="l197" style="background-color: #ffcccc">  ! ====================================================</a>
+   198) <a name="l198" style="background-color: #ffcccc">  ! Calculate the log pressure extrapolation factor</a>
+   199) <a name="l199" style="background-color: #ffcccc">  ! ====================================================</a>
+   200) <a name="l200" style="background-color: #ffcccc">! JPE just prevents a compiler warning when plev==1</a>
+   201) <a name="l201" style="background-color: #ffcccc">#if (PLEV&gt;1)</a>
+   202) <a name="l202" style="background-color: #ffcccc">  hvcoord%prsfac = log( hvcoord%hyam(plev  ) + hvcoord%hybm(plev)) / &amp;</a>
+   203) <a name="l203" style="background-color: #ffcccc">                   log((hvcoord%hyam(plev  ) + hvcoord%hybm(plev)) / (hvcoord%hyam(plev-1) + hvcoord%hybm(plev-1)))</a>
+   204) <a name="l204" style="background-color: #ffcccc">#endif</a>
+   205) <a name="l205" style="background-color: #ffcccc">  ! ======================================================================</a>
+   206) <a name="l206" style="background-color: #ffcccc">  ! Test that A's and B's at full levels are arithmetic means of A's and</a>
+   207) <a name="l207" style="background-color: #ffcccc">  ! B's at interfaces</a>
+   208) <a name="l208" style="background-color: #ffcccc">  ! ======================================================================</a>
+   209) <a name="l209" style="background-color: #ffcccc"></a>
+   210) <a name="l210" style="background-color: #ffcccc">  do k = 1,plev</a>
+   211) <a name="l211" style="background-color: #ffcccc">     amean = ( hvcoord%hyai(k+1) + hvcoord%hyai(k) )*0.5D0</a>
+   212) <a name="l212" style="background-color: #ffcccc">     bmean = ( hvcoord%hybi(k+1) + hvcoord%hybi(k) )*0.5D0</a>
+   213) <a name="l213" style="background-color: #ffcccc">     if(amean == 0. .and. hvcoord%hyam(k) == 0.) then</a>
+   214) <a name="l214" style="background-color: #ffcccc">        atest = 0.</a>
+   215) <a name="l215" style="background-color: #ffcccc">     else</a>
+   216) <a name="l216" style="background-color: #ffcccc">        atest = abs( amean - hvcoord%hyam(k) )/ ( 0.5D0*( abs(amean + hvcoord%hyam(k)) ) )</a>
+   217) <a name="l217" style="background-color: #ffcccc">     endif</a>
+   218) <a name="l218" style="background-color: #ffcccc">     if(bmean == 0. .and. hvcoord%hybm(k) == 0.) then</a>
+   219) <a name="l219" style="background-color: #ffcccc">        btest = 0.</a>
+   220) <a name="l220" style="background-color: #ffcccc">     else</a>
+   221) <a name="l221" style="background-color: #ffcccc">        btest = abs( bmean - hvcoord%hybm(k) )/ ( 0.5D0*( abs(bmean + hvcoord%hybm(k)) ) )</a>
+   222) <a name="l222" style="background-color: #ffcccc">     endif</a>
+   223) <a name="l223" style="background-color: #ffcccc">     if (atest &gt; eps) then</a>
+   224) <a name="l224" style="background-color: #ffcccc">        if (masterproc) then</a>
+   225) <a name="l225" style="background-color: #ffcccc">           write(iulog,9850)</a>
+   226) <a name="l226" style="background-color: #ffcccc">           write(iulog,*)'k,atest,eps=',k,atest,eps</a>
+   227) <a name="l227" style="background-color: #ffcccc">        end if</a>
+   228) <a name="l228" style="background-color: #ffcccc">!        call endrun</a>
+   229) <a name="l229" style="background-color: #ffcccc">     endif</a>
+   230) <a name="l230" style="background-color: #ffcccc"></a>
+   231) <a name="l231" style="background-color: #ffcccc">     if (btest &gt; eps) then</a>
+   232) <a name="l232" style="background-color: #ffcccc">        if (masterproc) then</a>
+   233) <a name="l233" style="background-color: #ffcccc">           write(iulog,9850)</a>
+   234) <a name="l234" style="background-color: #ffcccc">           write(iulog,*)'k,btest,eps=',k,btest,eps</a>
+   235) <a name="l235" style="background-color: #ffcccc">        end if</a>
+   236) <a name="l236" style="background-color: #ffcccc">!        call endrun</a>
+   237) <a name="l237" style="background-color: #ffcccc">     endif</a>
+   238) <a name="l238" style="background-color: #ffcccc">  end do</a>
+   239) <a name="l239" style="background-color: #ffcccc"></a>
+   240) <a name="l240" style="background-color: #ffcccc">  if (masterproc) then</a>
+   241) <a name="l241" style="background-color: #ffcccc">     if (lprint) then</a>
+   242) <a name="l242" style="background-color: #ffcccc">        write(iulog,'(a)')'1 Layer Locations (*1000) '</a>
+   243) <a name="l243" style="background-color: #ffcccc">        do k=1,plev</a>
+   244) <a name="l244" style="background-color: #ffcccc">           write(iulog,9800)k,hvcoord%hyai(k),hvcoord%hybi(k),hvcoord%hyai(k)+hvcoord%hybi(k)</a>
+   245) <a name="l245" style="background-color: #ffcccc">           write(iulog,9810) hvcoord%hyam(k), hvcoord%hybm(k), hvcoord%hyam(k)+hvcoord%hybm(k)</a>
+   246) <a name="l246" style="background-color: #ffcccc">        end do</a>
+   247) <a name="l247" style="background-color: #ffcccc">        write(iulog,9800)plevp,hvcoord%hyai(plevp),hvcoord%hybi(plevp),hvcoord%hyai(plevp)+hvcoord%hybi(plevp)</a>
+   248) <a name="l248" style="background-color: #ffcccc">     else</a>
+   249) <a name="l249" style="background-color: #ffcccc">        ! sanity check for endian problem with file:</a>
+   250) <a name="l250" style="background-color: #ffcccc">        write(iulog,*)'min/max hybm() coordinates: ',minval(hvcoord%hybm(1:plev)),maxval(hvcoord%hybm(1:plev))</a>
+   251) <a name="l251" style="background-color: #ffcccc">     endif</a>
+   252) <a name="l252" style="background-color: #ffcccc">  end if</a>
+   253) <a name="l253" style="background-color: #ffcccc">  </a>
+   254) <a name="l254" style="background-color: #ffcccc">9800 format( 1x, i3, 3p, 3(f10.4,10x) )</a>
+   255) <a name="l255" style="background-color: #ffcccc">9810 format( 1x, 3x, 3p, 3(10x,f10.4) )</a>
+   256) <a name="l256" style="background-color: #ffcccc">9850 format('HYCOEF: A and/or B vertical level coefficients at full',/, &amp;</a>
+   257) <a name="l257" style="background-color: #ffcccc">            ' levels are not the arithmetic mean of half-level values')</a>
+   258) <a name="l258" style="background-color: #ffcccc"></a>
+   259) <a name="l259" style="background-color: #ffcccc">  end function hvcoord_init</a>
+   260) <a name="l260" style="background-color: #ffffff"></a>
+   261) <a name="l261" style="background-color: #ffffff">end module hybvcoord_mod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

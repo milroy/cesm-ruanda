@@ -1,0 +1,1798 @@
+<html>
+<head>
+<title>Listing of mo_photo.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;mo_photo.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 70.00&#160;%func&#160;&#160;&#160;&#160; 42.71&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module mo_photo</a>
+     2) <a name="l2" style="background-color: #ffffff">  !----------------------------------------------------------------------</a>
+     3) <a name="l3" style="background-color: #ffffff">  !	... photolysis interp table and related arrays</a>
+     4) <a name="l4" style="background-color: #ffffff">  !----------------------------------------------------------------------</a>
+     5) <a name="l5" style="background-color: #ffffff"></a>
+     6) <a name="l6" style="background-color: #ffffff">  use shr_kind_mod, only : r8 =&gt; shr_kind_r8</a>
+     7) <a name="l7" style="background-color: #ffffff">  use ppgrid,       only : pcols, pver, pverp, begchunk, endchunk</a>
+     8) <a name="l8" style="background-color: #ffffff">  use abortutils,   only : endrun</a>
+     9) <a name="l9" style="background-color: #ffffff">  use mo_constants, only : pi,r2d,boltz,d2r</a>
+    10) <a name="l10" style="background-color: #ffffff">  use ref_pres,     only : num_pr_lev, ptop_ref </a>
+    11) <a name="l11" style="background-color: #ffffff">  use pio</a>
+    12) <a name="l12" style="background-color: #ffffff">  use cam_pio_utils,only : cam_pio_openfile</a>
+    13) <a name="l13" style="background-color: #ffffff">  use spmd_utils,   only : masterproc</a>
+    14) <a name="l14" style="background-color: #ffffff">  use cam_logfile,  only : iulog</a>
+    15) <a name="l15" style="background-color: #ffffff">  use phys_control, only : waccmx_is</a>
+    16) <a name="l16" style="background-color: #ffffff"></a>
+    17) <a name="l17" style="background-color: #ffffff">  implicit none</a>
+    18) <a name="l18" style="background-color: #ffffff"></a>
+    19) <a name="l19" style="background-color: #ffffff">  private</a>
+    20) <a name="l20" style="background-color: #ffffff"></a>
+    21) <a name="l21" style="background-color: #ffffff">  public :: photo_inti, table_photo, xactive_photo</a>
+    22) <a name="l22" style="background-color: #ffffff">  public :: set_ub_col</a>
+    23) <a name="l23" style="background-color: #ffffff">  public :: setcol </a>
+    24) <a name="l24" style="background-color: #ffffff">  public :: photo_timestep_init</a>
+    25) <a name="l25" style="background-color: #ffffff">  public :: photo_register</a>
+    26) <a name="l26" style="background-color: #ffffff"></a>
+    27) <a name="l27" style="background-color: #ffffff">  save</a>
+    28) <a name="l28" style="background-color: #ffffff"></a>
+    29) <a name="l29" style="background-color: #ffffff">  real(r8), parameter :: kg2g = 1.e3_r8</a>
+    30) <a name="l30" style="background-color: #ffffff">  integer, parameter  :: pverm = pver - 1</a>
+    31) <a name="l31" style="background-color: #ffffff"></a>
+    32) <a name="l32" style="background-color: #ffffff">  integer ::  jno_ndx</a>
+    33) <a name="l33" style="background-color: #ffffff">  integer ::  jonitr_ndx</a>
+    34) <a name="l34" style="background-color: #ffffff">  integer ::  jho2no2_ndx</a>
+    35) <a name="l35" style="background-color: #ffffff">  integer ::  jch3cho_a_ndx, jch3cho_b_ndx, jch3cho_c_ndx</a>
+    36) <a name="l36" style="background-color: #ffffff">  integer ::  jo2_a_ndx, jo2_b_ndx</a>
+    37) <a name="l37" style="background-color: #ffffff">  integer ::  ox_ndx, o3_ndx, o3_inv_ndx, o3rad_ndx</a>
+    38) <a name="l38" style="background-color: #ffffff">  integer ::  oc1_ndx, oc2_ndx</a>
+    39) <a name="l39" style="background-color: #ffffff">  integer ::  cb1_ndx, cb2_ndx</a>
+    40) <a name="l40" style="background-color: #ffffff">  integer ::  soa_ndx</a>
+    41) <a name="l41" style="background-color: #ffffff">  integer ::  ant_ndx</a>
+    42) <a name="l42" style="background-color: #ffffff">  integer ::  so4_ndx</a>
+    43) <a name="l43" style="background-color: #ffffff">  integer ::  sa1_ndx, sa2_ndx, sa3_ndx, sa4_ndx</a>
+    44) <a name="l44" style="background-color: #ffffff">  integer ::  n2_ndx, no_ndx, o2_ndx, o_ndx</a>
+    45) <a name="l45" style="background-color: #ffffff">  integer, allocatable :: lng_indexer(:)</a>
+    46) <a name="l46" style="background-color: #ffffff">  integer, allocatable :: sht_indexer(:)</a>
+    47) <a name="l47" style="background-color: #ffffff">  integer, allocatable :: euv_indexer(:)</a>
+    48) <a name="l48" style="background-color: #ffffff"></a>
+    49) <a name="l49" style="background-color: #ffffff">  integer              :: ki</a>
+    50) <a name="l50" style="background-color: #ffffff">  integer              :: last</a>
+    51) <a name="l51" style="background-color: #ffffff">  integer              :: next</a>
+    52) <a name="l52" style="background-color: #ffffff">  integer              :: n_exo_levs</a>
+    53) <a name="l53" style="background-color: #ffffff">  real(r8)                 :: delp</a>
+    54) <a name="l54" style="background-color: #ffffff">  real(r8)                 :: dels</a>
+    55) <a name="l55" style="background-color: #ffffff">  real(r8), allocatable    :: days(:)</a>
+    56) <a name="l56" style="background-color: #ffffff">  real(r8), allocatable    :: levs(:)</a>
+    57) <a name="l57" style="background-color: #ffffff">  real(r8), allocatable    :: o2_exo_coldens(:,:,:,:)</a>
+    58) <a name="l58" style="background-color: #ffffff">  real(r8), allocatable    :: o3_exo_coldens(:,:,:,:)</a>
+    59) <a name="l59" style="background-color: #ffffff">  logical              :: o_is_inv</a>
+    60) <a name="l60" style="background-color: #ffffff">  logical              :: o2_is_inv</a>
+    61) <a name="l61" style="background-color: #ffffff">  logical              :: n2_is_inv</a>
+    62) <a name="l62" style="background-color: #ffffff">  logical              :: o3_is_inv</a>
+    63) <a name="l63" style="background-color: #ffffff">  logical              :: no_is_inv</a>
+    64) <a name="l64" style="background-color: #ffffff">  logical              :: has_o2_col</a>
+    65) <a name="l65" style="background-color: #ffffff">  logical              :: has_o3_col</a>
+    66) <a name="l66" style="background-color: #ffffff">  logical              :: has_fixed_press</a>
+    67) <a name="l67" style="background-color: #ffffff">  logical  :: waccm</a>
+    68) <a name="l68" style="background-color: #ffffff">  real(r8) :: max_zen_angle       ! degrees</a>
+    69) <a name="l69" style="background-color: #ffffff"></a>
+    70) <a name="l70" style="background-color: #ffffff">  integer :: jo1d_ndx, jo3p_ndx, jno2_ndx, jn2o5_ndx</a>
+    71) <a name="l71" style="background-color: #ffffff">  integer :: jhno3_ndx, jno3_ndx, jpan_ndx, jmpan_ndx</a>
+    72) <a name="l72" style="background-color: #ffffff"></a>
+    73) <a name="l73" style="background-color: #ffffff">  integer :: jo1da_ndx, jo3pa_ndx, jno2a_ndx, jn2o5a_ndx, jn2o5b_ndx</a>
+    74) <a name="l74" style="background-color: #ffffff">  integer :: jhno3a_ndx, jno3a_ndx, jpana_ndx, jmpana_ndx, jho2no2a_ndx </a>
+    75) <a name="l75" style="background-color: #ffffff">  integer :: jonitra_ndx</a>
+    76) <a name="l76" style="background-color: #ffffff"></a>
+    77) <a name="l77" style="background-color: #ffffff">  logical :: do_jshort = .false.</a>
+    78) <a name="l78" style="background-color: #ffffff">  logical :: do_diag = .false.</a>
+    79) <a name="l79" style="background-color: #ffffff"></a>
+    80) <a name="l80" style="background-color: #ffffff">  integer :: ion_rates_idx = -1</a>
+    81) <a name="l81" style="background-color: #ffffff"></a>
+    82) <a name="l82" style="background-color: #ffffff">contains</a>
+    83) <a name="l83" style="background-color: #ffffff"></a>
+    84) <a name="l84" style="background-color: #ffffff">  </a>
+    85) <a name="l85" style="background-color: #ffffff">  !----------------------------------------------------------------------</a>
+    86) <a name="l86" style="background-color: #ffffff">  !----------------------------------------------------------------------</a>
+    87) <a name="l87" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">photo_register</a>
+    88) <a name="l88" style="background-color: #ffcccc">    use mo_jeuv,      only : nIonRates</a>
+    89) <a name="l89" style="background-color: #ffcccc">    use physics_buffer,only : pbuf_add_field, dtype_r8</a>
+    90) <a name="l90" style="background-color: #ffcccc"></a>
+    91) <a name="l91" style="background-color: #ffcccc">    ! add photo-ionization rates to phys buffer for waccmx ionosphere module</a>
+    92) <a name="l92" style="background-color: #ffcccc"></a>
+    93) <a name="l93" style="background-color: #ffcccc">    call pbuf_add_field('IonRates' , 'physpkg', dtype_r8, (/pcols,pver,nIonRates/), ion_rates_idx) ! Ionization rates for O+,O2+,N+,N2+,NO+ </a>
+    94) <a name="l94" style="background-color: #ffcccc"></a>
+    95) <a name="l95" style="background-color: #ffcccc">  endsubroutine photo_register</a>
+    96) <a name="l96" style="background-color: #ffffff"></a>
+    97) <a name="l97" style="background-color: #ffffff">  !----------------------------------------------------------------------</a>
+    98) <a name="l98" style="background-color: #ffffff">  !----------------------------------------------------------------------</a>
+    99) <a name="l99" style="background-color: #ffffff">  subroutine photo_inti( xs_coef_file, xs_short_file, xs_long_file, rsf_file, &amp;</a>
+   100) <a name="l100" style="background-color: #ffffff">       euvacdat_file, photon_file, electron_file, &amp;</a>
+   101) <a name="l101" style="background-color: #ffffff">       exo_coldens_file, tuv_xsect_file, o2_xsect_file, xactive_prates, is_waccm )</a>
+   102) <a name="l102" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   103) <a name="l103" style="background-color: #ffffff">    !	... initialize photolysis module</a>
+   104) <a name="l104" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   105) <a name="l105" style="background-color: #ffffff"></a>
+   106) <a name="l106" style="background-color: #ffffff">    use mo_photoin,    only : photoin_inti</a>
+   107) <a name="l107" style="background-color: #ffffff">    use mo_tuv_inti,   only : tuv_inti</a>
+   108) <a name="l108" style="background-color: #ffffff">    use mo_tuv_inti,   only : nlng</a>
+   109) <a name="l109" style="background-color: #ffffff">    use mo_seto2,      only : o2_xsect_inti      </a>
+   110) <a name="l110" style="background-color: #ffffff">    use interpolate_data, only: lininterp_init, lininterp, lininterp_finish, interp_type</a>
+   111) <a name="l111" style="background-color: #ffffff">    use chem_mods,     only : phtcnt</a>
+   112) <a name="l112" style="background-color: #ffffff">    use chem_mods,     only : ncol_abs =&gt; nabscol</a>
+   113) <a name="l113" style="background-color: #ffffff">    use chem_mods,     only : rxt_tag_lst, pht_alias_lst, pht_alias_mult</a>
+   114) <a name="l114" style="background-color: #ffffff">    use time_manager,  only : get_calday</a>
+   115) <a name="l115" style="background-color: #ffffff">    use ioFileMod,     only : getfil</a>
+   116) <a name="l116" style="background-color: #ffffff">    use mo_chem_utls,  only : get_spc_ndx, get_rxt_ndx, get_inv_ndx</a>
+   117) <a name="l117" style="background-color: #ffffff">    use mo_jlong,      only : jlong_init</a>
+   118) <a name="l118" style="background-color: #ffffff">    use seasalt_model, only : sslt_names=&gt;seasalt_names, sslt_ncnst=&gt;seasalt_nbin</a>
+   119) <a name="l119" style="background-color: #ffffff">    use mo_jshort,     only : jshort_init</a>
+   120) <a name="l120" style="background-color: #ffffff">    use mo_jeuv,       only : jeuv_init</a>
+   121) <a name="l121" style="background-color: #ffffff">    use dyn_grid,      only : get_dyn_grid_parm</a>
+   122) <a name="l122" style="background-color: #ffffff">    use phys_grid,     only : get_ncols_p, get_rlat_all_p    </a>
+   123) <a name="l123" style="background-color: #ffffff">    use solar_data,    only : has_spectrum</a>
+   124) <a name="l124" style="background-color: #ffffff">    use photo_bkgrnd,  only : photo_bkgrnd_init</a>
+   125) <a name="l125" style="background-color: #ffffff">    use cam_history,   only : addfld,phys_decomp</a>
+   126) <a name="l126" style="background-color: #ffffff"></a>
+   127) <a name="l127" style="background-color: #ffffff">    implicit none</a>
+   128) <a name="l128" style="background-color: #ffffff"></a>
+   129) <a name="l129" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   130) <a name="l130" style="background-color: #ffffff">    !	... dummy arguments</a>
+   131) <a name="l131" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   132) <a name="l132" style="background-color: #ffffff">    character(len=*), intent(in) :: xs_long_file, rsf_file</a>
+   133) <a name="l133" style="background-color: #ffffff">    character(len=*), intent(in) :: exo_coldens_file</a>
+   134) <a name="l134" style="background-color: #ffffff">    character(len=*), intent(in) :: tuv_xsect_file</a>
+   135) <a name="l135" style="background-color: #ffffff">    character(len=*), intent(in) :: o2_xsect_file</a>
+   136) <a name="l136" style="background-color: #ffffff">    logical, intent(in)          :: xactive_prates</a>
+   137) <a name="l137" style="background-color: #ffffff">    ! waccm </a>
+   138) <a name="l138" style="background-color: #ffffff">    character(len=*), intent(in) :: xs_coef_file</a>
+   139) <a name="l139" style="background-color: #ffffff">    character(len=*), intent(in) :: xs_short_file</a>
+   140) <a name="l140" style="background-color: #ffffff">    character(len=*), intent(in) :: euvacdat_file</a>
+   141) <a name="l141" style="background-color: #ffffff">    character(len=*), intent(in) :: photon_file</a>
+   142) <a name="l142" style="background-color: #ffffff">    character(len=*), intent(in) :: electron_file</a>
+   143) <a name="l143" style="background-color: #ffffff"></a>
+   144) <a name="l144" style="background-color: #ffffff">    logical, optional, intent(in) :: is_waccm</a>
+   145) <a name="l145" style="background-color: #ffffff"></a>
+   146) <a name="l146" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   147) <a name="l147" style="background-color: #ffffff">    !	... local variables</a>
+   148) <a name="l148" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   149) <a name="l149" style="background-color: #ffffff">    real(r8), parameter   :: hPa2Pa = 100._r8</a>
+   150) <a name="l150" style="background-color: #ffffff">    integer           :: k, n</a>
+   151) <a name="l151" style="background-color: #ffffff">    type(file_desc_t) :: ncid</a>
+   152) <a name="l152" style="background-color: #ffffff">    type(var_desc_t)  :: vidO2, vidO3, vid</a>
+   153) <a name="l153" style="background-color: #ffffff">    type(interp_type) :: lat_wgts</a>
+   154) <a name="l154" style="background-color: #ffffff">    integer           :: dimid</a>
+   155) <a name="l155" style="background-color: #ffffff">    integer           :: nlat</a>
+   156) <a name="l156" style="background-color: #ffffff">    integer           :: ntimes</a>
+   157) <a name="l157" style="background-color: #ffffff">    integer           :: astat</a>
+   158) <a name="l158" style="background-color: #ffffff">    integer           :: gndx</a>
+   159) <a name="l159" style="background-color: #ffffff">    integer           :: ndx</a>
+   160) <a name="l160" style="background-color: #ffffff">    integer           :: spc_ndx</a>
+   161) <a name="l161" style="background-color: #ffffff">    integer           :: ierr</a>
+   162) <a name="l162" style="background-color: #ffffff">    integer           :: c, ncols</a>
+   163) <a name="l163" style="background-color: #ffffff">    integer           :: plev, plevp</a>
+   164) <a name="l164" style="background-color: #ffffff">    integer, allocatable :: dates(:)</a>
+   165) <a name="l165" style="background-color: #ffffff">    real(r8)              :: pinterp</a>
+   166) <a name="l166" style="background-color: #ffffff">    real(r8), allocatable :: lats(:)</a>
+   167) <a name="l167" style="background-color: #ffffff">    real(r8), allocatable :: coldens(:,:,:)</a>
+   168) <a name="l168" style="background-color: #ffffff">    character(len=256)    :: locfn</a>
+   169) <a name="l169" style="background-color: #ffffff">    character(len=256)    :: filespec</a>
+   170) <a name="l170" style="background-color: #ffffff">    real(r8), parameter :: trop_thrshld = 1._r8 ! Pa</a>
+   171) <a name="l171" style="background-color: #ffffff">    real(r8) :: to_lats(pcols)</a>
+   172) <a name="l172" style="background-color: #ffffff"></a>
+   173) <a name="l173" style="background-color: #ffffff"></a>
+   174) <a name="l174" style="background-color: #ffffff">    if( phtcnt &lt; 1 ) then</a>
+   175) <a name="l175" style="background-color: #ffffff">       return</a>
+   176) <a name="l176" style="background-color: #ffffff">    end if</a>
+   177) <a name="l177" style="background-color: #ffffff"></a>
+   178) <a name="l178" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(is_waccm)) then</a>
+   179) <a name="l179" style="background-color: #ffffff">       waccm = is_waccm</a>
+   180) <a name="l180" style="background-color: #ffffff">    else</a>
+   181) <a name="l181" style="background-color: #ffff99">       waccm = .false.</a>
+   182) <a name="l182" style="background-color: #ffff99">    endif</a>
+   183) <a name="l183" style="background-color: #ffff99">    </a>
+   184) <a name="l184" style="background-color: #ffff99">    !----------------------------------------------------------------------------</a>
+   185) <a name="l185" style="background-color: #ffff99">    !  Need a larger maximum zenith angle for WACCM-X extended to high altitudes</a>
+   186) <a name="l186" style="background-color: #ffff99">    !----------------------------------------------------------------------------</a>
+   187) <a name="l187" style="background-color: #ffff99">    if ( </a><a style="background-color: #ffffff">waccmx_is('ionosphere') .or. waccmx_is('neutral') ) then </a>
+   188) <a name="l188" style="background-color: #ffff99">       max_zen_angle = 116._r8</a>
+   189) <a name="l189" style="background-color: #ffffff">    else if ( waccm ) then</a>
+   190) <a name="l190" style="background-color: #ffff99">       max_zen_angle = 97.01_r8 ! degrees</a>
+   191) <a name="l191" style="background-color: #ffff99">    else</a>
+   192) <a name="l192" style="background-color: #ffffff">       max_zen_angle = 88.85_r8 ! degrees</a>
+   193) <a name="l193" style="background-color: #ffffff">    endif</a>
+   194) <a name="l194" style="background-color: #ffffff"></a>
+   195) <a name="l195" style="background-color: #ffffff">    ! jeuv_1,,, jeuv_25 --&gt; need euv calculations --&gt; must be waccm </a>
+   196) <a name="l196" style="background-color: #ffffff">    ! how to determine if shrt calc is needed ?? -- use top level pressure =&gt; waccm = true ? false</a>
+   197) <a name="l197" style="background-color: #ffffff"></a>
+   198) <a name="l198" style="background-color: #ffffff">    if ( </a><a style="background-color: #ffff99">waccm .and. xactive_prates ) then</a>
+   199) <a name="l199" style="background-color: #ffff99">       call endrun( &quot; photo_inti: xactive_prates option is not available in WACCM&quot; )</a>
+   200) <a name="l200" style="background-color: #ffff99">    endif</a>
+   201) <a name="l201" style="background-color: #ffff99"></a>
+   202) <a name="l202" style="background-color: #ffffff">    if ( .not. has_spectrum ) then</a>
+   203) <a name="l203" style="background-color: #ffff99">       write(iulog,*) 'photo_inti: solar_data file needs to contain irradiance spectrum'</a>
+   204) <a name="l204" style="background-color: #ffff99">       call endrun('photo_inti: ERROR -- solar irradiance spectrum is missing')</a>
+   205) <a name="l205" style="background-color: #ffff99">    endif</a>
+   206) <a name="l206" style="background-color: #ffff99">    </a>
+   207) <a name="l207" style="background-color: #ffffff">    plev = get_dyn_grid_parm('plev')</a>
+   208) <a name="l208" style="background-color: #ffffff">    plevp = get_dyn_grid_parm('plevp')</a>
+   209) <a name="l209" style="background-color: #ffffff"></a>
+   210) <a name="l210" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   211) <a name="l211" style="background-color: #ffffff">    !	... allocate indexers</a>
+   212) <a name="l212" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   213) <a name="l213" style="background-color: #ffffff">    allocate( lng_indexer(phtcnt),stat=astat )</a>
+   214) <a name="l214" style="background-color: #ffffff">    if( astat /= 0 ) then</a>
+   215) <a name="l215" style="background-color: #ffff99">       write(iulog,*) 'photo_inti: lng_indexer allocation error = ',astat</a>
+   216) <a name="l216" style="background-color: #ffff99">       call endrun</a>
+   217) <a name="l217" style="background-color: #ffff99">    end if</a>
+   218) <a name="l218" style="background-color: #ffffff">    lng_indexer(:) = 0</a>
+   219) <a name="l219" style="background-color: #ffffff">    allocate( sht_indexer(phtcnt),stat=astat )</a>
+   220) <a name="l220" style="background-color: #ffffff">    if( astat /= 0 ) then</a>
+   221) <a name="l221" style="background-color: #ffff99">       write(iulog,*) 'photo_inti: Failed to allocate sht_indexer; error = ',astat</a>
+   222) <a name="l222" style="background-color: #ffff99">       call endrun</a>
+   223) <a name="l223" style="background-color: #ffff99">    end if</a>
+   224) <a name="l224" style="background-color: #ffffff">    sht_indexer(:) = 0</a>
+   225) <a name="l225" style="background-color: #ffffff">    allocate( euv_indexer(phtcnt),stat=astat )</a>
+   226) <a name="l226" style="background-color: #ffffff">    if( astat /= 0 ) then</a>
+   227) <a name="l227" style="background-color: #ffff99">       write(iulog,*) 'photo_inti: Failed to allocate euv_indexer; error = ',astat</a>
+   228) <a name="l228" style="background-color: #ffff99">       call endrun</a>
+   229) <a name="l229" style="background-color: #ffff99">    end if</a>
+   230) <a name="l230" style="background-color: #ffffff">    euv_indexer(:) = 0</a>
+   231) <a name="l231" style="background-color: #ffffff"></a>
+   232) <a name="l232" style="background-color: #ffffff">    jno_ndx     = get_rxt_ndx( 'jno' )</a>
+   233) <a name="l233" style="background-color: #ffffff">    jo2_a_ndx   = get_rxt_ndx( 'jo2_a' )</a>
+   234) <a name="l234" style="background-color: #ffffff">    jo2_b_ndx   = get_rxt_ndx( 'jo2_b' )</a>
+   235) <a name="l235" style="background-color: #ffffff"></a>
+   236) <a name="l236" style="background-color: #ffffff">    jo1da_ndx = get_rxt_ndx( 'jo1da' )</a>
+   237) <a name="l237" style="background-color: #ffffff">    jo3pa_ndx = get_rxt_ndx( 'jo3pa' )</a>
+   238) <a name="l238" style="background-color: #ffffff">    jno2a_ndx = get_rxt_ndx( 'jno2a' )</a>
+   239) <a name="l239" style="background-color: #ffffff">    jn2o5a_ndx = get_rxt_ndx( 'jn2o5a' )</a>
+   240) <a name="l240" style="background-color: #ffffff">    jn2o5b_ndx = get_rxt_ndx( 'jn2o5b' )</a>
+   241) <a name="l241" style="background-color: #ffffff">    jhno3a_ndx = get_rxt_ndx( 'jhno3a' )</a>
+   242) <a name="l242" style="background-color: #ffffff">    jno3a_ndx = get_rxt_ndx( 'jno3a' )</a>
+   243) <a name="l243" style="background-color: #ffffff">    jpana_ndx = get_rxt_ndx( 'jpana' )</a>
+   244) <a name="l244" style="background-color: #ffffff">    jmpana_ndx = get_rxt_ndx( 'jmpana' )</a>
+   245) <a name="l245" style="background-color: #ffffff">    jho2no2a_ndx  = get_rxt_ndx( 'jho2no2a' )</a>
+   246) <a name="l246" style="background-color: #ffffff">    jonitra_ndx = get_rxt_ndx( 'jonitra' )</a>
+   247) <a name="l247" style="background-color: #ffffff"></a>
+   248) <a name="l248" style="background-color: #ffffff">    jo1d_ndx = get_rxt_ndx( 'jo1d' )</a>
+   249) <a name="l249" style="background-color: #ffffff">    jo3p_ndx = get_rxt_ndx( 'jo3p' )</a>
+   250) <a name="l250" style="background-color: #ffffff">    jno2_ndx = get_rxt_ndx( 'jno2' )</a>
+   251) <a name="l251" style="background-color: #ffffff">    jn2o5_ndx = get_rxt_ndx( 'jn2o5' )</a>
+   252) <a name="l252" style="background-color: #ffffff">    jn2o5_ndx = get_rxt_ndx( 'jn2o5' )</a>
+   253) <a name="l253" style="background-color: #ffffff">    jhno3_ndx = get_rxt_ndx( 'jhno3' )</a>
+   254) <a name="l254" style="background-color: #ffffff">    jno3_ndx = get_rxt_ndx( 'jno3' )</a>
+   255) <a name="l255" style="background-color: #ffffff">    jpan_ndx = get_rxt_ndx( 'jpan' )</a>
+   256) <a name="l256" style="background-color: #ffffff">    jmpan_ndx = get_rxt_ndx( 'jmpan' )</a>
+   257) <a name="l257" style="background-color: #ffffff">    jho2no2_ndx  = get_rxt_ndx( 'jho2no2' )</a>
+   258) <a name="l258" style="background-color: #ffffff">    jonitr_ndx = get_rxt_ndx( 'jonitr' )</a>
+   259) <a name="l259" style="background-color: #ffffff"></a>
+   260) <a name="l260" style="background-color: #ffffff"></a>
+   261) <a name="l261" style="background-color: #ffffff">    ox_ndx     = get_spc_ndx( 'OX' )</a>
+   262) <a name="l262" style="background-color: #ffffff">    if( ox_ndx &lt; 1 ) then</a>
+   263) <a name="l263" style="background-color: #ffffff">       ox_ndx  = get_spc_ndx( 'O3' )</a>
+   264) <a name="l264" style="background-color: #ffffff">    end if</a>
+   265) <a name="l265" style="background-color: #ffffff">    o3_ndx     = get_spc_ndx( 'O3' )</a>
+   266) <a name="l266" style="background-color: #ffffff">    o3rad_ndx  = get_spc_ndx( 'O3RAD' )</a>
+   267) <a name="l267" style="background-color: #ffffff">    o3_inv_ndx = get_inv_ndx( 'O3' )</a>
+   268) <a name="l268" style="background-color: #ffffff"></a>
+   269) <a name="l269" style="background-color: #ffffff">    n2_ndx     = get_inv_ndx( 'N2' )</a>
+   270) <a name="l270" style="background-color: #fafad2">    n2_is_inv  = n2_ndx &gt; 0</a>
+   271) <a name="l271" style="background-color: #fafad2">    if( .not. n2_is_inv ) then</a>
+   272) <a name="l272" style="background-color: #ffff99">       n2_ndx = get_spc_ndx( 'N2' )</a>
+   273) <a name="l273" style="background-color: #ffff99">    end if</a>
+   274) <a name="l274" style="background-color: #ffffff">    o2_ndx     = get_inv_ndx( 'O2' )</a>
+   275) <a name="l275" style="background-color: #fafad2">    o2_is_inv  = o2_ndx &gt; 0</a>
+   276) <a name="l276" style="background-color: #fafad2">    if( .not. o2_is_inv ) then</a>
+   277) <a name="l277" style="background-color: #ffff99">       o2_ndx = get_spc_ndx( 'O2' )</a>
+   278) <a name="l278" style="background-color: #ffff99">    end if</a>
+   279) <a name="l279" style="background-color: #ffffff">    no_ndx     = get_spc_ndx( 'NO' )</a>
+   280) <a name="l280" style="background-color: #fafad2">    no_is_inv  = no_ndx &lt; 1</a>
+   281) <a name="l281" style="background-color: #fafad2">    if( no_is_inv ) then</a>
+   282) <a name="l282" style="background-color: #ffffff">       no_ndx = get_inv_ndx( 'NO' )</a>
+   283) <a name="l283" style="background-color: #ffffff">    end if</a>
+   284) <a name="l284" style="background-color: #fafad2">    o3_is_inv  = o3_ndx &lt; 1</a>
+   285) <a name="l285" style="background-color: #fafad2"></a>
+   286) <a name="l286" style="background-color: #ffffff">    o_ndx     = get_spc_ndx( 'O' )</a>
+   287) <a name="l287" style="background-color: #fafad2">    o_is_inv  = o_ndx &lt; 1</a>
+   288) <a name="l288" style="background-color: #fafad2">    if( o_is_inv ) then</a>
+   289) <a name="l289" style="background-color: #ffffff">       o_ndx = get_inv_ndx( 'O' )</a>
+   290) <a name="l290" style="background-color: #ffffff">    end if</a>
+   291) <a name="l291" style="background-color: #ffffff"></a>
+   292) <a name="l292" style="background-color: #ffffff">    do_jshort = o_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. o2_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. (o3_ndx</a><a style="background-color: #fafad2">&gt;0.or.o3_inv_ndx&gt;0) </a><a style="background-color: #ffffff">.and. n2_ndx</a><a style="background-color: #fafad2">&gt;0 .and. no_ndx&gt;0</a>
+   293) <a name="l293" style="background-color: #fafad2"></a>
+   294) <a name="l294" style="background-color: #fafad2">    !----------------------------------------------------------------------</a>
+   295) <a name="l295" style="background-color: #fafad2">    !	... call module initializers</a>
+   296) <a name="l296" style="background-color: #fafad2">    !----------------------------------------------------------------------</a>
+   297) <a name="l297" style="background-color: #fafad2">    is_xactive : if( xactive_prates ) then</a>
+   298) <a name="l298" style="background-color: #ffff99">       do_jshort = .false.</a>
+   299) <a name="l299" style="background-color: #ffff99">       jch3cho_a_ndx = get_rxt_ndx( 'jch3cho_a' )</a>
+   300) <a name="l300" style="background-color: #ffff99">       jch3cho_b_ndx = get_rxt_ndx( 'jch3cho_b' )</a>
+   301) <a name="l301" style="background-color: #ffff99">       jch3cho_c_ndx = get_rxt_ndx( 'jch3cho_c' )</a>
+   302) <a name="l302" style="background-color: #ffff99">       jonitr_ndx    = get_rxt_ndx( 'jonitr' )</a>
+   303) <a name="l303" style="background-color: #ffff99">       jho2no2_ndx   = get_rxt_ndx( 'jho2no2' )</a>
+   304) <a name="l304" style="background-color: #ffff99">       call tuv_inti( pverp, tuv_xsect_file, lng_indexer )</a>
+   305) <a name="l305" style="background-color: #ffff99">    else is_xactive</a>
+   306) <a name="l306" style="background-color: #ffff99">       call </a><a style="background-color: #ffffff">jlong_init( xs_long_file, rsf_file, lng_indexer )</a>
+   307) <a name="l307" style="background-color: #ffffff">       if (waccm) then</a>
+   308) <a name="l308" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">jeuv_init( euvacdat_file, photon_file, electron_file, euv_indexer )</a>
+   309) <a name="l309" style="background-color: #ffff99">          call photo_bkgrnd_init()</a>
+   310) <a name="l310" style="background-color: #ffff99">          call addfld('Qbkgndtot','cm-3 sec-1', pver, 'A', 'background ionization rate ', phys_decomp )</a>
+   311) <a name="l311" style="background-color: #ffff99">          call addfld('Qbkgnd_o1','cm-3 sec-1', pver, 'A', 'background ionization rate ', phys_decomp )</a>
+   312) <a name="l312" style="background-color: #ffff99">          call addfld('Qbkgnd_o2','cm-3 sec-1', pver, 'A', 'background ionization rate ', phys_decomp )</a>
+   313) <a name="l313" style="background-color: #ffff99">          call addfld('Qbkgnd_n2','cm-3 sec-1', pver, 'A', 'background ionization rate ', phys_decomp )</a>
+   314) <a name="l314" style="background-color: #ffff99">          call addfld('Qbkgnd_n1','cm-3 sec-1', pver, 'A', 'background ionization rate ', phys_decomp )</a>
+   315) <a name="l315" style="background-color: #ffff99">          call addfld('Qbkgnd_no','cm-3 sec-1', pver, 'A', 'background ionization rate ', phys_decomp )</a>
+   316) <a name="l316" style="background-color: #ffff99">       endif</a>
+   317) <a name="l317" style="background-color: #ffffff">       if (do_jshort) then</a>
+   318) <a name="l318" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">jshort_init( xs_coef_file, xs_short_file, sht_indexer )</a>
+   319) <a name="l319" style="background-color: #ffff99">       endif</a>
+   320) <a name="l320" style="background-color: #ffffff">       jho2no2_ndx = get_rxt_ndx( 'jho2no2_b' )</a>
+   321) <a name="l321" style="background-color: #ffffff">    end if is_xactive</a>
+   322) <a name="l322" style="background-color: #ffffff"></a>
+   323) <a name="l323" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   324) <a name="l324" style="background-color: #ffffff">    !        ... check that each photorate is in short or long datasets</a>
+   325) <a name="l325" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   326) <a name="l326" style="background-color: #ffffff">    if( any( (abs(sht_indexer(:)) + abs(lng_indexer(:)) + abs(euv_indexer(:))) </a><a style="background-color: #fafad2">== 0 ) ) then</a>
+   327) <a name="l327" style="background-color: #ffff99">       write(iulog,*) ' '</a>
+   328) <a name="l328" style="background-color: #ffff99">       write(iulog,*) 'photo_inti: the following photorate(s) are not in'</a>
+   329) <a name="l329" style="background-color: #ffff99">       write(iulog,*) '            either the short or long datasets'</a>
+   330) <a name="l330" style="background-color: #ffff99">       write(iulog,*) ' '</a>
+   331) <a name="l331" style="background-color: #ffff99">       do ndx = 1,phtcnt</a>
+   332) <a name="l332" style="background-color: #ffff99">          if( abs(sht_indexer(ndx)) + abs(lng_indexer(ndx)) == 0 ) then</a>
+   333) <a name="l333" style="background-color: #ffff99">             write(iulog,*) '           ',trim( rxt_tag_lst(ndx) )</a>
+   334) <a name="l334" style="background-color: #ffff99">          end if</a>
+   335) <a name="l335" style="background-color: #ffff99">       end do</a>
+   336) <a name="l336" style="background-color: #ffff99">       call endrun</a>
+   337) <a name="l337" style="background-color: #ffff99">    end if</a>
+   338) <a name="l338" style="background-color: #ffff99"></a>
+   339) <a name="l339" style="background-color: #ffff99">    !----------------------------------------------------------------------</a>
+   340) <a name="l340" style="background-color: #ffff99">    !        ... output any aliased photorates</a>
+   341) <a name="l341" style="background-color: #ffff99">    !----------------------------------------------------------------------</a>
+   342) <a name="l342" style="background-color: #ffffff">    if( masterproc ) then</a>
+   343) <a name="l343" style="background-color: #ffffff">       if( any( pht_alias_lst(:,1) </a><a style="background-color: #fafad2">/= ' ' ) ) then</a>
+   344) <a name="l344" style="background-color: #ffff99">          write(iulog,*) ' '</a>
+   345) <a name="l345" style="background-color: #ffff99">          write(iulog,*) 'photo_inti: the following short photorate(s) are aliased'</a>
+   346) <a name="l346" style="background-color: #ffff99">          write(iulog,*) ' '</a>
+   347) <a name="l347" style="background-color: #ffff99">          do ndx = 1,phtcnt</a>
+   348) <a name="l348" style="background-color: #ffff99">             if( pht_alias_lst(ndx,1) /= ' ' ) then</a>
+   349) <a name="l349" style="background-color: #ffff99">                if( pht_alias_mult(ndx,1) == 1._r8 ) then</a>
+   350) <a name="l350" style="background-color: #ffff99">                   write(iulog,*) '           ',trim(rxt_tag_lst(ndx)),' -&gt; ',trim(pht_alias_lst(ndx,1))</a>
+   351) <a name="l351" style="background-color: #ffff99">                else</a>
+   352) <a name="l352" style="background-color: #ffff99">                   write(iulog,*) '           ',trim(rxt_tag_lst(ndx)),' -&gt; ',pht_alias_mult(ndx,1),'*',trim(pht_alias_lst(ndx,1))</a>
+   353) <a name="l353" style="background-color: #ffff99">                end if</a>
+   354) <a name="l354" style="background-color: #ffff99">             end if</a>
+   355) <a name="l355" style="background-color: #ffff99">          end do</a>
+   356) <a name="l356" style="background-color: #ffff99">       end if</a>
+   357) <a name="l357" style="background-color: #ffff99">       if( </a><a style="background-color: #ffffff">any( pht_alias_lst(:,2) </a><a style="background-color: #fafad2">/= ' ' ) ) then</a>
+   358) <a name="l358" style="background-color: #ffff99">          write(iulog,*) ' '</a>
+   359) <a name="l359" style="background-color: #ffff99">          write(iulog,*) 'photo_inti: the following long photorate(s) are aliased'</a>
+   360) <a name="l360" style="background-color: #ffff99">          write(iulog,*) ' '</a>
+   361) <a name="l361" style="background-color: #ffff99">          do ndx = 1,phtcnt</a>
+   362) <a name="l362" style="background-color: #ffff99">             if( pht_alias_lst(ndx,2) /= ' ' ) then</a>
+   363) <a name="l363" style="background-color: #ffff99">                if( pht_alias_mult(ndx,2) == 1._r8 ) then</a>
+   364) <a name="l364" style="background-color: #ffff99">                   write(iulog,*) '           ',trim(rxt_tag_lst(ndx)),' -&gt; ',trim(pht_alias_lst(ndx,2))</a>
+   365) <a name="l365" style="background-color: #ffff99">                else</a>
+   366) <a name="l366" style="background-color: #ffff99">                   write(iulog,*) '           ',trim(rxt_tag_lst(ndx)),' -&gt; ',pht_alias_mult(ndx,2),'*',trim(pht_alias_lst(ndx,2))</a>
+   367) <a name="l367" style="background-color: #ffff99">                end if</a>
+   368) <a name="l368" style="background-color: #ffff99">             end if</a>
+   369) <a name="l369" style="background-color: #ffff99">          end do</a>
+   370) <a name="l370" style="background-color: #ffff99">       end if</a>
+   371) <a name="l371" style="background-color: #ffff99"></a>
+   372) <a name="l372" style="background-color: #ffffff">       write(iulog,*) ' '</a>
+   373) <a name="l373" style="background-color: #ffffff">       write(iulog,*) '*********************************************'</a>
+   374) <a name="l374" style="background-color: #ffffff">       write(iulog,*) 'photo_inti: euv_indexer'</a>
+   375) <a name="l375" style="background-color: #ffffff">       write(iulog,'(10i6)') euv_indexer(:)</a>
+   376) <a name="l376" style="background-color: #ffffff">       write(iulog,*) 'photo_inti: sht_indexer'</a>
+   377) <a name="l377" style="background-color: #ffffff">       write(iulog,'(10i6)') sht_indexer(:)</a>
+   378) <a name="l378" style="background-color: #ffffff">       write(iulog,*) 'photo_inti: lng_indexer'</a>
+   379) <a name="l379" style="background-color: #ffffff">       write(iulog,'(10i6)') lng_indexer(:)</a>
+   380) <a name="l380" style="background-color: #ffffff">       write(iulog,*) '*********************************************'</a>
+   381) <a name="l381" style="background-color: #ffffff">       write(iulog,*) ' '</a>
+   382) <a name="l382" style="background-color: #ffffff">    endif</a>
+   383) <a name="l383" style="background-color: #ffffff"></a>
+   384) <a name="l384" style="background-color: #ffffff">    if( xactive_prates ) then</a>
+   385) <a name="l385" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">o2_xsect_inti( o2_xsect_file )</a>
+   386) <a name="l386" style="background-color: #ffff99">       call photoin_inti( nlng, lng_indexer )</a>
+   387) <a name="l387" style="background-color: #ffff99">    end if</a>
+   388) <a name="l388" style="background-color: #ffff99"></a>
+   389) <a name="l389" style="background-color: #ffff99">    !----------------------------------------------------------------------</a>
+   390) <a name="l390" style="background-color: #ffff99">    !	... check for o2, o3 absorber columns</a>
+   391) <a name="l391" style="background-color: #ffff99">    !----------------------------------------------------------------------</a>
+   392) <a name="l392" style="background-color: #ffff99">    if( ncol_abs &gt; 0 ) then</a>
+   393) <a name="l393" style="background-color: #ffffff">       spc_ndx = ox_ndx</a>
+   394) <a name="l394" style="background-color: #ffffff">       if( spc_ndx &lt; 1 ) then</a>
+   395) <a name="l395" style="background-color: #ffffff">          spc_ndx = o3_ndx</a>
+   396) <a name="l396" style="background-color: #ffffff">       end if</a>
+   397) <a name="l397" style="background-color: #ffffff">       if( spc_ndx &gt; 0 ) then</a>
+   398) <a name="l398" style="background-color: #ffff99">          has_o3_col = .true.</a>
+   399) <a name="l399" style="background-color: #ffff99">       else</a>
+   400) <a name="l400" style="background-color: #ffffff">          has_o3_col = .false.</a>
+   401) <a name="l401" style="background-color: #ffffff">       end if</a>
+   402) <a name="l402" style="background-color: #ffffff">       if( ncol_abs &gt; 1 ) then</a>
+   403) <a name="l403" style="background-color: #ffffff">          if( o2_ndx &gt; 1 ) then</a>
+   404) <a name="l404" style="background-color: #ffffff">             has_o2_col = .true.</a>
+   405) <a name="l405" style="background-color: #ffffff">          else</a>
+   406) <a name="l406" style="background-color: #ffff99">             has_o2_col = .false.</a>
+   407) <a name="l407" style="background-color: #ffff99">          end if</a>
+   408) <a name="l408" style="background-color: #ffff99">       else</a>
+   409) <a name="l409" style="background-color: #ffff99">          has_o2_col = .false.</a>
+   410) <a name="l410" style="background-color: #ffff99">       end if</a>
+   411) <a name="l411" style="background-color: #ffff99">    else</a>
+   412) <a name="l412" style="background-color: #ffff99">       has_o2_col = .false.</a>
+   413) <a name="l413" style="background-color: #ffff99">       has_o3_col = .false.</a>
+   414) <a name="l414" style="background-color: #ffff99">    end if</a>
+   415) <a name="l415" style="background-color: #ffff99"></a>
+   416) <a name="l416" style="background-color: #ffff99">    if ( </a><a style="background-color: #ffffff">len_trim(exo_coldens_file) == 0 ) then</a>
+   417) <a name="l417" style="background-color: #ffff99">       has_o2_col = .false.</a>
+   418) <a name="l418" style="background-color: #ffff99">       has_o3_col = .false.</a>
+   419) <a name="l419" style="background-color: #ffff99">    endif</a>
+   420) <a name="l420" style="background-color: #ffff99"></a>
+   421) <a name="l421" style="background-color: #ffffff">    oc1_ndx = get_spc_ndx( 'OC1' )</a>
+   422) <a name="l422" style="background-color: #ffffff">    oc2_ndx = get_spc_ndx( 'OC2' )</a>
+   423) <a name="l423" style="background-color: #ffffff">    cb1_ndx = get_spc_ndx( 'CB1' )</a>
+   424) <a name="l424" style="background-color: #ffffff">    cb2_ndx = get_spc_ndx( 'CB2' )</a>
+   425) <a name="l425" style="background-color: #ffffff">    soa_ndx = get_spc_ndx( 'SOA' )</a>
+   426) <a name="l426" style="background-color: #ffffff">    ant_ndx = get_spc_ndx( 'NH4NO3' )</a>
+   427) <a name="l427" style="background-color: #ffffff">    so4_ndx = get_spc_ndx( 'SO4' )</a>
+   428) <a name="l428" style="background-color: #ffffff">    if (sslt_ncnst == 4) then</a>
+   429) <a name="l429" style="background-color: #ffff99">       sa1_ndx = get_spc_ndx( sslt_names(1) )</a>
+   430) <a name="l430" style="background-color: #ffff99">       sa2_ndx = get_spc_ndx( sslt_names(2) )</a>
+   431) <a name="l431" style="background-color: #ffff99">       sa3_ndx = get_spc_ndx( sslt_names(3) )</a>
+   432) <a name="l432" style="background-color: #ffff99">       sa4_ndx = get_spc_ndx( sslt_names(4) )</a>
+   433) <a name="l433" style="background-color: #ffff99">    endif</a>
+   434) <a name="l434" style="background-color: #ffff99"></a>
+   435) <a name="l435" style="background-color: #ffffff">    has_abs_columns : if( has_o2_col .or. has_o3_col ) then</a>
+   436) <a name="l436" style="background-color: #ffffff">       !-----------------------------------------------------------------------</a>
+   437) <a name="l437" style="background-color: #ffffff">       !	... open exo coldens file</a>
+   438) <a name="l438" style="background-color: #ffffff">       !-----------------------------------------------------------------------</a>
+   439) <a name="l439" style="background-color: #ffffff">       filespec = trim( exo_coldens_file )</a>
+   440) <a name="l440" style="background-color: #ffffff">       call getfil( filespec, locfn, 0 )</a>
+   441) <a name="l441" style="background-color: #ffffff">       call cam_pio_openfile( ncid, trim(locfn), PIO_NOWRITE )</a>
+   442) <a name="l442" style="background-color: #ffffff"></a>
+   443) <a name="l443" style="background-color: #ffffff">       !-----------------------------------------------------------------------</a>
+   444) <a name="l444" style="background-color: #ffffff">       !       ... get grid dimensions from file</a>
+   445) <a name="l445" style="background-color: #ffffff">       !-----------------------------------------------------------------------</a>
+   446) <a name="l446" style="background-color: #ffffff">       !       ... timing</a>
+   447) <a name="l447" style="background-color: #ffffff">       !-----------------------------------------------------------------------</a>
+   448) <a name="l448" style="background-color: #ffffff">       ierr = pio_inq_dimid( ncid, 'month', dimid )</a>
+   449) <a name="l449" style="background-color: #ffffff">       ierr = pio_inq_dimlen( ncid, dimid, ntimes )</a>
+   450) <a name="l450" style="background-color: #ffffff"></a>
+   451) <a name="l451" style="background-color: #ffffff">       if( ntimes /= 12 ) then</a>
+   452) <a name="l452" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">endrun('photo_inti: exo coldens is not annual period')</a>
+   453) <a name="l453" style="background-color: #ffff99">       end if</a>
+   454) <a name="l454" style="background-color: #fafad2">       allocate( dates(ntimes),days(ntimes),stat=astat )</a>
+   455) <a name="l455" style="background-color: #fafad2">       if( astat /= 0 ) then</a>
+   456) <a name="l456" style="background-color: #ffff99">          write(iulog,*) 'photo_inti: dates,days allocation error = ',astat</a>
+   457) <a name="l457" style="background-color: #ffff99">          call endrun</a>
+   458) <a name="l458" style="background-color: #ffff99">       end if</a>
+   459) <a name="l459" style="background-color: #ffffff">       dates(:) = (/ 116, 214, 316, 415,  516,  615, &amp;</a>
+   460) <a name="l460" style="background-color: #ffffff">            716, 816, 915, 1016, 1115, 1216 /)</a>
+   461) <a name="l461" style="background-color: #ffffff">       !-----------------------------------------------------------------------</a>
+   462) <a name="l462" style="background-color: #ffffff">       !	... initialize the monthly day of year times</a>
+   463) <a name="l463" style="background-color: #ffffff">       !-----------------------------------------------------------------------</a>
+   464) <a name="l464" style="background-color: #ffffff">       do n = 1,ntimes</a>
+   465) <a name="l465" style="background-color: #ffffff">          days(n) = get_calday( dates(n), 0 )</a>
+   466) <a name="l466" style="background-color: #ffffff">       end do</a>
+   467) <a name="l467" style="background-color: #ffffff">       deallocate( dates )</a>
+   468) <a name="l468" style="background-color: #ffffff">       !-----------------------------------------------------------------------</a>
+   469) <a name="l469" style="background-color: #ffffff">       !       ... latitudes</a>
+   470) <a name="l470" style="background-color: #ffffff">       !-----------------------------------------------------------------------</a>
+   471) <a name="l471" style="background-color: #ffffff">       ierr = pio_inq_dimid( ncid, 'lat', dimid )</a>
+   472) <a name="l472" style="background-color: #ffffff">       ierr = pio_inq_dimlen( ncid, dimid, nlat )</a>
+   473) <a name="l473" style="background-color: #fafad2">       allocate( lats(nlat), stat=astat )</a>
+   474) <a name="l474" style="background-color: #fafad2">       if( astat /= 0 ) then</a>
+   475) <a name="l475" style="background-color: #ffff99">          write(iulog,*) 'photo_inti: lats allocation error = ',astat</a>
+   476) <a name="l476" style="background-color: #ffff99">          call endrun</a>
+   477) <a name="l477" style="background-color: #ffff99">       end if</a>
+   478) <a name="l478" style="background-color: #ffffff">       ierr = pio_inq_varid( ncid, 'lat', vid )</a>
+   479) <a name="l479" style="background-color: #ffffff">       ierr = pio_get_var( ncid, vid, lats )</a>
+   480) <a name="l480" style="background-color: #ffffff">       lats(:nlat) = lats(:nlat) * d2r</a>
+   481) <a name="l481" style="background-color: #ffffff">       !-----------------------------------------------------------------------</a>
+   482) <a name="l482" style="background-color: #ffffff">       !       ... levels</a>
+   483) <a name="l483" style="background-color: #ffffff">       !-----------------------------------------------------------------------</a>
+   484) <a name="l484" style="background-color: #ffffff">       ierr = pio_inq_dimid( ncid, 'lev', dimid )</a>
+   485) <a name="l485" style="background-color: #ffffff">       ierr = pio_inq_dimlen( ncid, dimid, n_exo_levs )</a>
+   486) <a name="l486" style="background-color: #fafad2">       allocate( levs(n_exo_levs), stat=astat )</a>
+   487) <a name="l487" style="background-color: #fafad2">       if( astat /= 0 ) then</a>
+   488) <a name="l488" style="background-color: #ffff99">          write(iulog,*) 'photo_inti: levs allocation error = ',astat</a>
+   489) <a name="l489" style="background-color: #ffff99">          call endrun</a>
+   490) <a name="l490" style="background-color: #ffff99">       end if</a>
+   491) <a name="l491" style="background-color: #ffffff">       ierr = pio_inq_varid( ncid, 'lev', vid )</a>
+   492) <a name="l492" style="background-color: #ffffff">       ierr = pio_get_var( ncid, vid, levs )</a>
+   493) <a name="l493" style="background-color: #ffffff">       levs(:n_exo_levs) = levs(:n_exo_levs) * hPa2Pa</a>
+   494) <a name="l494" style="background-color: #ffffff">       !-----------------------------------------------------------------------</a>
+   495) <a name="l495" style="background-color: #ffffff">       !       ... set up regridding</a>
+   496) <a name="l496" style="background-color: #ffffff">       !-----------------------------------------------------------------------</a>
+   497) <a name="l497" style="background-color: #ffffff"></a>
+   498) <a name="l498" style="background-color: #fafad2">       allocate( coldens(nlat,n_exo_levs,ntimes),stat=astat )</a>
+   499) <a name="l499" style="background-color: #fafad2">       if( astat /= 0 ) then</a>
+   500) <a name="l500" style="background-color: #ffff99">          write(iulog,*) 'photo_inti: coldens allocation error = ',astat</a>
+   501) <a name="l501" style="background-color: #ffff99">          call endrun</a>
+   502) <a name="l502" style="background-color: #ffff99">       end if</a>
+   503) <a name="l503" style="background-color: #ffffff">       if( has_o2_col ) then</a>
+   504) <a name="l504" style="background-color: #fafad2">          allocate( o2_exo_coldens(n_exo_levs,pcols,begchunk:endchunk,ntimes),stat=astat )</a>
+   505) <a name="l505" style="background-color: #fafad2">          if( astat /= 0 ) then</a>
+   506) <a name="l506" style="background-color: #ffff99">             write(iulog,*) 'photo_inti: o2_exo_coldens allocation error = ',astat</a>
+   507) <a name="l507" style="background-color: #ffff99">             call endrun</a>
+   508) <a name="l508" style="background-color: #ffff99">          end if</a>
+   509) <a name="l509" style="background-color: #ffffff">          ierr = pio_inq_varid( ncid, 'O2_column_density', vid )</a>
+   510) <a name="l510" style="background-color: #ffffff">          ierr = pio_get_var( ncid, vid,coldens )</a>
+   511) <a name="l511" style="background-color: #ffffff"></a>
+   512) <a name="l512" style="background-color: #ffffff">          do c=begchunk,endchunk</a>
+   513) <a name="l513" style="background-color: #ffffff">             ncols = get_ncols_p(c)</a>
+   514) <a name="l514" style="background-color: #ffffff">             call get_rlat_all_p(c, pcols, to_lats)</a>
+   515) <a name="l515" style="background-color: #ffffff">             call lininterp_init(lats, nlat, to_lats, ncols, 1, lat_wgts)</a>
+   516) <a name="l516" style="background-color: #ffffff">             do n=1,ntimes</a>
+   517) <a name="l517" style="background-color: #ffffff">                do k = 1,n_exo_levs</a>
+   518) <a name="l518" style="background-color: #ffffff">                   call lininterp(coldens(:,k,n), nlat, o2_exo_coldens(k,:,c,n), ncols, lat_wgts)</a>
+   519) <a name="l519" style="background-color: #ffffff">                end do</a>
+   520) <a name="l520" style="background-color: #ffffff">             end do</a>
+   521) <a name="l521" style="background-color: #ffffff">             call lininterp_finish(lat_wgts)</a>
+   522) <a name="l522" style="background-color: #ffffff">          enddo</a>
+   523) <a name="l523" style="background-color: #ffffff"></a>
+   524) <a name="l524" style="background-color: #ffffff"></a>
+   525) <a name="l525" style="background-color: #ffffff">       end if</a>
+   526) <a name="l526" style="background-color: #ffffff">       if( has_o3_col ) then</a>
+   527) <a name="l527" style="background-color: #ffff99">          allocate( o3_exo_coldens(n_exo_levs,pcols,begchunk:endchunk,ntimes),stat=astat )</a>
+   528) <a name="l528" style="background-color: #ffff99">          if( astat /= 0 ) then</a>
+   529) <a name="l529" style="background-color: #ffff99">             write(iulog,*) 'photo_inti: o3_exo_coldens allocation error = ',astat</a>
+   530) <a name="l530" style="background-color: #ffff99">             call endrun</a>
+   531) <a name="l531" style="background-color: #ffff99">          end if</a>
+   532) <a name="l532" style="background-color: #ffff99">          ierr = pio_inq_varid( ncid, 'O3_column_density', vid )</a>
+   533) <a name="l533" style="background-color: #ffff99">          ierr = pio_get_var( ncid, vid,coldens )</a>
+   534) <a name="l534" style="background-color: #ffff99"></a>
+   535) <a name="l535" style="background-color: #ffff99">          do c=begchunk,endchunk</a>
+   536) <a name="l536" style="background-color: #ffff99">             ncols = get_ncols_p(c)</a>
+   537) <a name="l537" style="background-color: #ffff99">             call get_rlat_all_p(c, pcols, to_lats)</a>
+   538) <a name="l538" style="background-color: #ffff99">             call lininterp_init(lats, nlat, to_lats, ncols, 1, lat_wgts)</a>
+   539) <a name="l539" style="background-color: #ffff99">             do n=1,ntimes</a>
+   540) <a name="l540" style="background-color: #ffff99">                do k = 1,n_exo_levs</a>
+   541) <a name="l541" style="background-color: #ffff99">                   call lininterp(coldens(:,k,n), nlat, o3_exo_coldens(k,:,c,n), ncols, lat_wgts)</a>
+   542) <a name="l542" style="background-color: #ffff99">                end do</a>
+   543) <a name="l543" style="background-color: #ffff99">             end do</a>
+   544) <a name="l544" style="background-color: #ffff99">             call lininterp_finish(lat_wgts)</a>
+   545) <a name="l545" style="background-color: #ffff99">          enddo</a>
+   546) <a name="l546" style="background-color: #ffff99">       end if</a>
+   547) <a name="l547" style="background-color: #ffff99">       call </a><a style="background-color: #ffffff">pio_closefile (ncid)</a>
+   548) <a name="l548" style="background-color: #ffffff">       deallocate( coldens,stat=astat )</a>
+   549) <a name="l549" style="background-color: #ffffff">       if( astat /= 0 ) then</a>
+   550) <a name="l550" style="background-color: #ffff99">          write(iulog,*) 'photo_inti: failed to deallocate coldens; error = ',astat</a>
+   551) <a name="l551" style="background-color: #ffff99">          call endrun</a>
+   552) <a name="l552" style="background-color: #ffff99">       end if</a>
+   553) <a name="l553" style="background-color: #fafad2">       has_fixed_press = (num_pr_lev .ne. 0)</a>
+   554) <a name="l554" style="background-color: #fafad2">       !-----------------------------------------------------------------------</a>
+   555) <a name="l555" style="background-color: #fafad2">       !	... setup the pressure interpolation</a>
+   556) <a name="l556" style="background-color: #fafad2">       !-----------------------------------------------------------------------</a>
+   557) <a name="l557" style="background-color: #fafad2">       if( has_fixed_press ) then</a>
+   558) <a name="l558" style="background-color: #ffffff">          pinterp =  ptop_ref</a>
+   559) <a name="l559" style="background-color: #ffffff">          if( pinterp &lt;= levs(1) ) then</a>
+   560) <a name="l560" style="background-color: #ffff99">             ki   = 1</a>
+   561) <a name="l561" style="background-color: #ffff99">             delp = 0._r8</a>
+   562) <a name="l562" style="background-color: #ffff99">          else</a>
+   563) <a name="l563" style="background-color: #ffffff">             do ki = 2,n_exo_levs</a>
+   564) <a name="l564" style="background-color: #ffffff">                if( pinterp &lt;= levs(ki) ) then</a>
+   565) <a name="l565" style="background-color: #ffffff">                   delp = log( pinterp/levs(ki-1) )/log( levs(ki)/levs(ki-1) )</a>
+   566) <a name="l566" style="background-color: #ffffff">                   exit</a>
+   567) <a name="l567" style="background-color: #ffffff">                end if</a>
+   568) <a name="l568" style="background-color: #ffffff">             end do</a>
+   569) <a name="l569" style="background-color: #ffffff">          end if</a>
+   570) <a name="l570" style="background-color: #ffffff">#ifdef DEBUG</a>
+   571) <a name="l571" style="background-color: #ffffff">          write(iulog,*) '-----------------------------------'</a>
+   572) <a name="l572" style="background-color: #ffffff">          write(iulog,*) 'photo_inti: diagnostics'</a>
+   573) <a name="l573" style="background-color: #ffffff">          write(iulog,*) 'ki, delp = ',ki,delp</a>
+   574) <a name="l574" style="background-color: #ffffff">          write(iulog,*) 'pinterp,levs(ki-1:ki) = ',pinterp,levs(ki-1:ki)</a>
+   575) <a name="l575" style="background-color: #ffffff">          write(iulog,*) '-----------------------------------'</a>
+   576) <a name="l576" style="background-color: #ffffff">#endif</a>
+   577) <a name="l577" style="background-color: #ffffff">       end if</a>
+   578) <a name="l578" style="background-color: #ffffff">    end if has_abs_columns</a>
+   579) <a name="l579" style="background-color: #ffffff"></a>
+   580) <a name="l580" style="background-color: #fafad2">  end subroutine photo_inti</a>
+   581) <a name="l581" style="background-color: #ffffff"></a>
+   582) <a name="l582" style="background-color: #ffffff">  subroutine table_photo( photos, pmid, pdel, temper, zmid, zint, &amp;</a>
+   583) <a name="l583" style="background-color: #ffffff">                          col_dens, zen_angle, srf_alb, lwc, clouds, &amp;</a>
+   584) <a name="l584" style="background-color: #ffffff">                          esfact, vmr, invariants, ncol, lchnk, pbuf )</a>
+   585) <a name="l585" style="background-color: #ffffff">!-----------------------------------------------------------------</a>
+   586) <a name="l586" style="background-color: #ffffff">!   	... table photorates for wavelengths &gt; 200nm</a>
+   587) <a name="l587" style="background-color: #ffffff">!-----------------------------------------------------------------</a>
+   588) <a name="l588" style="background-color: #ffffff"></a>
+   589) <a name="l589" style="background-color: #ffffff">    use chem_mods,   only : ncol_abs =&gt; nabscol, phtcnt, gas_pcnst, nfs</a>
+   590) <a name="l590" style="background-color: #ffffff">    use chem_mods,   only : pht_alias_mult, indexm</a>
+   591) <a name="l591" style="background-color: #ffffff">    use mo_jshort,   only : nsht =&gt; nj, jshort</a>
+   592) <a name="l592" style="background-color: #ffffff">    use mo_jlong,    only : nlng =&gt; numj, jlong</a>
+   593) <a name="l593" style="background-color: #ffffff">    use mo_jeuv,     only : neuv, jeuv, nIonRates</a>
+   594) <a name="l594" style="background-color: #ffffff">    use physics_buffer, only : physics_buffer_desc, pbuf_set_field, pbuf_get_field</a>
+   595) <a name="l595" style="background-color: #ffffff">    use photo_bkgrnd, only : photo_bkgrnd_calc</a>
+   596) <a name="l596" style="background-color: #ffffff">    use cam_history, only : outfld</a>
+   597) <a name="l597" style="background-color: #ffffff">    use infnan,      only : nan, assignment(=)</a>
+   598) <a name="l598" style="background-color: #ffffff"></a>
+   599) <a name="l599" style="background-color: #ffffff">    implicit none</a>
+   600) <a name="l600" style="background-color: #ffffff"></a>
+   601) <a name="l601" style="background-color: #ffffff">!-----------------------------------------------------------------</a>
+   602) <a name="l602" style="background-color: #ffffff">!   	... dummy arguments</a>
+   603) <a name="l603" style="background-color: #ffffff">!-----------------------------------------------------------------</a>
+   604) <a name="l604" style="background-color: #ffffff">    integer,  intent(in)    :: lchnk</a>
+   605) <a name="l605" style="background-color: #ffffff">    integer,  intent(in)    :: ncol</a>
+   606) <a name="l606" style="background-color: #ffffff">    real(r8), intent(in)    :: esfact                       ! earth sun distance factor</a>
+   607) <a name="l607" style="background-color: #ffffff">    real(r8), intent(in)    :: vmr(ncol,pver,max(1,gas_pcnst)) ! vmr</a>
+   608) <a name="l608" style="background-color: #ffffff">    real(r8), intent(in)    :: col_dens(ncol,pver,ncol_abs) ! column densities (molecules/cm^2)</a>
+   609) <a name="l609" style="background-color: #ffffff">    real(r8), intent(in)    :: zen_angle(ncol)              ! solar zenith angle (radians)</a>
+   610) <a name="l610" style="background-color: #ffffff">    real(r8), intent(in)    :: srf_alb(pcols)               ! surface albedo</a>
+   611) <a name="l611" style="background-color: #ffffff">    real(r8), intent(in)    :: lwc(ncol,pver)               ! liquid water content (kg/kg)</a>
+   612) <a name="l612" style="background-color: #ffffff">    real(r8), intent(in)    :: clouds(ncol,pver)            ! cloud fraction</a>
+   613) <a name="l613" style="background-color: #ffffff">    real(r8), intent(in)    :: pmid(pcols,pver)             ! midpoint pressure (Pa)</a>
+   614) <a name="l614" style="background-color: #ffffff">    real(r8), intent(in)    :: pdel(pcols,pver)             ! pressure delta about midpoint (Pa)</a>
+   615) <a name="l615" style="background-color: #ffffff">    real(r8), intent(in)    :: temper(pcols,pver)           ! midpoint temperature (K)</a>
+   616) <a name="l616" style="background-color: #ffffff">    real(r8), intent(in)    :: zmid(ncol,pver)              ! midpoint height (km)</a>
+   617) <a name="l617" style="background-color: #ffffff">    real(r8), intent(in)    :: zint(ncol,pver)              ! interface height (km)</a>
+   618) <a name="l618" style="background-color: #ffffff">    real(r8), intent(in)    :: invariants(ncol,pver,max(1,nfs)) ! invariant densities (molecules/cm^3)</a>
+   619) <a name="l619" style="background-color: #ffffff">    real(r8), intent(inout) :: photos(ncol,pver,phtcnt)     ! photodissociation rates (1/s)</a>
+   620) <a name="l620" style="background-color: #ffffff">    type(physics_buffer_desc),pointer :: pbuf(:)</a>
+   621) <a name="l621" style="background-color: #ffffff"></a>
+   622) <a name="l622" style="background-color: #ffffff">!-----------------------------------------------------------------</a>
+   623) <a name="l623" style="background-color: #ffffff">!    	... local variables</a>
+   624) <a name="l624" style="background-color: #ffffff">!-----------------------------------------------------------------</a>
+   625) <a name="l625" style="background-color: #ffffff">    real(r8), parameter :: Pa2mb         = 1.e-2_r8       ! pascals to mb</a>
+   626) <a name="l626" style="background-color: #ffffff"></a>
+   627) <a name="l627" style="background-color: #ffffff">    integer ::  i, k, m, n                 ! indicies</a>
+   628) <a name="l628" style="background-color: #ffffff">    integer ::  astat</a>
+   629) <a name="l629" style="background-color: #ffffff">    integer ::  indxIR                     ! pbuf index for ionization rates</a>
+   630) <a name="l630" style="background-color: #ffffff">    real(r8) ::  sza</a>
+   631) <a name="l631" style="background-color: #ffffff">    real(r8) ::  alias_factor</a>
+   632) <a name="l632" style="background-color: #ffffff">    real(r8) ::  fac1(pver)                ! work space for j(no) calc</a>
+   633) <a name="l633" style="background-color: #ffffff">    real(r8) ::  fac2(pver)                ! work space for j(no) calc</a>
+   634) <a name="l634" style="background-color: #ffffff">    real(r8) ::  colo3(pver)               ! vertical o3 column density</a>
+   635) <a name="l635" style="background-color: #ffffff">    real(r8) ::  parg(pver)                ! vertical pressure array (hPa)</a>
+   636) <a name="l636" style="background-color: #ffffff"></a>
+   637) <a name="l637" style="background-color: #ffffff">    real(r8) ::  cld_line(pver)            ! vertical cloud array</a>
+   638) <a name="l638" style="background-color: #ffffff">    real(r8) ::  lwc_line(pver)            ! vertical lwc array</a>
+   639) <a name="l639" style="background-color: #ffffff">    real(r8) ::  eff_alb(pver)             ! effective albedo from cloud modifications</a>
+   640) <a name="l640" style="background-color: #ffffff">    real(r8) ::  cld_mult(pver)            ! clould multiplier</a>
+   641) <a name="l641" style="background-color: #ffffff">    real(r8) ::  tmp(ncol,pver)            ! wrk array</a>
+   642) <a name="l642" style="background-color: #ffffff">    real(r8), allocatable ::  lng_prates(:,:) ! photorates matrix (1/s)</a>
+   643) <a name="l643" style="background-color: #ffffff">    real(r8), allocatable ::  sht_prates(:,:) ! photorates matrix (1/s)</a>
+   644) <a name="l644" style="background-color: #ffffff">    real(r8), allocatable ::  euv_prates(:,:) ! photorates matrix (1/s)</a>
+   645) <a name="l645" style="background-color: #ffffff">    </a>
+   646) <a name="l646" style="background-color: #ffffff"></a>
+   647) <a name="l647" style="background-color: #ffffff">    real(r8), allocatable :: zarg(:)</a>
+   648) <a name="l648" style="background-color: #ffffff">    real(r8), allocatable :: tline(:)               ! vertical temperature array</a>
+   649) <a name="l649" style="background-color: #ffffff">    real(r8), allocatable :: o_den(:)               ! o density (molecules/cm^3)</a>
+   650) <a name="l650" style="background-color: #ffffff">    real(r8), allocatable :: o2_den(:)              ! o2 density (molecules/cm^3)</a>
+   651) <a name="l651" style="background-color: #ffffff">    real(r8), allocatable :: o3_den(:)              ! o3 density (molecules/cm^3)</a>
+   652) <a name="l652" style="background-color: #ffffff">    real(r8), allocatable :: no_den(:)              ! no density (molecules/cm^3)</a>
+   653) <a name="l653" style="background-color: #ffffff">    real(r8), allocatable :: n2_den(:)              ! n2 density (molecules/cm^3)</a>
+   654) <a name="l654" style="background-color: #ffffff">    real(r8), allocatable :: jno_sht(:)             ! no short photorate</a>
+   655) <a name="l655" style="background-color: #ffffff">    real(r8), allocatable :: jo2_sht(:,:)           ! o2 short photorate</a>
+   656) <a name="l656" style="background-color: #ffffff"></a>
+   657) <a name="l657" style="background-color: #ffffff">    real(r8), pointer     :: ionRates(:,:,:)        ! Pointer to ionization rates for O+,O2+,N+,N2+,NO+ in pbuf (s-1 from modules mo_jeuv and mo_jshort)</a>
+   658) <a name="l658" style="background-color: #ffffff"></a>
+   659) <a name="l659" style="background-color: #ffffff">    integer :: n_jshrt_levs, p1, p2</a>
+   660) <a name="l660" style="background-color: #ffffff">    real(r8) :: ideltaZkm, factor</a>
+   661) <a name="l661" style="background-color: #ffffff"></a>
+   662) <a name="l662" style="background-color: #ffffff">    real(r8) :: qbktot(ncol,pver)</a>
+   663) <a name="l663" style="background-color: #ffffff">    real(r8) :: qbko1(ncol,pver)</a>
+   664) <a name="l664" style="background-color: #ffffff">    real(r8) :: qbko2(ncol,pver)</a>
+   665) <a name="l665" style="background-color: #ffffff">    real(r8) :: qbkn2(ncol,pver)</a>
+   666) <a name="l666" style="background-color: #ffffff">    real(r8) :: qbkn1(ncol,pver)</a>
+   667) <a name="l667" style="background-color: #ffffff">    real(r8) :: qbkno(ncol,pver)</a>
+   668) <a name="l668" style="background-color: #ffffff"></a>
+   669) <a name="l669" style="background-color: #ffffff">    qbktot(:,:) = nan</a>
+   670) <a name="l670" style="background-color: #ffffff">    qbko1(:,:) = nan</a>
+   671) <a name="l671" style="background-color: #ffffff">    qbko2(:,:) = nan</a>
+   672) <a name="l672" style="background-color: #ffffff">    qbkn2(:,:) = nan</a>
+   673) <a name="l673" style="background-color: #ffffff">    qbkn1(:,:) = nan</a>
+   674) <a name="l674" style="background-color: #ffffff">    qbkno(:,:) = nan</a>
+   675) <a name="l675" style="background-color: #ffffff"></a>
+   676) <a name="l676" style="background-color: #ffffff">    if( phtcnt &lt; 1 ) then</a>
+   677) <a name="l677" style="background-color: #ffffff">       return</a>
+   678) <a name="l678" style="background-color: #ffffff">    end if</a>
+   679) <a name="l679" style="background-color: #ffffff"></a>
+   680) <a name="l680" style="background-color: #ffffff">    if ((</a><a style="background-color: #ffff99">.not.do_jshort) .or. (waccm)) then</a>
+   681) <a name="l681" style="background-color: #ffffff">       n_jshrt_levs = pver</a>
+   682) <a name="l682" style="background-color: #ffffff">       p1 = 1 </a>
+   683) <a name="l683" style="background-color: #ffffff">       p2 = pver</a>
+   684) <a name="l684" style="background-color: #ffffff">    else</a>
+   685) <a name="l685" style="background-color: #ffff99">       n_jshrt_levs = pver+1</a>
+   686) <a name="l686" style="background-color: #ffff99">       p1 = 2</a>
+   687) <a name="l687" style="background-color: #ffff99">       p2 = pver+1</a>
+   688) <a name="l688" style="background-color: #ffff99">    endif</a>
+   689) <a name="l689" style="background-color: #ffff99"></a>
+   690) <a name="l690" style="background-color: #fafad2">    allocate( zarg(n_jshrt_levs) )</a>
+   691) <a name="l691" style="background-color: #fafad2">    allocate( tline(n_jshrt_levs) )</a>
+   692) <a name="l692" style="background-color: #ffffff">    if (do_jshort) then</a>
+   693) <a name="l693" style="background-color: #ffff99">       allocate( o_den(n_jshrt_levs) )</a>
+   694) <a name="l694" style="background-color: #ffff99">       allocate( o2_den(n_jshrt_levs) )</a>
+   695) <a name="l695" style="background-color: #ffff99">       allocate( o3_den(n_jshrt_levs) )</a>
+   696) <a name="l696" style="background-color: #ffff99">       allocate( no_den(n_jshrt_levs) )</a>
+   697) <a name="l697" style="background-color: #ffff99">       allocate( n2_den(n_jshrt_levs) )</a>
+   698) <a name="l698" style="background-color: #ffff99">       allocate( jno_sht(n_jshrt_levs) )</a>
+   699) <a name="l699" style="background-color: #ffff99">       allocate( jo2_sht(n_jshrt_levs,2) )</a>
+   700) <a name="l700" style="background-color: #ffff99">    endif</a>
+   701) <a name="l701" style="background-color: #ffff99"></a>
+   702) <a name="l702" style="background-color: #ffff99">!-----------------------------------------------------------------</a>
+   703) <a name="l703" style="background-color: #ffff99">!	... allocate short, long temp arrays</a>
+   704) <a name="l704" style="background-color: #ffff99">!-----------------------------------------------------------------</a>
+   705) <a name="l705" style="background-color: #ffffff">    if ( waccm ) then</a>
+   706) <a name="l706" style="background-color: #ffffff">       if (neuv&gt;0) then</a>
+   707) <a name="l707" style="background-color: #ffff99">          allocate( euv_prates(pver,neuv),stat=astat )</a>
+   708) <a name="l708" style="background-color: #ffff99">          if( astat /= 0 ) then</a>
+   709) <a name="l709" style="background-color: #ffff99">             write(iulog,*) 'photo: Failed to allocate euv_prates; error = ',astat</a>
+   710) <a name="l710" style="background-color: #ffff99">             call endrun</a>
+   711) <a name="l711" style="background-color: #ffff99">          end if</a>
+   712) <a name="l712" style="background-color: #ffff99">       endif</a>
+   713) <a name="l713" style="background-color: #ffff99">    endif</a>
+   714) <a name="l714" style="background-color: #ffff99">    </a>
+   715) <a name="l715" style="background-color: #ffffff">    if (nsht&gt;0) then</a>
+   716) <a name="l716" style="background-color: #ffff99">       allocate( sht_prates(n_jshrt_levs,nsht),stat=astat )</a>
+   717) <a name="l717" style="background-color: #ffff99">       if( astat /= 0 ) then</a>
+   718) <a name="l718" style="background-color: #ffff99">          write(iulog,*) 'photo: Failed to allocate sht_prates; error = ',astat</a>
+   719) <a name="l719" style="background-color: #ffff99">          call endrun</a>
+   720) <a name="l720" style="background-color: #ffff99">       end if</a>
+   721) <a name="l721" style="background-color: #ffff99">    endif</a>
+   722) <a name="l722" style="background-color: #ffff99"></a>
+   723) <a name="l723" style="background-color: #ffffff">    if (nlng&gt;0) then</a>
+   724) <a name="l724" style="background-color: #fafad2">       allocate( lng_prates(nlng,pver),stat=astat )</a>
+   725) <a name="l725" style="background-color: #fafad2">       if( astat /= 0 ) then</a>
+   726) <a name="l726" style="background-color: #ffff99">          write(iulog,*) 'photo: Failed to allocate lng_prates; error = ',astat</a>
+   727) <a name="l727" style="background-color: #ffff99">          call endrun</a>
+   728) <a name="l728" style="background-color: #ffff99">       end if</a>
+   729) <a name="l729" style="background-color: #ffff99">    endif</a>
+   730) <a name="l730" style="background-color: #ffff99"></a>
+   731) <a name="l731" style="background-color: #ffff99">!-----------------------------------------------------------------</a>
+   732) <a name="l732" style="background-color: #ffff99">!	... zero all photorates</a>
+   733) <a name="l733" style="background-color: #ffff99">!-----------------------------------------------------------------</a>
+   734) <a name="l734" style="background-color: #ffffff">    do m = 1,max(1,phtcnt)</a>
+   735) <a name="l735" style="background-color: #ffffff">       do k = 1,pver</a>
+   736) <a name="l736" style="background-color: #ffffff">          photos(:,k,m) = 0._r8</a>
+   737) <a name="l737" style="background-color: #ffffff">       end do</a>
+   738) <a name="l738" style="background-color: #ffffff">    end do</a>
+   739) <a name="l739" style="background-color: #ffffff"></a>
+   740) <a name="l740" style="background-color: #ffffff">!------------------------------------------------------------------------------------------------------------</a>
+   741) <a name="l741" style="background-color: #ffffff">!  Point to production rates array in physics buffer where rates will be stored for ionosphere module</a>
+   742) <a name="l742" style="background-color: #ffffff">!  access.  Also, initialize rates to zero before column loop since only daylight values are filled</a>
+   743) <a name="l743" style="background-color: #ffffff">!------------------------------------------------------------------------------------------------------------</a>
+   744) <a name="l744" style="background-color: #ffffff">    if (ion_rates_idx&gt;0) then</a>
+   745) <a name="l745" style="background-color: #ffffff">      call </a><a style="background-color: #ffff99">pbuf_get_field(pbuf, ion_rates_idx, ionRates)</a>
+   746) <a name="l746" style="background-color: #ffff99">      ionRates(:,:,:) = 0._r8</a>
+   747) <a name="l747" style="background-color: #ffff99">    endif</a>
+   748) <a name="l748" style="background-color: #ffff99"></a>
+   749) <a name="l749" style="background-color: #ffffff">    col_loop : do i = 1,ncol</a>
+   750) <a name="l750" style="background-color: #ffffff">       if (do_jshort) then</a>
+   751) <a name="l751" style="background-color: #ffffff"></a>
+   752) <a name="l752" style="background-color: #ffff99">          if ( o_is_inv ) then</a>
+   753) <a name="l753" style="background-color: #ffff99">             o_den(p1:p2) = invariants(i,:pver,o_ndx)</a>
+   754) <a name="l754" style="background-color: #ffff99">          else</a>
+   755) <a name="l755" style="background-color: #ffff99">             o_den(p1:p2) = vmr(i,:pver,o_ndx) * invariants(i,:pver,indexm)</a>
+   756) <a name="l756" style="background-color: #ffff99">          endif</a>
+   757) <a name="l757" style="background-color: #ffff99">          if ( o2_is_inv ) then</a>
+   758) <a name="l758" style="background-color: #ffff99">             o2_den(p1:p2) = invariants(i,:pver,o2_ndx)</a>
+   759) <a name="l759" style="background-color: #ffff99">          else</a>
+   760) <a name="l760" style="background-color: #ffff99">             o2_den(p1:p2) = vmr(i,:pver,o2_ndx) * invariants(i,:pver,indexm)</a>
+   761) <a name="l761" style="background-color: #ffff99">          endif</a>
+   762) <a name="l762" style="background-color: #ffff99">          if ( o3_is_inv ) then</a>
+   763) <a name="l763" style="background-color: #ffff99">             o3_den(p1:p2) = invariants(i,:pver,o3_inv_ndx)</a>
+   764) <a name="l764" style="background-color: #ffff99">          else</a>
+   765) <a name="l765" style="background-color: #ffff99">             o3_den(p1:p2) = vmr(i,:,o3_ndx) * invariants(i,:pver,indexm)</a>
+   766) <a name="l766" style="background-color: #ffff99">          endif</a>
+   767) <a name="l767" style="background-color: #ffff99">          if ( n2_is_inv ) then</a>
+   768) <a name="l768" style="background-color: #ffff99">             n2_den(p1:p2) = invariants(i,:,n2_ndx)</a>
+   769) <a name="l769" style="background-color: #ffff99">          else</a>
+   770) <a name="l770" style="background-color: #ffff99">             n2_den(p1:p2) = vmr(i,:pver,n2_ndx) * invariants(i,:pver,indexm)</a>
+   771) <a name="l771" style="background-color: #ffff99">          endif</a>
+   772) <a name="l772" style="background-color: #ffff99">          if ( no_is_inv ) then</a>
+   773) <a name="l773" style="background-color: #ffff99">             no_den(p1:p2) = invariants(i,:pver,no_ndx)</a>
+   774) <a name="l774" style="background-color: #ffff99">          else</a>
+   775) <a name="l775" style="background-color: #ffff99">             no_den(p1:p2) = vmr(i,:pver,no_ndx) * invariants(i,:pver,indexm)</a>
+   776) <a name="l776" style="background-color: #ffff99">          endif</a>
+   777) <a name="l777" style="background-color: #ffff99"></a>
+   778) <a name="l778" style="background-color: #ffff99">       endif</a>
+   779) <a name="l779" style="background-color: #ffffff">       sza = zen_angle(i)*r2d</a>
+   780) <a name="l780" style="background-color: #ffffff">       daylight : if( sza &gt;= 0._r8 .and. sza &lt; max_zen_angle ) then</a>
+   781) <a name="l781" style="background-color: #ffffff">          parg(:)     = Pa2mb*pmid(i,:)</a>
+   782) <a name="l782" style="background-color: #ffffff">          colo3(:)    = col_dens(i,:,1)</a>
+   783) <a name="l783" style="background-color: #ffffff">          fac1(:)     = pdel(i,:)</a>
+   784) <a name="l784" style="background-color: #ffffff">          lwc_line(:) = lwc(i,:)</a>
+   785) <a name="l785" style="background-color: #ffffff">          cld_line(:) = clouds(i,:)</a>
+   786) <a name="l786" style="background-color: #ffffff"></a>
+   787) <a name="l787" style="background-color: #ffffff">          </a>
+   788) <a name="l788" style="background-color: #ffffff">          tline(p1:p2) = temper(i,:pver)</a>
+   789) <a name="l789" style="background-color: #ffffff"></a>
+   790) <a name="l790" style="background-color: #ffffff">          zarg(p1:p2) = zmid(i,:pver)</a>
+   791) <a name="l791" style="background-color: #ffffff"></a>
+   792) <a name="l792" style="background-color: #ffffff">          if (do_jshort) then</a>
+   793) <a name="l793" style="background-color: #ffff99">             if ( .not. waccm ) then</a>
+   794) <a name="l794" style="background-color: #ffff99">                !-----------------------------------------------------------------</a>
+   795) <a name="l795" style="background-color: #ffff99">                ! Only for lower lid versions of CAM (i.e., not for WACCM)</a>
+   796) <a name="l796" style="background-color: #ffff99">                ! Column O3 and O2 above the top of the model</a>
+   797) <a name="l797" style="background-color: #ffff99">                ! DEK 20110224</a>
+   798) <a name="l798" style="background-color: #ffff99">                !-----------------------------------------------------------------</a>
+   799) <a name="l799" style="background-color: #ffff99">                ideltaZkm = 1._r8/(zint(i,1) - zint(i,2))</a>
+   800) <a name="l800" style="background-color: #ffff99"></a>
+   801) <a name="l801" style="background-color: #ffff99">                !-----------------------------------------------------------------</a>
+   802) <a name="l802" style="background-color: #ffff99">                !... set density (units: molecules cm-3)</a>
+   803) <a name="l803" style="background-color: #ffff99">                !... used for jshort</a>
+   804) <a name="l804" style="background-color: #ffff99">                !....... Assuming a scale height of 7km for ozone</a>
+   805) <a name="l805" style="background-color: #ffff99">                !....... Assuming a scale height of 7km for O2</a>
+   806) <a name="l806" style="background-color: #ffff99">                !-----------------------------------------------------------------</a>
+   807) <a name="l807" style="background-color: #ffff99">                o3_den(1)        = o3_den(2)*7.0_r8 * ideltaZkm</a>
+   808) <a name="l808" style="background-color: #ffff99"></a>
+   809) <a name="l809" style="background-color: #ffff99">                o2_den(1)        = o2_den(2)*7.0_r8 * ideltaZkm</a>
+   810) <a name="l810" style="background-color: #ffff99"></a>
+   811) <a name="l811" style="background-color: #ffff99">                no_den(1)        = no_den(2)*0.9_r8</a>
+   812) <a name="l812" style="background-color: #ffff99"></a>
+   813) <a name="l813" style="background-color: #ffff99">                n2_den(1)        = n2_den(2)*0.9_r8</a>
+   814) <a name="l814" style="background-color: #ffff99"></a>
+   815) <a name="l815" style="background-color: #ffff99">                tline(1)         = tline(2) + 5.0_r8</a>
+   816) <a name="l816" style="background-color: #ffff99"></a>
+   817) <a name="l817" style="background-color: #ffff99">                zarg(1)          = zarg(2) + (zint(i,1) - zint(i,2))</a>
+   818) <a name="l818" style="background-color: #ffff99"></a>
+   819) <a name="l819" style="background-color: #ffff99">             endif</a>
+   820) <a name="l820" style="background-color: #ffff99"></a>
+   821) <a name="l821" style="background-color: #ffff99">             !-----------------------------------------------------------------</a>
+   822) <a name="l822" style="background-color: #ffff99">             !	... short wave length component</a>
+   823) <a name="l823" style="background-color: #ffff99">             !-----------------------------------------------------------------</a>
+   824) <a name="l824" style="background-color: #ffff99">             call jshort( n_jshrt_levs, sza, n2_den, o2_den, o3_den, &amp;</a>
+   825) <a name="l825" style="background-color: #ffff99">                  no_den, tline, zarg, jo2_sht, jno_sht, sht_prates )  </a>
+   826) <a name="l826" style="background-color: #ffff99"></a>
+   827) <a name="l827" style="background-color: #ffff99">             do m = 1,phtcnt</a>
+   828) <a name="l828" style="background-color: #ffff99">                if( sht_indexer(m) &gt; 0 ) then</a>
+   829) <a name="l829" style="background-color: #ffff99">                   alias_factor = pht_alias_mult(m,1)</a>
+   830) <a name="l830" style="background-color: #ffff99">                   if( alias_factor == 1._r8 ) then</a>
+   831) <a name="l831" style="background-color: #ffff99">                      photos(i,pver:1:-1,m) = sht_prates(1:pver,sht_indexer(m))</a>
+   832) <a name="l832" style="background-color: #ffff99">                   else</a>
+   833) <a name="l833" style="background-color: #ffff99">                      photos(i,pver:1:-1,m) = alias_factor * sht_prates(1:pver,sht_indexer(m))</a>
+   834) <a name="l834" style="background-color: #ffff99">                   end if</a>
+   835) <a name="l835" style="background-color: #ffff99">                end if</a>
+   836) <a name="l836" style="background-color: #ffff99">             end do</a>
+   837) <a name="l837" style="background-color: #ffff99"></a>
+   838) <a name="l838" style="background-color: #ffff99">             if( jno_ndx &gt; 0 )   photos(i,pver:1:-1,jno_ndx)   = jno_sht(1:pver)</a>
+   839) <a name="l839" style="background-color: #ffff99">             if( jo2_a_ndx &gt; 0 ) photos(i,pver:1:-1,jo2_a_ndx) = jo2_sht(1:pver,2)</a>
+   840) <a name="l840" style="background-color: #ffff99">             if( jo2_b_ndx &gt; 0 ) photos(i,pver:1:-1,jo2_b_ndx) = jo2_sht(1:pver,1)</a>
+   841) <a name="l841" style="background-color: #ffff99">          endif</a>
+   842) <a name="l842" style="background-color: #ffff99"></a>
+   843) <a name="l843" style="background-color: #ffffff">          if ( waccm ) then</a>
+   844) <a name="l844" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   845) <a name="l845" style="background-color: #ffffff">             !	... euv photorates do not include cloud effects ??</a>
+   846) <a name="l846" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   847) <a name="l847" style="background-color: #ffffff">             call </a><a style="background-color: #ffff99">jeuv( pver, sza, o_den, o2_den, n2_den,  zarg, euv_prates )</a>
+   848) <a name="l848" style="background-color: #ffff99">             do m = 1,phtcnt</a>
+   849) <a name="l849" style="background-color: #ffff99">                if( euv_indexer(m) &gt; 0 ) then</a>
+   850) <a name="l850" style="background-color: #ffff99">                   photos(i,:,m) = esfact * euv_prates(:,euv_indexer(m))</a>
+   851) <a name="l851" style="background-color: #ffff99">                endif</a>
+   852) <a name="l852" style="background-color: #ffff99">             enddo</a>
+   853) <a name="l853" style="background-color: #ffff99">          endif</a>
+   854) <a name="l854" style="background-color: #ffff99"></a>
+   855) <a name="l855" style="background-color: #ffff99">          !-----------------------------------------------------------------</a>
+   856) <a name="l856" style="background-color: #ffff99">          !     ... compute eff_alb and cld_mult -- needs to be before jlong</a>
+   857) <a name="l857" style="background-color: #ffff99">          !-----------------------------------------------------------------</a>
+   858) <a name="l858" style="background-color: #ffff99">          call </a><a style="background-color: #ffffff">cloud_mod( zen_angle(i), cld_line, lwc_line, fac1, srf_alb(i), &amp;</a>
+   859) <a name="l859" style="background-color: #ffffff">                          eff_alb, cld_mult )</a>
+   860) <a name="l860" style="background-color: #ffffff">          cld_mult(:) = esfact * cld_mult(:)</a>
+   861) <a name="l861" style="background-color: #ffffff"></a>
+   862) <a name="l862" style="background-color: #ffffff">          !-----------------------------------------------------------------</a>
+   863) <a name="l863" style="background-color: #ffffff">          !	... long wave length component</a>
+   864) <a name="l864" style="background-color: #ffffff">          !-----------------------------------------------------------------</a>
+   865) <a name="l865" style="background-color: #ffffff">          call jlong( pver, sza, eff_alb, parg, tline, colo3, lng_prates )          </a>
+   866) <a name="l866" style="background-color: #ffffff">          do m = 1,phtcnt</a>
+   867) <a name="l867" style="background-color: #ffffff">             if( lng_indexer(m) &gt; 0 ) then</a>
+   868) <a name="l868" style="background-color: #ffffff">                alias_factor = pht_alias_mult(m,2)</a>
+   869) <a name="l869" style="background-color: #ffffff">                if( alias_factor == 1._r8 ) then</a>
+   870) <a name="l870" style="background-color: #ffffff">                   photos(i,:,m) = (photos(i,:,m) + lng_prates(lng_indexer(m),:))*cld_mult(:)</a>
+   871) <a name="l871" style="background-color: #ffffff">                else</a>
+   872) <a name="l872" style="background-color: #ffff99">                   photos(i,:,m) = (photos(i,:,m) + alias_factor * lng_prates(lng_indexer(m),:))*cld_mult(:)</a>
+   873) <a name="l873" style="background-color: #ffff99">                end if</a>
+   874) <a name="l874" style="background-color: #ffff99">             end if</a>
+   875) <a name="l875" style="background-color: #ffff99">          end do</a>
+   876) <a name="l876" style="background-color: #ffff99"></a>
+   877) <a name="l877" style="background-color: #ffff99">          !-----------------------------------------------------------------</a>
+   878) <a name="l878" style="background-color: #ffff99">          !	... calculate j(no) from formula</a>
+   879) <a name="l879" style="background-color: #ffff99">          !-----------------------------------------------------------------</a>
+   880) <a name="l880" style="background-color: #ffffff">          if( (jno_ndx </a><a style="background-color: #ffff99">&gt; 0) .and. (.not.do_jshort)) then</a>
+   881) <a name="l881" style="background-color: #ffff99">             if( has_o2_col .and. has_o3_col ) then</a>
+   882) <a name="l882" style="background-color: #ffff99">                fac1(:) = 1.e-8_r8 * (abs(col_dens(i,:,2)/cos(zen_angle(i))))**.38_r8</a>
+   883) <a name="l883" style="background-color: #ffff99">                fac2(:) = 5.e-19_r8 * abs(col_dens(i,:,1)/cos(zen_angle(i)))</a>
+   884) <a name="l884" style="background-color: #ffff99">                photos(i,:,jno_ndx) = photos(i,:,jno_ndx) + 4.5e-6_r8 * exp( -(fac1(:) + fac2(:)) )</a>
+   885) <a name="l885" style="background-color: #ffff99">             end if</a>
+   886) <a name="l886" style="background-color: #ffff99">          end if</a>
+   887) <a name="l887" style="background-color: #ffff99"></a>
+   888) <a name="l888" style="background-color: #ffff99">          !-----------------------------------------------------------------</a>
+   889) <a name="l889" style="background-color: #ffff99">          ! 	... add near IR correction to ho2no2</a>
+   890) <a name="l890" style="background-color: #ffff99">          !-----------------------------------------------------------------</a>
+   891) <a name="l891" style="background-color: #ffffff">          if( jho2no2_ndx &gt; 0 ) then</a>
+   892) <a name="l892" style="background-color: #ffff99">             photos(i,:,jho2no2_ndx) = photos(i,:,jho2no2_ndx) + 1.e-5_r8*cld_mult(:)</a>
+   893) <a name="l893" style="background-color: #ffff99">          endif</a>
+   894) <a name="l894" style="background-color: #ffff99"></a>
+   895) <a name="l895" style="background-color: #ffff99">          !  Save photo-ionization rates to physics buffer accessed in ionosphere module for WACCMX</a>
+   896) <a name="l896" style="background-color: #ffffff">          if (ion_rates_idx&gt;0) then</a>
+   897) <a name="l897" style="background-color: #ffffff">							 </a>
+   898) <a name="l898" style="background-color: #ffff99">                ionRates(i,1:pver,1:nIonRates) = esfact * euv_prates(1:pver,1:nIonRates)</a>
+   899) <a name="l899" style="background-color: #ffff99">							 </a>
+   900) <a name="l900" style="background-color: #ffff99">          endif</a>
+   901) <a name="l901" style="background-color: #ffff99"></a>
+   902) <a name="l902" style="background-color: #ffff99">       end if daylight</a>
+   903) <a name="l903" style="background-color: #ffff99"></a>
+   904) <a name="l904" style="background-color: #ffffff">       if (waccm) then</a>
+   905) <a name="l905" style="background-color: #ffffff">          !-----------------------------------------------------------------</a>
+   906) <a name="l906" style="background-color: #ffffff">          ! include background ionization ...</a>
+   907) <a name="l907" style="background-color: #ffffff">          ! outside daylight block so this is applied in all columns</a>
+   908) <a name="l908" style="background-color: #ffffff">          !-----------------------------------------------------------------</a>
+   909) <a name="l909" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">photo_bkgrnd_calc( o_den, o2_den, n2_den, no_den, zint(i,:),&amp;</a>
+   910) <a name="l910" style="background-color: #ffff99">                    photos(i,:,:), qbko1_out=qbko1(i,:), qbko2_out=qbko2(i,:), &amp;</a>
+   911) <a name="l911" style="background-color: #ffff99">                    qbkn2_out=qbkn2(i,:), qbkn1_out=qbkn1(i,:), qbkno_out=qbkno(i,:) )</a>
+   912) <a name="l912" style="background-color: #ffff99">       endif</a>
+   913) <a name="l913" style="background-color: #ffff99"></a>
+   914) <a name="l914" style="background-color: #ffff99">    end do col_loop</a>
+   915) <a name="l915" style="background-color: #ffff99">    </a>
+   916) <a name="l916" style="background-color: #ffffff">    if ( waccm ) then</a>
+   917) <a name="l917" style="background-color: #ffff99">       qbktot(:ncol,:) = qbko1(:ncol,:)+qbko2(:ncol,:)+qbkn2(:ncol,:)+qbkn1(:ncol,:)+qbkno(:ncol,:)</a>
+   918) <a name="l918" style="background-color: #ffff99">       call outfld( 'Qbkgndtot', qbktot(:ncol,:),ncol, lchnk )</a>
+   919) <a name="l919" style="background-color: #ffff99">       call outfld( 'Qbkgnd_o1', qbko1(:ncol,:), ncol, lchnk )</a>
+   920) <a name="l920" style="background-color: #ffff99">       call outfld( 'Qbkgnd_o2', qbko2(:ncol,:), ncol, lchnk )</a>
+   921) <a name="l921" style="background-color: #ffff99">       call outfld( 'Qbkgnd_n2', qbkn2(:ncol,:), ncol, lchnk )</a>
+   922) <a name="l922" style="background-color: #ffff99">       call outfld( 'Qbkgnd_n1', qbkn1(:ncol,:), ncol, lchnk )</a>
+   923) <a name="l923" style="background-color: #ffff99">       call outfld( 'Qbkgnd_no', qbkno(:ncol,:), ncol, lchnk )</a>
+   924) <a name="l924" style="background-color: #ffff99">    endif</a>
+   925) <a name="l925" style="background-color: #ffff99"></a>
+   926) <a name="l926" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">allocated(lng_prates) ) </a><a style="background-color: #ffffff">deallocate( lng_prates )</a>
+   927) <a name="l927" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">allocated(sht_prates) ) </a><a style="background-color: #ffff99">deallocate( sht_prates )</a>
+   928) <a name="l928" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">allocated(euv_prates) ) </a><a style="background-color: #ffff99">deallocate( euv_prates )</a>
+   929) <a name="l929" style="background-color: #ffff99"></a>
+   930) <a name="l930" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">allocated(zarg) )    </a><a style="background-color: #ffffff">deallocate( zarg )</a>
+   931) <a name="l931" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">allocated(tline) )   </a><a style="background-color: #ffffff">deallocate( tline )</a>
+   932) <a name="l932" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">allocated(o_den) )   </a><a style="background-color: #ffff99">deallocate( o_den )</a>
+   933) <a name="l933" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">allocated(o2_den) )  </a><a style="background-color: #ffff99">deallocate( o2_den )</a>
+   934) <a name="l934" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">allocated(o3_den) )  </a><a style="background-color: #ffff99">deallocate( o3_den )</a>
+   935) <a name="l935" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">allocated(no_den) )  </a><a style="background-color: #ffff99">deallocate( no_den )</a>
+   936) <a name="l936" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">allocated(n2_den) )  </a><a style="background-color: #ffff99">deallocate( n2_den )</a>
+   937) <a name="l937" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">allocated(jno_sht) ) </a><a style="background-color: #ffff99">deallocate( jno_sht )</a>
+   938) <a name="l938" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">allocated(jo2_sht) ) </a><a style="background-color: #ffff99">deallocate( jo2_sht )</a>
+   939) <a name="l939" style="background-color: #ffff99"></a>
+   940) <a name="l940" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">set_xnox_photo( photos, ncol  )</a>
+   941) <a name="l941" style="background-color: #ffffff"></a>
+   942) <a name="l942" style="background-color: #fafad2">  end subroutine table_photo</a>
+   943) <a name="l943" style="background-color: #ffffff"></a>
+   944) <a name="l944" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">xactive_photo( photos, vmr, temper, cwat, cldfr, &amp;</a>
+   945) <a name="l945" style="background-color: #ffcccc">                            pmid, zmid, col_dens, zen_angle, srf_alb, &amp;</a>
+   946) <a name="l946" style="background-color: #ffcccc">                            tdens, ps, ts, esfact, relhum, dust_vmr, &amp;</a>
+   947) <a name="l947" style="background-color: #ffcccc">                            dt_diag, fracday, &amp;</a>
+   948) <a name="l948" style="background-color: #ffcccc">                            ncol, lchnk )</a>
+   949) <a name="l949" style="background-color: #ffcccc">    !-----------------------------------------------------------------</a>
+   950) <a name="l950" style="background-color: #ffcccc">    !   	... fast online photo rates</a>
+   951) <a name="l951" style="background-color: #ffcccc">    !-----------------------------------------------------------------</a>
+   952) <a name="l952" style="background-color: #ffcccc"></a>
+   953) <a name="l953" style="background-color: #ffcccc">    use ppgrid,       only : pver, pverp</a>
+   954) <a name="l954" style="background-color: #ffcccc">    use chem_mods,    only : ncol_abs =&gt; nabscol, phtcnt, pcnstm1 =&gt; gas_pcnst</a>
+   955) <a name="l955" style="background-color: #ffcccc">    use chem_mods,    only : pht_alias_mult</a>
+   956) <a name="l956" style="background-color: #ffcccc">    use mo_params,    only : kz, kw</a>
+   957) <a name="l957" style="background-color: #ffcccc">    use mo_wavelen,   only : nw</a>
+   958) <a name="l958" style="background-color: #ffcccc">    use mo_photoin,   only : photoin</a>
+   959) <a name="l959" style="background-color: #ffcccc">    use mo_tuv_inti,  only : nlng</a>
+   960) <a name="l960" style="background-color: #ffcccc">    use time_manager, only : get_curr_date</a>
+   961) <a name="l961" style="background-color: #ffcccc">    use dust_model,   only : ndst =&gt; dust_nbin</a>
+   962) <a name="l962" style="background-color: #ffcccc">    use phys_grid,    only : get_rlat_all_p, get_rlon_all_p</a>
+   963) <a name="l963" style="background-color: #ffcccc"></a>
+   964) <a name="l964" style="background-color: #ffcccc">    implicit none</a>
+   965) <a name="l965" style="background-color: #ffcccc"></a>
+   966) <a name="l966" style="background-color: #ffcccc">    !----------------------------------------------------------------</a>
+   967) <a name="l967" style="background-color: #ffcccc">    !   	... dummy arguments</a>
+   968) <a name="l968" style="background-color: #ffcccc">    !-----------------------------------------------------------------</a>
+   969) <a name="l969" style="background-color: #ffcccc">    integer,  intent(in)    :: ncol, lchnk</a>
+   970) <a name="l970" style="background-color: #ffcccc">    real(r8), intent(in)    :: esfact                       ! earth sun distance factor</a>
+   971) <a name="l971" style="background-color: #ffcccc">    real(r8), intent(in)    :: ps(pcols)                    ! surface pressure (Pa)</a>
+   972) <a name="l972" style="background-color: #ffcccc">    real(r8), intent(in)    :: ts(ncol)                     ! surface temperature (K)</a>
+   973) <a name="l973" style="background-color: #ffcccc">    real(r8), intent(in)    :: col_dens(ncol,pver,ncol_abs) ! column densities (molecules/cm^2)</a>
+   974) <a name="l974" style="background-color: #ffcccc">    real(r8), intent(in)    :: zen_angle(ncol)              ! solar zenith angle (radians)</a>
+   975) <a name="l975" style="background-color: #ffcccc">    real(r8), intent(in)    :: srf_alb(pcols)               ! surface albedo</a>
+   976) <a name="l976" style="background-color: #ffcccc">    real(r8), intent(in)    :: tdens(ncol,pver)             ! total atms density (molecules/cm^3)</a>
+   977) <a name="l977" style="background-color: #ffcccc">    real(r8), intent(in)    :: vmr(ncol,pver,pcnstm1)       ! species concentration (mol/mol)</a>
+   978) <a name="l978" style="background-color: #ffcccc">    real(r8), intent(in)    :: pmid(pcols,pver)             ! midpoint pressure (Pa)</a>
+   979) <a name="l979" style="background-color: #ffcccc">    real(r8), intent(in)    :: zmid(ncol,pver)              ! midpoint height (m)</a>
+   980) <a name="l980" style="background-color: #ffcccc">    real(r8), intent(in)    :: temper(pcols,pver)           ! midpoint temperature (K)</a>
+   981) <a name="l981" style="background-color: #ffcccc">    real(r8), intent(in)    :: relhum(ncol,pver)            ! relative humidity</a>
+   982) <a name="l982" style="background-color: #ffcccc">    real(r8), intent(in)    :: cwat(ncol,pver)              ! cloud water (kg/kg)</a>
+   983) <a name="l983" style="background-color: #ffcccc">    real(r8), intent(in)    :: cldfr(ncol,pver)             ! cloud fraction</a>
+   984) <a name="l984" style="background-color: #ffcccc">    real(r8), intent(in)    :: dust_vmr(ncol,pver,ndst)     ! dust concentration (mol/mol)</a>
+   985) <a name="l985" style="background-color: #ffcccc">    real(r8), intent(inout) :: photos(ncol,pver,phtcnt)     ! photodissociation rates (1/s)</a>
+   986) <a name="l986" style="background-color: #ffcccc">    real(r8), intent(out)   :: dt_diag(pcols,8)              ! od diagnostics</a>
+   987) <a name="l987" style="background-color: #ffcccc">    real(r8), intent(out)   :: fracday(pcols)                ! fraction of day</a>
+   988) <a name="l988" style="background-color: #ffcccc">    !-----------------------------------------------------------------</a>
+   989) <a name="l989" style="background-color: #ffcccc">    !    	... local variables</a>
+   990) <a name="l990" style="background-color: #ffcccc">    !-----------------------------------------------------------------</a>
+   991) <a name="l991" style="background-color: #ffcccc">    integer, parameter  ::  k_diag = 3</a>
+   992) <a name="l992" style="background-color: #ffcccc">    real(r8), parameter :: secant_limit = 50._r8</a>
+   993) <a name="l993" style="background-color: #ffcccc"></a>
+   994) <a name="l994" style="background-color: #ffcccc">    integer  ::  astat</a>
+   995) <a name="l995" style="background-color: #ffcccc">    integer  ::  i                      ! index</a>
+   996) <a name="l996" style="background-color: #ffcccc">    integer  ::  k                      ! index</a>
+   997) <a name="l997" style="background-color: #ffcccc">    integer  ::  m                      ! index</a>
+   998) <a name="l998" style="background-color: #ffcccc">    integer  ::  ndx                    ! index</a>
+   999) <a name="l999" style="background-color: #ffcccc">    integer  ::  spc_ndx                ! index</a>
+  1000) <a name="l1000" style="background-color: #ffcccc">    integer  ::  file                   ! index</a>
+  1001) <a name="l1001" style="background-color: #ffcccc">    integer  ::  yr, mon, day, tod      ! time of day (seconds past 0Z)</a>
+  1002) <a name="l1002" style="background-color: #ffcccc">    integer  ::  ncdate                 ! current date(yyyymmdd)</a>
+  1003) <a name="l1003" style="background-color: #ffcccc"></a>
+  1004) <a name="l1004" style="background-color: #ffcccc">    real(r8)    ::   sza</a>
+  1005) <a name="l1005" style="background-color: #ffcccc">    real(r8)    ::   secant</a>
+  1006) <a name="l1006" style="background-color: #ffcccc">    real(r8)    ::   alias_factor</a>
+  1007) <a name="l1007" style="background-color: #ffcccc">    real(r8)    ::   alat</a>
+  1008) <a name="l1008" style="background-color: #ffcccc">    real(r8)    ::   along</a>
+  1009) <a name="l1009" style="background-color: #ffcccc">    real(r8)    ::   ut</a>
+  1010) <a name="l1010" style="background-color: #ffcccc">    real(r8)    ::   fac1(pver)                    ! work space for j(no) calc</a>
+  1011) <a name="l1011" style="background-color: #ffcccc">    real(r8)    ::   fac2(pver)                    ! work space for j(no) calc</a>
+  1012) <a name="l1012" style="background-color: #ffcccc">    real(r8)    ::   tlay(pver)                    ! vertical temperature array at layer midpoint</a>
+  1013) <a name="l1013" style="background-color: #ffcccc">    real(r8)    ::   tline(pverp)                  ! vertical temperature array</a>
+  1014) <a name="l1014" style="background-color: #ffcccc">    real(r8)    ::   xlwc(pverp)                   ! cloud water (kg/kg)</a>
+  1015) <a name="l1015" style="background-color: #ffcccc">    real(r8)    ::   xfrc(pverp)                   ! cloud fraction      xuexi</a>
+  1016) <a name="l1016" style="background-color: #ffcccc">    real(r8)    ::   airdens(pverp)                ! atmospheric density</a>
+  1017) <a name="l1017" style="background-color: #ffcccc">    real(r8)    ::   o3line(pverp)                 ! vertical o3 vmr</a>
+  1018) <a name="l1018" style="background-color: #ffcccc">    real(r8)    ::   aerocs1(pverp)   </a>
+  1019) <a name="l1019" style="background-color: #ffcccc">    real(r8)    ::   aerocs2(pverp)   </a>
+  1020) <a name="l1020" style="background-color: #ffcccc">    real(r8)    ::   aercbs1(pverp)   </a>
+  1021) <a name="l1021" style="background-color: #ffcccc">    real(r8)    ::   aercbs2(pverp)   </a>
+  1022) <a name="l1022" style="background-color: #ffcccc">    real(r8)    ::   aersoa(pverp)   </a>
+  1023) <a name="l1023" style="background-color: #ffcccc">    real(r8)    ::   aerant(pverp)   </a>
+  1024) <a name="l1024" style="background-color: #ffcccc">    real(r8)    ::   aerso4(pverp)   </a>
+  1025) <a name="l1025" style="background-color: #ffcccc">    real(r8)    ::   aerds(4,pverp)</a>
+  1026) <a name="l1026" style="background-color: #ffcccc">    real(r8)    ::   rh(pverp)   </a>
+  1027) <a name="l1027" style="background-color: #ffcccc">    real(r8)    ::   zarg(pverp)                   ! vertical height array</a>
+  1028) <a name="l1028" style="background-color: #ffcccc">    real(r8)    ::   aersal(pverp,4)</a>
+  1029) <a name="l1029" style="background-color: #ffcccc">    real(r8)    ::   albedo(kw)                    ! wavelenght dependent albedo</a>
+  1030) <a name="l1030" style="background-color: #ffcccc">    real(r8)    ::   dt_xdiag(8)                   ! wrk array</a>
+  1031) <a name="l1031" style="background-color: #ffcccc">    real(r8), allocatable :: prates(:,:)           ! photorates matrix</a>
+  1032) <a name="l1032" style="background-color: #ffcccc"></a>
+  1033) <a name="l1033" style="background-color: #ffcccc">    logical  ::  zagtz(ncol)                       ! zenith angle &gt; 0 flag array</a>
+  1034) <a name="l1034" style="background-color: #ffcccc">    real(r8), dimension(ncol)  :: rlats, rlons     ! chunk latitudes and longitudes (radians)</a>
+  1035) <a name="l1035" style="background-color: #ffcccc"></a>
+  1036) <a name="l1036" style="background-color: #ffcccc">    call get_rlat_all_p( lchnk, ncol, rlats )</a>
+  1037) <a name="l1037" style="background-color: #ffcccc">    call get_rlon_all_p( lchnk, ncol, rlons )</a>
+  1038) <a name="l1038" style="background-color: #ffcccc"></a>
+  1039) <a name="l1039" style="background-color: #ffcccc">    !-----------------------------------------------------------------</a>
+  1040) <a name="l1040" style="background-color: #ffcccc">    !	... any photorates ?</a>
+  1041) <a name="l1041" style="background-color: #ffcccc">    !-----------------------------------------------------------------</a>
+  1042) <a name="l1042" style="background-color: #ffcccc">    if( phtcnt &lt; 1 ) then</a>
+  1043) <a name="l1043" style="background-color: #ffcccc">       return</a>
+  1044) <a name="l1044" style="background-color: #ffcccc">    end if</a>
+  1045) <a name="l1045" style="background-color: #ffcccc"></a>
+  1046) <a name="l1046" style="background-color: #ffcccc">    !-----------------------------------------------------------------</a>
+  1047) <a name="l1047" style="background-color: #ffcccc">    !	... zero all photorates</a>
+  1048) <a name="l1048" style="background-color: #ffcccc">    !-----------------------------------------------------------------</a>
+  1049) <a name="l1049" style="background-color: #ffcccc">    do m = 1,phtcnt</a>
+  1050) <a name="l1050" style="background-color: #ffcccc">       do k = 1,pver</a>
+  1051) <a name="l1051" style="background-color: #ffcccc">          photos(:,k,m) = 0._r8</a>
+  1052) <a name="l1052" style="background-color: #ffcccc">       end do</a>
+  1053) <a name="l1053" style="background-color: #ffcccc">    end do</a>
+  1054) <a name="l1054" style="background-color: #ffcccc"></a>
+  1055) <a name="l1055" style="background-color: #ffcccc">!-----------------------------------------------------------------</a>
+  1056) <a name="l1056" style="background-color: #ffcccc">!	... allocate &quot;working&quot; rate array</a>
+  1057) <a name="l1057" style="background-color: #ffcccc">!-----------------------------------------------------------------</a>
+  1058) <a name="l1058" style="background-color: #ffcccc">      allocate( prates(pverp,nlng), stat=astat )</a>
+  1059) <a name="l1059" style="background-color: #ffcccc">      if( astat /= 0 ) then</a>
+  1060) <a name="l1060" style="background-color: #ffcccc">         write(iulog,*) 'xactive_photo: failed to allocate prates; error = ',astat</a>
+  1061) <a name="l1061" style="background-color: #ffcccc">         call endrun</a>
+  1062) <a name="l1062" style="background-color: #ffcccc">      end if</a>
+  1063) <a name="l1063" style="background-color: #ffcccc"></a>
+  1064) <a name="l1064" style="background-color: #ffcccc">    zagtz(:) = zen_angle(:) &lt; .99_r8*pi/2._r8 .and. zen_angle(:) &gt; 0._r8 !! daylight</a>
+  1065) <a name="l1065" style="background-color: #ffcccc">    fracday(:) = 0._r8</a>
+  1066) <a name="l1066" style="background-color: #ffcccc">    dt_diag(:,:) = 0._r8</a>
+  1067) <a name="l1067" style="background-color: #ffcccc"></a>
+  1068) <a name="l1068" style="background-color: #ffcccc">    call get_curr_date(yr, mon, day, tod, 0)</a>
+  1069) <a name="l1069" style="background-color: #ffcccc">    ncdate = yr*10000 + mon*100 + day</a>
+  1070) <a name="l1070" style="background-color: #ffcccc">    ut   = real(tod)/3600._r8</a>
+  1071) <a name="l1071" style="background-color: #ffcccc">#ifdef DEBUG</a>
+  1072) <a name="l1072" style="background-color: #ffcccc">    write(iulog,*) 'photo: nj = ',nlng</a>
+  1073) <a name="l1073" style="background-color: #ffcccc">    write(iulog,*) 'photo: esfact = ',esfact</a>
+  1074) <a name="l1074" style="background-color: #ffcccc">#endif</a>
+  1075) <a name="l1075" style="background-color: #ffcccc">    col_loop : do i = 1,ncol</a>
+  1076) <a name="l1076" style="background-color: #ffcccc">daylight : &amp;</a>
+  1077) <a name="l1077" style="background-color: #ffcccc">       if( zagtz(i) ) then</a>
+  1078) <a name="l1078" style="background-color: #ffcccc">          sza    = zen_angle(i)*r2d</a>
+  1079) <a name="l1079" style="background-color: #ffcccc">          secant = 1._r8 / cos( zen_angle(i) )</a>
+  1080) <a name="l1080" style="background-color: #ffcccc">secant_in_bounds : &amp;</a>
+  1081) <a name="l1081" style="background-color: #ffcccc">          if( secant &lt;= secant_limit ) then</a>
+  1082) <a name="l1082" style="background-color: #ffcccc">             fracday(i) = 1._r8</a>
+  1083) <a name="l1083" style="background-color: #ffcccc">             zarg(pverp:2:-1)     = zmid(i,:)</a>
+  1084) <a name="l1084" style="background-color: #ffcccc">             zarg(1)              = 0._r8</a>
+  1085) <a name="l1085" style="background-color: #ffcccc">             airdens(pverp:2:-1)  = tdens(i,:)</a>
+  1086) <a name="l1086" style="background-color: #ffcccc">             airdens(1)           = 10._r8 * ps(i) / (boltz*ts(i))</a>
+  1087) <a name="l1087" style="background-color: #ffcccc">             if( o3rad_ndx &gt; 0 ) then</a>
+  1088) <a name="l1088" style="background-color: #ffcccc">                spc_ndx = o3rad_ndx</a>
+  1089) <a name="l1089" style="background-color: #ffcccc">             else</a>
+  1090) <a name="l1090" style="background-color: #ffcccc">                spc_ndx = ox_ndx</a>
+  1091) <a name="l1091" style="background-color: #ffcccc">             end if</a>
+  1092) <a name="l1092" style="background-color: #ffcccc">             if( spc_ndx &lt; 1 ) then</a>
+  1093) <a name="l1093" style="background-color: #ffcccc">                spc_ndx = o3_ndx</a>
+  1094) <a name="l1094" style="background-color: #ffcccc">             end if</a>
+  1095) <a name="l1095" style="background-color: #ffcccc">             if( spc_ndx &gt; 0 ) then</a>
+  1096) <a name="l1096" style="background-color: #ffcccc">                o3line(pverp:2:-1) = vmr(i,:,spc_ndx)</a>
+  1097) <a name="l1097" style="background-color: #ffcccc">             else</a>
+  1098) <a name="l1098" style="background-color: #ffcccc">                o3line(pverp:2:-1) = 0._r8</a>
+  1099) <a name="l1099" style="background-color: #ffcccc">             end if</a>
+  1100) <a name="l1100" style="background-color: #ffcccc">             o3line(1)            = o3line(2)</a>
+  1101) <a name="l1101" style="background-color: #ffcccc">             tline(pverp:2:-1)    = temper(i,:)</a>
+  1102) <a name="l1102" style="background-color: #ffcccc">             tline(1)             = tline(2)</a>
+  1103) <a name="l1103" style="background-color: #ffcccc">             rh(pverp:2:-1)       = relhum(i,:)</a>
+  1104) <a name="l1104" style="background-color: #ffcccc">             rh(1)                = rh(2)</a>
+  1105) <a name="l1105" style="background-color: #ffcccc">             xlwc(pverp:2:-1)     = cwat(i,:) * pmid(i,:)/(temper(i,:)*287._r8) * kg2g  !! TIE</a>
+  1106) <a name="l1106" style="background-color: #ffcccc">             xlwc(1)              = xlwc(2)</a>
+  1107) <a name="l1107" style="background-color: #ffcccc">             xfrc(pverp:2:-1)     = cldfr(i,:)                      ! cloud fraction</a>
+  1108) <a name="l1108" style="background-color: #ffcccc">             xfrc(1)              = xfrc(2)</a>
+  1109) <a name="l1109" style="background-color: #ffcccc">             tlay(1:pver)         = .5_r8*(tline(1:pver) + tline(2:pverp))</a>
+  1110) <a name="l1110" style="background-color: #ffcccc">             albedo(1:nw)       = srf_alb(i)</a>
+  1111) <a name="l1111" style="background-color: #ffcccc"></a>
+  1112) <a name="l1112" style="background-color: #ffcccc">             alat = rlats(i)</a>
+  1113) <a name="l1113" style="background-color: #ffcccc">             along= rlons(i)</a>
+  1114) <a name="l1114" style="background-color: #ffcccc"></a>
+  1115) <a name="l1115" style="background-color: #ffcccc">             if( oc1_ndx &gt; 0 ) then</a>
+  1116) <a name="l1116" style="background-color: #ffcccc">                aerocs1(pverp:2:-1) = vmr(i,:,oc1_ndx)</a>
+  1117) <a name="l1117" style="background-color: #ffcccc">             else</a>
+  1118) <a name="l1118" style="background-color: #ffcccc">                aerocs1(pverp:2:-1) = 0._r8</a>
+  1119) <a name="l1119" style="background-color: #ffcccc">             end if</a>
+  1120) <a name="l1120" style="background-color: #ffcccc">             aerocs1(1)            = aerocs1(2)</a>
+  1121) <a name="l1121" style="background-color: #ffcccc">             if( oc2_ndx &gt; 0 ) then</a>
+  1122) <a name="l1122" style="background-color: #ffcccc">                aerocs2(pverp:2:-1) = vmr(i,:,oc2_ndx)</a>
+  1123) <a name="l1123" style="background-color: #ffcccc">             else</a>
+  1124) <a name="l1124" style="background-color: #ffcccc">                aerocs2(pverp:2:-1) = 0._r8</a>
+  1125) <a name="l1125" style="background-color: #ffcccc">             end if</a>
+  1126) <a name="l1126" style="background-color: #ffcccc">             aerocs2(1)          = aerocs2(2)</a>
+  1127) <a name="l1127" style="background-color: #ffcccc">             if( cb1_ndx &gt; 0 ) then</a>
+  1128) <a name="l1128" style="background-color: #ffcccc">                aercbs1(pverp:2:-1) = vmr(i,:,cb1_ndx)</a>
+  1129) <a name="l1129" style="background-color: #ffcccc">             else</a>
+  1130) <a name="l1130" style="background-color: #ffcccc">                aercbs1(pverp:2:-1) = 0._r8</a>
+  1131) <a name="l1131" style="background-color: #ffcccc">             end if</a>
+  1132) <a name="l1132" style="background-color: #ffcccc">             aercbs1(1)          = aercbs1(2)</a>
+  1133) <a name="l1133" style="background-color: #ffcccc">             if( cb2_ndx &gt; 0 ) then</a>
+  1134) <a name="l1134" style="background-color: #ffcccc">                aercbs2(pverp:2:-1) = vmr(i,:,cb2_ndx)</a>
+  1135) <a name="l1135" style="background-color: #ffcccc">             else</a>
+  1136) <a name="l1136" style="background-color: #ffcccc">                aercbs2(pverp:2:-1) = 0._r8</a>
+  1137) <a name="l1137" style="background-color: #ffcccc">             end if</a>
+  1138) <a name="l1138" style="background-color: #ffcccc">             aercbs2(1)          = aercbs2(2)</a>
+  1139) <a name="l1139" style="background-color: #ffcccc">             if( soa_ndx &gt; 0 ) then</a>
+  1140) <a name="l1140" style="background-color: #ffcccc">                aersoa(pverp:2:-1) = vmr(i,:,soa_ndx)</a>
+  1141) <a name="l1141" style="background-color: #ffcccc">             else</a>
+  1142) <a name="l1142" style="background-color: #ffcccc">                aersoa(pverp:2:-1) = 0._r8</a>
+  1143) <a name="l1143" style="background-color: #ffcccc">             end if</a>
+  1144) <a name="l1144" style="background-color: #ffcccc">             aersoa(1)          = aersoa(2)</a>
+  1145) <a name="l1145" style="background-color: #ffcccc">             if( ant_ndx &gt; 0 ) then</a>
+  1146) <a name="l1146" style="background-color: #ffcccc">                aerant(pverp:2:-1) = vmr(i,:,ant_ndx)</a>
+  1147) <a name="l1147" style="background-color: #ffcccc">             else</a>
+  1148) <a name="l1148" style="background-color: #ffcccc">                aerant(pverp:2:-1) = 0._r8</a>
+  1149) <a name="l1149" style="background-color: #ffcccc">             end if</a>
+  1150) <a name="l1150" style="background-color: #ffcccc">             aerant(1)            = aerant(2)</a>
+  1151) <a name="l1151" style="background-color: #ffcccc">             if( so4_ndx &gt; 0 ) then</a>
+  1152) <a name="l1152" style="background-color: #ffcccc">                aerso4(pverp:2:-1) = vmr(i,:,so4_ndx)</a>
+  1153) <a name="l1153" style="background-color: #ffcccc">             else</a>
+  1154) <a name="l1154" style="background-color: #ffcccc">                aerso4(pverp:2:-1) = 0._r8</a>
+  1155) <a name="l1155" style="background-color: #ffcccc">             end if</a>
+  1156) <a name="l1156" style="background-color: #ffcccc">             aerso4(1)            = aerso4(2)</a>
+  1157) <a name="l1157" style="background-color: #ffcccc">             if ( ndst == 4 ) then</a>
+  1158) <a name="l1158" style="background-color: #ffcccc">                do ndx = 1,4</a>
+  1159) <a name="l1159" style="background-color: #ffcccc">                   aerds(ndx,pverp:2:-1) = dust_vmr(i,:,ndx)</a>
+  1160) <a name="l1160" style="background-color: #ffcccc">                end do</a>
+  1161) <a name="l1161" style="background-color: #ffcccc">             else </a>
+  1162) <a name="l1162" style="background-color: #ffcccc">                do ndx = 1,4</a>
+  1163) <a name="l1163" style="background-color: #ffcccc">                   aerds(ndx,pverp:2:-1) = 0._r8</a>
+  1164) <a name="l1164" style="background-color: #ffcccc">                end do</a>
+  1165) <a name="l1165" style="background-color: #ffcccc">             endif</a>
+  1166) <a name="l1166" style="background-color: #ffcccc">             aerds(1,1)          = aerds(1,2)</a>
+  1167) <a name="l1167" style="background-color: #ffcccc">             aerds(2,1)          = aerds(2,2)</a>
+  1168) <a name="l1168" style="background-color: #ffcccc">             aerds(3,1)          = aerds(3,2)</a>
+  1169) <a name="l1169" style="background-color: #ffcccc">             aerds(4,1)          = aerds(4,2)</a>
+  1170) <a name="l1170" style="background-color: #ffcccc">             if( sa1_ndx &gt; 0 ) then</a>
+  1171) <a name="l1171" style="background-color: #ffcccc">                aersal(pverp:2:-1,1) = vmr(i,:,sa1_ndx)</a>
+  1172) <a name="l1172" style="background-color: #ffcccc">             else</a>
+  1173) <a name="l1173" style="background-color: #ffcccc">                aersal(pverp:2:-1,1) = 0._r8</a>
+  1174) <a name="l1174" style="background-color: #ffcccc">             end if</a>
+  1175) <a name="l1175" style="background-color: #ffcccc">             if( sa2_ndx &gt; 0 ) then</a>
+  1176) <a name="l1176" style="background-color: #ffcccc">                aersal(pverp:2:-1,2) = vmr(i,:,sa2_ndx)</a>
+  1177) <a name="l1177" style="background-color: #ffcccc">             else</a>
+  1178) <a name="l1178" style="background-color: #ffcccc">                aersal(pverp:2:-1,2) = 0._r8</a>
+  1179) <a name="l1179" style="background-color: #ffcccc">             end if</a>
+  1180) <a name="l1180" style="background-color: #ffcccc">             if( sa3_ndx &gt; 0 ) then</a>
+  1181) <a name="l1181" style="background-color: #ffcccc">                aersal(pverp:2:-1,3) = vmr(i,:,sa3_ndx)</a>
+  1182) <a name="l1182" style="background-color: #ffcccc">             else</a>
+  1183) <a name="l1183" style="background-color: #ffcccc">                aersal(pverp:2:-1,3) = 0._r8</a>
+  1184) <a name="l1184" style="background-color: #ffcccc">             end if</a>
+  1185) <a name="l1185" style="background-color: #ffcccc">             if( sa4_ndx &gt; 0 ) then</a>
+  1186) <a name="l1186" style="background-color: #ffcccc">                aersal(pverp:2:-1,4) = vmr(i,:,sa4_ndx)</a>
+  1187) <a name="l1187" style="background-color: #ffcccc">             else</a>
+  1188) <a name="l1188" style="background-color: #ffcccc">                aersal(pverp:2:-1,4) = 0._r8</a>
+  1189) <a name="l1189" style="background-color: #ffcccc">             end if</a>
+  1190) <a name="l1190" style="background-color: #ffcccc">             aersal(1,:) = aersal(2,:)</a>
+  1191) <a name="l1191" style="background-color: #ffcccc">             call photoin( ncdate, alat, along, &amp;</a>
+  1192) <a name="l1192" style="background-color: #ffcccc">                           ut, esfact, col_dens(i,1,1), col_dens(i,1,2), albedo, &amp;</a>
+  1193) <a name="l1193" style="background-color: #ffcccc">                           zarg, tline, tlay, xlwc, xfrc, &amp;</a>
+  1194) <a name="l1194" style="background-color: #ffcccc">                           airdens, aerocs1, aerocs2, aercbs1, aercbs2, &amp;</a>
+  1195) <a name="l1195" style="background-color: #ffcccc">                           aersoa, aerant, aerso4, aersal, aerds, o3line, rh, &amp;</a>
+  1196) <a name="l1196" style="background-color: #ffcccc">                           prates, sza, nw, dt_xdiag )</a>
+  1197) <a name="l1197" style="background-color: #ffcccc">             dt_diag(i,:) = dt_xdiag(:) </a>
+  1198) <a name="l1198" style="background-color: #ffcccc">             </a>
+  1199) <a name="l1199" style="background-color: #ffcccc">             do m = 1,phtcnt</a>
+  1200) <a name="l1200" style="background-color: #ffcccc">                if( lng_indexer(m) &gt; 0 ) then</a>
+  1201) <a name="l1201" style="background-color: #ffcccc">                   alias_factor = pht_alias_mult(m,2)</a>
+  1202) <a name="l1202" style="background-color: #ffcccc">                   if( alias_factor == 1._r8 ) then</a>
+  1203) <a name="l1203" style="background-color: #ffcccc">                      photos(i,:,m) = prates(1:pver,lng_indexer(m))</a>
+  1204) <a name="l1204" style="background-color: #ffcccc">                   else</a>
+  1205) <a name="l1205" style="background-color: #ffcccc">                      photos(i,:,m) = alias_factor * prates(1:pver,lng_indexer(m))</a>
+  1206) <a name="l1206" style="background-color: #ffcccc">                   end if</a>
+  1207) <a name="l1207" style="background-color: #ffcccc">                end if</a>
+  1208) <a name="l1208" style="background-color: #ffcccc"></a>
+  1209) <a name="l1209" style="background-color: #ffcccc">#ifdef DEBUG</a>
+  1210) <a name="l1210" style="background-color: #ffcccc">                if( do_diag ) then</a>
+  1211) <a name="l1211" style="background-color: #ffcccc">                   write(iulog,'(''xactive_photo: prates('',i2,'',.)'')') m</a>
+  1212) <a name="l1212" style="background-color: #ffcccc">                   write(iulog,'(1p,5e21.13)') photos(i,:pver,m)</a>
+  1213) <a name="l1213" style="background-color: #ffcccc">                   write(iulog,*) ' '</a>
+  1214) <a name="l1214" style="background-color: #ffcccc">                end if</a>
+  1215) <a name="l1215" style="background-color: #ffcccc">#endif</a>
+  1216) <a name="l1216" style="background-color: #ffcccc"></a>
+  1217) <a name="l1217" style="background-color: #ffcccc">             end do</a>
+  1218) <a name="l1218" style="background-color: #ffcccc">!-----------------------------------------------------------------</a>
+  1219) <a name="l1219" style="background-color: #ffcccc">!	... set j(onitr)</a>
+  1220) <a name="l1220" style="background-color: #ffcccc">!-----------------------------------------------------------------</a>
+  1221) <a name="l1221" style="background-color: #ffcccc">               if( jonitr_ndx &gt; 0 ) then</a>
+  1222) <a name="l1222" style="background-color: #ffcccc">                  if( jch3cho_a_ndx &gt; 0 ) then</a>
+  1223) <a name="l1223" style="background-color: #ffcccc">                     photos(i,1:pver,jonitr_ndx) = photos(i,1:pver,jch3cho_a_ndx)</a>
+  1224) <a name="l1224" style="background-color: #ffcccc">                  end if</a>
+  1225) <a name="l1225" style="background-color: #ffcccc">                  if( jch3cho_b_ndx &gt; 0 ) then</a>
+  1226) <a name="l1226" style="background-color: #ffcccc">                     photos(i,1:pver,jonitr_ndx) = photos(i,1:pver,jonitr_ndx) + photos(i,1:pver,jch3cho_b_ndx)</a>
+  1227) <a name="l1227" style="background-color: #ffcccc">                  end if</a>
+  1228) <a name="l1228" style="background-color: #ffcccc">                  if( jch3cho_c_ndx &gt; 0 ) then</a>
+  1229) <a name="l1229" style="background-color: #ffcccc">                     photos(i,1:pver,jonitr_ndx) = photos(i,1:pver,jonitr_ndx) + photos(i,1:pver,jch3cho_c_ndx)</a>
+  1230) <a name="l1230" style="background-color: #ffcccc">                  end if</a>
+  1231) <a name="l1231" style="background-color: #ffcccc">               end if</a>
+  1232) <a name="l1232" style="background-color: #ffcccc">!-----------------------------------------------------------------</a>
+  1233) <a name="l1233" style="background-color: #ffcccc">!	... calculate j(no) from formula</a>
+  1234) <a name="l1234" style="background-color: #ffcccc">!-----------------------------------------------------------------</a>
+  1235) <a name="l1235" style="background-color: #ffcccc">               if( jno_ndx &gt; 0 ) then</a>
+  1236) <a name="l1236" style="background-color: #ffcccc">                  if( has_o2_col .and. has_o3_col ) then</a>
+  1237) <a name="l1237" style="background-color: #ffcccc">                     fac1(:) = 1.e-8_r8 * (col_dens(i,:,2)/cos(zen_angle(i)))**.38_r8</a>
+  1238) <a name="l1238" style="background-color: #ffcccc">                     fac2(:) = 5.e-19_r8 * col_dens(i,:,1) / cos(zen_angle(i))</a>
+  1239) <a name="l1239" style="background-color: #ffcccc">                     photos(i,:,jno_ndx) = 4.5e-6_r8 * exp( -(fac1(:) + fac2(:)) )</a>
+  1240) <a name="l1240" style="background-color: #ffcccc">                  end if</a>
+  1241) <a name="l1241" style="background-color: #ffcccc">               end if</a>
+  1242) <a name="l1242" style="background-color: #ffcccc">!-----------------------------------------------------------------</a>
+  1243) <a name="l1243" style="background-color: #ffcccc">! 	... add near IR correction to j(ho2no2)</a>
+  1244) <a name="l1244" style="background-color: #ffcccc">!-----------------------------------------------------------------</a>
+  1245) <a name="l1245" style="background-color: #ffcccc">               if( jho2no2_ndx &gt; 0 ) then</a>
+  1246) <a name="l1246" style="background-color: #ffcccc">                  photos(i,:,jho2no2_ndx) = photos(i,:,jho2no2_ndx) + 1.e-5_r8</a>
+  1247) <a name="l1247" style="background-color: #ffcccc">               endif</a>
+  1248) <a name="l1248" style="background-color: #ffcccc">          end if secant_in_bounds</a>
+  1249) <a name="l1249" style="background-color: #ffcccc">       end if daylight</a>
+  1250) <a name="l1250" style="background-color: #ffcccc">    end do col_loop</a>
+  1251) <a name="l1251" style="background-color: #ffcccc"></a>
+  1252) <a name="l1252" style="background-color: #ffcccc">    call set_xnox_photo( photos, ncol  )</a>
+  1253) <a name="l1253" style="background-color: #ffcccc"></a>
+  1254) <a name="l1254" style="background-color: #ffcccc">    deallocate( prates )</a>
+  1255) <a name="l1255" style="background-color: #ffcccc"></a>
+  1256) <a name="l1256" style="background-color: #ffcccc">  end subroutine xactive_photo</a>
+  1257) <a name="l1257" style="background-color: #ffffff"></a>
+  1258) <a name="l1258" style="background-color: #ffffff">  subroutine cloud_mod( zen_angle, clouds, lwc, delp, srf_alb, &amp;</a>
+  1259) <a name="l1259" style="background-color: #ffffff">                        eff_alb, cld_mult )</a>
+  1260) <a name="l1260" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+  1261) <a name="l1261" style="background-color: #ffffff">    ! 	... cloud alteration factors for photorates and albedo</a>
+  1262) <a name="l1262" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+  1263) <a name="l1263" style="background-color: #ffffff"></a>
+  1264) <a name="l1264" style="background-color: #ffffff">    implicit none</a>
+  1265) <a name="l1265" style="background-color: #ffffff"></a>
+  1266) <a name="l1266" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+  1267) <a name="l1267" style="background-color: #ffffff">    ! 	... dummy arguments</a>
+  1268) <a name="l1268" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+  1269) <a name="l1269" style="background-color: #ffffff">    real(r8), intent(in)    ::  zen_angle         ! zenith angle</a>
+  1270) <a name="l1270" style="background-color: #ffffff">    real(r8), intent(in)    ::  srf_alb           ! surface albedo</a>
+  1271) <a name="l1271" style="background-color: #ffffff">    real(r8), intent(in)    ::  clouds(pver)       ! cloud fraction</a>
+  1272) <a name="l1272" style="background-color: #ffffff">    real(r8), intent(in)    ::  lwc(pver)          ! liquid water content (mass mr)</a>
+  1273) <a name="l1273" style="background-color: #ffffff">    real(r8), intent(in)    ::  delp(pver)         ! del press about midpoint in pascals</a>
+  1274) <a name="l1274" style="background-color: #ffffff">    real(r8), intent(out)   ::  eff_alb(pver)      ! effective albedo</a>
+  1275) <a name="l1275" style="background-color: #ffffff">    real(r8), intent(out)   ::  cld_mult(pver)     ! photolysis mult factor</a>
+  1276) <a name="l1276" style="background-color: #ffffff"></a>
+  1277) <a name="l1277" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+  1278) <a name="l1278" style="background-color: #ffffff">    ! 	... local variables</a>
+  1279) <a name="l1279" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+  1280) <a name="l1280" style="background-color: #ffffff">    integer :: k</a>
+  1281) <a name="l1281" style="background-color: #ffffff">    real(r8)    :: coschi</a>
+  1282) <a name="l1282" style="background-color: #ffffff">    real(r8)    :: del_lwp(pver)</a>
+  1283) <a name="l1283" style="background-color: #ffffff">    real(r8)    :: del_tau(pver)</a>
+  1284) <a name="l1284" style="background-color: #ffffff">    real(r8)    :: above_tau(pver)</a>
+  1285) <a name="l1285" style="background-color: #ffffff">    real(r8)    :: below_tau(pver)</a>
+  1286) <a name="l1286" style="background-color: #ffffff">    real(r8)    :: above_cld(pver)</a>
+  1287) <a name="l1287" style="background-color: #ffffff">    real(r8)    :: below_cld(pver)</a>
+  1288) <a name="l1288" style="background-color: #ffffff">    real(r8)    :: above_tra(pver)</a>
+  1289) <a name="l1289" style="background-color: #ffffff">    real(r8)    :: below_tra(pver)</a>
+  1290) <a name="l1290" style="background-color: #ffffff">    real(r8)    :: fac1(pver)</a>
+  1291) <a name="l1291" style="background-color: #ffffff">    real(r8)    :: fac2(pver)</a>
+  1292) <a name="l1292" style="background-color: #ffffff"></a>
+  1293) <a name="l1293" style="background-color: #ffffff">    real(r8), parameter :: rgrav = 1._r8/9.80616_r8</a>
+  1294) <a name="l1294" style="background-color: #ffffff"></a>
+  1295) <a name="l1295" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1296) <a name="l1296" style="background-color: #ffffff">    !	... modify lwc for cloud fraction and form</a>
+  1297) <a name="l1297" style="background-color: #ffffff">    !	    liquid water path for each layer</a>
+  1298) <a name="l1298" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1299) <a name="l1299" style="background-color: #ffffff">    where( clouds(:) /= 0._r8 )</a>
+  1300) <a name="l1300" style="background-color: #ffffff">       del_lwp(:) = rgrav * lwc(:) * delp(:) * 1.e3_r8 / clouds(:)</a>
+  1301) <a name="l1301" style="background-color: #ffffff">    elsewhere</a>
+  1302) <a name="l1302" style="background-color: #ffffff">       del_lwp(:) = 0._r8</a>
+  1303) <a name="l1303" style="background-color: #ffffff">    endwhere</a>
+  1304) <a name="l1304" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1305) <a name="l1305" style="background-color: #ffffff">    !    	... form tau for each model layer</a>
+  1306) <a name="l1306" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1307) <a name="l1307" style="background-color: #ffffff">    where( clouds(:) /= 0._r8 )</a>
+  1308) <a name="l1308" style="background-color: #ffffff">       del_tau(:) = del_lwp(:) *.155_r8 * clouds(:)**1.5_r8</a>
+  1309) <a name="l1309" style="background-color: #ffffff">    elsewhere</a>
+  1310) <a name="l1310" style="background-color: #ffffff">       del_tau(:) = 0._r8</a>
+  1311) <a name="l1311" style="background-color: #ffffff">    end where</a>
+  1312) <a name="l1312" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1313) <a name="l1313" style="background-color: #ffffff">    !    	... form integrated tau from top down</a>
+  1314) <a name="l1314" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1315) <a name="l1315" style="background-color: #ffffff">    above_tau(1) = 0._r8</a>
+  1316) <a name="l1316" style="background-color: #ffffff">    do k = 1,pverm</a>
+  1317) <a name="l1317" style="background-color: #ffffff">       above_tau(k+1) = del_tau(k) + above_tau(k)</a>
+  1318) <a name="l1318" style="background-color: #ffffff">    end do</a>
+  1319) <a name="l1319" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1320) <a name="l1320" style="background-color: #ffffff">    !    	... form integrated tau from bottom up</a>
+  1321) <a name="l1321" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1322) <a name="l1322" style="background-color: #ffffff">    below_tau(pver) = 0._r8</a>
+  1323) <a name="l1323" style="background-color: #ffffff">    do k = pverm,1,-1</a>
+  1324) <a name="l1324" style="background-color: #ffffff">       below_tau(k) = del_tau(k+1) + below_tau(k+1)</a>
+  1325) <a name="l1325" style="background-color: #ffffff">    end do</a>
+  1326) <a name="l1326" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1327) <a name="l1327" style="background-color: #ffffff">    !	... form vertically averaged cloud cover above and below</a>
+  1328) <a name="l1328" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1329) <a name="l1329" style="background-color: #ffffff">    above_cld(1) = 0._r8</a>
+  1330) <a name="l1330" style="background-color: #ffffff">    do k = 1,pverm</a>
+  1331) <a name="l1331" style="background-color: #ffffff">       above_cld(k+1) = clouds(k) * del_tau(k) + above_cld(k)</a>
+  1332) <a name="l1332" style="background-color: #ffffff">    end do</a>
+  1333) <a name="l1333" style="background-color: #ffffff">    do k = 2,pver</a>
+  1334) <a name="l1334" style="background-color: #ffffff">       if( above_tau(k) /= 0._r8 ) then</a>
+  1335) <a name="l1335" style="background-color: #ffffff">          above_cld(k) = above_cld(k) / above_tau(k)</a>
+  1336) <a name="l1336" style="background-color: #ffffff">       else</a>
+  1337) <a name="l1337" style="background-color: #ffffff">          above_cld(k) = above_cld(k-1)</a>
+  1338) <a name="l1338" style="background-color: #ffffff">       end if</a>
+  1339) <a name="l1339" style="background-color: #ffffff">    end do</a>
+  1340) <a name="l1340" style="background-color: #ffffff">    below_cld(pver) = 0._r8</a>
+  1341) <a name="l1341" style="background-color: #ffffff">    do k = pverm,1,-1</a>
+  1342) <a name="l1342" style="background-color: #ffffff">       below_cld(k) = clouds(k+1) * del_tau(k+1) + below_cld(k+1)</a>
+  1343) <a name="l1343" style="background-color: #ffffff">    end do</a>
+  1344) <a name="l1344" style="background-color: #ffffff">    do k = pverm,1,-1</a>
+  1345) <a name="l1345" style="background-color: #ffffff">       if( below_tau(k) /= 0._r8 ) then</a>
+  1346) <a name="l1346" style="background-color: #ffffff">          below_cld(k) = below_cld(k) / below_tau(k)</a>
+  1347) <a name="l1347" style="background-color: #ffffff">       else</a>
+  1348) <a name="l1348" style="background-color: #ffffff">          below_cld(k) = below_cld(k+1)</a>
+  1349) <a name="l1349" style="background-color: #ffffff">       end if</a>
+  1350) <a name="l1350" style="background-color: #ffffff">    end do</a>
+  1351) <a name="l1351" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1352) <a name="l1352" style="background-color: #ffffff">    !	... modify above_tau and below_tau via jfm</a>
+  1353) <a name="l1353" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1354) <a name="l1354" style="background-color: #ffffff">    where( above_cld(2:pver) /= 0._r8 )</a>
+  1355) <a name="l1355" style="background-color: #ffffff">       above_tau(2:pver) = above_tau(2:pver) / above_cld(2:pver)</a>
+  1356) <a name="l1356" style="background-color: #ffffff">    end where</a>
+  1357) <a name="l1357" style="background-color: #ffffff">    where( below_cld(:pverm) /= 0._r8 )</a>
+  1358) <a name="l1358" style="background-color: #ffffff">       below_tau(:pverm) = below_tau(:pverm) / below_cld(:pverm)</a>
+  1359) <a name="l1359" style="background-color: #ffffff">    end where</a>
+  1360) <a name="l1360" style="background-color: #ffffff">    where( above_tau(2:pver) &lt; 5._r8 )</a>
+  1361) <a name="l1361" style="background-color: #ffffff">       above_cld(2:pver) = 0._r8</a>
+  1362) <a name="l1362" style="background-color: #ffffff">    end where</a>
+  1363) <a name="l1363" style="background-color: #ffffff">    where( below_tau(:pverm) &lt; 5._r8 )</a>
+  1364) <a name="l1364" style="background-color: #ffffff">       below_cld(:pverm) = 0._r8</a>
+  1365) <a name="l1365" style="background-color: #ffffff">    end where</a>
+  1366) <a name="l1366" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1367) <a name="l1367" style="background-color: #ffffff">    !	... form transmission factors</a>
+  1368) <a name="l1368" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1369) <a name="l1369" style="background-color: #ffffff">    above_tra(:) = 11.905_r8 / (9.524_r8 + above_tau(:))</a>
+  1370) <a name="l1370" style="background-color: #ffffff">    below_tra(:) = 11.905_r8 / (9.524_r8 + below_tau(:))</a>
+  1371) <a name="l1371" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1372) <a name="l1372" style="background-color: #ffffff">    !	... form effective albedo</a>
+  1373) <a name="l1373" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1374) <a name="l1374" style="background-color: #ffffff">    where( below_cld(:) /= 0._r8 )</a>
+  1375) <a name="l1375" style="background-color: #ffffff">       eff_alb(:) = srf_alb + below_cld(:) * (1._r8 - below_tra(:)) &amp;</a>
+  1376) <a name="l1376" style="background-color: #ffffff">                  * (1._r8 - srf_alb)</a>
+  1377) <a name="l1377" style="background-color: #ffffff">    elsewhere</a>
+  1378) <a name="l1378" style="background-color: #ffffff">       eff_alb(:) = srf_alb</a>
+  1379) <a name="l1379" style="background-color: #ffffff">    end where</a>
+  1380) <a name="l1380" style="background-color: #ffffff">    coschi = max( cos( zen_angle ),.5_r8 )</a>
+  1381) <a name="l1381" style="background-color: #ffffff">    where( del_lwp(:)*.155_r8 &lt; 5._r8 )</a>
+  1382) <a name="l1382" style="background-color: #ffffff">       fac1(:) = 0._r8</a>
+  1383) <a name="l1383" style="background-color: #ffffff">    elsewhere</a>
+  1384) <a name="l1384" style="background-color: #ffffff">       fac1(:) = 1.4_r8 * coschi - 1._r8</a>
+  1385) <a name="l1385" style="background-color: #ffffff">    end where</a>
+  1386) <a name="l1386" style="background-color: #ffffff">    fac2(:)     = min( 0._r8,1.6_r8*coschi*above_tra(:) - 1._r8 )</a>
+  1387) <a name="l1387" style="background-color: #ffffff">    cld_mult(:) = 1._r8 + fac1(:) * clouds(:) + fac2(:) * above_cld(:)</a>
+  1388) <a name="l1388" style="background-color: #ffffff">    cld_mult(:) = max( .05_r8,cld_mult(:) )</a>
+  1389) <a name="l1389" style="background-color: #ffffff"></a>
+  1390) <a name="l1390" style="background-color: #ffffff">  end subroutine cloud_mod</a>
+  1391) <a name="l1391" style="background-color: #ffffff"></a>
+  1392) <a name="l1392" style="background-color: #ffffff">  subroutine set_ub_col( col_delta, vmr, invariants, ptop, pdel, ncol, lchnk )</a>
+  1393) <a name="l1393" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1394) <a name="l1394" style="background-color: #ffffff">    !        ... set the column densities at the upper boundary</a>
+  1395) <a name="l1395" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1396) <a name="l1396" style="background-color: #ffffff"></a>
+  1397) <a name="l1397" style="background-color: #ffffff">    use chem_mods, only : nfs, ncol_abs=&gt;nabscol, indexm</a>
+  1398) <a name="l1398" style="background-color: #ffffff">    use chem_mods, only : nabscol, gas_pcnst, indexm, nfs</a>
+  1399) <a name="l1399" style="background-color: #ffffff">    use chem_mods, only : gas_pcnst</a>
+  1400) <a name="l1400" style="background-color: #ffffff"></a>
+  1401) <a name="l1401" style="background-color: #ffffff">    implicit none</a>
+  1402) <a name="l1402" style="background-color: #ffffff"></a>
+  1403) <a name="l1403" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1404) <a name="l1404" style="background-color: #ffffff">    !        ... dummy args</a>
+  1405) <a name="l1405" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1406) <a name="l1406" style="background-color: #ffffff">    real(r8), intent(in)    ::  ptop(pcols)                            ! top pressure (Pa)</a>
+  1407) <a name="l1407" style="background-color: #ffffff">    integer,  intent(in)    ::  ncol                                   ! number of columns in current chunk</a>
+  1408) <a name="l1408" style="background-color: #ffffff">    integer,  intent(in)    ::  lchnk                                  ! latitude indicies in chunk</a>
+  1409) <a name="l1409" style="background-color: #ffffff">    real(r8), intent(in)    ::  vmr(ncol,pver,gas_pcnst)               ! xported species vmr</a>
+  1410) <a name="l1410" style="background-color: #ffffff">    real(r8), intent(in)    ::  pdel(pcols,pver)                       ! pressure delta about midpoints (Pa)</a>
+  1411) <a name="l1411" style="background-color: #ffffff">    real(r8), intent(in)    ::  invariants(ncol,pver,nfs)</a>
+  1412) <a name="l1412" style="background-color: #ffffff">    real(r8), intent(out)   ::  col_delta(ncol,0:pver,max(1,nabscol))  ! /cm**2 o2,o3 col dens above model</a>
+  1413) <a name="l1413" style="background-color: #ffffff"></a>
+  1414) <a name="l1414" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1415) <a name="l1415" style="background-color: #ffffff">    !        ... local variables</a>
+  1416) <a name="l1416" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1417) <a name="l1417" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1418) <a name="l1418" style="background-color: #ffffff">    !        note: xfactor = 10.*r/(k*g) in cgs units.</a>
+  1419) <a name="l1419" style="background-color: #ffffff">    !              the factor 10. is to convert pdel</a>
+  1420) <a name="l1420" style="background-color: #ffffff">    !              from pascals to dyne/cm**2.</a>
+  1421) <a name="l1421" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1422) <a name="l1422" style="background-color: #ffffff">    real(r8), parameter :: xfactor = 2.8704e21_r8/(9.80616_r8*1.38044_r8)</a>
+  1423) <a name="l1423" style="background-color: #ffffff">    integer :: k, kl, spc_ndx</a>
+  1424) <a name="l1424" style="background-color: #ffffff">    integer :: ku(ncol)</a>
+  1425) <a name="l1425" style="background-color: #ffffff">    real(r8)    :: dp(ncol)</a>
+  1426) <a name="l1426" style="background-color: #ffffff">    real(r8)    :: tint_vals(2)</a>
+  1427) <a name="l1427" style="background-color: #ffffff">    real(r8)    :: o2_exo_col(ncol)</a>
+  1428) <a name="l1428" style="background-color: #ffffff">    real(r8)    :: o3_exo_col(ncol)</a>
+  1429) <a name="l1429" style="background-color: #ffffff">    integer :: lat, i</a>
+  1430) <a name="l1430" style="background-color: #ffffff"> </a>
+  1431) <a name="l1431" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1432) <a name="l1432" style="background-color: #ffffff">    !        ... assign column density at the upper boundary</a>
+  1433) <a name="l1433" style="background-color: #ffffff">    !            the first column is o3 and the second is o2.</a>
+  1434) <a name="l1434" style="background-color: #ffffff">    !            add 10 du o3 column above top of model.</a>
+  1435) <a name="l1435" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1436) <a name="l1436" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1437) <a name="l1437" style="background-color: #ffffff">    !	... set exo absorber columns</a>
+  1438) <a name="l1438" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1439) <a name="l1439" style="background-color: #ffffff">    has_abs_cols : if( has_o2_col .and. has_o3_col ) then</a>
+  1440) <a name="l1440" style="background-color: #ffff99">       if( has_fixed_press ) then</a>
+  1441) <a name="l1441" style="background-color: #ffff99">          kl = ki - 1</a>
+  1442) <a name="l1442" style="background-color: #ffff99">          if( has_o2_col ) then</a>
+  1443) <a name="l1443" style="background-color: #ffff99">             do i = 1,ncol</a>
+  1444) <a name="l1444" style="background-color: #ffff99">                if ( kl &gt; 0 ) then</a>
+  1445) <a name="l1445" style="background-color: #ffff99">                   tint_vals(1) = o2_exo_coldens(kl,i,lchnk,last) &amp;</a>
+  1446) <a name="l1446" style="background-color: #ffff99">                        + delp * (o2_exo_coldens(ki,i,lchnk,last) &amp;</a>
+  1447) <a name="l1447" style="background-color: #ffff99">                        - o2_exo_coldens(kl,i,lchnk,last))</a>
+  1448) <a name="l1448" style="background-color: #ffff99">                   tint_vals(2) = o2_exo_coldens(kl,i,lchnk,next) &amp;</a>
+  1449) <a name="l1449" style="background-color: #ffff99">                        + delp * (o2_exo_coldens(ki,i,lchnk,next) &amp;</a>
+  1450) <a name="l1450" style="background-color: #ffff99">                        - o2_exo_coldens(kl,i,lchnk,next))</a>
+  1451) <a name="l1451" style="background-color: #ffff99">                else</a>
+  1452) <a name="l1452" style="background-color: #ffff99">                   tint_vals(1) = o2_exo_coldens( 1,i,lchnk,last) </a>
+  1453) <a name="l1453" style="background-color: #ffff99">                   tint_vals(2) = o2_exo_coldens( 1,i,lchnk,next) </a>
+  1454) <a name="l1454" style="background-color: #ffff99">                endif</a>
+  1455) <a name="l1455" style="background-color: #ffff99">                o2_exo_col(i) = tint_vals(1) + dels * (tint_vals(2) - tint_vals(1))</a>
+  1456) <a name="l1456" style="background-color: #ffff99">             end do</a>
+  1457) <a name="l1457" style="background-color: #ffff99">          else</a>
+  1458) <a name="l1458" style="background-color: #ffff99">             o2_exo_col(:) = 0._r8</a>
+  1459) <a name="l1459" style="background-color: #ffff99">          end if</a>
+  1460) <a name="l1460" style="background-color: #ffff99">          if( has_o3_col ) then</a>
+  1461) <a name="l1461" style="background-color: #ffff99">             do i = 1,ncol</a>
+  1462) <a name="l1462" style="background-color: #ffff99">                if ( kl &gt; 0 ) then</a>
+  1463) <a name="l1463" style="background-color: #ffff99">                   tint_vals(1) = o3_exo_coldens(kl,i,lchnk,last) &amp;</a>
+  1464) <a name="l1464" style="background-color: #ffff99">                        + delp * (o3_exo_coldens(ki,i,lchnk,last) &amp;</a>
+  1465) <a name="l1465" style="background-color: #ffff99">                        - o3_exo_coldens(kl,i,lchnk,last))</a>
+  1466) <a name="l1466" style="background-color: #ffff99">                   tint_vals(2) = o3_exo_coldens(kl,i,lchnk,next) &amp;</a>
+  1467) <a name="l1467" style="background-color: #ffff99">                        + delp * (o3_exo_coldens(ki,i,lchnk,next) &amp;</a>
+  1468) <a name="l1468" style="background-color: #ffff99">                        - o3_exo_coldens(kl,i,lchnk,next))</a>
+  1469) <a name="l1469" style="background-color: #ffff99">                else</a>
+  1470) <a name="l1470" style="background-color: #ffff99">                   tint_vals(1) = o3_exo_coldens( 1,i,lchnk,last) </a>
+  1471) <a name="l1471" style="background-color: #ffff99">                   tint_vals(2) = o3_exo_coldens( 1,i,lchnk,next) </a>
+  1472) <a name="l1472" style="background-color: #ffff99">                endif</a>
+  1473) <a name="l1473" style="background-color: #ffff99">                o3_exo_col(i) = tint_vals(1) + dels * (tint_vals(2) - tint_vals(1))</a>
+  1474) <a name="l1474" style="background-color: #ffff99">             end do</a>
+  1475) <a name="l1475" style="background-color: #ffff99">          else</a>
+  1476) <a name="l1476" style="background-color: #ffff99">             o3_exo_col(:) = 0._r8</a>
+  1477) <a name="l1477" style="background-color: #ffff99">          end if</a>
+  1478) <a name="l1478" style="background-color: #ffff99">#ifdef DEBUG</a>
+  1479) <a name="l1479" style="background-color: #ffff99">          write(iulog,*) '-----------------------------------'</a>
+  1480) <a name="l1480" style="background-color: #ffff99">          write(iulog,*) 'set_ub_col: diagnostics @ lat = ',lat</a>
+  1481) <a name="l1481" style="background-color: #ffff99">          write(iulog,*) 'o2_exo_col'</a>
+  1482) <a name="l1482" style="background-color: #ffff99">          write(iulog,'(1p,5g15.7)') o2_exo_col(:)</a>
+  1483) <a name="l1483" style="background-color: #ffff99">          write(iulog,*) 'o3_exo_col'</a>
+  1484) <a name="l1484" style="background-color: #ffff99">          write(iulog,'(1p,5g15.7)') o3_exo_col(:)</a>
+  1485) <a name="l1485" style="background-color: #ffff99">          write(iulog,*) '-----------------------------------'</a>
+  1486) <a name="l1486" style="background-color: #ffff99">#endif</a>
+  1487) <a name="l1487" style="background-color: #ffff99">       else</a>
+  1488) <a name="l1488" style="background-color: #ffff99">          !---------------------------------------------------------------</a>
+  1489) <a name="l1489" style="background-color: #ffff99">          !	... do pressure interpolation</a>
+  1490) <a name="l1490" style="background-color: #ffff99">          !---------------------------------------------------------------</a>
+  1491) <a name="l1491" style="background-color: #ffff99">          call p_interp( lchnk, ncol, ptop, o2_exo_col, o3_exo_col )</a>
+  1492) <a name="l1492" style="background-color: #ffff99">       end if</a>
+  1493) <a name="l1493" style="background-color: #ffff99">    else</a>
+  1494) <a name="l1494" style="background-color: #ffffff">       o2_exo_col(:) = 0._r8</a>
+  1495) <a name="l1495" style="background-color: #ffffff">       o3_exo_col(:) = 0._r8</a>
+  1496) <a name="l1496" style="background-color: #ffffff">    end if has_abs_cols</a>
+  1497) <a name="l1497" style="background-color: #ffffff"></a>
+  1498) <a name="l1498" style="background-color: #ffffff">    if( o3rad_ndx &gt; 0 ) then</a>
+  1499) <a name="l1499" style="background-color: #ffff99">       spc_ndx = o3rad_ndx</a>
+  1500) <a name="l1500" style="background-color: #ffff99">    else</a>
+  1501) <a name="l1501" style="background-color: #ffffff">       spc_ndx = ox_ndx</a>
+  1502) <a name="l1502" style="background-color: #ffffff">    end if</a>
+  1503) <a name="l1503" style="background-color: #ffffff">    if( spc_ndx &lt; 1 ) then</a>
+  1504) <a name="l1504" style="background-color: #ffffff">       spc_ndx = o3_ndx</a>
+  1505) <a name="l1505" style="background-color: #ffffff">    end if</a>
+  1506) <a name="l1506" style="background-color: #ffffff">    if( spc_ndx &gt; 0 ) then</a>
+  1507) <a name="l1507" style="background-color: #ffff99">       col_delta(:,0,1) = o3_exo_col(:)</a>
+  1508) <a name="l1508" style="background-color: #ffff99">       do k = 1,pver</a>
+  1509) <a name="l1509" style="background-color: #ffff99">          col_delta(:ncol,k,1) = xfactor * pdel(:ncol,k) * vmr(:ncol,k,spc_ndx)</a>
+  1510) <a name="l1510" style="background-color: #ffff99">       end do</a>
+  1511) <a name="l1511" style="background-color: #ffffff">    else if( o3_inv_ndx &gt; 0 ) then</a>
+  1512) <a name="l1512" style="background-color: #ffffff">       col_delta(:,0,1) = o3_exo_col(:)</a>
+  1513) <a name="l1513" style="background-color: #ffffff">       do k = 1,pver</a>
+  1514) <a name="l1514" style="background-color: #ffffff">          col_delta(:ncol,k,1) = xfactor * pdel(:ncol,k) * invariants(:ncol,k,o3_inv_ndx)/invariants(:ncol,k,indexm)</a>
+  1515) <a name="l1515" style="background-color: #ffffff">       end do</a>
+  1516) <a name="l1516" style="background-color: #ffffff">    else</a>
+  1517) <a name="l1517" style="background-color: #ffff99">       col_delta(:,:,1) = 0._r8</a>
+  1518) <a name="l1518" style="background-color: #ffff99">    end if</a>
+  1519) <a name="l1519" style="background-color: #ffff99">    if( ncol_abs &gt; 1 ) then</a>
+  1520) <a name="l1520" style="background-color: #ffffff">       if( o2_ndx &gt; 1 ) then</a>
+  1521) <a name="l1521" style="background-color: #ffffff">          col_delta(:,0,2) = o2_exo_col(:)</a>
+  1522) <a name="l1522" style="background-color: #ffffff">          if( o2_is_inv ) then</a>
+  1523) <a name="l1523" style="background-color: #ffffff">             do k = 1,pver</a>
+  1524) <a name="l1524" style="background-color: #ffffff">                col_delta(:ncol,k,2) = xfactor * pdel(:ncol,k) * invariants(:ncol,k,o2_ndx)/invariants(:ncol,k,indexm)</a>
+  1525) <a name="l1525" style="background-color: #ffffff">             end do</a>
+  1526) <a name="l1526" style="background-color: #ffffff">          else</a>
+  1527) <a name="l1527" style="background-color: #ffff99">             do k = 1,pver</a>
+  1528) <a name="l1528" style="background-color: #ffff99">                col_delta(:ncol,k,2) = xfactor * pdel(:ncol,k) * vmr(:ncol,k,o2_ndx)</a>
+  1529) <a name="l1529" style="background-color: #ffff99">             end do</a>
+  1530) <a name="l1530" style="background-color: #ffff99">          endif</a>
+  1531) <a name="l1531" style="background-color: #ffff99">       else</a>
+  1532) <a name="l1532" style="background-color: #ffff99">          col_delta(:,:,2) = 0._r8</a>
+  1533) <a name="l1533" style="background-color: #ffff99">       end if</a>
+  1534) <a name="l1534" style="background-color: #ffff99">    end if</a>
+  1535) <a name="l1535" style="background-color: #ffff99"></a>
+  1536) <a name="l1536" style="background-color: #ffff99">  end subroutine set_ub_col</a>
+  1537) <a name="l1537" style="background-color: #ffffff"></a>
+  1538) <a name="l1538" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">p_interp( lchnk, ncol, ptop, o2_exo_col, o3_exo_col )</a>
+  1539) <a name="l1539" style="background-color: #ffcccc">    !---------------------------------------------------------------</a>
+  1540) <a name="l1540" style="background-color: #ffcccc">    !     	... pressure interpolation for exo col density</a>
+  1541) <a name="l1541" style="background-color: #ffcccc">    !---------------------------------------------------------------</a>
+  1542) <a name="l1542" style="background-color: #ffcccc"></a>
+  1543) <a name="l1543" style="background-color: #ffcccc">    implicit none</a>
+  1544) <a name="l1544" style="background-color: #ffcccc"></a>
+  1545) <a name="l1545" style="background-color: #ffcccc">    !---------------------------------------------------------------</a>
+  1546) <a name="l1546" style="background-color: #ffcccc">    !     	... dummy arguments</a>
+  1547) <a name="l1547" style="background-color: #ffcccc">    !---------------------------------------------------------------</a>
+  1548) <a name="l1548" style="background-color: #ffcccc">    integer, intent(in)     :: ncol                      ! no. of columns</a>
+  1549) <a name="l1549" style="background-color: #ffcccc">    real(r8), intent(out)   :: o2_exo_col(ncol)          ! exo model o2 column density (molecules/cm^2)</a>
+  1550) <a name="l1550" style="background-color: #ffcccc">    real(r8), intent(out)   :: o3_exo_col(ncol)          ! exo model o3 column density (molecules/cm^2)</a>
+  1551) <a name="l1551" style="background-color: #ffcccc">    integer, intent(in)     :: lchnk                     ! latitude  indicies in chunk</a>
+  1552) <a name="l1552" style="background-color: #ffcccc">    real(r8)                :: ptop(pcols)               ! top pressure (Pa)</a>
+  1553) <a name="l1553" style="background-color: #ffcccc"></a>
+  1554) <a name="l1554" style="background-color: #ffcccc">    !---------------------------------------------------------------</a>
+  1555) <a name="l1555" style="background-color: #ffcccc">    !     	... local variables</a>
+  1556) <a name="l1556" style="background-color: #ffcccc">    !---------------------------------------------------------------</a>
+  1557) <a name="l1557" style="background-color: #ffcccc">    integer  :: i, k, ki, kl</a>
+  1558) <a name="l1558" style="background-color: #ffcccc">    integer  :: ku(ncol)                               ! interpolation index</a>
+  1559) <a name="l1559" style="background-color: #ffcccc">    real(r8) :: pinterp</a>
+  1560) <a name="l1560" style="background-color: #ffcccc">    real(r8) :: delp</a>
+  1561) <a name="l1561" style="background-color: #ffcccc">    real(r8) :: tint_vals(2)</a>
+  1562) <a name="l1562" style="background-color: #ffcccc">    real(r8) :: dp(ncol)                               ! pressure interpolation factor</a>
+  1563) <a name="l1563" style="background-color: #ffcccc"></a>
+  1564) <a name="l1564" style="background-color: #ffcccc">    do i = 1,ncol</a>
+  1565) <a name="l1565" style="background-color: #ffcccc">       pinterp = ptop(i)</a>
+  1566) <a name="l1566" style="background-color: #ffcccc">       if( pinterp &lt; levs(1) ) then</a>
+  1567) <a name="l1567" style="background-color: #ffcccc">          ki   = 0</a>
+  1568) <a name="l1568" style="background-color: #ffcccc">          delp = 0._r8</a>
+  1569) <a name="l1569" style="background-color: #ffcccc">       else</a>
+  1570) <a name="l1570" style="background-color: #ffcccc">          do ki = 2,n_exo_levs</a>
+  1571) <a name="l1571" style="background-color: #ffcccc">             if( pinterp &lt;= levs(ki) ) then</a>
+  1572) <a name="l1572" style="background-color: #ffcccc">                delp = log( pinterp/levs(ki-1) )/log( levs(ki)/levs(ki-1) )</a>
+  1573) <a name="l1573" style="background-color: #ffcccc">                exit</a>
+  1574) <a name="l1574" style="background-color: #ffcccc">             end if</a>
+  1575) <a name="l1575" style="background-color: #ffcccc">          end do</a>
+  1576) <a name="l1576" style="background-color: #ffcccc">       end if</a>
+  1577) <a name="l1577" style="background-color: #ffcccc">       kl = ki - 1</a>
+  1578) <a name="l1578" style="background-color: #ffcccc">       if( has_o2_col ) then</a>
+  1579) <a name="l1579" style="background-color: #ffcccc">          tint_vals(1) = o2_exo_coldens(kl,i,lchnk,last) &amp;</a>
+  1580) <a name="l1580" style="background-color: #ffcccc">                         + delp * (o2_exo_coldens(ki,i,lchnk,last) &amp;</a>
+  1581) <a name="l1581" style="background-color: #ffcccc">                                 - o2_exo_coldens(kl,i,lchnk,last))</a>
+  1582) <a name="l1582" style="background-color: #ffcccc">          tint_vals(2) = o2_exo_coldens(kl,i,lchnk,next) &amp;</a>
+  1583) <a name="l1583" style="background-color: #ffcccc">                         + delp * (o2_exo_coldens(ki,i,lchnk,next) &amp;</a>
+  1584) <a name="l1584" style="background-color: #ffcccc">                         - o2_exo_coldens(kl,i,lchnk,next))</a>
+  1585) <a name="l1585" style="background-color: #ffcccc">          o2_exo_col(i) = tint_vals(1) + dels * (tint_vals(2) - tint_vals(1))</a>
+  1586) <a name="l1586" style="background-color: #ffcccc">       else</a>
+  1587) <a name="l1587" style="background-color: #ffcccc">          o2_exo_col(i) = 0._r8</a>
+  1588) <a name="l1588" style="background-color: #ffcccc">       end if</a>
+  1589) <a name="l1589" style="background-color: #ffcccc">       if( has_o3_col ) then</a>
+  1590) <a name="l1590" style="background-color: #ffcccc">          tint_vals(1) = o3_exo_coldens(kl,i,lchnk,last) &amp;</a>
+  1591) <a name="l1591" style="background-color: #ffcccc">                         + delp * (o3_exo_coldens(ki,i,lchnk,last) &amp;</a>
+  1592) <a name="l1592" style="background-color: #ffcccc">                         - o3_exo_coldens(kl,i,lchnk,last))</a>
+  1593) <a name="l1593" style="background-color: #ffcccc">          tint_vals(2) = o3_exo_coldens(kl,i,lchnk,next) &amp;</a>
+  1594) <a name="l1594" style="background-color: #ffcccc">                         + delp * (o3_exo_coldens(ki,i,lchnk,next) &amp;</a>
+  1595) <a name="l1595" style="background-color: #ffcccc">                         - o3_exo_coldens(kl,i,lchnk,next))</a>
+  1596) <a name="l1596" style="background-color: #ffcccc">          o3_exo_col(i) = tint_vals(1) + dels * (tint_vals(2) - tint_vals(1))</a>
+  1597) <a name="l1597" style="background-color: #ffcccc">       else</a>
+  1598) <a name="l1598" style="background-color: #ffcccc">          o3_exo_col(i) = 0._r8</a>
+  1599) <a name="l1599" style="background-color: #ffcccc">       end if</a>
+  1600) <a name="l1600" style="background-color: #ffcccc">    end do</a>
+  1601) <a name="l1601" style="background-color: #ffcccc"></a>
+  1602) <a name="l1602" style="background-color: #ffcccc">  end subroutine p_interp</a>
+  1603) <a name="l1603" style="background-color: #ffffff"></a>
+  1604) <a name="l1604" style="background-color: #ffffff">  subroutine setcol( col_delta, col_dens, vmr, pdel,  ncol )</a>
+  1605) <a name="l1605" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1606) <a name="l1606" style="background-color: #ffffff">    !     	... set the column densities</a>
+  1607) <a name="l1607" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1608) <a name="l1608" style="background-color: #ffffff"></a>
+  1609) <a name="l1609" style="background-color: #ffffff">    use chem_mods, only : ncol_abs=&gt;nabscol, gas_pcnst</a>
+  1610) <a name="l1610" style="background-color: #ffffff"></a>
+  1611) <a name="l1611" style="background-color: #ffffff">    implicit none</a>
+  1612) <a name="l1612" style="background-color: #ffffff"></a>
+  1613) <a name="l1613" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1614) <a name="l1614" style="background-color: #ffffff">    !     	... dummy arguments</a>
+  1615) <a name="l1615" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1616) <a name="l1616" style="background-color: #ffffff">    integer,  intent(in)    :: ncol                              ! no. of columns in current chunk</a>
+  1617) <a name="l1617" style="background-color: #ffffff">    real(r8), intent(in)    :: vmr(ncol,pver,gas_pcnst)          ! xported species vmr</a>
+  1618) <a name="l1618" style="background-color: #ffffff">    real(r8), intent(in)    :: pdel(pcols,pver)                  ! delta about midpoints</a>
+  1619) <a name="l1619" style="background-color: #ffffff">    real(r8), intent(in)    :: col_delta(:,0:,:)                 ! layer column densities (molecules/cm^2)</a>
+  1620) <a name="l1620" style="background-color: #ffffff">    real(r8), intent(out)   :: col_dens(:,:,:)                   ! column densities ( /cm**2 )</a>
+  1621) <a name="l1621" style="background-color: #ffffff"></a>
+  1622) <a name="l1622" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1623) <a name="l1623" style="background-color: #ffffff">    !        the local variables</a>
+  1624) <a name="l1624" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1625) <a name="l1625" style="background-color: #ffffff">    integer  ::   i, k, km1, m      ! long, alt indicies</a>
+  1626) <a name="l1626" style="background-color: #ffffff"></a>
+  1627) <a name="l1627" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1628) <a name="l1628" style="background-color: #ffffff">    !        note: xfactor = 10.*r/(k*g) in cgs units.</a>
+  1629) <a name="l1629" style="background-color: #ffffff">    !              the factor 10. is to convert pdel</a>
+  1630) <a name="l1630" style="background-color: #ffffff">    !              from pascals to dyne/cm**2.</a>
+  1631) <a name="l1631" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1632) <a name="l1632" style="background-color: #ffffff">    real(r8), parameter :: xfactor = 2.8704e21_r8/(9.80616_r8*1.38044_r8)</a>
+  1633) <a name="l1633" style="background-color: #ffffff"></a>
+  1634) <a name="l1634" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1635) <a name="l1635" style="background-color: #ffffff">    !   	... compute column densities down to the</a>
+  1636) <a name="l1636" style="background-color: #ffffff">    !           current eta index in the calling routine.</a>
+  1637) <a name="l1637" style="background-color: #ffffff">    !           the first column is o3 and the second is o2.</a>
+  1638) <a name="l1638" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+  1639) <a name="l1639" style="background-color: #ffffff">    do m = 1,ncol_abs</a>
+  1640) <a name="l1640" style="background-color: #ffffff">       col_dens(:,1,m) = col_delta(:,0,m) + .5_r8 * col_delta(:,1,m)</a>
+  1641) <a name="l1641" style="background-color: #ffffff">       do k = 2,pver</a>
+  1642) <a name="l1642" style="background-color: #ffffff">          km1 = k - 1</a>
+  1643) <a name="l1643" style="background-color: #ffffff">          col_dens(:,k,m) = col_dens(:,km1,m) + .5_r8 * (col_delta(:,km1,m) + col_delta(:,k,m))</a>
+  1644) <a name="l1644" style="background-color: #ffffff">       end do</a>
+  1645) <a name="l1645" style="background-color: #ffffff">    enddo</a>
+  1646) <a name="l1646" style="background-color: #ffffff"></a>
+  1647) <a name="l1647" style="background-color: #ffffff">  end subroutine setcol</a>
+  1648) <a name="l1648" style="background-color: #ffffff"></a>
+  1649) <a name="l1649" style="background-color: #ffffff">  subroutine photo_timestep_init( calday )</a>
+  1650) <a name="l1650" style="background-color: #ffffff">    use time_manager,   only : is_end_curr_day</a>
+  1651) <a name="l1651" style="background-color: #ffffff">    use euvac,          only : euvac_set_etf</a>
+  1652) <a name="l1652" style="background-color: #ffffff">    use mo_solar_parms, only : get_solar_parms</a>
+  1653) <a name="l1653" style="background-color: #ffffff">    use mo_jshort,      only : jshort_timestep_init</a>
+  1654) <a name="l1654" style="background-color: #ffffff">    use mo_jlong,       only : jlong_timestep_init</a>
+  1655) <a name="l1655" style="background-color: #ffffff"></a>
+  1656) <a name="l1656" style="background-color: #ffffff">    !-----------------------------------------------------------------------------</a>
+  1657) <a name="l1657" style="background-color: #ffffff">    !	... setup the time interpolation</a>
+  1658) <a name="l1658" style="background-color: #ffffff">    !-----------------------------------------------------------------------------</a>
+  1659) <a name="l1659" style="background-color: #ffffff"></a>
+  1660) <a name="l1660" style="background-color: #ffffff">    implicit none</a>
+  1661) <a name="l1661" style="background-color: #ffffff"></a>
+  1662) <a name="l1662" style="background-color: #ffffff">    !-----------------------------------------------------------------------------</a>
+  1663) <a name="l1663" style="background-color: #ffffff">    !	... dummy arguments</a>
+  1664) <a name="l1664" style="background-color: #ffffff">    !-----------------------------------------------------------------------------</a>
+  1665) <a name="l1665" style="background-color: #ffffff">    real(r8), intent(in)    ::  calday                                   ! day of year at end of present time step</a>
+  1666) <a name="l1666" style="background-color: #ffffff"></a>
+  1667) <a name="l1667" style="background-color: #ffffff">    !-----------------------------------------------------------------------------</a>
+  1668) <a name="l1668" style="background-color: #ffffff">    !	... local variables</a>
+  1669) <a name="l1669" style="background-color: #ffffff">    !-----------------------------------------------------------------------------</a>
+  1670) <a name="l1670" style="background-color: #ffffff">    integer :: m</a>
+  1671) <a name="l1671" style="background-color: #ffffff">    real(r8) :: f107</a>
+  1672) <a name="l1672" style="background-color: #ffffff">    real(r8) :: f107a</a>
+  1673) <a name="l1673" style="background-color: #ffffff"></a>
+  1674) <a name="l1674" style="background-color: #ffffff">    if (waccm) then</a>
+  1675) <a name="l1675" style="background-color: #ffffff">       if( </a><a style="background-color: #ffff99">is_end_curr_day() ) then</a>
+  1676) <a name="l1676" style="background-color: #ffff99">          call get_solar_parms( f107_s = f107, f107a_s = f107a )</a>
+  1677) <a name="l1677" style="background-color: #ffff99">          call euvac_set_etf( f107, f107a )</a>
+  1678) <a name="l1678" style="background-color: #ffff99">       end if</a>
+  1679) <a name="l1679" style="background-color: #ffff99">    endif</a>
+  1680) <a name="l1680" style="background-color: #ffff99"></a>
+  1681) <a name="l1681" style="background-color: #ffffff">    if( has_o2_col .or. has_o3_col ) then</a>
+  1682) <a name="l1682" style="background-color: #ffffff">       if( calday &lt; days(1) ) then</a>
+  1683) <a name="l1683" style="background-color: #ffffff">          next = 1</a>
+  1684) <a name="l1684" style="background-color: #ffffff">          last = 12</a>
+  1685) <a name="l1685" style="background-color: #ffffff">          dels = (365._r8 + calday - days(12)) / (365._r8 + days(1) - days(12))</a>
+  1686) <a name="l1686" style="background-color: #ffff99">       else if( calday &gt;= days(12) ) then</a>
+  1687) <a name="l1687" style="background-color: #ffff99">          next = 1</a>
+  1688) <a name="l1688" style="background-color: #ffff99">          last = 12</a>
+  1689) <a name="l1689" style="background-color: #ffff99">          dels = (calday - days(12)) / (365._r8 + days(1) - days(12))</a>
+  1690) <a name="l1690" style="background-color: #ffff99">       else</a>
+  1691) <a name="l1691" style="background-color: #ffff99">          do m = 11,1,-1</a>
+  1692) <a name="l1692" style="background-color: #ffff99">             if( calday &gt;= days(m) ) then</a>
+  1693) <a name="l1693" style="background-color: #ffff99">                exit</a>
+  1694) <a name="l1694" style="background-color: #ffff99">             end if</a>
+  1695) <a name="l1695" style="background-color: #ffff99">          end do</a>
+  1696) <a name="l1696" style="background-color: #ffff99">          last = m</a>
+  1697) <a name="l1697" style="background-color: #ffff99">          next = m + 1</a>
+  1698) <a name="l1698" style="background-color: #ffff99">          dels = (calday - days(m)) / (days(m+1) - days(m))</a>
+  1699) <a name="l1699" style="background-color: #ffff99">       end if</a>
+  1700) <a name="l1700" style="background-color: #ffff99">#ifdef DEBUG</a>
+  1701) <a name="l1701" style="background-color: #ffff99">       write(iulog,*) '-----------------------------------'</a>
+  1702) <a name="l1702" style="background-color: #ffff99">       write(iulog,*) 'photo_timestep_init: diagnostics'</a>
+  1703) <a name="l1703" style="background-color: #ffff99">       write(iulog,*) 'calday, last, next, dels = ',calday,last,next,dels</a>
+  1704) <a name="l1704" style="background-color: #ffff99">       write(iulog,*) '-----------------------------------'</a>
+  1705) <a name="l1705" style="background-color: #ffff99">#endif</a>
+  1706) <a name="l1706" style="background-color: #ffff99">    end if</a>
+  1707) <a name="l1707" style="background-color: #ffff99"></a>
+  1708) <a name="l1708" style="background-color: #ffff99">    !-----------------------------------------------------------------------</a>
+  1709) <a name="l1709" style="background-color: #ffff99">    ! Set jlong etf</a>
+  1710) <a name="l1710" style="background-color: #ffff99">    !-----------------------------------------------------------------------</a>
+  1711) <a name="l1711" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">jlong_timestep_init</a>
+  1712) <a name="l1712" style="background-color: #ffffff">    </a>
+  1713) <a name="l1713" style="background-color: #ffffff">    if ( do_jshort ) then</a>
+  1714) <a name="l1714" style="background-color: #ffffff">       !-----------------------------------------------------------------------</a>
+  1715) <a name="l1715" style="background-color: #ffffff">       ! Set jshort etf</a>
+  1716) <a name="l1716" style="background-color: #ffffff">       !-----------------------------------------------------------------------</a>
+  1717) <a name="l1717" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">jshort_timestep_init</a>
+  1718) <a name="l1718" style="background-color: #ffff99">    endif</a>
+  1719) <a name="l1719" style="background-color: #ffff99"></a>
+  1720) <a name="l1720" style="background-color: #ffffff">  end subroutine photo_timestep_init</a>
+  1721) <a name="l1721" style="background-color: #ffffff"></a>
+  1722) <a name="l1722" style="background-color: #ffffff">  !--------------------------------------------------------------------------</a>
+  1723) <a name="l1723" style="background-color: #ffffff">  !--------------------------------------------------------------------------</a>
+  1724) <a name="l1724" style="background-color: #ffffff">  subroutine set_xnox_photo( photos, ncol )</a>
+  1725) <a name="l1725" style="background-color: #ffffff">    use chem_mods,    only : ncol_abs =&gt; nabscol, phtcnt, pcnstm1 =&gt; gas_pcnst, nfs</a>
+  1726) <a name="l1726" style="background-color: #ffffff">    implicit none</a>
+  1727) <a name="l1727" style="background-color: #ffffff">    integer, intent(in)     :: ncol</a>
+  1728) <a name="l1728" style="background-color: #ffffff">    real(r8), intent(inout) :: photos(ncol,pver,phtcnt)     ! photodissociation rates (1/s)</a>
+  1729) <a name="l1729" style="background-color: #ffffff"></a>
+  1730) <a name="l1730" style="background-color: #ffffff">    if( jno2a_ndx </a><a style="background-color: #ffff99">&gt; 0 .and. jno2_ndx &gt; 0 ) then</a>
+  1731) <a name="l1731" style="background-color: #ffff99">       photos(:,:,jno2a_ndx) = photos(:,:,jno2_ndx)</a>
+  1732) <a name="l1732" style="background-color: #ffff99">    end if</a>
+  1733) <a name="l1733" style="background-color: #ffffff">    if( jn2o5a_ndx </a><a style="background-color: #ffff99">&gt; 0 .and. jn2o5_ndx &gt; 0 ) then</a>
+  1734) <a name="l1734" style="background-color: #ffff99">       photos(:,:,jn2o5a_ndx) = photos(:,:,jn2o5_ndx)</a>
+  1735) <a name="l1735" style="background-color: #ffff99">    end if</a>
+  1736) <a name="l1736" style="background-color: #ffffff">    if( jn2o5b_ndx </a><a style="background-color: #ffff99">&gt; 0 .and. jn2o5_ndx &gt; 0 ) then</a>
+  1737) <a name="l1737" style="background-color: #ffff99">       photos(:,:,jn2o5b_ndx) = photos(:,:,jn2o5_ndx)</a>
+  1738) <a name="l1738" style="background-color: #ffff99">    end if</a>
+  1739) <a name="l1739" style="background-color: #ffffff">    if( jhno3a_ndx </a><a style="background-color: #ffff99">&gt; 0 .and. jhno3_ndx &gt; 0 ) then</a>
+  1740) <a name="l1740" style="background-color: #ffff99">       photos(:,:,jhno3a_ndx) = photos(:,:,jhno3_ndx)</a>
+  1741) <a name="l1741" style="background-color: #ffff99">    end if</a>
+  1742) <a name="l1742" style="background-color: #ffff99"></a>
+  1743) <a name="l1743" style="background-color: #ffffff">    if( jno3a_ndx </a><a style="background-color: #ffff99">&gt; 0 .and. jno3_ndx &gt; 0 ) then</a>
+  1744) <a name="l1744" style="background-color: #ffff99">       photos(:,:,jno3a_ndx) = photos(:,:,jno3_ndx)</a>
+  1745) <a name="l1745" style="background-color: #ffff99">    end if</a>
+  1746) <a name="l1746" style="background-color: #ffffff">    if( jho2no2a_ndx </a><a style="background-color: #ffff99">&gt; 0 .and. jho2no2_ndx &gt; 0 ) then</a>
+  1747) <a name="l1747" style="background-color: #ffff99">       photos(:,:,jho2no2a_ndx) = photos(:,:,jho2no2_ndx)</a>
+  1748) <a name="l1748" style="background-color: #ffff99">    end if</a>
+  1749) <a name="l1749" style="background-color: #ffffff">    if( jmpana_ndx </a><a style="background-color: #ffff99">&gt; 0 .and. jmpan_ndx &gt; 0 ) then</a>
+  1750) <a name="l1750" style="background-color: #ffff99">       photos(:,:,jmpana_ndx) = photos(:,:,jmpan_ndx)</a>
+  1751) <a name="l1751" style="background-color: #ffff99">    end if</a>
+  1752) <a name="l1752" style="background-color: #ffffff">    if( jpana_ndx </a><a style="background-color: #ffff99">&gt; 0 .and. jpan_ndx &gt; 0 ) then</a>
+  1753) <a name="l1753" style="background-color: #ffff99">       photos(:,:,jpana_ndx) = photos(:,:,jpan_ndx)</a>
+  1754) <a name="l1754" style="background-color: #ffff99">    end if</a>
+  1755) <a name="l1755" style="background-color: #ffffff">    if( jonitra_ndx </a><a style="background-color: #ffff99">&gt; 0 .and. jonitr_ndx &gt; 0 ) then</a>
+  1756) <a name="l1756" style="background-color: #ffff99">       photos(:,:,jonitra_ndx) = photos(:,:,jonitr_ndx)</a>
+  1757) <a name="l1757" style="background-color: #ffff99">    end if</a>
+  1758) <a name="l1758" style="background-color: #ffffff">    if( jo1da_ndx </a><a style="background-color: #ffff99">&gt; 0 .and. jo1d_ndx &gt; 0 ) then</a>
+  1759) <a name="l1759" style="background-color: #ffff99">       photos(:,:,jo1da_ndx) = photos(:,:,jo1d_ndx)</a>
+  1760) <a name="l1760" style="background-color: #ffff99">    end if</a>
+  1761) <a name="l1761" style="background-color: #ffffff">    if( jo3pa_ndx </a><a style="background-color: #ffff99">&gt; 0 .and. jo3p_ndx &gt; 0 ) then</a>
+  1762) <a name="l1762" style="background-color: #ffff99">       photos(:,:,jo3pa_ndx) = photos(:,:,jo3p_ndx)</a>
+  1763) <a name="l1763" style="background-color: #ffff99">    end if</a>
+  1764) <a name="l1764" style="background-color: #ffff99"></a>
+  1765) <a name="l1765" style="background-color: #ffffff">  endsubroutine set_xnox_photo</a>
+  1766) <a name="l1766" style="background-color: #ffffff"></a>
+  1767) <a name="l1767" style="background-color: #ffffff">end module mo_photo</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

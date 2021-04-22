@@ -1,0 +1,1345 @@
+<html>
+<head>
+<title>Listing of phys_prop.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;phys_prop.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 65.00&#160;%func&#160;&#160;&#160;&#160; 60.75&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module phys_prop</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">! Properties of aerosols that are used by radiation and other parameterizations.</a>
+     4) <a name="l4" style="background-color: #ffffff"></a>
+     5) <a name="l5" style="background-color: #ffffff">! *****N.B.*****</a>
+     6) <a name="l6" style="background-color: #ffffff">! This module is a utility used by the rad_constituents module.  The properties stored</a>
+     7) <a name="l7" style="background-color: #ffffff">! here are meant to be accessed via that module.  This module knows nothing about how</a>
+     8) <a name="l8" style="background-color: #ffffff">! this data is associated with the constituents that are radiatively active or those that</a>
+     9) <a name="l9" style="background-color: #ffffff">! are being used for diagnostic calculations.  That is the responsibility of the </a>
+    10) <a name="l10" style="background-color: #ffffff">! rad_constituents module.</a>
+    11) <a name="l11" style="background-color: #ffffff"></a>
+    12) <a name="l12" style="background-color: #ffffff">use shr_kind_mod,   only: r8 =&gt; shr_kind_r8</a>
+    13) <a name="l13" style="background-color: #ffffff">use spmd_utils,     only: masterproc</a>
+    14) <a name="l14" style="background-color: #ffffff">use radconstants,   only: nrh, nlwbands, nswbands, idx_sw_diag</a>
+    15) <a name="l15" style="background-color: #ffffff">use ioFileMod,      only: getfil</a>
+    16) <a name="l16" style="background-color: #ffffff">use cam_pio_utils,  only: cam_pio_openfile</a>
+    17) <a name="l17" style="background-color: #ffffff">use pio,            only: file_desc_t, var_desc_t, pio_get_var, pio_inq_varid, &amp;</a>
+    18) <a name="l18" style="background-color: #ffffff">                          pio_inq_dimlen, pio_inq_dimid , pio_nowrite, pio_closefile, &amp;</a>
+    19) <a name="l19" style="background-color: #ffffff">                          pio_seterrorhandling, PIO_BCAST_ERROR, PIO_INTERNAL_ERROR, PIO_NOERR</a>
+    20) <a name="l20" style="background-color: #ffffff"></a>
+    21) <a name="l21" style="background-color: #ffffff">use cam_logfile,    only: iulog</a>
+    22) <a name="l22" style="background-color: #ffffff">use abortutils,     only: endrun</a>
+    23) <a name="l23" style="background-color: #ffffff"></a>
+    24) <a name="l24" style="background-color: #ffffff">implicit none</a>
+    25) <a name="l25" style="background-color: #ffffff">private</a>
+    26) <a name="l26" style="background-color: #ffffff">save</a>
+    27) <a name="l27" style="background-color: #ffffff"></a>
+    28) <a name="l28" style="background-color: #ffffff">integer, parameter, public :: ot_length = 32</a>
+    29) <a name="l29" style="background-color: #ffffff">public :: &amp;</a>
+    30) <a name="l30" style="background-color: #ffffff">   physprop_accum_unique_files,  &amp;! Make a list of the unique set of files that contain properties</a>
+    31) <a name="l31" style="background-color: #ffffff">                                  ! This is an initialization step that must be done before calling physprop_init</a>
+    32) <a name="l32" style="background-color: #ffffff">   physprop_init,                &amp;! Initialization -- read the input datasets</a>
+    33) <a name="l33" style="background-color: #ffffff">   physprop_get_id,              &amp;! Return ID used to access the property data from the input files</a>
+    34) <a name="l34" style="background-color: #ffffff">   physprop_get                   ! Return data for specified ID</a>
+    35) <a name="l35" style="background-color: #ffffff"></a>
+    36) <a name="l36" style="background-color: #ffffff">! Data from one input dataset is stored in a structure of type(physprop_type).</a>
+    37) <a name="l37" style="background-color: #ffffff">type :: physprop_type</a>
+    38) <a name="l38" style="background-color: #ffffff">   character(len=256) :: sourcefile ! Absolute pathname of data file.</a>
+    39) <a name="l39" style="background-color: #ffffff">   character(len=ot_length)  :: opticsmethod ! one of {hygro,nonhygro}</a>
+    40) <a name="l40" style="background-color: #ffffff"></a>
+    41) <a name="l41" style="background-color: #ffffff">   ! for hygroscopic species of externally mixed aerosols</a>
+    42) <a name="l42" style="background-color: #ffffff">   real(r8), pointer :: sw_hygro_ext(:,:)</a>
+    43) <a name="l43" style="background-color: #ffffff">   real(r8), pointer :: sw_hygro_ssa(:,:)</a>
+    44) <a name="l44" style="background-color: #ffffff">   real(r8), pointer :: sw_hygro_asm(:,:)</a>
+    45) <a name="l45" style="background-color: #ffffff">   real(r8), pointer :: lw_hygro_abs(:,:)</a>
+    46) <a name="l46" style="background-color: #ffffff"></a>
+    47) <a name="l47" style="background-color: #ffffff">   ! for nonhygroscopic species of externally mixed aerosols</a>
+    48) <a name="l48" style="background-color: #ffffff">   real(r8), pointer :: sw_nonhygro_ext(:)</a>
+    49) <a name="l49" style="background-color: #ffffff">   real(r8), pointer :: sw_nonhygro_ssa(:)</a>
+    50) <a name="l50" style="background-color: #ffffff">   real(r8), pointer :: sw_nonhygro_asm(:)</a>
+    51) <a name="l51" style="background-color: #ffffff">   real(r8), pointer :: sw_nonhygro_scat(:)</a>
+    52) <a name="l52" style="background-color: #ffffff">   real(r8), pointer :: sw_nonhygro_ascat(:)</a>
+    53) <a name="l53" style="background-color: #ffffff">   real(r8), pointer :: lw_abs(:)</a>
+    54) <a name="l54" style="background-color: #ffffff"></a>
+    55) <a name="l55" style="background-color: #ffffff">   ! complex refractive index</a>
+    56) <a name="l56" style="background-color: #ffffff">   complex(r8), pointer :: refindex_aer_sw(:)</a>
+    57) <a name="l57" style="background-color: #ffffff">   complex(r8), pointer :: refindex_aer_lw(:)</a>
+    58) <a name="l58" style="background-color: #ffffff"></a>
+    59) <a name="l59" style="background-color: #ffffff">   ! for radius-dependent mass-specific quantities</a>
+    60) <a name="l60" style="background-color: #ffffff">   real(r8), pointer :: r_sw_ext(:,:)</a>
+    61) <a name="l61" style="background-color: #ffffff">   real(r8), pointer :: r_sw_scat(:,:)</a>
+    62) <a name="l62" style="background-color: #ffffff">   real(r8), pointer :: r_sw_ascat(:,:)</a>
+    63) <a name="l63" style="background-color: #ffffff">   real(r8), pointer :: r_lw_abs(:,:)</a>
+    64) <a name="l64" style="background-color: #ffffff">   real(r8), pointer :: mu(:)</a>
+    65) <a name="l65" style="background-color: #ffffff"></a>
+    66) <a name="l66" style="background-color: #ffffff">   ! for modal optics</a>
+    67) <a name="l67" style="background-color: #ffffff">   real(r8), pointer :: extpsw(:,:,:,:) ! specific extinction</a>
+    68) <a name="l68" style="background-color: #ffffff">   real(r8), pointer :: abspsw(:,:,:,:) ! specific absorption</a>
+    69) <a name="l69" style="background-color: #ffffff">   real(r8), pointer :: asmpsw(:,:,:,:) ! asymmetry factor</a>
+    70) <a name="l70" style="background-color: #ffffff">   real(r8), pointer :: absplw(:,:,:,:) ! specific absorption</a>
+    71) <a name="l71" style="background-color: #ffffff">   real(r8), pointer :: refrtabsw(:,:)  ! table of real refractive indices for aerosols visible</a>
+    72) <a name="l72" style="background-color: #ffffff">   real(r8), pointer :: refitabsw(:,:)  ! table of imag refractive indices for aerosols visible</a>
+    73) <a name="l73" style="background-color: #ffffff">   real(r8), pointer :: refrtablw(:,:)  ! table of real refractive indices for aerosols infrared</a>
+    74) <a name="l74" style="background-color: #ffffff">   real(r8), pointer :: refitablw(:,:)  ! table of imag refractive indices for aerosols infrared</a>
+    75) <a name="l75" style="background-color: #ffffff"></a>
+    76) <a name="l76" style="background-color: #ffffff">   ! microphysics parameters.</a>
+    77) <a name="l77" style="background-color: #ffffff">   character(len=32) :: aername ! for output of number concentration</a>
+    78) <a name="l78" style="background-color: #ffffff">   real(r8) :: density_aer      ! density of aerosol (kg/m3)</a>
+    79) <a name="l79" style="background-color: #ffffff">   real(r8) :: hygro_aer        ! hygroscopicity of aerosol</a>
+    80) <a name="l80" style="background-color: #ffffff">   real(r8) :: dryrad_aer       ! number mode radius (m) of aerosol size distribution</a>
+    81) <a name="l81" style="background-color: #ffffff">   real(r8) :: dispersion_aer   ! geometric standard deviation of aerosol size distribution</a>
+    82) <a name="l82" style="background-color: #ffffff">   real(r8) :: num_to_mass_aer  ! ratio of number concentration to mass concentration (#/kg)</a>
+    83) <a name="l83" style="background-color: #ffffff">                                ! *** Is this actually (kg/#) ???</a>
+    84) <a name="l84" style="background-color: #ffffff">   ! mode parameters</a>
+    85) <a name="l85" style="background-color: #ffffff">   integer :: ncoef       ! number of Chebyshev coefficients</a>
+    86) <a name="l86" style="background-color: #ffffff">   integer :: prefr       ! dimension in table of real refractive indices</a>
+    87) <a name="l87" style="background-color: #ffffff">   integer :: prefi       ! dimension in table of imag refractive indices</a>
+    88) <a name="l88" style="background-color: #ffffff">   real(r8) :: sigmag     ! geometric standard deviation of the number distribution for aerosol mode</a>
+    89) <a name="l89" style="background-color: #ffffff">   real(r8) :: dgnum      ! geometric dry mean diameter of the number distribution for aerosol mode</a>
+    90) <a name="l90" style="background-color: #ffffff">   real(r8) :: dgnumlo    ! lower limit of dgnum</a>
+    91) <a name="l91" style="background-color: #ffffff">   real(r8) :: dgnumhi    ! upper limit of dgnum</a>
+    92) <a name="l92" style="background-color: #ffffff">   real(r8) :: rhcrystal  ! crystalization relative humidity for mode</a>
+    93) <a name="l93" style="background-color: #ffffff">   real(r8) :: rhdeliques ! deliquescence relative humidity for mode</a>
+    94) <a name="l94" style="background-color: #ffffff"></a>
+    95) <a name="l95" style="background-color: #ffffff">endtype physprop_type</a>
+    96) <a name="l96" style="background-color: #ffffff"></a>
+    97) <a name="l97" style="background-color: #ffffff">! This module stores data in an array of physprop_type structures.  The way this data</a>
+    98) <a name="l98" style="background-color: #ffffff">! is accessed outside the module is via a physprop ID, which is an index into the array.</a>
+    99) <a name="l99" style="background-color: #ffffff">integer :: numphysprops = 0 ! an incremental total across ALL clim and diag constituents</a>
+   100) <a name="l100" style="background-color: #ffffff">type (physprop_type), pointer :: physprop(:)</a>
+   101) <a name="l101" style="background-color: #ffffff"></a>
+   102) <a name="l102" style="background-color: #ffffff">! Temporary storage location for filenames in namelist, and construction of dynamic index</a>
+   103) <a name="l103" style="background-color: #ffffff">! to properties.  The unique filenames specified in the namelist are the identifiers of</a>
+   104) <a name="l104" style="background-color: #ffffff">! the properties.  Searching the uniquefilenames array provides the index into the physprop</a>
+   105) <a name="l105" style="background-color: #ffffff">! array.</a>
+   106) <a name="l106" style="background-color: #ffffff">character(len=256), allocatable :: uniquefilenames(:)</a>
+   107) <a name="l107" style="background-color: #ffffff"> </a>
+   108) <a name="l108" style="background-color: #ffffff">!================================================================================================</a>
+   109) <a name="l109" style="background-color: #ffffff">contains</a>
+   110) <a name="l110" style="background-color: #ffffff">!================================================================================================</a>
+   111) <a name="l111" style="background-color: #ffffff"></a>
+   112) <a name="l112" style="background-color: #ffffff">subroutine physprop_accum_unique_files(radname, type)</a>
+   113) <a name="l113" style="background-color: #ffffff"></a>
+   114) <a name="l114" style="background-color: #ffffff">   ! Count number of aerosols in input radname array.  Aerosols are identified</a>
+   115) <a name="l115" style="background-color: #ffffff">   ! as strings with a &quot;.nc&quot; suffix.</a>
+   116) <a name="l116" style="background-color: #ffffff">   ! Construct a cumulative list of unique filenames containing physical property data.</a>
+   117) <a name="l117" style="background-color: #ffffff"></a>
+   118) <a name="l118" style="background-color: #ffffff">   character(len=*), intent(in)  :: radname(:)</a>
+   119) <a name="l119" style="background-color: #ffffff">   character(len=1), intent(in)  :: type(:)</a>
+   120) <a name="l120" style="background-color: #ffffff"></a>
+   121) <a name="l121" style="background-color: #ffffff">   integer :: ncnst, i</a>
+   122) <a name="l122" style="background-color: #ffffff">   character(len=*), parameter :: subname = 'physprop_accum_unique_files'</a>
+   123) <a name="l123" style="background-color: #ffffff">   !------------------------------------------------------------------------------------</a>
+   124) <a name="l124" style="background-color: #ffffff"></a>
+   125) <a name="l125" style="background-color: #ffffff">   ! Initial guess for number of files we need.</a>
+   126) <a name="l126" style="background-color: #ffffff">   if (.not. allocated(uniquefilenames)) allocate(uniquefilenames(50))</a>
+   127) <a name="l127" style="background-color: #ffffff"></a>
+   128) <a name="l128" style="background-color: #ffffff">   ncnst = </a><a style="background-color: #ffff99">ubound(radname, 1)</a>
+   129) <a name="l129" style="background-color: #ffff99"></a>
+   130) <a name="l130" style="background-color: #ffffff">   do i = 1, ncnst</a>
+   131) <a name="l131" style="background-color: #ffffff"></a>
+   132) <a name="l132" style="background-color: #ffffff">      ! check if radname is either a bulk aerosol or a mode</a>
+   133) <a name="l133" style="background-color: #ffffff">      if (type(i) == 'A' .or. type(i) == 'M') then</a>
+   134) <a name="l134" style="background-color: #ffffff"></a>
+   135) <a name="l135" style="background-color: #ffffff">         ! check if this filename has been used by another aerosol.  If not</a>
+   136) <a name="l136" style="background-color: #ffffff">         ! then add it to the list of unique names.</a>
+   137) <a name="l137" style="background-color: #ffffff">         if (physprop_get_id(radname(i)) &lt; 0) then</a>
+   138) <a name="l138" style="background-color: #ffffff">            numphysprops = numphysprops + 1</a>
+   139) <a name="l139" style="background-color: #ffffff">            if (numphysprops &gt; size(uniquefilenames)) then</a>
+   140) <a name="l140" style="background-color: #ffffff">               call </a><a style="background-color: #ffff99">double_capacity(uniquefilenames)</a>
+   141) <a name="l141" style="background-color: #ffff99">            end if</a>
+   142) <a name="l142" style="background-color: #ffffff">            uniquefilenames(numphysprops) = trim(radname(i))</a>
+   143) <a name="l143" style="background-color: #ffffff">         endif</a>
+   144) <a name="l144" style="background-color: #ffffff"></a>
+   145) <a name="l145" style="background-color: #ffffff">      endif</a>
+   146) <a name="l146" style="background-color: #ffffff">   enddo</a>
+   147) <a name="l147" style="background-color: #ffffff"></a>
+   148) <a name="l148" style="background-color: #ffffff"> contains</a>
+   149) <a name="l149" style="background-color: #ffffff"></a>
+   150) <a name="l150" style="background-color: #ffffff">   ! Simple routine to re-allocate an array with twice the size, but with</a>
+   151) <a name="l151" style="background-color: #ffffff">   ! the inital values being preserved.</a>
+   152) <a name="l152" style="background-color: #ffffff">   subroutine </a><a style="background-color: #ffcccc">double_capacity(array)</a>
+   153) <a name="l153" style="background-color: #ffcccc">     character(len=256), intent(inout), allocatable :: array(:)</a>
+   154) <a name="l154" style="background-color: #ffcccc"></a>
+   155) <a name="l155" style="background-color: #ffcccc">     character(len=256), allocatable :: tmp(:)</a>
+   156) <a name="l156" style="background-color: #ffcccc">     integer :: ierr</a>
+   157) <a name="l157" style="background-color: #ffcccc"></a>
+   158) <a name="l158" style="background-color: #ffcccc">     allocate(tmp(size(array)*2), stat=ierr)</a>
+   159) <a name="l159" style="background-color: #ffcccc">     if ( ierr /= 0 ) then</a>
+   160) <a name="l160" style="background-color: #ffcccc">        call endrun('physprop_accum_unique_files: Allocation error.')</a>
+   161) <a name="l161" style="background-color: #ffcccc">     end if</a>
+   162) <a name="l162" style="background-color: #ffcccc"></a>
+   163) <a name="l163" style="background-color: #ffcccc">     tmp(:size(array)) = array</a>
+   164) <a name="l164" style="background-color: #ffcccc"></a>
+   165) <a name="l165" style="background-color: #ffcccc">     deallocate(array, stat=ierr)</a>
+   166) <a name="l166" style="background-color: #ffcccc">     if ( ierr /= 0 ) then</a>
+   167) <a name="l167" style="background-color: #ffcccc">        call endrun('physprop_accum_unique_files: Deallocation error.')</a>
+   168) <a name="l168" style="background-color: #ffcccc">     end if</a>
+   169) <a name="l169" style="background-color: #ffcccc"></a>
+   170) <a name="l170" style="background-color: #ffcccc">     call move_alloc(tmp, array)</a>
+   171) <a name="l171" style="background-color: #ffcccc"></a>
+   172) <a name="l172" style="background-color: #ffcccc">   end subroutine double_capacity</a>
+   173) <a name="l173" style="background-color: #ffffff"></a>
+   174) <a name="l174" style="background-color: #ffffff">end subroutine physprop_accum_unique_files</a>
+   175) <a name="l175" style="background-color: #ffffff"></a>
+   176) <a name="l176" style="background-color: #ffffff">!================================================================================================</a>
+   177) <a name="l177" style="background-color: #ffffff"></a>
+   178) <a name="l178" style="background-color: #ffffff">subroutine physprop_init()</a>
+   179) <a name="l179" style="background-color: #ffffff"></a>
+   180) <a name="l180" style="background-color: #ffffff">   ! Read properties from the aerosol data files.</a>
+   181) <a name="l181" style="background-color: #ffffff"></a>
+   182) <a name="l182" style="background-color: #ffffff">   ! ***N.B.*** The calls to physprop_accum_unique_files must be made before calling</a>
+   183) <a name="l183" style="background-color: #ffffff">   !            this init routine.  physprop_accum_unique_files is responsible for building</a>
+   184) <a name="l184" style="background-color: #ffffff">   !            the list of files to be read here.</a>
+   185) <a name="l185" style="background-color: #ffffff"></a>
+   186) <a name="l186" style="background-color: #ffffff">   ! Local variables</a>
+   187) <a name="l187" style="background-color: #ffffff">   integer            :: fileindex</a>
+   188) <a name="l188" style="background-color: #ffffff">   type(file_desc_t)  :: nc_id ! index to netcdf file</a>
+   189) <a name="l189" style="background-color: #ffffff">   character(len=256) :: locfn ! path to actual file used</a>
+   190) <a name="l190" style="background-color: #ffffff">   character(len=32)  :: aername_str ! string read from netCDF file -- may contain trailing</a>
+   191) <a name="l191" style="background-color: #ffffff">                                     ! nulls which aren't dealt with by trim()</a>
+   192) <a name="l192" style="background-color: #ffffff">   </a>
+   193) <a name="l193" style="background-color: #ffffff">   integer :: ierr ! error codes from mpi</a>
+   194) <a name="l194" style="background-color: #ffffff"></a>
+   195) <a name="l195" style="background-color: #ffffff">   !------------------------------------------------------------------------------------</a>
+   196) <a name="l196" style="background-color: #ffffff"></a>
+   197) <a name="l197" style="background-color: #fafad2">   allocate(physprop(numphysprops))</a>
+   198) <a name="l198" style="background-color: #fafad2"></a>
+   199) <a name="l199" style="background-color: #ffffff">   do fileindex = 1, numphysprops</a>
+   200) <a name="l200" style="background-color: #ffffff">      nullify(physprop(fileindex)%sw_hygro_ext)</a>
+   201) <a name="l201" style="background-color: #ffffff">      nullify(physprop(fileindex)%sw_hygro_ssa)</a>
+   202) <a name="l202" style="background-color: #ffffff">      nullify(physprop(fileindex)%sw_hygro_asm)</a>
+   203) <a name="l203" style="background-color: #ffffff">      nullify(physprop(fileindex)%lw_hygro_abs)</a>
+   204) <a name="l204" style="background-color: #ffffff"></a>
+   205) <a name="l205" style="background-color: #ffffff">      nullify(physprop(fileindex)%sw_nonhygro_ext)</a>
+   206) <a name="l206" style="background-color: #ffffff">      nullify(physprop(fileindex)%sw_nonhygro_ssa)</a>
+   207) <a name="l207" style="background-color: #ffffff">      nullify(physprop(fileindex)%sw_nonhygro_asm)</a>
+   208) <a name="l208" style="background-color: #ffffff">      nullify(physprop(fileindex)%sw_nonhygro_scat)</a>
+   209) <a name="l209" style="background-color: #ffffff">      nullify(physprop(fileindex)%sw_nonhygro_ascat)</a>
+   210) <a name="l210" style="background-color: #ffffff">      nullify(physprop(fileindex)%lw_abs)</a>
+   211) <a name="l211" style="background-color: #ffffff"></a>
+   212) <a name="l212" style="background-color: #ffffff">      nullify(physprop(fileindex)%refindex_aer_sw)</a>
+   213) <a name="l213" style="background-color: #ffffff">      nullify(physprop(fileindex)%refindex_aer_lw)</a>
+   214) <a name="l214" style="background-color: #ffffff"></a>
+   215) <a name="l215" style="background-color: #ffffff">      nullify(physprop(fileindex)%r_sw_ext)</a>
+   216) <a name="l216" style="background-color: #ffffff">      nullify(physprop(fileindex)%r_sw_scat)</a>
+   217) <a name="l217" style="background-color: #ffffff">      nullify(physprop(fileindex)%r_sw_ascat)</a>
+   218) <a name="l218" style="background-color: #ffffff">      nullify(physprop(fileindex)%r_lw_abs)</a>
+   219) <a name="l219" style="background-color: #ffffff">      nullify(physprop(fileindex)%mu)</a>
+   220) <a name="l220" style="background-color: #ffffff"></a>
+   221) <a name="l221" style="background-color: #ffffff">      nullify(physprop(fileindex)%extpsw)</a>
+   222) <a name="l222" style="background-color: #ffffff">      nullify(physprop(fileindex)%abspsw)</a>
+   223) <a name="l223" style="background-color: #ffffff">      nullify(physprop(fileindex)%asmpsw)</a>
+   224) <a name="l224" style="background-color: #ffffff">      nullify(physprop(fileindex)%absplw)</a>
+   225) <a name="l225" style="background-color: #ffffff">      nullify(physprop(fileindex)%refrtabsw)</a>
+   226) <a name="l226" style="background-color: #ffffff">      nullify(physprop(fileindex)%refitabsw)</a>
+   227) <a name="l227" style="background-color: #ffffff">      nullify(physprop(fileindex)%refrtablw)</a>
+   228) <a name="l228" style="background-color: #ffffff">      nullify(physprop(fileindex)%refitablw)</a>
+   229) <a name="l229" style="background-color: #ffffff"></a>
+   230) <a name="l230" style="background-color: #ffffff">      call getfil(uniquefilenames(fileindex), locfn, 0)</a>
+   231) <a name="l231" style="background-color: #ffffff">      physprop(fileindex)%sourcefile = locfn</a>
+   232) <a name="l232" style="background-color: #ffffff"></a>
+   233) <a name="l233" style="background-color: #ffffff">      ! Open the physprop file</a>
+   234) <a name="l234" style="background-color: #ffffff">      call cam_pio_openfile(nc_id, locfn, PIO_NOWRITE)</a>
+   235) <a name="l235" style="background-color: #ffffff"></a>
+   236) <a name="l236" style="background-color: #ffffff">      call aerosol_optics_init(physprop(fileindex), nc_id)</a>
+   237) <a name="l237" style="background-color: #ffffff"></a>
+   238) <a name="l238" style="background-color: #ffffff">      ! Close the physprop file</a>
+   239) <a name="l239" style="background-color: #ffffff">      call pio_closefile(nc_id)</a>
+   240) <a name="l240" style="background-color: #ffffff"></a>
+   241) <a name="l241" style="background-color: #ffffff">   end do</a>
+   242) <a name="l242" style="background-color: #ffffff">end subroutine physprop_init</a>
+   243) <a name="l243" style="background-color: #ffffff"></a>
+   244) <a name="l244" style="background-color: #ffffff">!================================================================================================</a>
+   245) <a name="l245" style="background-color: #ffffff"></a>
+   246) <a name="l246" style="background-color: #ffffff">integer function physprop_get_id(filename)</a>
+   247) <a name="l247" style="background-color: #ffffff"></a>
+   248) <a name="l248" style="background-color: #ffffff">   ! Look for filename in the global list of unique filenames (module data uniquefilenames).</a>
+   249) <a name="l249" style="background-color: #ffffff">   ! If found, return it's index in the list.  Otherwise return -1.</a>
+   250) <a name="l250" style="background-color: #ffffff"></a>
+   251) <a name="l251" style="background-color: #ffffff">   character(len=*), intent(in) :: filename</a>
+   252) <a name="l252" style="background-color: #ffffff">   integer iphysprop</a>
+   253) <a name="l253" style="background-color: #ffffff"></a>
+   254) <a name="l254" style="background-color: #ffffff">   physprop_get_id = -1</a>
+   255) <a name="l255" style="background-color: #ffffff">   do iphysprop = 1, numphysprops</a>
+   256) <a name="l256" style="background-color: #ffffff">     if(trim(uniquefilenames(iphysprop)) == trim(filename) ) then</a>
+   257) <a name="l257" style="background-color: #ffffff">       physprop_get_id = iphysprop</a>
+   258) <a name="l258" style="background-color: #ffffff">       return</a>
+   259) <a name="l259" style="background-color: #ffffff">     endif</a>
+   260) <a name="l260" style="background-color: #ffffff">   enddo</a>
+   261) <a name="l261" style="background-color: #ffffff"></a>
+   262) <a name="l262" style="background-color: #ffffff">end function physprop_get_id</a>
+   263) <a name="l263" style="background-color: #ffffff"></a>
+   264) <a name="l264" style="background-color: #ffffff">!================================================================================================</a>
+   265) <a name="l265" style="background-color: #ffffff"></a>
+   266) <a name="l266" style="background-color: #ffffff">subroutine physprop_get(id, sourcefile, opticstype, &amp;</a>
+   267) <a name="l267" style="background-color: #ffffff">   sw_hygro_ext, sw_hygro_ssa, sw_hygro_asm, lw_hygro_abs, &amp;</a>
+   268) <a name="l268" style="background-color: #ffffff">   sw_nonhygro_ext, sw_nonhygro_ssa, sw_nonhygro_asm, &amp;</a>
+   269) <a name="l269" style="background-color: #ffffff">   sw_nonhygro_scat, sw_nonhygro_ascat, lw_abs, &amp;</a>
+   270) <a name="l270" style="background-color: #ffffff">   refindex_aer_sw, refindex_aer_lw, &amp;</a>
+   271) <a name="l271" style="background-color: #ffffff">   r_sw_ext, r_sw_scat, r_sw_ascat, r_lw_abs, mu, &amp;</a>
+   272) <a name="l272" style="background-color: #ffffff">   extpsw, abspsw, asmpsw, absplw, refrtabsw, &amp;</a>
+   273) <a name="l273" style="background-color: #ffffff">   refitabsw, refrtablw, refitablw, &amp;</a>
+   274) <a name="l274" style="background-color: #ffffff">   aername, density_aer, hygro_aer, dryrad_aer, dispersion_aer, &amp;</a>
+   275) <a name="l275" style="background-color: #ffffff">   num_to_mass_aer, ncoef, prefr, prefi, sigmag, &amp;</a>
+   276) <a name="l276" style="background-color: #ffffff">   dgnum, dgnumlo, dgnumhi, rhcrystal, rhdeliques)</a>
+   277) <a name="l277" style="background-color: #ffffff"></a>
+   278) <a name="l278" style="background-color: #ffffff">   ! Return requested properties for specified ID.</a>
+   279) <a name="l279" style="background-color: #ffffff"></a>
+   280) <a name="l280" style="background-color: #ffffff">   ! Arguments</a>
+   281) <a name="l281" style="background-color: #ffffff">   integer,                            intent(in)  :: id</a>
+   282) <a name="l282" style="background-color: #ffffff">   character(len=256),       optional, intent(out) :: sourcefile ! Absolute pathname of data file.</a>
+   283) <a name="l283" style="background-color: #ffffff">   character(len=ot_length), optional, intent(out) :: opticstype</a>
+   284) <a name="l284" style="background-color: #ffffff">   real(r8),          optional, pointer     :: sw_hygro_ext(:,:)</a>
+   285) <a name="l285" style="background-color: #ffffff">   real(r8),          optional, pointer     :: sw_hygro_ssa(:,:) </a>
+   286) <a name="l286" style="background-color: #ffffff">   real(r8),          optional, pointer     :: sw_hygro_asm(:,:) </a>
+   287) <a name="l287" style="background-color: #ffffff">   real(r8),          optional, pointer     :: lw_hygro_abs(:,:)         </a>
+   288) <a name="l288" style="background-color: #ffffff">   real(r8),          optional, pointer     :: sw_nonhygro_ext(:)</a>
+   289) <a name="l289" style="background-color: #ffffff">   real(r8),          optional, pointer     :: sw_nonhygro_ssa(:)</a>
+   290) <a name="l290" style="background-color: #ffffff">   real(r8),          optional, pointer     :: sw_nonhygro_asm(:)</a>
+   291) <a name="l291" style="background-color: #ffffff">   real(r8),          optional, pointer     :: sw_nonhygro_scat(:)</a>
+   292) <a name="l292" style="background-color: #ffffff">   real(r8),          optional, pointer     :: sw_nonhygro_ascat(:)</a>
+   293) <a name="l293" style="background-color: #ffffff">   real(r8),          optional, pointer     :: lw_abs(:)         </a>
+   294) <a name="l294" style="background-color: #ffffff">   complex(r8),       optional, pointer     :: refindex_aer_sw(:)</a>
+   295) <a name="l295" style="background-color: #ffffff">   complex(r8),       optional, pointer     :: refindex_aer_lw(:)</a>
+   296) <a name="l296" style="background-color: #ffffff">   real(r8),          optional, pointer     :: r_sw_ext(:,:)</a>
+   297) <a name="l297" style="background-color: #ffffff">   real(r8),          optional, pointer     :: r_sw_scat(:,:)</a>
+   298) <a name="l298" style="background-color: #ffffff">   real(r8),          optional, pointer     :: r_sw_ascat(:,:)</a>
+   299) <a name="l299" style="background-color: #ffffff">   real(r8),          optional, pointer     :: r_lw_abs(:,:)</a>
+   300) <a name="l300" style="background-color: #ffffff">   real(r8),          optional, pointer     :: mu(:)</a>
+   301) <a name="l301" style="background-color: #ffffff">   real(r8),          optional, pointer     :: extpsw(:,:,:,:)</a>
+   302) <a name="l302" style="background-color: #ffffff">   real(r8),          optional, pointer     :: abspsw(:,:,:,:)</a>
+   303) <a name="l303" style="background-color: #ffffff">   real(r8),          optional, pointer     :: asmpsw(:,:,:,:)</a>
+   304) <a name="l304" style="background-color: #ffffff">   real(r8),          optional, pointer     :: absplw(:,:,:,:)</a>
+   305) <a name="l305" style="background-color: #ffffff">   real(r8),          optional, pointer     :: refrtabsw(:,:)</a>
+   306) <a name="l306" style="background-color: #ffffff">   real(r8),          optional, pointer     :: refitabsw(:,:)</a>
+   307) <a name="l307" style="background-color: #ffffff">   real(r8),          optional, pointer     :: refrtablw(:,:)</a>
+   308) <a name="l308" style="background-color: #ffffff">   real(r8),          optional, pointer     :: refitablw(:,:)</a>
+   309) <a name="l309" style="background-color: #ffffff">   character(len=20), optional, intent(out) :: aername           </a>
+   310) <a name="l310" style="background-color: #ffffff">   real(r8),          optional, intent(out) :: density_aer       </a>
+   311) <a name="l311" style="background-color: #ffffff">   real(r8),          optional, intent(out) :: hygro_aer         </a>
+   312) <a name="l312" style="background-color: #ffffff">   real(r8),          optional, intent(out) :: dryrad_aer        </a>
+   313) <a name="l313" style="background-color: #ffffff">   real(r8),          optional, intent(out) :: dispersion_aer</a>
+   314) <a name="l314" style="background-color: #ffffff">   real(r8),          optional, intent(out) :: num_to_mass_aer</a>
+   315) <a name="l315" style="background-color: #ffffff">   integer,           optional, intent(out) :: ncoef</a>
+   316) <a name="l316" style="background-color: #ffffff">   integer,           optional, intent(out) :: prefr</a>
+   317) <a name="l317" style="background-color: #ffffff">   integer,           optional, intent(out) :: prefi</a>
+   318) <a name="l318" style="background-color: #ffffff">   real(r8),          optional, intent(out) :: sigmag</a>
+   319) <a name="l319" style="background-color: #ffffff">   real(r8),          optional, intent(out) :: dgnum</a>
+   320) <a name="l320" style="background-color: #ffffff">   real(r8),          optional, intent(out) :: dgnumlo</a>
+   321) <a name="l321" style="background-color: #ffffff">   real(r8),          optional, intent(out) :: dgnumhi</a>
+   322) <a name="l322" style="background-color: #ffffff">   real(r8),          optional, intent(out) :: rhcrystal</a>
+   323) <a name="l323" style="background-color: #ffffff">   real(r8),          optional, intent(out) :: rhdeliques</a>
+   324) <a name="l324" style="background-color: #ffffff"></a>
+   325) <a name="l325" style="background-color: #ffffff">   ! Local variables</a>
+   326) <a name="l326" style="background-color: #ffffff">   character(len=*), parameter :: subname = 'physprop_get'</a>
+   327) <a name="l327" style="background-color: #ffffff">   !------------------------------------------------------------------------------------</a>
+   328) <a name="l328" style="background-color: #ffffff"></a>
+   329) <a name="l329" style="background-color: #ffffff">   if (id &lt;= 0 .or. id &gt; numphysprops) then</a>
+   330) <a name="l330" style="background-color: #ffff99">      write(iulog,*) subname//': illegal ID value: ', id</a>
+   331) <a name="l331" style="background-color: #ffff99">      call endrun('physprop_get: ID out of range')</a>
+   332) <a name="l332" style="background-color: #ffff99">   end if</a>
+   333) <a name="l333" style="background-color: #ffff99"></a>
+   334) <a name="l334" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(sourcefile))        </a><a style="background-color: #ffff99">sourcefile        =  physprop(id)%sourcefile</a>
+   335) <a name="l335" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(opticstype))        </a><a style="background-color: #ffff99">opticstype        =  physprop(id)%opticsmethod</a>
+   336) <a name="l336" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(sw_hygro_ext))      </a><a style="background-color: #ffff99">sw_hygro_ext      =&gt; physprop(id)%sw_hygro_ext</a>
+   337) <a name="l337" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(sw_hygro_ssa))      </a><a style="background-color: #ffff99">sw_hygro_ssa      =&gt; physprop(id)%sw_hygro_ssa</a>
+   338) <a name="l338" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(sw_hygro_asm))      </a><a style="background-color: #ffff99">sw_hygro_asm      =&gt; physprop(id)%sw_hygro_asm</a>
+   339) <a name="l339" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(lw_hygro_abs))      </a><a style="background-color: #ffff99">lw_hygro_abs      =&gt; physprop(id)%lw_hygro_abs</a>
+   340) <a name="l340" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(sw_nonhygro_ext))   </a><a style="background-color: #ffff99">sw_nonhygro_ext   =&gt; physprop(id)%sw_nonhygro_ext</a>
+   341) <a name="l341" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(sw_nonhygro_ssa))   </a><a style="background-color: #ffff99">sw_nonhygro_ssa   =&gt; physprop(id)%sw_nonhygro_ssa</a>
+   342) <a name="l342" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(sw_nonhygro_asm))   </a><a style="background-color: #ffff99">sw_nonhygro_asm   =&gt; physprop(id)%sw_nonhygro_asm</a>
+   343) <a name="l343" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(sw_nonhygro_scat))  </a><a style="background-color: #ffff99">sw_nonhygro_scat  =&gt; physprop(id)%sw_nonhygro_scat</a>
+   344) <a name="l344" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(sw_nonhygro_ascat)) </a><a style="background-color: #ffff99">sw_nonhygro_ascat =&gt; physprop(id)%sw_nonhygro_ascat</a>
+   345) <a name="l345" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(lw_abs))            </a><a style="background-color: #ffff99">lw_abs            =&gt; physprop(id)%lw_abs</a>
+   346) <a name="l346" style="background-color: #ffff99"></a>
+   347) <a name="l347" style="background-color: #ffffff">   if (present(refindex_aer_sw))   refindex_aer_sw   =&gt; physprop(id)%refindex_aer_sw</a>
+   348) <a name="l348" style="background-color: #ffffff">   if (present(refindex_aer_lw))   refindex_aer_lw   =&gt; physprop(id)%refindex_aer_lw</a>
+   349) <a name="l349" style="background-color: #ffffff"></a>
+   350) <a name="l350" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(r_sw_ext))          </a><a style="background-color: #ffff99">r_sw_ext      =&gt; physprop(id)%r_sw_ext</a>
+   351) <a name="l351" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(r_sw_scat))         </a><a style="background-color: #ffff99">r_sw_scat     =&gt; physprop(id)%r_sw_scat</a>
+   352) <a name="l352" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(r_sw_ascat))        </a><a style="background-color: #ffff99">r_sw_ascat    =&gt; physprop(id)%r_sw_ascat</a>
+   353) <a name="l353" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(r_lw_abs))          </a><a style="background-color: #ffff99">r_lw_abs      =&gt; physprop(id)%r_lw_abs</a>
+   354) <a name="l354" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(mu))                </a><a style="background-color: #ffff99">mu            =&gt; physprop(id)%mu</a>
+   355) <a name="l355" style="background-color: #ffff99"></a>
+   356) <a name="l356" style="background-color: #ffffff">   if (present(extpsw))            extpsw        =&gt; physprop(id)%extpsw</a>
+   357) <a name="l357" style="background-color: #ffffff">   if (present(abspsw))            abspsw        =&gt; physprop(id)%abspsw</a>
+   358) <a name="l358" style="background-color: #ffffff">   if (present(asmpsw))            asmpsw        =&gt; physprop(id)%asmpsw</a>
+   359) <a name="l359" style="background-color: #ffffff">   if (present(absplw))            absplw        =&gt; physprop(id)%absplw</a>
+   360) <a name="l360" style="background-color: #ffffff">   if (present(refrtabsw))         refrtabsw     =&gt; physprop(id)%refrtabsw</a>
+   361) <a name="l361" style="background-color: #ffffff">   if (present(refitabsw))         refitabsw     =&gt; physprop(id)%refitabsw</a>
+   362) <a name="l362" style="background-color: #ffffff">   if (present(refrtablw))         refrtablw     =&gt; physprop(id)%refrtablw</a>
+   363) <a name="l363" style="background-color: #ffffff">   if (present(refitablw))         refitablw     =&gt; physprop(id)%refitablw</a>
+   364) <a name="l364" style="background-color: #ffffff"></a>
+   365) <a name="l365" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(aername))         </a><a style="background-color: #ffff99">aername         =  physprop(id)%aername</a>
+   366) <a name="l366" style="background-color: #ffffff">   if (present(density_aer))     density_aer     =  physprop(id)%density_aer</a>
+   367) <a name="l367" style="background-color: #ffffff">   if (present(hygro_aer))       hygro_aer       =  physprop(id)%hygro_aer</a>
+   368) <a name="l368" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(dryrad_aer))      </a><a style="background-color: #ffff99">dryrad_aer      =  physprop(id)%dryrad_aer</a>
+   369) <a name="l369" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(dispersion_aer))  </a><a style="background-color: #ffff99">dispersion_aer  =  physprop(id)%dispersion_aer</a>
+   370) <a name="l370" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(num_to_mass_aer)) </a><a style="background-color: #ffff99">num_to_mass_aer =  physprop(id)%num_to_mass_aer</a>
+   371) <a name="l371" style="background-color: #ffff99"></a>
+   372) <a name="l372" style="background-color: #ffffff">   if (present(ncoef))           ncoef           =  physprop(id)%ncoef</a>
+   373) <a name="l373" style="background-color: #ffffff">   if (present(prefr))           prefr           =  physprop(id)%prefr</a>
+   374) <a name="l374" style="background-color: #ffffff">   if (present(prefi))           prefi           =  physprop(id)%prefi</a>
+   375) <a name="l375" style="background-color: #ffffff">   if (present(sigmag))          sigmag          =  physprop(id)%sigmag</a>
+   376) <a name="l376" style="background-color: #ffffff">   if (present(dgnum))           dgnum           =  physprop(id)%dgnum</a>
+   377) <a name="l377" style="background-color: #ffffff">   if (present(dgnumlo))         dgnumlo         =  physprop(id)%dgnumlo</a>
+   378) <a name="l378" style="background-color: #ffffff">   if (present(dgnumhi))         dgnumhi         =  physprop(id)%dgnumhi</a>
+   379) <a name="l379" style="background-color: #ffffff">   if (present(rhcrystal))       rhcrystal       =  physprop(id)%rhcrystal</a>
+   380) <a name="l380" style="background-color: #ffffff">   if (present(rhdeliques))      rhdeliques      =  physprop(id)%rhdeliques</a>
+   381) <a name="l381" style="background-color: #ffffff"></a>
+   382) <a name="l382" style="background-color: #ffffff">end subroutine physprop_get</a>
+   383) <a name="l383" style="background-color: #ffffff"></a>
+   384) <a name="l384" style="background-color: #ffffff">!================================================================================================</a>
+   385) <a name="l385" style="background-color: #ffffff">! Private methods</a>
+   386) <a name="l386" style="background-color: #ffffff">!================================================================================================</a>
+   387) <a name="l387" style="background-color: #ffffff"></a>
+   388) <a name="l388" style="background-color: #ffffff">subroutine aerosol_optics_init(phys_prop, nc_id)</a>
+   389) <a name="l389" style="background-color: #ffffff"></a>
+   390) <a name="l390" style="background-color: #ffffff">   ! Determine the opticstype, then call the </a>
+   391) <a name="l391" style="background-color: #ffffff">   ! appropriate routine to read the data.</a>
+   392) <a name="l392" style="background-color: #ffffff"></a>
+   393) <a name="l393" style="background-color: #ffffff">   type(physprop_type), intent(inout) :: phys_prop  ! data after interp onto cam rh mesh</a>
+   394) <a name="l394" style="background-color: #ffffff">   type(file_desc_t),   intent(inout) :: nc_id      ! indentifier for netcdf file</a>
+   395) <a name="l395" style="background-color: #ffffff"></a>
+   396) <a name="l396" style="background-color: #ffffff">   integer :: opticslength_id, opticslength</a>
+   397) <a name="l397" style="background-color: #ffffff">   type(var_desc_t) :: op_type_id</a>
+   398) <a name="l398" style="background-color: #ffffff">   integer :: ierr ! mpi error codes</a>
+   399) <a name="l399" style="background-color: #ffffff">   character(len=ot_length)  :: opticstype_str ! string read from netCDF file -- may contain trailing</a>
+   400) <a name="l400" style="background-color: #ffffff">                                        ! nulls which aren't dealt with by trim()</a>
+   401) <a name="l401" style="background-color: #ffffff">   !------------------------------------------------------------------------------------</a>
+   402) <a name="l402" style="background-color: #ffffff"></a>
+   403) <a name="l403" style="background-color: #ffffff">   ierr = pio_inq_dimid(nc_id, 'opticsmethod_len', opticslength_id)</a>
+   404) <a name="l404" style="background-color: #ffffff">   ierr = pio_inq_dimlen(nc_id, opticslength_id, opticslength)</a>
+   405) <a name="l405" style="background-color: #ffffff">   if ( opticslength .gt. ot_length ) then</a>
+   406) <a name="l406" style="background-color: #ffffff">      call </a><a style="background-color: #ffff99">endrun(&quot; optics type length in &quot;//phys_prop%sourcefile//&quot; excedes maximum length of 32&quot;)</a>
+   407) <a name="l407" style="background-color: #ffff99">   endif</a>
+   408) <a name="l408" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'opticsmethod', op_type_id)</a>
+   409) <a name="l409" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, op_type_id,phys_prop%opticsmethod )</a>
+   410) <a name="l410" style="background-color: #ffffff"></a>
+   411) <a name="l411" style="background-color: #ffffff">   select case (phys_prop%opticsmethod)</a>
+   412) <a name="l412" style="background-color: #ffffff">   case ('zero')</a>
+   413) <a name="l413" style="background-color: #ffffff">      call </a><a style="background-color: #ffff99">zero_optics_init(phys_prop, nc_id)</a>
+   414) <a name="l414" style="background-color: #ffff99"></a>
+   415) <a name="l415" style="background-color: #ffff99">   case (</a><a style="background-color: #ffffff">'hygro')</a>
+   416) <a name="l416" style="background-color: #ffffff">      call </a><a style="background-color: #ffff99">hygro_optics_init(phys_prop, nc_id)</a>
+   417) <a name="l417" style="background-color: #ffff99"></a>
+   418) <a name="l418" style="background-color: #ffff99">   case (</a><a style="background-color: #ffffff">'hygroscopic')</a>
+   419) <a name="l419" style="background-color: #ffffff">      call hygroscopic_optics_init(phys_prop, nc_id)</a>
+   420) <a name="l420" style="background-color: #ffffff"></a>
+   421) <a name="l421" style="background-color: #ffffff">   case ('nonhygro')</a>
+   422) <a name="l422" style="background-color: #ffffff">      call </a><a style="background-color: #ffff99">nonhygro_optics_init(phys_prop, nc_id)</a>
+   423) <a name="l423" style="background-color: #ffff99">        </a>
+   424) <a name="l424" style="background-color: #ffff99">   case (</a><a style="background-color: #ffffff">'insoluble')</a>
+   425) <a name="l425" style="background-color: #ffffff">      call insoluble_optics_init(phys_prop, nc_id)</a>
+   426) <a name="l426" style="background-color: #ffffff">        </a>
+   427) <a name="l427" style="background-color: #ffffff">   case ('volcanic_radius')</a>
+   428) <a name="l428" style="background-color: #ffffff">      call </a><a style="background-color: #ffff99">volcanic_radius_optics_init(phys_prop, nc_id)</a>
+   429) <a name="l429" style="background-color: #ffff99"></a>
+   430) <a name="l430" style="background-color: #ffff99">   case (</a><a style="background-color: #ffffff">'volcanic')</a>
+   431) <a name="l431" style="background-color: #ffffff">      call </a><a style="background-color: #ffff99">volcanic_optics_init(phys_prop, nc_id)</a>
+   432) <a name="l432" style="background-color: #ffff99">        </a>
+   433) <a name="l433" style="background-color: #ffff99">   case (</a><a style="background-color: #ffffff">'modal')</a>
+   434) <a name="l434" style="background-color: #ffffff">      call modal_optics_init(phys_prop, nc_id)</a>
+   435) <a name="l435" style="background-color: #ffffff">        </a>
+   436) <a name="l436" style="background-color: #ffffff">   ! other types of optics can be added here</a>
+   437) <a name="l437" style="background-color: #ffffff"></a>
+   438) <a name="l438" style="background-color: #ffffff">   case default</a>
+   439) <a name="l439" style="background-color: #ffffff">      call </a><a style="background-color: #fafad2">endrun(</a><a style="background-color: #ffff99">'aerosol_optics_init: unsupported optics type '//&amp;</a>
+   440) <a name="l440" style="background-color: #ffff99">         trim(phys_prop%opticsmethod)//' in file '//phys_prop%sourcefile)</a>
+   441) <a name="l441" style="background-color: #ffff99">   end select</a>
+   442) <a name="l442" style="background-color: #ffff99"></a>
+   443) <a name="l443" style="background-color: #ffffff">end subroutine aerosol_optics_init</a>
+   444) <a name="l444" style="background-color: #ffffff"></a>
+   445) <a name="l445" style="background-color: #ffffff">!================================================================================================</a>
+   446) <a name="l446" style="background-color: #ffffff"></a>
+   447) <a name="l447" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">hygro_optics_init(phys_prop, nc_id)</a>
+   448) <a name="l448" style="background-color: #ffcccc"></a>
+   449) <a name="l449" style="background-color: #ffcccc">   ! Read optics data of type 'hygro' and interpolate it to CAM's rh mesh.</a>
+   450) <a name="l450" style="background-color: #ffcccc"></a>
+   451) <a name="l451" style="background-color: #ffcccc">   type (physprop_type), intent(inout) :: phys_prop  ! data after interp onto cam rh mesh</a>
+   452) <a name="l452" style="background-color: #ffcccc">   type (file_desc_t),   intent(inout) :: nc_id      ! indentifier for netcdf file</a>
+   453) <a name="l453" style="background-color: #ffcccc"></a>
+   454) <a name="l454" style="background-color: #ffcccc">   ! Local variables</a>
+   455) <a name="l455" style="background-color: #ffcccc">   integer :: ierr ! error flag</a>
+   456) <a name="l456" style="background-color: #ffcccc"></a>
+   457) <a name="l457" style="background-color: #ffcccc">   integer :: rh_idx_id, lw_band_id, sw_band_id</a>
+   458) <a name="l458" style="background-color: #ffcccc">   integer :: kbnd, krh</a>
+   459) <a name="l459" style="background-color: #ffcccc">   integer :: rh_id, sw_ext_id, sw_ssa_id, sw_asm_id, lw_ext_id</a>
+   460) <a name="l460" style="background-color: #ffcccc">   integer :: nbnd, swbands</a>
+   461) <a name="l461" style="background-color: #ffcccc"></a>
+   462) <a name="l462" style="background-color: #ffcccc">   ! temp data from hygroscopic file before interpolation onto cam-rh-mesh</a>
+   463) <a name="l463" style="background-color: #ffcccc">   integer  :: nfilerh ! number of rh values in file</a>
+   464) <a name="l464" style="background-color: #ffcccc">   real(r8), allocatable, dimension(:) :: frh</a>
+   465) <a name="l465" style="background-color: #ffcccc">   real(r8), allocatable, dimension(:,:)  :: fsw_ext</a>
+   466) <a name="l466" style="background-color: #ffcccc">   real(r8), allocatable, dimension(:,:)  :: fsw_ssa</a>
+   467) <a name="l467" style="background-color: #ffcccc">   real(r8), allocatable, dimension(:,:)  :: fsw_asm</a>
+   468) <a name="l468" style="background-color: #ffcccc"></a>
+   469) <a name="l469" style="background-color: #ffcccc">   real(r8) :: rh ! real rh value on cam rh mesh (indexvalue)</a>
+   470) <a name="l470" style="background-color: #ffcccc">   !------------------------------------------------------------------------------------</a>
+   471) <a name="l471" style="background-color: #ffcccc"></a>
+   472) <a name="l472" style="background-color: #ffcccc">   allocate(phys_prop%sw_hygro_ext(nrh,nswbands))</a>
+   473) <a name="l473" style="background-color: #ffcccc">   allocate(phys_prop%sw_hygro_ssa(nrh,nswbands))</a>
+   474) <a name="l474" style="background-color: #ffcccc">   allocate(phys_prop%sw_hygro_asm(nrh,nswbands))</a>
+   475) <a name="l475" style="background-color: #ffcccc">   allocate(phys_prop%lw_abs(nlwbands))</a>
+   476) <a name="l476" style="background-color: #ffcccc"></a>
+   477) <a name="l477" style="background-color: #ffcccc">   ierr = pio_inq_dimid(nc_id, 'rh_idx', rh_idx_id)</a>
+   478) <a name="l478" style="background-color: #ffcccc"></a>
+   479) <a name="l479" style="background-color: #ffcccc">   ierr = pio_inq_dimlen(nc_id, rh_idx_id, nfilerh)</a>
+   480) <a name="l480" style="background-color: #ffcccc"></a>
+   481) <a name="l481" style="background-color: #ffcccc">   ierr = pio_inq_dimid(nc_id, 'lw_band', lw_band_id)</a>
+   482) <a name="l482" style="background-color: #ffcccc"></a>
+   483) <a name="l483" style="background-color: #ffcccc">   ierr = pio_inq_dimid(nc_id, 'sw_band', sw_band_id)</a>
+   484) <a name="l484" style="background-color: #ffcccc"></a>
+   485) <a name="l485" style="background-color: #ffcccc">   ierr = pio_inq_dimlen(nc_id, lw_band_id, nbnd)</a>
+   486) <a name="l486" style="background-color: #ffcccc"></a>
+   487) <a name="l487" style="background-color: #ffcccc">   if (nbnd .ne. nlwbands) call endrun(phys_prop%sourcefile// &amp;</a>
+   488) <a name="l488" style="background-color: #ffcccc">        ' has the wrong number of lwbands')</a>
+   489) <a name="l489" style="background-color: #ffcccc"></a>
+   490) <a name="l490" style="background-color: #ffcccc">   ierr = pio_inq_dimlen(nc_id, sw_band_id, swbands)</a>
+   491) <a name="l491" style="background-color: #ffcccc"></a>
+   492) <a name="l492" style="background-color: #ffcccc">   if(swbands .ne. nswbands) call endrun(phys_prop%sourcefile// &amp;</a>
+   493) <a name="l493" style="background-color: #ffcccc">         ' has the wrong number of sw bands')</a>
+   494) <a name="l494" style="background-color: #ffcccc"></a>
+   495) <a name="l495" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'rh', rh_id)</a>
+   496) <a name="l496" style="background-color: #ffcccc"></a>
+   497) <a name="l497" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'ext_sw', sw_ext_id)</a>
+   498) <a name="l498" style="background-color: #ffcccc"></a>
+   499) <a name="l499" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'ssa_sw', sw_ssa_id)</a>
+   500) <a name="l500" style="background-color: #ffcccc"></a>
+   501) <a name="l501" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'asm_sw', sw_asm_id)</a>
+   502) <a name="l502" style="background-color: #ffcccc"></a>
+   503) <a name="l503" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'abs_lw', lw_ext_id)</a>
+   504) <a name="l504" style="background-color: #ffcccc"></a>
+   505) <a name="l505" style="background-color: #ffcccc">   ! specific optical properties on file's rh mesh</a>
+   506) <a name="l506" style="background-color: #ffcccc">   allocate(fsw_ext(nfilerh,nswbands))</a>
+   507) <a name="l507" style="background-color: #ffcccc">   allocate(fsw_asm(nfilerh,nswbands))</a>
+   508) <a name="l508" style="background-color: #ffcccc">   allocate(fsw_ssa(nfilerh,nswbands))</a>
+   509) <a name="l509" style="background-color: #ffcccc">   allocate(frh(nfilerh))</a>
+   510) <a name="l510" style="background-color: #ffcccc"></a>
+   511) <a name="l511" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, rh_id, frh)</a>
+   512) <a name="l512" style="background-color: #ffcccc"></a>
+   513) <a name="l513" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, sw_ext_id, fsw_ext)</a>
+   514) <a name="l514" style="background-color: #ffcccc"></a>
+   515) <a name="l515" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, sw_ssa_id, fsw_ssa)</a>
+   516) <a name="l516" style="background-color: #ffcccc"></a>
+   517) <a name="l517" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, sw_asm_id, fsw_asm)</a>
+   518) <a name="l518" style="background-color: #ffcccc"></a>
+   519) <a name="l519" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, lw_ext_id, phys_prop%lw_abs)</a>
+   520) <a name="l520" style="background-color: #ffcccc"></a>
+   521) <a name="l521" style="background-color: #ffcccc">   ! interpolate onto cam's rh mesh</a>
+   522) <a name="l522" style="background-color: #ffcccc">   do kbnd = 1,nswbands</a>
+   523) <a name="l523" style="background-color: #ffcccc">      do krh = 1, nrh</a>
+   524) <a name="l524" style="background-color: #ffcccc">         rh = 1.0_r8 / nrh * (krh - 1)</a>
+   525) <a name="l525" style="background-color: #ffcccc">         phys_prop%sw_hygro_ext(krh,kbnd) = &amp;</a>
+   526) <a name="l526" style="background-color: #ffcccc">            exp_interpol( frh, fsw_ext(:,kbnd) / fsw_ext(1,kbnd), rh ) &amp;</a>
+   527) <a name="l527" style="background-color: #ffcccc">            * fsw_ext(1, kbnd)</a>
+   528) <a name="l528" style="background-color: #ffcccc">         phys_prop%sw_hygro_ssa(krh,kbnd) = &amp;</a>
+   529) <a name="l529" style="background-color: #ffcccc">            lin_interpol( frh, fsw_ssa(:,kbnd) / fsw_ssa(1,kbnd), rh ) &amp;</a>
+   530) <a name="l530" style="background-color: #ffcccc">            * fsw_ssa(1, kbnd)</a>
+   531) <a name="l531" style="background-color: #ffcccc">         phys_prop%sw_hygro_asm(krh,kbnd) = &amp;</a>
+   532) <a name="l532" style="background-color: #ffcccc">            lin_interpol( frh, fsw_asm(:,kbnd) / fsw_asm(1,kbnd), rh ) &amp;</a>
+   533) <a name="l533" style="background-color: #ffcccc">            * fsw_asm(1, kbnd)</a>
+   534) <a name="l534" style="background-color: #ffcccc">      enddo</a>
+   535) <a name="l535" style="background-color: #ffcccc">   enddo</a>
+   536) <a name="l536" style="background-color: #ffcccc"></a>
+   537) <a name="l537" style="background-color: #ffcccc">   deallocate (fsw_ext, fsw_asm, fsw_ssa, frh)</a>
+   538) <a name="l538" style="background-color: #ffcccc"></a>
+   539) <a name="l539" style="background-color: #ffcccc">   ! read refractive index data if available</a>
+   540) <a name="l540" style="background-color: #ffcccc">   call refindex_aer_init(phys_prop, nc_id)</a>
+   541) <a name="l541" style="background-color: #ffcccc"></a>
+   542) <a name="l542" style="background-color: #ffcccc">   ! read bulk aero props</a>
+   543) <a name="l543" style="background-color: #ffcccc">   call bulk_props_init(phys_prop, nc_id)</a>
+   544) <a name="l544" style="background-color: #ffcccc"></a>
+   545) <a name="l545" style="background-color: #ffcccc">end subroutine hygro_optics_init</a>
+   546) <a name="l546" style="background-color: #ffffff"></a>
+   547) <a name="l547" style="background-color: #ffffff">!================================================================================================</a>
+   548) <a name="l548" style="background-color: #ffffff"></a>
+   549) <a name="l549" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">zero_optics_init(phys_prop, nc_id)</a>
+   550) <a name="l550" style="background-color: #ffcccc"></a>
+   551) <a name="l551" style="background-color: #ffcccc">   ! Read optics data of type 'nonhygro'</a>
+   552) <a name="l552" style="background-color: #ffcccc"></a>
+   553) <a name="l553" style="background-color: #ffcccc">   type (physprop_type), intent(inout) :: phys_prop  ! storage for file data</a>
+   554) <a name="l554" style="background-color: #ffcccc">   type (file_desc_t),   intent(inout) :: nc_id      ! indentifier for netcdf file</a>
+   555) <a name="l555" style="background-color: #ffcccc"></a>
+   556) <a name="l556" style="background-color: #ffcccc">   ! Local variables</a>
+   557) <a name="l557" style="background-color: #ffcccc">   integer :: lw_band_id, sw_band_id</a>
+   558) <a name="l558" style="background-color: #ffcccc">   integer :: sw_ext_id, sw_ssa_id, sw_asm_id, lw_ext_id</a>
+   559) <a name="l559" style="background-color: #ffcccc">   integer :: swbands, nbnd</a>
+   560) <a name="l560" style="background-color: #ffcccc">   integer :: ierr ! error flag</a>
+   561) <a name="l561" style="background-color: #ffcccc">   !------------------------------------------------------------------------------------</a>
+   562) <a name="l562" style="background-color: #ffcccc"></a>
+   563) <a name="l563" style="background-color: #ffcccc">   ! perhaps this doesn't even need allocated.</a>
+   564) <a name="l564" style="background-color: #ffcccc">   allocate (phys_prop%sw_nonhygro_ext(nswbands))</a>
+   565) <a name="l565" style="background-color: #ffcccc">   allocate (phys_prop%sw_nonhygro_ssa(nswbands))</a>
+   566) <a name="l566" style="background-color: #ffcccc">   allocate (phys_prop%sw_nonhygro_asm(nswbands))</a>
+   567) <a name="l567" style="background-color: #ffcccc">   allocate (phys_prop%lw_abs(nlwbands))</a>
+   568) <a name="l568" style="background-color: #ffcccc"></a>
+   569) <a name="l569" style="background-color: #ffcccc">   phys_prop%sw_nonhygro_ext = 0._r8</a>
+   570) <a name="l570" style="background-color: #ffcccc">   phys_prop%sw_nonhygro_ssa = 0._r8</a>
+   571) <a name="l571" style="background-color: #ffcccc">   phys_prop%sw_nonhygro_asm = 0._r8</a>
+   572) <a name="l572" style="background-color: #ffcccc">   phys_prop%lw_abs = 0._r8</a>
+   573) <a name="l573" style="background-color: #ffcccc"></a>
+   574) <a name="l574" style="background-color: #ffcccc">end subroutine zero_optics_init</a>
+   575) <a name="l575" style="background-color: #ffffff"></a>
+   576) <a name="l576" style="background-color: #ffffff">!================================================================================================</a>
+   577) <a name="l577" style="background-color: #ffffff"></a>
+   578) <a name="l578" style="background-color: #ffffff">subroutine insoluble_optics_init(phys_prop, nc_id)</a>
+   579) <a name="l579" style="background-color: #ffffff"></a>
+   580) <a name="l580" style="background-color: #ffffff">   ! Read optics data of type 'nonhygro'</a>
+   581) <a name="l581" style="background-color: #ffffff"></a>
+   582) <a name="l582" style="background-color: #ffffff">   type (physprop_type), intent(inout) :: phys_prop  ! storage for file data</a>
+   583) <a name="l583" style="background-color: #ffffff">   type (file_desc_t),   intent(inout) :: nc_id      ! indentifier for netcdf file</a>
+   584) <a name="l584" style="background-color: #ffffff"></a>
+   585) <a name="l585" style="background-color: #ffffff">   ! Local variables</a>
+   586) <a name="l586" style="background-color: #ffffff">   integer :: lw_band_id, sw_band_id</a>
+   587) <a name="l587" style="background-color: #ffffff">   integer :: sw_ext_id, sw_ssa_id, sw_asm_id, lw_ext_id</a>
+   588) <a name="l588" style="background-color: #ffffff">   integer :: swbands, nbnd</a>
+   589) <a name="l589" style="background-color: #ffffff">   integer :: ierr ! error flag</a>
+   590) <a name="l590" style="background-color: #ffffff">   integer :: start(2), count(2)</a>
+   591) <a name="l591" style="background-color: #ffffff">   !------------------------------------------------------------------------------------</a>
+   592) <a name="l592" style="background-color: #ffffff"></a>
+   593) <a name="l593" style="background-color: #ffffff">   allocate (phys_prop%sw_nonhygro_ext(nswbands))</a>
+   594) <a name="l594" style="background-color: #ffffff">   allocate (phys_prop%sw_nonhygro_ssa(nswbands))</a>
+   595) <a name="l595" style="background-color: #ffffff">   allocate (phys_prop%sw_nonhygro_asm(nswbands))</a>
+   596) <a name="l596" style="background-color: #ffffff">   allocate (phys_prop%lw_abs(nlwbands))</a>
+   597) <a name="l597" style="background-color: #ffffff"></a>
+   598) <a name="l598" style="background-color: #ffffff">   ierr = pio_inq_dimid(nc_id, 'lw_band', lw_band_id)</a>
+   599) <a name="l599" style="background-color: #ffffff"></a>
+   600) <a name="l600" style="background-color: #ffffff">   ierr = pio_inq_dimid(nc_id, 'sw_band', sw_band_id)</a>
+   601) <a name="l601" style="background-color: #ffffff"></a>
+   602) <a name="l602" style="background-color: #ffffff">   ierr = pio_inq_dimlen(nc_id, lw_band_id, nbnd)</a>
+   603) <a name="l603" style="background-color: #ffffff"></a>
+   604) <a name="l604" style="background-color: #ffffff">   if (nbnd .ne. nlwbands) </a><a style="background-color: #ffff99">call endrun(phys_prop%sourcefile// &amp;</a>
+   605) <a name="l605" style="background-color: #ffff99">        ' has the wrong number of lwbands')</a>
+   606) <a name="l606" style="background-color: #ffff99"></a>
+   607) <a name="l607" style="background-color: #ffffff">   ierr = pio_inq_dimlen(nc_id, sw_band_id, swbands)</a>
+   608) <a name="l608" style="background-color: #ffffff"></a>
+   609) <a name="l609" style="background-color: #ffffff">   if (swbands .ne. nswbands) </a><a style="background-color: #ffff99">call endrun(phys_prop%sourcefile// &amp;</a>
+   610) <a name="l610" style="background-color: #ffff99">        ' has the wrong number of sw bands')</a>
+   611) <a name="l611" style="background-color: #ffff99"></a>
+   612) <a name="l612" style="background-color: #ffff99">   ! read file data</a>
+   613) <a name="l613" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'ext_sw', sw_ext_id)</a>
+   614) <a name="l614" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'ssa_sw', sw_ssa_id)</a>
+   615) <a name="l615" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'asm_sw', sw_asm_id)</a>
+   616) <a name="l616" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'abs_lw', lw_ext_id)</a>
+   617) <a name="l617" style="background-color: #ffffff"></a>
+   618) <a name="l618" style="background-color: #ffffff">   start = 1</a>
+   619) <a name="l619" style="background-color: #ffffff">   count=(/1,swbands/)</a>
+   620) <a name="l620" style="background-color: #ffffff"></a>
+   621) <a name="l621" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, sw_ext_id, start, count, phys_prop%sw_nonhygro_ext)</a>
+   622) <a name="l622" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, sw_ssa_id, start, count, phys_prop%sw_nonhygro_ssa)</a>
+   623) <a name="l623" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, sw_asm_id, start, count, phys_prop%sw_nonhygro_asm)</a>
+   624) <a name="l624" style="background-color: #ffffff">   count = (/1,nbnd/)</a>
+   625) <a name="l625" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, lw_ext_id, start, count, phys_prop%lw_abs)</a>
+   626) <a name="l626" style="background-color: #ffffff"></a>
+   627) <a name="l627" style="background-color: #ffffff">   ! read refractive index data if available</a>
+   628) <a name="l628" style="background-color: #ffffff">   call refindex_aer_init(phys_prop, nc_id)</a>
+   629) <a name="l629" style="background-color: #ffffff"></a>
+   630) <a name="l630" style="background-color: #ffffff">   ! read bulk aero props</a>
+   631) <a name="l631" style="background-color: #ffffff">   call bulk_props_init(phys_prop, nc_id)</a>
+   632) <a name="l632" style="background-color: #ffffff"></a>
+   633) <a name="l633" style="background-color: #ffffff">end subroutine insoluble_optics_init</a>
+   634) <a name="l634" style="background-color: #ffffff"></a>
+   635) <a name="l635" style="background-color: #ffffff">!================================================================================================</a>
+   636) <a name="l636" style="background-color: #ffffff"></a>
+   637) <a name="l637" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">volcanic_radius_optics_init(phys_prop, nc_id)</a>
+   638) <a name="l638" style="background-color: #ffcccc"></a>
+   639) <a name="l639" style="background-color: #ffcccc">   ! Read optics data of type 'volcanic_radius'</a>
+   640) <a name="l640" style="background-color: #ffcccc"></a>
+   641) <a name="l641" style="background-color: #ffcccc">   type (physprop_type), intent(inout) :: phys_prop  ! storage for file data</a>
+   642) <a name="l642" style="background-color: #ffcccc">   type (file_desc_t),   intent(inout) :: nc_id      ! indentifier for netcdf file</a>
+   643) <a name="l643" style="background-color: #ffcccc"></a>
+   644) <a name="l644" style="background-color: #ffcccc">   ! Local variables</a>
+   645) <a name="l645" style="background-color: #ffcccc">   integer :: lw_band_id, sw_band_id, mu_id, mu_did</a>
+   646) <a name="l646" style="background-color: #ffcccc">   integer :: sw_ext_id, sw_scat_id, sw_ascat_id, lw_abs_id</a>
+   647) <a name="l647" style="background-color: #ffcccc">   integer :: swbands, nbnd, n_mu_samples</a>
+   648) <a name="l648" style="background-color: #ffcccc">   integer :: ierr ! error flag</a>
+   649) <a name="l649" style="background-color: #ffcccc">   !------------------------------------------------------------------------------------</a>
+   650) <a name="l650" style="background-color: #ffcccc"></a>
+   651) <a name="l651" style="background-color: #ffcccc">   ierr = pio_inq_dimid(nc_id, 'mu_samples', mu_did)</a>
+   652) <a name="l652" style="background-color: #ffcccc">   ierr = pio_inq_dimlen(nc_id, mu_did, n_mu_samples)</a>
+   653) <a name="l653" style="background-color: #ffcccc"></a>
+   654) <a name="l654" style="background-color: #ffcccc">   allocate (phys_prop%r_sw_ext(nswbands,n_mu_samples))</a>
+   655) <a name="l655" style="background-color: #ffcccc">   allocate (phys_prop%r_sw_scat(nswbands,n_mu_samples))</a>
+   656) <a name="l656" style="background-color: #ffcccc">   allocate (phys_prop%r_sw_ascat(nswbands,n_mu_samples))</a>
+   657) <a name="l657" style="background-color: #ffcccc">   allocate (phys_prop%r_lw_abs(nlwbands,n_mu_samples))</a>
+   658) <a name="l658" style="background-color: #ffcccc">   allocate (phys_prop%mu(n_mu_samples))</a>
+   659) <a name="l659" style="background-color: #ffcccc"></a>
+   660) <a name="l660" style="background-color: #ffcccc">   ierr = pio_inq_dimid(nc_id, 'lw_band', lw_band_id)</a>
+   661) <a name="l661" style="background-color: #ffcccc"></a>
+   662) <a name="l662" style="background-color: #ffcccc">   ierr = pio_inq_dimid(nc_id, 'sw_band', sw_band_id)</a>
+   663) <a name="l663" style="background-color: #ffcccc"></a>
+   664) <a name="l664" style="background-color: #ffcccc">   ierr = pio_inq_dimlen(nc_id, lw_band_id, nbnd)</a>
+   665) <a name="l665" style="background-color: #ffcccc"></a>
+   666) <a name="l666" style="background-color: #ffcccc">   if (nbnd .ne. nlwbands) call endrun(phys_prop%sourcefile// &amp;</a>
+   667) <a name="l667" style="background-color: #ffcccc">        ' has the wrong number of lwbands')</a>
+   668) <a name="l668" style="background-color: #ffcccc"></a>
+   669) <a name="l669" style="background-color: #ffcccc">   ierr = pio_inq_dimlen(nc_id, sw_band_id, swbands)</a>
+   670) <a name="l670" style="background-color: #ffcccc"></a>
+   671) <a name="l671" style="background-color: #ffcccc">   if (swbands .ne. nswbands) call endrun(phys_prop%sourcefile// &amp;</a>
+   672) <a name="l672" style="background-color: #ffcccc">        ' has the wrong number of sw bands')</a>
+   673) <a name="l673" style="background-color: #ffcccc"></a>
+   674) <a name="l674" style="background-color: #ffcccc">   ! read file data</a>
+   675) <a name="l675" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'bext_sw', sw_ext_id)</a>
+   676) <a name="l676" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'bsca_sw', sw_scat_id)</a>
+   677) <a name="l677" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'basc_sw', sw_ascat_id)</a>
+   678) <a name="l678" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'babs_lw', lw_abs_id)</a>
+   679) <a name="l679" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'mu_samples', mu_id)</a>
+   680) <a name="l680" style="background-color: #ffcccc"></a>
+   681) <a name="l681" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, sw_ext_id, phys_prop%r_sw_ext)</a>
+   682) <a name="l682" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, sw_scat_id, phys_prop%r_sw_scat)</a>
+   683) <a name="l683" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, sw_ascat_id, phys_prop%r_sw_ascat)</a>
+   684) <a name="l684" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, lw_abs_id, phys_prop%r_lw_abs)</a>
+   685) <a name="l685" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, mu_id, phys_prop%mu)</a>
+   686) <a name="l686" style="background-color: #ffcccc"></a>
+   687) <a name="l687" style="background-color: #ffcccc">   ! read bulk aero props</a>
+   688) <a name="l688" style="background-color: #ffcccc">   call bulk_props_init(phys_prop, nc_id)</a>
+   689) <a name="l689" style="background-color: #ffcccc"></a>
+   690) <a name="l690" style="background-color: #ffcccc">end subroutine volcanic_radius_optics_init</a>
+   691) <a name="l691" style="background-color: #ffffff"></a>
+   692) <a name="l692" style="background-color: #ffffff">!================================================================================================</a>
+   693) <a name="l693" style="background-color: #ffffff"></a>
+   694) <a name="l694" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">volcanic_optics_init(phys_prop, nc_id)</a>
+   695) <a name="l695" style="background-color: #ffcccc"></a>
+   696) <a name="l696" style="background-color: #ffcccc">   ! Read optics data of type 'volcanic'</a>
+   697) <a name="l697" style="background-color: #ffcccc"></a>
+   698) <a name="l698" style="background-color: #ffcccc">   type (physprop_type), intent(inout) :: phys_prop  ! storage for file data</a>
+   699) <a name="l699" style="background-color: #ffcccc">   type (file_desc_t)  , intent(inout) :: nc_id      ! indentifier for netcdf file</a>
+   700) <a name="l700" style="background-color: #ffcccc"></a>
+   701) <a name="l701" style="background-color: #ffcccc">   ! Local variables</a>
+   702) <a name="l702" style="background-color: #ffcccc">   integer :: lw_band_id, sw_band_id</a>
+   703) <a name="l703" style="background-color: #ffcccc">   integer :: sw_ext_id, sw_scat_id, sw_ascat_id, lw_abs_id</a>
+   704) <a name="l704" style="background-color: #ffcccc">   integer :: swbands, nbnd</a>
+   705) <a name="l705" style="background-color: #ffcccc">   integer :: ierr ! error flag</a>
+   706) <a name="l706" style="background-color: #ffcccc">   !------------------------------------------------------------------------------------</a>
+   707) <a name="l707" style="background-color: #ffcccc"></a>
+   708) <a name="l708" style="background-color: #ffcccc">   allocate (phys_prop%sw_nonhygro_ext(nswbands))</a>
+   709) <a name="l709" style="background-color: #ffcccc">   allocate (phys_prop%sw_nonhygro_scat(nswbands))</a>
+   710) <a name="l710" style="background-color: #ffcccc">   allocate (phys_prop%sw_nonhygro_ascat(nswbands))</a>
+   711) <a name="l711" style="background-color: #ffcccc">   allocate (phys_prop%lw_abs(nlwbands))</a>
+   712) <a name="l712" style="background-color: #ffcccc"></a>
+   713) <a name="l713" style="background-color: #ffcccc">   ierr = pio_inq_dimid(nc_id, 'lw_band', lw_band_id)</a>
+   714) <a name="l714" style="background-color: #ffcccc">   ierr = pio_inq_dimid(nc_id, 'sw_band', sw_band_id)</a>
+   715) <a name="l715" style="background-color: #ffcccc"></a>
+   716) <a name="l716" style="background-color: #ffcccc">   ierr = pio_inq_dimlen(nc_id, lw_band_id, nbnd)</a>
+   717) <a name="l717" style="background-color: #ffcccc"></a>
+   718) <a name="l718" style="background-color: #ffcccc">   if (nbnd .ne. nlwbands) call endrun(phys_prop%sourcefile// &amp;</a>
+   719) <a name="l719" style="background-color: #ffcccc">        ' has the wrong number of lwbands')</a>
+   720) <a name="l720" style="background-color: #ffcccc"></a>
+   721) <a name="l721" style="background-color: #ffcccc">   ierr = pio_inq_dimlen(nc_id, sw_band_id, swbands)</a>
+   722) <a name="l722" style="background-color: #ffcccc">   if(masterproc) write(iulog,*) 'swbands',swbands</a>
+   723) <a name="l723" style="background-color: #ffcccc"></a>
+   724) <a name="l724" style="background-color: #ffcccc">   if (swbands .ne. nswbands) call endrun(phys_prop%sourcefile// &amp;</a>
+   725) <a name="l725" style="background-color: #ffcccc">        ' has the wrong number of sw bands')</a>
+   726) <a name="l726" style="background-color: #ffcccc"></a>
+   727) <a name="l727" style="background-color: #ffcccc">   ! read file data</a>
+   728) <a name="l728" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'bext_sw', sw_ext_id)</a>
+   729) <a name="l729" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'bsca_sw', sw_scat_id)</a>
+   730) <a name="l730" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'basc_sw', sw_ascat_id)</a>
+   731) <a name="l731" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'babs_lw', lw_abs_id)</a>
+   732) <a name="l732" style="background-color: #ffcccc"></a>
+   733) <a name="l733" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, sw_ext_id, phys_prop%sw_nonhygro_ext)</a>
+   734) <a name="l734" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, sw_scat_id, phys_prop%sw_nonhygro_scat)</a>
+   735) <a name="l735" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, sw_ascat_id, phys_prop%sw_nonhygro_ascat)</a>
+   736) <a name="l736" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, lw_abs_id, phys_prop%lw_abs)</a>
+   737) <a name="l737" style="background-color: #ffcccc"></a>
+   738) <a name="l738" style="background-color: #ffcccc">   ! read bulk aero props</a>
+   739) <a name="l739" style="background-color: #ffcccc">   call bulk_props_init(phys_prop, nc_id)</a>
+   740) <a name="l740" style="background-color: #ffcccc"></a>
+   741) <a name="l741" style="background-color: #ffcccc">end subroutine volcanic_optics_init</a>
+   742) <a name="l742" style="background-color: #ffffff"></a>
+   743) <a name="l743" style="background-color: #ffffff">!================================================================================================</a>
+   744) <a name="l744" style="background-color: #ffffff"></a>
+   745) <a name="l745" style="background-color: #ffffff">subroutine hygroscopic_optics_init(phys_prop, nc_id)</a>
+   746) <a name="l746" style="background-color: #ffffff"></a>
+   747) <a name="l747" style="background-color: #ffffff">   ! Read optics data of type 'hygroscopic' and interpolate it to CAM's rh mesh.</a>
+   748) <a name="l748" style="background-color: #ffffff"></a>
+   749) <a name="l749" style="background-color: #ffffff">   type (physprop_type), intent(inout) :: phys_prop  ! data after interp onto cam rh mesh</a>
+   750) <a name="l750" style="background-color: #ffffff">   type (file_desc_T),   intent(inout) :: nc_id      ! indentifier for netcdf file</a>
+   751) <a name="l751" style="background-color: #ffffff"></a>
+   752) <a name="l752" style="background-color: #ffffff">   ! Local variables</a>
+   753) <a name="l753" style="background-color: #ffffff">   integer :: ierr ! error flag</a>
+   754) <a name="l754" style="background-color: #ffffff"></a>
+   755) <a name="l755" style="background-color: #ffffff">   integer :: rh_idx_id, lw_band_id, sw_band_id</a>
+   756) <a name="l756" style="background-color: #ffffff">   integer :: kbnd, krh</a>
+   757) <a name="l757" style="background-color: #ffffff">   integer :: rh_id, sw_ext_id, sw_ssa_id, sw_asm_id, lw_ext_id</a>
+   758) <a name="l758" style="background-color: #ffffff">   integer :: nbnd, swbands</a>
+   759) <a name="l759" style="background-color: #ffffff"></a>
+   760) <a name="l760" style="background-color: #ffffff">   ! temp data from hygroscopic file before interpolation onto cam-rh-mesh</a>
+   761) <a name="l761" style="background-color: #ffffff">   integer  :: nfilerh ! number of rh values in file</a>
+   762) <a name="l762" style="background-color: #ffffff">   real(r8), allocatable, dimension(:) :: frh</a>
+   763) <a name="l763" style="background-color: #ffffff">   real(r8), allocatable, dimension(:,:)  :: fsw_ext</a>
+   764) <a name="l764" style="background-color: #ffffff">   real(r8), allocatable, dimension(:,:)  :: fsw_ssa</a>
+   765) <a name="l765" style="background-color: #ffffff">   real(r8), allocatable, dimension(:,:)  :: fsw_asm</a>
+   766) <a name="l766" style="background-color: #ffffff">   real(r8), allocatable, dimension(:,:)  :: flw_abs</a>
+   767) <a name="l767" style="background-color: #ffffff"></a>
+   768) <a name="l768" style="background-color: #ffffff">   real(r8) :: rh ! real rh value on cam rh mesh (indexvalue)</a>
+   769) <a name="l769" style="background-color: #ffffff">   character(len=*), parameter :: sub = 'hygroscopic_optics_init'</a>
+   770) <a name="l770" style="background-color: #ffffff">   !------------------------------------------------------------------------------------</a>
+   771) <a name="l771" style="background-color: #ffffff"></a>
+   772) <a name="l772" style="background-color: #ffffff">   allocate(phys_prop%sw_hygro_ext(nrh,nswbands))</a>
+   773) <a name="l773" style="background-color: #ffffff">   allocate(phys_prop%sw_hygro_ssa(nrh,nswbands))</a>
+   774) <a name="l774" style="background-color: #ffffff">   allocate(phys_prop%sw_hygro_asm(nrh,nswbands))</a>
+   775) <a name="l775" style="background-color: #ffffff">   allocate(phys_prop%lw_hygro_abs(nrh,nlwbands))</a>
+   776) <a name="l776" style="background-color: #ffffff"></a>
+   777) <a name="l777" style="background-color: #ffffff">   ierr = pio_inq_dimid(nc_id, 'rh_idx', rh_idx_id)</a>
+   778) <a name="l778" style="background-color: #ffffff">   ierr = pio_inq_dimlen(nc_id, rh_idx_id, nfilerh)</a>
+   779) <a name="l779" style="background-color: #ffffff"></a>
+   780) <a name="l780" style="background-color: #ffffff">   ierr = pio_inq_dimid(nc_id, 'lw_band', lw_band_id)</a>
+   781) <a name="l781" style="background-color: #ffffff">   ierr = pio_inq_dimlen(nc_id, lw_band_id, nbnd)</a>
+   782) <a name="l782" style="background-color: #ffffff">   if (nbnd .ne. nlwbands) </a><a style="background-color: #ffff99">call endrun(phys_prop%sourcefile// &amp;</a>
+   783) <a name="l783" style="background-color: #ffff99">        ' has the wrong number of lwbands')</a>
+   784) <a name="l784" style="background-color: #ffff99"></a>
+   785) <a name="l785" style="background-color: #ffffff">   ierr = pio_inq_dimid(nc_id, 'sw_band', sw_band_id)</a>
+   786) <a name="l786" style="background-color: #ffffff">   ierr = pio_inq_dimlen(nc_id, sw_band_id, swbands)</a>
+   787) <a name="l787" style="background-color: #ffffff">   if(swbands .ne. nswbands) </a><a style="background-color: #ffff99">call endrun(phys_prop%sourcefile// &amp;</a>
+   788) <a name="l788" style="background-color: #ffff99">        ' has the wrong number of sw bands')</a>
+   789) <a name="l789" style="background-color: #ffff99"></a>
+   790) <a name="l790" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'rh', rh_id)</a>
+   791) <a name="l791" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'ext_sw', sw_ext_id)</a>
+   792) <a name="l792" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'ssa_sw', sw_ssa_id)</a>
+   793) <a name="l793" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'asm_sw', sw_asm_id)</a>
+   794) <a name="l794" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'abs_lw', lw_ext_id)</a>
+   795) <a name="l795" style="background-color: #ffffff"></a>
+   796) <a name="l796" style="background-color: #ffffff">   ! specific optical properties on file's rh mesh</a>
+   797) <a name="l797" style="background-color: #fafad2">   allocate(fsw_ext(nfilerh,nswbands))</a>
+   798) <a name="l798" style="background-color: #fafad2">   allocate(fsw_asm(nfilerh,nswbands))</a>
+   799) <a name="l799" style="background-color: #fafad2">   allocate(fsw_ssa(nfilerh,nswbands))</a>
+   800) <a name="l800" style="background-color: #fafad2">   allocate(flw_abs(nfilerh,nlwbands))</a>
+   801) <a name="l801" style="background-color: #fafad2">   allocate(frh(nfilerh))</a>
+   802) <a name="l802" style="background-color: #fafad2"></a>
+   803) <a name="l803" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, rh_id, frh)</a>
+   804) <a name="l804" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, sw_ext_id, fsw_ext)</a>
+   805) <a name="l805" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, sw_ssa_id, fsw_ssa)</a>
+   806) <a name="l806" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, sw_asm_id, fsw_asm)</a>
+   807) <a name="l807" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, lw_ext_id, flw_abs)</a>
+   808) <a name="l808" style="background-color: #ffffff"></a>
+   809) <a name="l809" style="background-color: #ffffff">   ! interpolate onto cam's rh mesh</a>
+   810) <a name="l810" style="background-color: #ffffff">   do kbnd = 1,nswbands</a>
+   811) <a name="l811" style="background-color: #ffffff">      do krh = 1, nrh</a>
+   812) <a name="l812" style="background-color: #ffffff">         rh = 1.0_r8 / nrh * (krh - 1)</a>
+   813) <a name="l813" style="background-color: #ffffff">         phys_prop%sw_hygro_ext(krh,kbnd) = &amp;</a>
+   814) <a name="l814" style="background-color: #ffffff">            exp_interpol( frh, fsw_ext(:,kbnd) / fsw_ext(1,kbnd), rh ) &amp;</a>
+   815) <a name="l815" style="background-color: #ffffff">            * fsw_ext(1, kbnd)</a>
+   816) <a name="l816" style="background-color: #ffffff">         phys_prop%sw_hygro_ssa(krh,kbnd) = &amp;</a>
+   817) <a name="l817" style="background-color: #ffffff">            lin_interpol( frh, fsw_ssa(:,kbnd) / fsw_ssa(1,kbnd), rh ) &amp;</a>
+   818) <a name="l818" style="background-color: #ffffff">            * fsw_ssa(1, kbnd)</a>
+   819) <a name="l819" style="background-color: #ffffff">         phys_prop%sw_hygro_asm(krh,kbnd) = &amp;</a>
+   820) <a name="l820" style="background-color: #ffffff">            lin_interpol( frh, fsw_asm(:,kbnd) / fsw_asm(1,kbnd), rh ) &amp;</a>
+   821) <a name="l821" style="background-color: #ffffff">            * fsw_asm(1, kbnd)</a>
+   822) <a name="l822" style="background-color: #ffffff">      enddo</a>
+   823) <a name="l823" style="background-color: #ffffff">   enddo</a>
+   824) <a name="l824" style="background-color: #ffffff">   do kbnd = 1,nlwbands</a>
+   825) <a name="l825" style="background-color: #ffffff">      do krh = 1, nrh</a>
+   826) <a name="l826" style="background-color: #ffffff">         rh = 1.0_r8 / nrh * (krh - 1)</a>
+   827) <a name="l827" style="background-color: #ffffff">         phys_prop%lw_hygro_abs(krh,kbnd) = &amp;</a>
+   828) <a name="l828" style="background-color: #ffffff">            exp_interpol( frh, flw_abs(:,kbnd) / flw_abs(1,kbnd), rh ) &amp;</a>
+   829) <a name="l829" style="background-color: #ffffff">            * flw_abs(1, kbnd)</a>
+   830) <a name="l830" style="background-color: #ffffff">      enddo</a>
+   831) <a name="l831" style="background-color: #ffffff">   enddo</a>
+   832) <a name="l832" style="background-color: #ffffff"></a>
+   833) <a name="l833" style="background-color: #ffffff">   deallocate (fsw_ext, fsw_asm, fsw_ssa, flw_abs, frh)</a>
+   834) <a name="l834" style="background-color: #ffffff"></a>
+   835) <a name="l835" style="background-color: #ffffff">   ! read refractive index data if available</a>
+   836) <a name="l836" style="background-color: #ffffff">   call refindex_aer_init(phys_prop, nc_id)</a>
+   837) <a name="l837" style="background-color: #ffffff"></a>
+   838) <a name="l838" style="background-color: #ffffff">   ! read bulk aero props</a>
+   839) <a name="l839" style="background-color: #ffffff">   call bulk_props_init(phys_prop, nc_id)</a>
+   840) <a name="l840" style="background-color: #ffffff"></a>
+   841) <a name="l841" style="background-color: #fafad2">end subroutine hygroscopic_optics_init</a>
+   842) <a name="l842" style="background-color: #ffffff"></a>
+   843) <a name="l843" style="background-color: #ffffff">!================================================================================================</a>
+   844) <a name="l844" style="background-color: #ffffff"></a>
+   845) <a name="l845" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">nonhygro_optics_init(phys_prop, nc_id)</a>
+   846) <a name="l846" style="background-color: #ffcccc"></a>
+   847) <a name="l847" style="background-color: #ffcccc">   ! Read optics data of type 'nonhygro'</a>
+   848) <a name="l848" style="background-color: #ffcccc"></a>
+   849) <a name="l849" style="background-color: #ffcccc">   type (physprop_type), intent(inout) :: phys_prop  ! storage for file data</a>
+   850) <a name="l850" style="background-color: #ffcccc">   type (file_desc_t)  , intent(inout) :: nc_id      ! indentifier for netcdf file</a>
+   851) <a name="l851" style="background-color: #ffcccc"></a>
+   852) <a name="l852" style="background-color: #ffcccc">   ! Local variables</a>
+   853) <a name="l853" style="background-color: #ffcccc">   integer :: lw_band_id, sw_band_id</a>
+   854) <a name="l854" style="background-color: #ffcccc">   integer :: sw_ext_id, sw_ssa_id, sw_asm_id, lw_ext_id</a>
+   855) <a name="l855" style="background-color: #ffcccc">   integer :: swbands, nbnd</a>
+   856) <a name="l856" style="background-color: #ffcccc">   integer :: ierr ! error flag</a>
+   857) <a name="l857" style="background-color: #ffcccc">   !------------------------------------------------------------------------------------</a>
+   858) <a name="l858" style="background-color: #ffcccc"></a>
+   859) <a name="l859" style="background-color: #ffcccc">   allocate (phys_prop%sw_nonhygro_ext(nswbands))</a>
+   860) <a name="l860" style="background-color: #ffcccc">   allocate (phys_prop%sw_nonhygro_ssa(nswbands))</a>
+   861) <a name="l861" style="background-color: #ffcccc">   allocate (phys_prop%sw_nonhygro_asm(nswbands))</a>
+   862) <a name="l862" style="background-color: #ffcccc">   allocate (phys_prop%lw_abs(nlwbands))</a>
+   863) <a name="l863" style="background-color: #ffcccc"></a>
+   864) <a name="l864" style="background-color: #ffcccc">   ierr = pio_inq_dimid(nc_id, 'lw_band', lw_band_id)</a>
+   865) <a name="l865" style="background-color: #ffcccc">   ierr = pio_inq_dimid(nc_id, 'sw_band', sw_band_id)</a>
+   866) <a name="l866" style="background-color: #ffcccc"></a>
+   867) <a name="l867" style="background-color: #ffcccc">   ierr = pio_inq_dimlen(nc_id, lw_band_id, nbnd)</a>
+   868) <a name="l868" style="background-color: #ffcccc"></a>
+   869) <a name="l869" style="background-color: #ffcccc">   if (nbnd .ne. nlwbands) call endrun(phys_prop%sourcefile// &amp;</a>
+   870) <a name="l870" style="background-color: #ffcccc">        ' has the wrong number of lwbands')</a>
+   871) <a name="l871" style="background-color: #ffcccc"></a>
+   872) <a name="l872" style="background-color: #ffcccc">   ierr = pio_inq_dimlen(nc_id, sw_band_id, swbands)</a>
+   873) <a name="l873" style="background-color: #ffcccc"></a>
+   874) <a name="l874" style="background-color: #ffcccc">   if (swbands .ne. nswbands) call endrun(phys_prop%sourcefile// &amp;</a>
+   875) <a name="l875" style="background-color: #ffcccc">        ' has the wrong number of sw bands')</a>
+   876) <a name="l876" style="background-color: #ffcccc"></a>
+   877) <a name="l877" style="background-color: #ffcccc">   ! read file data</a>
+   878) <a name="l878" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'ext_sw', sw_ext_id)</a>
+   879) <a name="l879" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'ssa_sw', sw_ssa_id)</a>
+   880) <a name="l880" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'asm_sw', sw_asm_id)</a>
+   881) <a name="l881" style="background-color: #ffcccc">   ierr = pio_inq_varid(nc_id, 'abs_lw', lw_ext_id)</a>
+   882) <a name="l882" style="background-color: #ffcccc"></a>
+   883) <a name="l883" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, sw_ext_id, phys_prop%sw_nonhygro_ext)</a>
+   884) <a name="l884" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, sw_ssa_id, phys_prop%sw_nonhygro_ssa)</a>
+   885) <a name="l885" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, sw_asm_id, phys_prop%sw_nonhygro_asm)</a>
+   886) <a name="l886" style="background-color: #ffcccc">   ierr = pio_get_var(nc_id, lw_ext_id, phys_prop%lw_abs)</a>
+   887) <a name="l887" style="background-color: #ffcccc"></a>
+   888) <a name="l888" style="background-color: #ffcccc">   ! read refractive index data if available</a>
+   889) <a name="l889" style="background-color: #ffcccc">   call refindex_aer_init(phys_prop, nc_id)</a>
+   890) <a name="l890" style="background-color: #ffcccc"></a>
+   891) <a name="l891" style="background-color: #ffcccc">   ! read bulk aero props</a>
+   892) <a name="l892" style="background-color: #ffcccc">   call bulk_props_init(phys_prop, nc_id)</a>
+   893) <a name="l893" style="background-color: #ffcccc"></a>
+   894) <a name="l894" style="background-color: #ffcccc">end subroutine nonhygro_optics_init</a>
+   895) <a name="l895" style="background-color: #ffffff"></a>
+   896) <a name="l896" style="background-color: #ffffff">!================================================================================================</a>
+   897) <a name="l897" style="background-color: #ffffff"></a>
+   898) <a name="l898" style="background-color: #ffffff">subroutine refindex_aer_init(phys_prop, nc_id)</a>
+   899) <a name="l899" style="background-color: #ffffff"></a>
+   900) <a name="l900" style="background-color: #ffffff">!  Read refractive indices of aerosol</a>
+   901) <a name="l901" style="background-color: #ffffff"></a>
+   902) <a name="l902" style="background-color: #ffffff">   type (physprop_type), intent(inout) :: phys_prop  ! storage for file data</a>
+   903) <a name="l903" style="background-color: #ffffff">   type (file_desc_T),   intent(inout) :: nc_id      ! indentifier for netcdf file</a>
+   904) <a name="l904" style="background-color: #ffffff"></a>
+   905) <a name="l905" style="background-color: #ffffff">   ! Local variables</a>
+   906) <a name="l906" style="background-color: #ffffff">   integer :: i</a>
+   907) <a name="l907" style="background-color: #ffffff">   integer :: istat1, istat2, istat3     ! status flags</a>
+   908) <a name="l908" style="background-color: #ffffff">   integer :: vid_real, vid_im           ! variable ids</a>
+   909) <a name="l909" style="background-color: #ffffff">   real(r8), pointer :: ref_real(:), ref_im(:)  ! tmp storage for components of complex index</a>
+   910) <a name="l910" style="background-color: #ffffff">   character(len=*), parameter :: subname = 'refindex_aer_init'</a>
+   911) <a name="l911" style="background-color: #ffffff">   !------------------------------------------------------------------------------------</a>
+   912) <a name="l912" style="background-color: #ffffff"></a>
+   913) <a name="l913" style="background-color: #ffffff">   ! assume that the dimensions lw_band and sw_band have already been checked</a>
+   914) <a name="l914" style="background-color: #ffffff">   ! by the calling subroutine</a>
+   915) <a name="l915" style="background-color: #ffffff"></a>
+   916) <a name="l916" style="background-color: #ffffff">   ! Check that the variables are present before allocating storage and reading.</a>
+   917) <a name="l917" style="background-color: #ffffff">   ! Since we're setting complex data values, both the real and imaginary parts must</a>
+   918) <a name="l918" style="background-color: #ffffff">   ! be present or neither will be read.</a>
+   919) <a name="l919" style="background-color: #ffffff"></a>
+   920) <a name="l920" style="background-color: #ffffff">   ! set PIO to return control to the caller when variable not found</a>
+   921) <a name="l921" style="background-color: #ffffff">   call pio_seterrorhandling(nc_id, PIO_BCAST_ERROR)</a>
+   922) <a name="l922" style="background-color: #ffffff"></a>
+   923) <a name="l923" style="background-color: #ffffff">   istat1 = pio_inq_varid(nc_id, 'refindex_real_aer_sw', vid_real)</a>
+   924) <a name="l924" style="background-color: #ffffff">   istat2 = pio_inq_varid(nc_id, 'refindex_im_aer_sw',   vid_im)</a>
+   925) <a name="l925" style="background-color: #ffffff"></a>
+   926) <a name="l926" style="background-color: #ffffff">   if (istat1 == PIO_NOERR  .and. istat2 == PIO_NOERR) then</a>
+   927) <a name="l927" style="background-color: #ffffff"></a>
+   928) <a name="l928" style="background-color: #ffffff">      allocate(ref_real(nswbands), ref_im(nswbands))</a>
+   929) <a name="l929" style="background-color: #ffffff"></a>
+   930) <a name="l930" style="background-color: #ffffff">      istat3 = pio_get_var(nc_id, vid_real, ref_real)</a>
+   931) <a name="l931" style="background-color: #ffffff">      if (istat3 /= PIO_NOERR) then</a>
+   932) <a name="l932" style="background-color: #ffffff">         call </a><a style="background-color: #ffff99">endrun(subname//': ERROR reading refindex_real_aer_sw')</a>
+   933) <a name="l933" style="background-color: #ffff99">      end if</a>
+   934) <a name="l934" style="background-color: #ffff99"></a>
+   935) <a name="l935" style="background-color: #ffffff">      istat3 = pio_get_var(nc_id, vid_im, ref_im)</a>
+   936) <a name="l936" style="background-color: #ffffff">      if (istat3 /= PIO_NOERR) then</a>
+   937) <a name="l937" style="background-color: #ffffff">         call </a><a style="background-color: #ffff99">endrun(subname//': ERROR reading refindex_im_aer_sw')</a>
+   938) <a name="l938" style="background-color: #ffff99">      end if</a>
+   939) <a name="l939" style="background-color: #ffff99"></a>
+   940) <a name="l940" style="background-color: #ffff99">      ! successfully read refindex data -- set complex values in physprop object</a>
+   941) <a name="l941" style="background-color: #ffffff">      allocate(phys_prop%refindex_aer_sw(nswbands))</a>
+   942) <a name="l942" style="background-color: #ffffff">      do i = 1, nswbands</a>
+   943) <a name="l943" style="background-color: #ffffff">         phys_prop%refindex_aer_sw(i) = cmplx(ref_real(i), abs(ref_im(i)),&amp;</a>
+   944) <a name="l944" style="background-color: #ffffff">              kind=r8)</a>
+   945) <a name="l945" style="background-color: #ffffff">      end do</a>
+   946) <a name="l946" style="background-color: #ffffff"></a>
+   947) <a name="l947" style="background-color: #ffffff">      deallocate(ref_real, ref_im)</a>
+   948) <a name="l948" style="background-color: #ffffff"></a>
+   949) <a name="l949" style="background-color: #ffffff">   end if</a>
+   950) <a name="l950" style="background-color: #ffffff"></a>
+   951) <a name="l951" style="background-color: #ffffff">   istat1 = pio_inq_varid(nc_id, 'refindex_real_aer_lw', vid_real)</a>
+   952) <a name="l952" style="background-color: #ffffff">   istat2 = pio_inq_varid(nc_id, 'refindex_im_aer_lw',   vid_im)</a>
+   953) <a name="l953" style="background-color: #ffffff"></a>
+   954) <a name="l954" style="background-color: #ffffff">   if (istat1 == PIO_NOERR  .and. istat2 == PIO_NOERR) then</a>
+   955) <a name="l955" style="background-color: #ffffff"></a>
+   956) <a name="l956" style="background-color: #ffffff">      allocate(ref_real(nlwbands), ref_im(nlwbands))</a>
+   957) <a name="l957" style="background-color: #ffffff"></a>
+   958) <a name="l958" style="background-color: #ffffff">      istat3 = pio_get_var(nc_id, vid_real, ref_real)</a>
+   959) <a name="l959" style="background-color: #ffffff">      if (istat3 /= PIO_NOERR) then</a>
+   960) <a name="l960" style="background-color: #ffffff">         call </a><a style="background-color: #ffff99">endrun(subname//': ERROR reading refindex_real_aer_lw')</a>
+   961) <a name="l961" style="background-color: #ffff99">      end if</a>
+   962) <a name="l962" style="background-color: #ffff99"></a>
+   963) <a name="l963" style="background-color: #ffffff">      istat3 = pio_get_var(nc_id, vid_im, ref_im)</a>
+   964) <a name="l964" style="background-color: #ffffff">      if (istat3 /= PIO_NOERR) then</a>
+   965) <a name="l965" style="background-color: #ffffff">         call </a><a style="background-color: #ffff99">endrun(subname//': ERROR reading refindex_im_aer_lw')</a>
+   966) <a name="l966" style="background-color: #ffff99">      end if</a>
+   967) <a name="l967" style="background-color: #ffff99"></a>
+   968) <a name="l968" style="background-color: #ffff99">      ! successfully read refindex data -- set complex value in physprop object</a>
+   969) <a name="l969" style="background-color: #ffffff">      allocate(phys_prop%refindex_aer_lw(nlwbands))</a>
+   970) <a name="l970" style="background-color: #ffffff">      do i = 1, nlwbands</a>
+   971) <a name="l971" style="background-color: #ffffff">         phys_prop%refindex_aer_lw(i) = cmplx(ref_real(i), abs(ref_im(i)),&amp;</a>
+   972) <a name="l972" style="background-color: #ffffff">              kind=r8)</a>
+   973) <a name="l973" style="background-color: #ffffff">      end do</a>
+   974) <a name="l974" style="background-color: #ffffff"></a>
+   975) <a name="l975" style="background-color: #ffffff">      deallocate(ref_real, ref_im)</a>
+   976) <a name="l976" style="background-color: #ffffff"></a>
+   977) <a name="l977" style="background-color: #ffffff">   end if</a>
+   978) <a name="l978" style="background-color: #ffffff"></a>
+   979) <a name="l979" style="background-color: #ffffff">   ! reset PIO to handle errors internally</a>
+   980) <a name="l980" style="background-color: #ffffff">   call pio_seterrorhandling(nc_id, PIO_INTERNAL_ERROR)</a>
+   981) <a name="l981" style="background-color: #ffffff"></a>
+   982) <a name="l982" style="background-color: #ffffff">end subroutine refindex_aer_init</a>
+   983) <a name="l983" style="background-color: #ffffff"></a>
+   984) <a name="l984" style="background-color: #ffffff">!================================================================================================</a>
+   985) <a name="l985" style="background-color: #ffffff"></a>
+   986) <a name="l986" style="background-color: #ffffff">subroutine modal_optics_init(props, ncid)</a>
+   987) <a name="l987" style="background-color: #ffffff"></a>
+   988) <a name="l988" style="background-color: #ffffff">!  Read optics data for modal aerosols</a>
+   989) <a name="l989" style="background-color: #ffffff"></a>
+   990) <a name="l990" style="background-color: #ffffff">   type (physprop_type), intent(inout) :: props   ! storage for file data</a>
+   991) <a name="l991" style="background-color: #ffffff">   type (file_desc_T),   intent(inout) :: ncid    ! indentifier for netcdf file</a>
+   992) <a name="l992" style="background-color: #ffffff"></a>
+   993) <a name="l993" style="background-color: #ffffff">   ! Local variables</a>
+   994) <a name="l994" style="background-color: #ffffff">   integer :: ierr</a>
+   995) <a name="l995" style="background-color: #ffffff">   integer :: did</a>
+   996) <a name="l996" style="background-color: #ffffff">   integer :: ival</a>
+   997) <a name="l997" style="background-color: #ffffff">   type(var_desc_t) :: vid</a>
+   998) <a name="l998" style="background-color: #ffffff">   real(r8), pointer :: rval(:,:,:,:,:) ! temp array used to eliminate a singleton dimension</a>
+   999) <a name="l999" style="background-color: #ffffff"></a>
+  1000) <a name="l1000" style="background-color: #ffffff">   character(len=*), parameter :: subname = 'modal_optics_init'</a>
+  1001) <a name="l1001" style="background-color: #ffffff">   !------------------------------------------------------------------------------------</a>
+  1002) <a name="l1002" style="background-color: #ffffff"></a>
+  1003) <a name="l1003" style="background-color: #ffffff">   ! Check dimensions for number of lw and sw bands</a>
+  1004) <a name="l1004" style="background-color: #ffffff"></a>
+  1005) <a name="l1005" style="background-color: #ffffff">   ierr = pio_inq_dimid(ncid, 'lw_band', did)</a>
+  1006) <a name="l1006" style="background-color: #ffffff">   ierr = pio_inq_dimlen(ncid, did, ival)</a>
+  1007) <a name="l1007" style="background-color: #ffffff">   if (ival .ne. nlwbands) </a><a style="background-color: #ffff99">call endrun(subname//':'//props%sourcefile// &amp;</a>
+  1008) <a name="l1008" style="background-color: #ffff99">        ' has the wrong number of lw bands')</a>
+  1009) <a name="l1009" style="background-color: #ffff99"></a>
+  1010) <a name="l1010" style="background-color: #ffffff">   ierr = pio_inq_dimid(ncid, 'sw_band', did)</a>
+  1011) <a name="l1011" style="background-color: #ffffff">   ierr = pio_inq_dimlen(ncid, did, ival)</a>
+  1012) <a name="l1012" style="background-color: #ffffff">   if (ival .ne. nswbands) </a><a style="background-color: #ffff99">call endrun(subname//':'//props%sourcefile// &amp;</a>
+  1013) <a name="l1013" style="background-color: #ffff99">        ' has the wrong number of sw bands')</a>
+  1014) <a name="l1014" style="background-color: #ffff99"></a>
+  1015) <a name="l1015" style="background-color: #ffff99">   ! Get other dimensions</a>
+  1016) <a name="l1016" style="background-color: #ffffff">   ierr = pio_inq_dimid(ncid, 'coef_number', did)</a>
+  1017) <a name="l1017" style="background-color: #ffffff">   ierr = pio_inq_dimlen(ncid, did, props%ncoef)</a>
+  1018) <a name="l1018" style="background-color: #ffffff"></a>
+  1019) <a name="l1019" style="background-color: #ffffff">   ierr = pio_inq_dimid(ncid, 'refindex_real', did)</a>
+  1020) <a name="l1020" style="background-color: #ffffff">   ierr = pio_inq_dimlen(ncid, did, props%prefr)</a>
+  1021) <a name="l1021" style="background-color: #ffffff"></a>
+  1022) <a name="l1022" style="background-color: #ffffff">   ierr = pio_inq_dimid(ncid, 'refindex_im', did)</a>
+  1023) <a name="l1023" style="background-color: #ffffff">   ierr = pio_inq_dimlen(ncid, did, props%prefi)</a>
+  1024) <a name="l1024" style="background-color: #ffffff"></a>
+  1025) <a name="l1025" style="background-color: #ffffff">   ! Allocate arrays</a>
+  1026) <a name="l1026" style="background-color: #fafad2">   allocate( &amp;</a>
+  1027) <a name="l1027" style="background-color: #fafad2">      props%extpsw(props%ncoef,props%prefr,props%prefi,nswbands), &amp;</a>
+  1028) <a name="l1028" style="background-color: #fafad2">      props%abspsw(props%ncoef,props%prefr,props%prefi,nswbands), &amp;</a>
+  1029) <a name="l1029" style="background-color: #fafad2">      props%asmpsw(props%ncoef,props%prefr,props%prefi,nswbands), &amp;</a>
+  1030) <a name="l1030" style="background-color: #fafad2">      props%absplw(props%ncoef,props%prefr,props%prefi,nlwbands), &amp;</a>
+  1031) <a name="l1031" style="background-color: #fafad2">      props%refrtabsw(props%prefr,nswbands), &amp;</a>
+  1032) <a name="l1032" style="background-color: #fafad2">      props%refitabsw(props%prefi,nswbands), &amp;</a>
+  1033) <a name="l1033" style="background-color: #fafad2">      props%refrtablw(props%prefr,nlwbands), &amp;</a>
+  1034) <a name="l1034" style="background-color: #fafad2">      props%refitablw(props%prefi,nlwbands)  )</a>
+  1035) <a name="l1035" style="background-color: #fafad2"></a>
+  1036) <a name="l1036" style="background-color: #fafad2"></a>
+  1037) <a name="l1037" style="background-color: #fafad2">   ! allocate temp to remove the mode dimension from the sw variables</a>
+  1038) <a name="l1038" style="background-color: #fafad2">   allocate(rval(props%ncoef,props%prefr,props%prefi,1,nswbands))</a>
+  1039) <a name="l1039" style="background-color: #fafad2"></a>
+  1040) <a name="l1040" style="background-color: #ffffff">   ierr = pio_inq_varid(ncid, 'extpsw', vid)</a>
+  1041) <a name="l1041" style="background-color: #ffffff">   ierr = pio_get_var(ncid, vid, rval)</a>
+  1042) <a name="l1042" style="background-color: #ffffff">   props%extpsw = rval(:,:,:,1,:)</a>
+  1043) <a name="l1043" style="background-color: #ffffff"></a>
+  1044) <a name="l1044" style="background-color: #ffffff">   ierr = pio_inq_varid(ncid, 'abspsw', vid)</a>
+  1045) <a name="l1045" style="background-color: #ffffff">   ierr = pio_get_var(ncid, vid, rval)</a>
+  1046) <a name="l1046" style="background-color: #ffffff">   props%abspsw = rval(:,:,:,1,:)</a>
+  1047) <a name="l1047" style="background-color: #ffffff"></a>
+  1048) <a name="l1048" style="background-color: #ffffff">   ierr = pio_inq_varid(ncid, 'asmpsw', vid)</a>
+  1049) <a name="l1049" style="background-color: #ffffff">   ierr = pio_get_var(ncid, vid, rval)</a>
+  1050) <a name="l1050" style="background-color: #ffffff">   props%asmpsw = rval(:,:,:,1,:)</a>
+  1051) <a name="l1051" style="background-color: #ffffff"></a>
+  1052) <a name="l1052" style="background-color: #ffffff">   deallocate(rval)</a>
+  1053) <a name="l1053" style="background-color: #ffffff"></a>
+  1054) <a name="l1054" style="background-color: #ffffff">   ! allocate temp to remove the mode dimension from the lw variables</a>
+  1055) <a name="l1055" style="background-color: #fafad2">   allocate(rval(props%ncoef,props%prefr,props%prefi,1,nlwbands))</a>
+  1056) <a name="l1056" style="background-color: #fafad2"></a>
+  1057) <a name="l1057" style="background-color: #ffffff">   ierr = pio_inq_varid(ncid, 'absplw', vid)</a>
+  1058) <a name="l1058" style="background-color: #ffffff">   ierr = pio_get_var(ncid, vid, rval)</a>
+  1059) <a name="l1059" style="background-color: #ffffff">   props%absplw = rval(:,:,:,1,:)</a>
+  1060) <a name="l1060" style="background-color: #ffffff"></a>
+  1061) <a name="l1061" style="background-color: #ffffff">   deallocate(rval)</a>
+  1062) <a name="l1062" style="background-color: #ffffff"></a>
+  1063) <a name="l1063" style="background-color: #ffffff">   ierr = pio_inq_varid(ncid, 'refindex_real_sw', vid)</a>
+  1064) <a name="l1064" style="background-color: #ffffff">   ierr = pio_get_var(ncid, vid, props%refrtabsw)</a>
+  1065) <a name="l1065" style="background-color: #ffffff"></a>
+  1066) <a name="l1066" style="background-color: #ffffff">   ierr = pio_inq_varid(ncid, 'refindex_im_sw', vid)</a>
+  1067) <a name="l1067" style="background-color: #ffffff">   ierr = pio_get_var(ncid, vid, props%refitabsw)</a>
+  1068) <a name="l1068" style="background-color: #ffffff"></a>
+  1069) <a name="l1069" style="background-color: #ffffff">   ierr = pio_inq_varid(ncid, 'refindex_real_lw', vid)</a>
+  1070) <a name="l1070" style="background-color: #ffffff">   ierr = pio_get_var(ncid, vid, props%refrtablw)</a>
+  1071) <a name="l1071" style="background-color: #ffffff"></a>
+  1072) <a name="l1072" style="background-color: #ffffff">   ierr = pio_inq_varid(ncid, 'refindex_im_lw', vid)</a>
+  1073) <a name="l1073" style="background-color: #ffffff">   ierr = pio_get_var(ncid, vid, props%refitablw)</a>
+  1074) <a name="l1074" style="background-color: #ffffff"></a>
+  1075) <a name="l1075" style="background-color: #ffffff">   ierr = pio_inq_varid(ncid, 'sigmag', vid)</a>
+  1076) <a name="l1076" style="background-color: #ffffff">   ierr = pio_get_var(ncid, vid, props%sigmag)</a>
+  1077) <a name="l1077" style="background-color: #ffffff"></a>
+  1078) <a name="l1078" style="background-color: #ffffff">   ierr = pio_inq_varid(ncid, 'dgnum', vid)</a>
+  1079) <a name="l1079" style="background-color: #ffffff">   ierr = pio_get_var(ncid, vid, props%dgnum)</a>
+  1080) <a name="l1080" style="background-color: #ffffff"></a>
+  1081) <a name="l1081" style="background-color: #ffffff">   ierr = pio_inq_varid(ncid, 'dgnumlo', vid)</a>
+  1082) <a name="l1082" style="background-color: #ffffff">   ierr = pio_get_var(ncid, vid, props%dgnumlo)</a>
+  1083) <a name="l1083" style="background-color: #ffffff"></a>
+  1084) <a name="l1084" style="background-color: #ffffff">   ierr = pio_inq_varid(ncid, 'dgnumhi', vid)</a>
+  1085) <a name="l1085" style="background-color: #ffffff">   ierr = pio_get_var(ncid, vid, props%dgnumhi)</a>
+  1086) <a name="l1086" style="background-color: #ffffff"></a>
+  1087) <a name="l1087" style="background-color: #ffffff">   ierr = pio_inq_varid(ncid, 'rhcrystal', vid)</a>
+  1088) <a name="l1088" style="background-color: #ffffff">   ierr = pio_get_var(ncid, vid, props%rhcrystal)</a>
+  1089) <a name="l1089" style="background-color: #ffffff"></a>
+  1090) <a name="l1090" style="background-color: #ffffff">   ierr = pio_inq_varid(ncid, 'rhdeliques', vid)</a>
+  1091) <a name="l1091" style="background-color: #ffffff">   ierr = pio_get_var(ncid, vid, props%rhdeliques)</a>
+  1092) <a name="l1092" style="background-color: #ffffff"></a>
+  1093) <a name="l1093" style="background-color: #ffffff">end subroutine modal_optics_init</a>
+  1094) <a name="l1094" style="background-color: #ffffff"></a>
+  1095) <a name="l1095" style="background-color: #ffffff">!================================================================================================</a>
+  1096) <a name="l1096" style="background-color: #ffffff"></a>
+  1097) <a name="l1097" style="background-color: #ffffff">subroutine bulk_props_init(physprop, nc_id)</a>
+  1098) <a name="l1098" style="background-color: #ffffff"></a>
+  1099) <a name="l1099" style="background-color: #ffffff">!  Read props for bulk aerosols</a>
+  1100) <a name="l1100" style="background-color: #ffffff"></a>
+  1101) <a name="l1101" style="background-color: #ffffff">   type (physprop_type), intent(inout) :: physprop ! storage for file data</a>
+  1102) <a name="l1102" style="background-color: #ffffff">   type (file_desc_T),   intent(inout) :: nc_id    ! indentifier for netcdf file</a>
+  1103) <a name="l1103" style="background-color: #ffffff"></a>
+  1104) <a name="l1104" style="background-color: #ffffff">   ! Local variables</a>
+  1105) <a name="l1105" style="background-color: #ffffff">   integer :: ierr</a>
+  1106) <a name="l1106" style="background-color: #ffffff"></a>
+  1107) <a name="l1107" style="background-color: #ffffff">   type(var_desc_T) :: vid</a>
+  1108) <a name="l1108" style="background-color: #ffffff"></a>
+  1109) <a name="l1109" style="background-color: #ffffff">   logical :: debug = .true.</a>
+  1110) <a name="l1110" style="background-color: #ffffff"></a>
+  1111) <a name="l1111" style="background-color: #ffffff">   character(len=*), parameter :: subname = 'bulk_props_init'</a>
+  1112) <a name="l1112" style="background-color: #ffffff">   !------------------------------------------------------------------------------------</a>
+  1113) <a name="l1113" style="background-color: #ffffff"></a>
+  1114) <a name="l1114" style="background-color: #ffffff">   ! read microphys</a>
+  1115) <a name="l1115" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'name', vid)</a>
+  1116) <a name="l1116" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, vid, physprop%aername)</a>
+  1117) <a name="l1117" style="background-color: #ffffff"></a>
+  1118) <a name="l1118" style="background-color: #ffffff">   ! use GLC function to remove trailing nulls and blanks.</a>
+  1119) <a name="l1119" style="background-color: #ffffff">   ! physprop%aername = aername_str(:GLC(aername_str))</a>
+  1120) <a name="l1120" style="background-color: #ffffff"></a>
+  1121) <a name="l1121" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'density', vid)</a>
+  1122) <a name="l1122" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, vid, physprop%density_aer)</a>
+  1123) <a name="l1123" style="background-color: #ffffff"></a>
+  1124) <a name="l1124" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'sigma_logr', vid)</a>
+  1125) <a name="l1125" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, vid, physprop%dispersion_aer)</a>
+  1126) <a name="l1126" style="background-color: #ffffff"></a>
+  1127) <a name="l1127" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'dryrad', vid)</a>
+  1128) <a name="l1128" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, vid, physprop%dryrad_aer)</a>
+  1129) <a name="l1129" style="background-color: #ffffff">         </a>
+  1130) <a name="l1130" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'hygroscopicity', vid)</a>
+  1131) <a name="l1131" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, vid, physprop%hygro_aer)</a>
+  1132) <a name="l1132" style="background-color: #ffffff"></a>
+  1133) <a name="l1133" style="background-color: #ffffff">   ierr = pio_inq_varid(nc_id, 'num_to_mass_ratio', vid)</a>
+  1134) <a name="l1134" style="background-color: #ffffff">   ierr = pio_get_var(nc_id, vid, physprop%num_to_mass_aer)</a>
+  1135) <a name="l1135" style="background-color: #ffffff">      </a>
+  1136) <a name="l1136" style="background-color: #ffffff">   ! Output select data to log file</a>
+  1137) <a name="l1137" style="background-color: #ffffff">   if (debug .and. masterproc) then</a>
+  1138) <a name="l1138" style="background-color: #ffffff">      if (trim(physprop%aername) == 'SULFATE') then</a>
+  1139) <a name="l1139" style="background-color: #ffffff">         write(iulog, '(2x, a)') '_______ hygroscopic growth in visible band _______'</a>
+  1140) <a name="l1140" style="background-color: #ffffff">         call </a><a style="background-color: #fafad2">aer_optics_log_rh('SO4', physprop%sw_hygro_ext(:,idx_sw_diag), &amp;</a>
+  1141) <a name="l1141" style="background-color: #fafad2">            physprop%sw_hygro_ssa(:,idx_sw_diag), physprop%sw_hygro_asm(:,idx_sw_diag))</a>
+  1142) <a name="l1142" style="background-color: #fafad2">      end if</a>
+  1143) <a name="l1143" style="background-color: #ffffff">      write(iulog, *) subname//': finished for ', trim(physprop%aername)</a>
+  1144) <a name="l1144" style="background-color: #ffffff">   end if</a>
+  1145) <a name="l1145" style="background-color: #ffffff"></a>
+  1146) <a name="l1146" style="background-color: #ffffff">end subroutine bulk_props_init</a>
+  1147) <a name="l1147" style="background-color: #ffffff"></a>
+  1148) <a name="l1148" style="background-color: #ffffff">!================================================================================================</a>
+  1149) <a name="l1149" style="background-color: #ffffff"></a>
+  1150) <a name="l1150" style="background-color: #ffffff">function exp_interpol(x, f, y) result(g)</a>
+  1151) <a name="l1151" style="background-color: #ffffff">! Purpose:</a>
+  1152) <a name="l1152" style="background-color: #ffffff">!   interpolates f(x) to point y</a>
+  1153) <a name="l1153" style="background-color: #ffffff">!   assuming f(x) = f(x0) exp a(x - x0)</a>
+  1154) <a name="l1154" style="background-color: #ffffff">!   where a = ( ln f(x1) - ln f(x0) ) / (x1 - x0)</a>
+  1155) <a name="l1155" style="background-color: #ffffff">!   x0 &lt;= x &lt;= x1</a>
+  1156) <a name="l1156" style="background-color: #ffffff">!   assumes x is monotonically increasing</a>
+  1157) <a name="l1157" style="background-color: #ffffff">! Author: D. Fillmore</a>
+  1158) <a name="l1158" style="background-color: #ffffff"></a>
+  1159) <a name="l1159" style="background-color: #ffffff">   implicit none</a>
+  1160) <a name="l1160" style="background-color: #ffffff"></a>
+  1161) <a name="l1161" style="background-color: #ffffff">   real(r8), intent(in), dimension(:) :: x  ! grid points</a>
+  1162) <a name="l1162" style="background-color: #ffffff">   real(r8), intent(in), dimension(:) :: f  ! grid function values</a>
+  1163) <a name="l1163" style="background-color: #ffffff">   real(r8), intent(in) :: y                ! interpolation point</a>
+  1164) <a name="l1164" style="background-color: #ffffff">   real(r8) :: g                            ! interpolated function value</a>
+  1165) <a name="l1165" style="background-color: #ffffff"></a>
+  1166) <a name="l1166" style="background-color: #ffffff">   integer :: k  ! interpolation point index</a>
+  1167) <a name="l1167" style="background-color: #ffffff">   integer :: n  ! length of x</a>
+  1168) <a name="l1168" style="background-color: #ffffff">   real(r8) :: a</a>
+  1169) <a name="l1169" style="background-color: #ffffff"></a>
+  1170) <a name="l1170" style="background-color: #ffffff">   n = size(x)</a>
+  1171) <a name="l1171" style="background-color: #ffffff"></a>
+  1172) <a name="l1172" style="background-color: #ffffff">   ! find k such that x(k) &lt; y =&lt; x(k+1)</a>
+  1173) <a name="l1173" style="background-color: #ffffff">   ! set k = 1 if y &lt;= x(1)  and  k = n-1 if y &gt; x(n)</a>
+  1174) <a name="l1174" style="background-color: #ffffff"></a>
+  1175) <a name="l1175" style="background-color: #ffffff">   if (y &lt;= x(1)) then</a>
+  1176) <a name="l1176" style="background-color: #ffffff">     k = 1</a>
+  1177) <a name="l1177" style="background-color: #ffffff">   else if (y &gt;= x(n)) then</a>
+  1178) <a name="l1178" style="background-color: #ffffff">     k = n - 1</a>
+  1179) <a name="l1179" style="background-color: #ffffff">   else</a>
+  1180) <a name="l1180" style="background-color: #ffffff">     k = 1</a>
+  1181) <a name="l1181" style="background-color: #ffffff">     do while (y &gt; x(k+1) .and. k &lt; n)</a>
+  1182) <a name="l1182" style="background-color: #ffffff">       k = k + 1</a>
+  1183) <a name="l1183" style="background-color: #ffffff">     end do</a>
+  1184) <a name="l1184" style="background-color: #ffffff">   end if</a>
+  1185) <a name="l1185" style="background-color: #ffffff"></a>
+  1186) <a name="l1186" style="background-color: #ffffff">   ! interpolate</a>
+  1187) <a name="l1187" style="background-color: #ffffff">   a = (  log( f(k+1) / f(k) )  ) / ( x(k+1) - x(k) )</a>
+  1188) <a name="l1188" style="background-color: #ffffff">   g = f(k) * exp( a * (y - x(k)) )</a>
+  1189) <a name="l1189" style="background-color: #ffffff">   return</a>
+  1190) <a name="l1190" style="background-color: #ffffff">end function exp_interpol</a>
+  1191) <a name="l1191" style="background-color: #ffffff"></a>
+  1192) <a name="l1192" style="background-color: #ffffff">!================================================================================================</a>
+  1193) <a name="l1193" style="background-color: #ffffff"></a>
+  1194) <a name="l1194" style="background-color: #ffffff">function lin_interpol(x, f, y) result(g)</a>
+  1195) <a name="l1195" style="background-color: #ffffff">! Purpose:</a>
+  1196) <a name="l1196" style="background-color: #ffffff">!   interpolates f(x) to point y</a>
+  1197) <a name="l1197" style="background-color: #ffffff">!   assuming f(x) = f(x0) + a * (x - x0)</a>
+  1198) <a name="l1198" style="background-color: #ffffff">!   where a = ( f(x1) - f(x0) ) / (x1 - x0)</a>
+  1199) <a name="l1199" style="background-color: #ffffff">!   x0 &lt;= x &lt;= x1</a>
+  1200) <a name="l1200" style="background-color: #ffffff">!   assumes x is monotonically increasing</a>
+  1201) <a name="l1201" style="background-color: #ffffff">! Author: D. Fillmore</a>
+  1202) <a name="l1202" style="background-color: #ffffff"></a>
+  1203) <a name="l1203" style="background-color: #ffffff">   implicit none</a>
+  1204) <a name="l1204" style="background-color: #ffffff"></a>
+  1205) <a name="l1205" style="background-color: #ffffff">   real(r8), intent(in), dimension(:) :: x  ! grid points</a>
+  1206) <a name="l1206" style="background-color: #ffffff">   real(r8), intent(in), dimension(:) :: f  ! grid function values</a>
+  1207) <a name="l1207" style="background-color: #ffffff">   real(r8), intent(in) :: y                ! interpolation point</a>
+  1208) <a name="l1208" style="background-color: #ffffff">   real(r8) :: g                            ! interpolated function value</a>
+  1209) <a name="l1209" style="background-color: #ffffff"></a>
+  1210) <a name="l1210" style="background-color: #ffffff">   integer :: k  ! interpolation point index</a>
+  1211) <a name="l1211" style="background-color: #ffffff">   integer :: n  ! length of x</a>
+  1212) <a name="l1212" style="background-color: #ffffff">   real(r8) :: a</a>
+  1213) <a name="l1213" style="background-color: #ffffff"></a>
+  1214) <a name="l1214" style="background-color: #ffffff">   n = size(x)</a>
+  1215) <a name="l1215" style="background-color: #ffffff"></a>
+  1216) <a name="l1216" style="background-color: #ffffff">   ! find k such that x(k) &lt; y =&lt; x(k+1)</a>
+  1217) <a name="l1217" style="background-color: #ffffff">   ! set k = 1 if y &lt;= x(1)  and  k = n-1 if y &gt; x(n)</a>
+  1218) <a name="l1218" style="background-color: #ffffff"></a>
+  1219) <a name="l1219" style="background-color: #ffffff">   if (y &lt;= x(1)) then</a>
+  1220) <a name="l1220" style="background-color: #ffffff">     k = 1</a>
+  1221) <a name="l1221" style="background-color: #ffffff">   else if (y &gt;= x(n)) then</a>
+  1222) <a name="l1222" style="background-color: #ffffff">     k = n - 1</a>
+  1223) <a name="l1223" style="background-color: #ffffff">   else</a>
+  1224) <a name="l1224" style="background-color: #ffffff">     k = 1</a>
+  1225) <a name="l1225" style="background-color: #ffffff">     do while (y &gt; x(k+1) .and. k &lt; n)</a>
+  1226) <a name="l1226" style="background-color: #ffffff">       k = k + 1</a>
+  1227) <a name="l1227" style="background-color: #ffffff">     end do</a>
+  1228) <a name="l1228" style="background-color: #ffffff">   end if</a>
+  1229) <a name="l1229" style="background-color: #ffffff"></a>
+  1230) <a name="l1230" style="background-color: #ffffff">   ! interpolate</a>
+  1231) <a name="l1231" style="background-color: #ffffff">   a = (  f(k+1) - f(k) ) / ( x(k+1) - x(k) )</a>
+  1232) <a name="l1232" style="background-color: #ffffff">   g = f(k) + a * (y - x(k))</a>
+  1233) <a name="l1233" style="background-color: #ffffff">   return</a>
+  1234) <a name="l1234" style="background-color: #ffffff">end function lin_interpol</a>
+  1235) <a name="l1235" style="background-color: #ffffff"></a>
+  1236) <a name="l1236" style="background-color: #ffffff">!================================================================================================</a>
+  1237) <a name="l1237" style="background-color: #ffffff"></a>
+  1238) <a name="l1238" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">aer_optics_log(name, ext, ssa, asm)</a>
+  1239) <a name="l1239" style="background-color: #ffcccc"></a>
+  1240) <a name="l1240" style="background-color: #ffcccc">   ! Purpose:</a>
+  1241) <a name="l1241" style="background-color: #ffcccc">   !   write aerosol optical constants to log file</a>
+  1242) <a name="l1242" style="background-color: #ffcccc"></a>
+  1243) <a name="l1243" style="background-color: #ffcccc">   ! Author: D. Fillmore</a>
+  1244) <a name="l1244" style="background-color: #ffcccc"></a>
+  1245) <a name="l1245" style="background-color: #ffcccc">   character(len=*), intent(in) :: name</a>
+  1246) <a name="l1246" style="background-color: #ffcccc">   real(r8), intent(in) :: ext(:)</a>
+  1247) <a name="l1247" style="background-color: #ffcccc">   real(r8), intent(in) :: ssa(:)</a>
+  1248) <a name="l1248" style="background-color: #ffcccc">   real(r8), intent(in) :: asm(:)</a>
+  1249) <a name="l1249" style="background-color: #ffcccc"></a>
+  1250) <a name="l1250" style="background-color: #ffcccc">   integer :: kbnd, nbnd</a>
+  1251) <a name="l1251" style="background-color: #ffcccc">   !------------------------------------------------------------------------------------</a>
+  1252) <a name="l1252" style="background-color: #ffcccc"></a>
+  1253) <a name="l1253" style="background-color: #ffcccc">   nbnd = ubound(ext, 1)</a>
+  1254) <a name="l1254" style="background-color: #ffcccc"></a>
+  1255) <a name="l1255" style="background-color: #ffcccc">   write(iulog, '(2x, a)') name</a>
+  1256) <a name="l1256" style="background-color: #ffcccc">   write(iulog, '(2x, a, 4x, a, 4x, a, 4x, a)') 'SW band', 'ext (m^2 kg^-1)', ' ssa', ' asm'</a>
+  1257) <a name="l1257" style="background-color: #ffcccc">   do kbnd = 1, nbnd</a>
+  1258) <a name="l1258" style="background-color: #ffcccc">      write(iulog, '(2x, i7, 4x, f13.2, 4x, f4.2, 4x, f4.2)') kbnd, ext(kbnd), ssa(kbnd), asm(kbnd)</a>
+  1259) <a name="l1259" style="background-color: #ffcccc">   end do</a>
+  1260) <a name="l1260" style="background-color: #ffcccc"></a>
+  1261) <a name="l1261" style="background-color: #ffcccc">end subroutine aer_optics_log</a>
+  1262) <a name="l1262" style="background-color: #ffffff"></a>
+  1263) <a name="l1263" style="background-color: #ffffff">!================================================================================================</a>
+  1264) <a name="l1264" style="background-color: #ffffff"></a>
+  1265) <a name="l1265" style="background-color: #ffffff"></a>
+  1266) <a name="l1266" style="background-color: #ffffff">subroutine aer_optics_log_rh(name, ext, ssa, asm)</a>
+  1267) <a name="l1267" style="background-color: #ffffff"></a>
+  1268) <a name="l1268" style="background-color: #ffffff">   ! Purpose:</a>
+  1269) <a name="l1269" style="background-color: #ffffff">   !   write out aerosol optical properties</a>
+  1270) <a name="l1270" style="background-color: #ffffff">   !   for a set of test rh values</a>
+  1271) <a name="l1271" style="background-color: #ffffff">   !   to test hygroscopic growth interpolation</a>
+  1272) <a name="l1272" style="background-color: #ffffff"></a>
+  1273) <a name="l1273" style="background-color: #ffffff">   ! Author: D. Fillmore</a>
+  1274) <a name="l1274" style="background-color: #ffffff"></a>
+  1275) <a name="l1275" style="background-color: #ffffff">   character(len=*), intent(in) :: name</a>
+  1276) <a name="l1276" style="background-color: #ffffff">   real(r8), intent(in) :: ext(nrh)</a>
+  1277) <a name="l1277" style="background-color: #ffffff">   real(r8), intent(in) :: ssa(nrh)</a>
+  1278) <a name="l1278" style="background-color: #ffffff">   real(r8), intent(in) :: asm(nrh)</a>
+  1279) <a name="l1279" style="background-color: #ffffff"></a>
+  1280) <a name="l1280" style="background-color: #ffffff">   integer :: krh_test</a>
+  1281) <a name="l1281" style="background-color: #ffffff">   integer, parameter :: nrh_test = 36</a>
+  1282) <a name="l1282" style="background-color: #ffffff">   integer :: krh</a>
+  1283) <a name="l1283" style="background-color: #ffffff">   real(r8) :: rh</a>
+  1284) <a name="l1284" style="background-color: #ffffff">   real(r8) :: rh_test(nrh_test)</a>
+  1285) <a name="l1285" style="background-color: #ffffff">   real(r8) :: exti</a>
+  1286) <a name="l1286" style="background-color: #ffffff">   real(r8) :: ssai</a>
+  1287) <a name="l1287" style="background-color: #ffffff">   real(r8) :: asmi</a>
+  1288) <a name="l1288" style="background-color: #ffffff">   real(r8) :: wrh</a>
+  1289) <a name="l1289" style="background-color: #ffffff">   !------------------------------------------------------------------------------------</a>
+  1290) <a name="l1290" style="background-color: #ffffff"></a>
+  1291) <a name="l1291" style="background-color: #ffffff">   do krh_test = 1, nrh_test</a>
+  1292) <a name="l1292" style="background-color: #ffffff">      rh_test(krh_test) = sqrt(sqrt(sqrt(sqrt(((krh_test - 1.0_r8) / (nrh_test - 1))))))</a>
+  1293) <a name="l1293" style="background-color: #ffffff">   enddo</a>
+  1294) <a name="l1294" style="background-color: #ffffff">   write(iulog, '(2x, a)') name</a>
+  1295) <a name="l1295" style="background-color: #ffffff">   write(iulog, '(2x, a, 4x, a, 4x, a, 4x, a)') '   rh', 'ext (m^2 kg^-1)', '  ssa', '  asm'</a>
+  1296) <a name="l1296" style="background-color: #ffffff"></a>
+  1297) <a name="l1297" style="background-color: #ffffff">   ! loop through test rh values</a>
+  1298) <a name="l1298" style="background-color: #ffffff">   do krh_test = 1, nrh_test</a>
+  1299) <a name="l1299" style="background-color: #ffffff">      ! find corresponding rh index</a>
+  1300) <a name="l1300" style="background-color: #ffffff">      rh = rh_test(krh_test)</a>
+  1301) <a name="l1301" style="background-color: #ffffff">      krh = min(floor( (rh) * nrh ) + 1, nrh - 1)</a>
+  1302) <a name="l1302" style="background-color: #ffffff">      wrh = (rh) *nrh - krh</a>
+  1303) <a name="l1303" style="background-color: #ffffff">      exti = ext(krh + 1) * (wrh + 1) - ext(krh) * wrh</a>
+  1304) <a name="l1304" style="background-color: #ffffff">      ssai = ssa(krh + 1) * (wrh + 1) - ssa(krh) * wrh</a>
+  1305) <a name="l1305" style="background-color: #ffffff">      asmi = asm(krh + 1) * (wrh + 1) - asm(krh) * wrh</a>
+  1306) <a name="l1306" style="background-color: #ffffff">      write(iulog, '(2x, f5.3, 4x, f13.3, 4x, f5.3, 4x, f5.3)') rh_test(krh_test), exti, ssai, asmi</a>
+  1307) <a name="l1307" style="background-color: #ffffff">   end do</a>
+  1308) <a name="l1308" style="background-color: #ffffff"></a>
+  1309) <a name="l1309" style="background-color: #ffffff">end subroutine aer_optics_log_rh</a>
+  1310) <a name="l1310" style="background-color: #ffffff"></a>
+  1311) <a name="l1311" style="background-color: #ffffff"></a>
+  1312) <a name="l1312" style="background-color: #ffffff">!================================================================================================</a>
+  1313) <a name="l1313" style="background-color: #ffffff"></a>
+  1314) <a name="l1314" style="background-color: #ffffff">end module phys_prop</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

@@ -1,0 +1,1059 @@
+<html>
+<head>
+<title>Listing of shr_file_mod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;shr_file_mod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 50.00&#160;%func&#160;&#160;&#160;&#160; 11.42&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!===============================================================================</a>
+     2) <a name="l2" style="background-color: #ffffff">! SVN $Id: shr_file_mod.F90 43960 2013-02-14 00:35:31Z tcraig $</a>
+     3) <a name="l3" style="background-color: #ffffff">! SVN $URL: https://svn-ccsm-models.cgd.ucar.edu/csm_share/trunk_tags/share3_140626/shr/shr_file_mod.F90 $</a>
+     4) <a name="l4" style="background-color: #ffffff">!===============================================================================</a>
+     5) <a name="l5" style="background-color: #ffffff">!BOP ===========================================================================</a>
+     6) <a name="l6" style="background-color: #ffffff">!</a>
+     7) <a name="l7" style="background-color: #ffffff">! !MODULE: shr_file_mod.F90 --- Module to handle various file utilily functions.</a>
+     8) <a name="l8" style="background-color: #ffffff">!</a>
+     9) <a name="l9" style="background-color: #ffffff">! !DESCRIPTION:</a>
+    10) <a name="l10" style="background-color: #ffffff">!</a>
+    11) <a name="l11" style="background-color: #ffffff">! Miscilaneous methods to handle file and directory utilities as well as FORTRAN</a>
+    12) <a name="l12" style="background-color: #ffffff">! unit control. Also put/get local files into/from archival location</a>
+    13) <a name="l13" style="background-color: #ffffff">!</a>
+    14) <a name="l14" style="background-color: #ffffff">! File utilites used with CCSM Message passing:</a>
+    15) <a name="l15" style="background-color: #ffffff">!</a>
+    16) <a name="l16" style="background-color: #ffffff">! shr_file_stdio is the main example here, it changes the working directory, </a>
+    17) <a name="l17" style="background-color: #ffffff">!                changes stdin and stdout to a given filename.</a>
+    18) <a name="l18" style="background-color: #ffffff">!</a>
+    19) <a name="l19" style="background-color: #ffffff">! This is needed because some implementations of MPI with MPMD so that</a>
+    20) <a name="l20" style="background-color: #ffffff">! each executable can run in a different working directory and redirect</a>
+    21) <a name="l21" style="background-color: #ffffff">! output to different files.</a>
+    22) <a name="l22" style="background-color: #ffffff">!</a>
+    23) <a name="l23" style="background-color: #ffffff">! File name archival convention, eg.</a>
+    24) <a name="l24" style="background-color: #ffffff">!    call shr_file_put(rcode,&quot;foo&quot;,&quot;mss:/USER/foo&quot;,rtpd=3650)</a>
+    25) <a name="l25" style="background-color: #ffffff">! is extensible -- the existence of the option file name prefix, eg. &quot;mss:&quot;, </a>
+    26) <a name="l26" style="background-color: #ffffff">! and optional arguments, eg. rtpd-3650 can be used to access site-specific </a>
+    27) <a name="l27" style="background-color: #ffffff">! storage devices.  Based on CCM (atmosphere) getfile &amp; putfile routines, but</a>
+    28) <a name="l28" style="background-color: #ffffff">! intended to be a more extensible, shared code.</a>
+    29) <a name="l29" style="background-color: #ffffff">! </a>
+    30) <a name="l30" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    31) <a name="l31" style="background-color: #ffffff">!   2006-05-08 E. Kluzek, Add in shr_file_mod and getUnit, freeUnif methods.</a>
+    32) <a name="l32" style="background-color: #ffffff">!   2000-??-?? B. Kauffman, original version circa 2000</a>
+    33) <a name="l33" style="background-color: #ffffff">!</a>
+    34) <a name="l34" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------</a>
+    35) <a name="l35" style="background-color: #ffffff"></a>
+    36) <a name="l36" style="background-color: #ffffff">MODULE shr_file_mod</a>
+    37) <a name="l37" style="background-color: #ffffff"></a>
+    38) <a name="l38" style="background-color: #ffffff">! !USES:</a>
+    39) <a name="l39" style="background-color: #ffffff"></a>
+    40) <a name="l40" style="background-color: #ffffff">   use shr_kind_mod  ! defines kinds</a>
+    41) <a name="l41" style="background-color: #ffffff">   use shr_sys_mod   ! system calls</a>
+    42) <a name="l42" style="background-color: #ffffff">   use shr_log_mod, only: s_loglev  =&gt; shr_log_Level</a>
+    43) <a name="l43" style="background-color: #ffffff">   use shr_log_mod, only: s_logunit =&gt; shr_log_Unit</a>
+    44) <a name="l44" style="background-color: #ffffff">   </a>
+    45) <a name="l45" style="background-color: #ffffff">   IMPLICIT none</a>
+    46) <a name="l46" style="background-color: #ffffff"></a>
+    47) <a name="l47" style="background-color: #ffffff">   PRIVATE           ! By default everything is private to this module</a>
+    48) <a name="l48" style="background-color: #ffffff">   </a>
+    49) <a name="l49" style="background-color: #ffffff">! !PUBLIC TYPES:               </a>
+    50) <a name="l50" style="background-color: #ffffff">   </a>
+    51) <a name="l51" style="background-color: #ffffff">   ! no public types</a>
+    52) <a name="l52" style="background-color: #ffffff"></a>
+    53) <a name="l53" style="background-color: #ffffff">! !PUBLIC MEMBER FUNCTIONS:</a>
+    54) <a name="l54" style="background-color: #ffffff"></a>
+    55) <a name="l55" style="background-color: #ffffff">   public :: shr_file_put          ! Put a file to an archive location</a>
+    56) <a name="l56" style="background-color: #ffffff">   public :: shr_file_get          ! Get a file from an archive location</a>
+    57) <a name="l57" style="background-color: #ffffff">   public :: shr_file_queryPrefix  ! Get prefix type for a filename</a>
+    58) <a name="l58" style="background-color: #ffffff">   public :: shr_file_getUnit      ! Get a logical unit for reading or writing</a>
+    59) <a name="l59" style="background-color: #ffffff">   public :: shr_file_freeUnit     ! Free a logical unit</a>
+    60) <a name="l60" style="background-color: #ffffff">   public :: shr_file_stdio        ! change dir and stdin and stdout</a>
+    61) <a name="l61" style="background-color: #ffffff">   public :: shr_file_chDir        ! change current working directory</a>
+    62) <a name="l62" style="background-color: #ffffff">   public :: shr_file_dirio        ! change stdin and stdout</a>
+    63) <a name="l63" style="background-color: #ffffff">   public :: shr_file_chStdIn      ! change stdin  (attach to a file)</a>
+    64) <a name="l64" style="background-color: #ffffff">   public :: shr_file_chStdOut     ! change stdout (attach to a file)</a>
+    65) <a name="l65" style="background-color: #ffffff">   public :: shr_file_setIO        ! open a log file from namelist</a>
+    66) <a name="l66" style="background-color: #ffffff">   public :: shr_file_setLogUnit   ! Reset the log unit number</a>
+    67) <a name="l67" style="background-color: #ffffff">   public :: shr_file_setLogLevel  ! Reset the logging debug level</a>
+    68) <a name="l68" style="background-color: #ffffff">   public :: shr_file_getLogUnit   ! Get the log unit number</a>
+    69) <a name="l69" style="background-color: #ffffff">   public :: shr_file_getLogLevel  ! Get the logging debug level</a>
+    70) <a name="l70" style="background-color: #ffffff"></a>
+    71) <a name="l71" style="background-color: #ffffff">! !PUBLIC DATA MEMBERS:</a>
+    72) <a name="l72" style="background-color: #ffffff"></a>
+    73) <a name="l73" style="background-color: #ffffff">   ! Integer flags for recognized prefixes on file get/put operations</a>
+    74) <a name="l74" style="background-color: #ffffff">   integer(SHR_KIND_IN), parameter, public :: shr_file_noPrefix      = 0 ! no recognized prefix</a>
+    75) <a name="l75" style="background-color: #ffffff">   integer(SHR_KIND_IN), parameter, public :: shr_file_nullPrefix    = 1 ! null:</a>
+    76) <a name="l76" style="background-color: #ffffff">   integer(SHR_KIND_IN), parameter, public :: shr_file_cpPrefix      = 2 ! cp:</a>
+    77) <a name="l77" style="background-color: #ffffff">   integer(SHR_KIND_IN), parameter, public :: shr_file_mssPrefix     = 3 ! mss:</a>
+    78) <a name="l78" style="background-color: #ffffff">   integer(SHR_KIND_IN), parameter, public :: shr_file_hpssPrefix    = 4 ! hpss:</a>
+    79) <a name="l79" style="background-color: #ffffff"></a>
+    80) <a name="l80" style="background-color: #ffffff">!EOP</a>
+    81) <a name="l81" style="background-color: #ffffff">   !--- unit numbers, users can ask for unit numbers from 0 to min, but getUnit</a>
+    82) <a name="l82" style="background-color: #ffffff">   !--- won't give a unit below min, users cannot ask for unit number above max</a>
+    83) <a name="l83" style="background-color: #ffffff">   !--- for backward compatability.  </a>
+    84) <a name="l84" style="background-color: #ffffff">   !--- eventually, recommend min as hard lower limit (tcraig, 9/2007)</a>
+    85) <a name="l85" style="background-color: #ffffff">   integer(SHR_KIND_IN),parameter :: shr_file_minUnit = 10      ! Min unit number to give</a>
+    86) <a name="l86" style="background-color: #ffffff">   integer(SHR_KIND_IN),parameter :: shr_file_maxUnit = 99      ! Max unit number to give</a>
+    87) <a name="l87" style="background-color: #ffffff">   logical, save :: UnitTag(0:shr_file_maxUnit) = .false. ! Logical units in use</a>
+    88) <a name="l88" style="background-color: #ffffff"></a>
+    89) <a name="l89" style="background-color: #ffffff">!===============================================================================</a>
+    90) <a name="l90" style="background-color: #ffffff">CONTAINS</a>
+    91) <a name="l91" style="background-color: #ffffff">!===============================================================================</a>
+    92) <a name="l92" style="background-color: #ffffff"></a>
+    93) <a name="l93" style="background-color: #ffffff">!===============================================================================</a>
+    94) <a name="l94" style="background-color: #ffffff">!BOP ===========================================================================</a>
+    95) <a name="l95" style="background-color: #ffffff">!</a>
+    96) <a name="l96" style="background-color: #ffffff">! !IROUTINE: shr_file_put -- Put a file to an archival location.</a>
+    97) <a name="l97" style="background-color: #ffffff">!</a>
+    98) <a name="l98" style="background-color: #ffffff">! !DESCRIPTION:</a>
+    99) <a name="l99" style="background-color: #ffffff">!    a generic, extensible put-local-file-into-archive routine</a>
+   100) <a name="l100" style="background-color: #ffffff">! USAGE:</a>
+   101) <a name="l101" style="background-color: #ffffff">!    call shr_file_put(rcode,&quot;foo&quot;,&quot;/home/user/foo&quot;)</a>
+   102) <a name="l102" style="background-color: #ffffff">!    if ( rcode /= 0 ) call shr_sys_abort( &quot;error copying foo&quot; )</a>
+   103) <a name="l103" style="background-color: #ffffff">!    call shr_file_put(rcode,&quot;foo&quot;,&quot;cp:/home/user/foo&quot;,remove=.true.)</a>
+   104) <a name="l104" style="background-color: #ffffff">!    if ( rcode /= 0 ) call shr_sys_abort( &quot;error copying foo&quot; )</a>
+   105) <a name="l105" style="background-color: #ffffff">!    call shr_file_put(rcode,&quot;foo&quot;,&quot;mss:/USER/foo&quot;,rtpd=3650)</a>
+   106) <a name="l106" style="background-color: #ffffff">!    if ( rcode /= 0 ) call shr_sys_abort( &quot;error archiving foo to MSS&quot; )</a>
+   107) <a name="l107" style="background-color: #ffffff">!</a>
+   108) <a name="l108" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+   109) <a name="l109" style="background-color: #ffffff"></a>
+   110) <a name="l110" style="background-color: #ffffff">SUBROUTINE </a><a style="background-color: #ffcccc">shr_file_put(rcode,loc_fn,rem_fn,passwd,rtpd,async,remove)</a>
+   111) <a name="l111" style="background-color: #ffcccc"></a>
+   112) <a name="l112" style="background-color: #ffcccc">   implicit none</a>
+   113) <a name="l113" style="background-color: #ffcccc"></a>
+   114) <a name="l114" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+   115) <a name="l115" style="background-color: #ffcccc"></a>
+   116) <a name="l116" style="background-color: #ffcccc">   integer(SHR_KIND_IN),intent(out)         :: rcode  ! return code (non-zero -- error)</a>
+   117) <a name="l117" style="background-color: #ffcccc">   character(*),        intent(in)          :: loc_fn ! local filename</a>
+   118) <a name="l118" style="background-color: #ffcccc">   character(*),        intent(in)          :: rem_fn ! remote filename</a>
+   119) <a name="l119" style="background-color: #ffcccc">   character(*),        intent(in),optional :: passwd ! password</a>
+   120) <a name="l120" style="background-color: #ffcccc">   integer(SHR_KIND_IN),intent(in),optional :: rtpd   ! MSS retention period</a>
+   121) <a name="l121" style="background-color: #ffcccc">   logical,             intent(in),optional :: async  ! true &lt;=&gt; asynchronous put</a>
+   122) <a name="l122" style="background-color: #ffcccc">   logical,             intent(in),optional :: remove ! true &lt;=&gt; rm after put</a>
+   123) <a name="l123" style="background-color: #ffcccc"></a>
+   124) <a name="l124" style="background-color: #ffcccc">!EOP</a>
+   125) <a name="l125" style="background-color: #ffcccc"></a>
+   126) <a name="l126" style="background-color: #ffcccc">   !----- local -----  </a>
+   127) <a name="l127" style="background-color: #ffcccc">   integer(SHR_KIND_IN)   :: rtpd2    ! MSS retention period</a>
+   128) <a name="l128" style="background-color: #ffcccc">   logical                :: remove2  ! true &lt;=&gt; rm after put</a>
+   129) <a name="l129" style="background-color: #ffcccc">   logical                :: async2   ! true &lt;=&gt; asynchronous put</a>
+   130) <a name="l130" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: passwd2  ! password</a>
+   131) <a name="l131" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: rfn      ! rem_fn without the destination prefix</a>
+   132) <a name="l132" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: cmd      ! command sent to system call</a>
+   133) <a name="l133" style="background-color: #ffcccc">   integer(SHR_KIND_IN)   :: prefix   ! remote file prefix type</a>
+   134) <a name="l134" style="background-color: #ffcccc"></a>
+   135) <a name="l135" style="background-color: #ffcccc">   !----- formats -----</a>
+   136) <a name="l136" style="background-color: #ffcccc">   character(*),parameter :: subName = '(shr_file_put) '</a>
+   137) <a name="l137" style="background-color: #ffcccc">   character(*),parameter :: F00 =   &quot;('(shr_file_put) ',4a)&quot;</a>
+   138) <a name="l138" style="background-color: #ffcccc">   character(*),parameter :: F01 =   &quot;('(shr_file_put) ',a,i3,2a)&quot;</a>
+   139) <a name="l139" style="background-color: #ffcccc">   character(*),parameter :: F02 =   &quot;(a,i4)&quot;</a>
+   140) <a name="l140" style="background-color: #ffcccc"></a>
+   141) <a name="l141" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   142) <a name="l142" style="background-color: #ffcccc">! Notes: </a>
+   143) <a name="l143" style="background-color: #ffcccc">! - On some machines the system call will not return a valid error code</a>
+   144) <a name="l144" style="background-color: #ffcccc">! - when things are sent asynchronously, there probably won't be a error code</a>
+   145) <a name="l145" style="background-color: #ffcccc">!   returned.</a>
+   146) <a name="l146" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   147) <a name="l147" style="background-color: #ffcccc"></a>
+   148) <a name="l148" style="background-color: #ffcccc">   remove2 =.false. ; if ( PRESENT(remove )) remove2 = remove</a>
+   149) <a name="l149" style="background-color: #ffcccc">   async2  =.true.  ; if ( PRESENT(async  )) async2  = async</a>
+   150) <a name="l150" style="background-color: #ffcccc">   passwd2 = &quot; &quot;    ; if ( PRESENT(passwd )) passwd2 = passwd</a>
+   151) <a name="l151" style="background-color: #ffcccc">   rtpd2   = 365    ; if ( PRESENT(rtpd   )) rtpd2   = rtpd</a>
+   152) <a name="l152" style="background-color: #ffcccc">   rcode   = 0</a>
+   153) <a name="l153" style="background-color: #ffcccc">   prefix = shr_file_queryPrefix( rem_fn )</a>
+   154) <a name="l154" style="background-color: #ffcccc"></a>
+   155) <a name="l155" style="background-color: #ffcccc">   if ( trim(rem_fn) == trim(loc_fn) ) then</a>
+   156) <a name="l156" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   157) <a name="l157" style="background-color: #ffcccc">      ! (remote file name) == (local file name) =&gt; do nothing</a>
+   158) <a name="l158" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   159) <a name="l159" style="background-color: #ffcccc">      cmd = 'do nothing: remote file = local file = '//trim(loc_fn)</a>
+   160) <a name="l160" style="background-color: #ffcccc">      rcode = 0</a>
+   161) <a name="l161" style="background-color: #ffcccc">   else if ( prefix == shr_file_cpPrefix .or. prefix == shr_file_noPrefix )then</a>
+   162) <a name="l162" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   163) <a name="l163" style="background-color: #ffcccc">      ! put via unix cp</a>
+   164) <a name="l164" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   165) <a name="l165" style="background-color: #ffcccc">      rfn = rem_fn</a>
+   166) <a name="l166" style="background-color: #ffcccc">      if ( rem_fn(1:3) == &quot;cp:&quot;) rfn = rem_fn(4:len_trim(rem_fn))</a>
+   167) <a name="l167" style="background-color: #ffcccc">#if defined(CATAMOUNT)</a>
+   168) <a name="l168" style="background-color: #ffcccc">      call shr_jlcp(trim(loc_fn),len_trim(loc_fn),trim(rfn),len_trim(rfn),rcode)</a>
+   169) <a name="l169" style="background-color: #ffcccc">      if (remove2) call unlink(trim(loc_fn))</a>
+   170) <a name="l170" style="background-color: #ffcccc">      if (async2 .and. s_loglev &gt; 0) write(s_logunit,F00) 'Error: asynchronous copy not supported.'</a>
+   171) <a name="l171" style="background-color: #ffcccc">      cmd = 'shr_jlcp -f '//trim(loc_fn)//' '//trim(rfn)</a>
+   172) <a name="l172" style="background-color: #ffcccc">      rcode = 0</a>
+   173) <a name="l173" style="background-color: #ffcccc">#else</a>
+   174) <a name="l174" style="background-color: #ffcccc">      cmd = '/bin/cp -f '//trim(loc_fn)//' '//trim(rfn)</a>
+   175) <a name="l175" style="background-color: #ffcccc">      if (remove2) cmd = trim(cmd)//' &amp;&amp; /bin/rm -f '//trim(loc_fn)</a>
+   176) <a name="l176" style="background-color: #ffcccc">      if (async2 ) cmd = trim(cmd)//' &amp; '</a>
+   177) <a name="l177" style="background-color: #ffcccc">      call shr_sys_system(trim(cmd),rcode)</a>
+   178) <a name="l178" style="background-color: #ffcccc">#endif</a>
+   179) <a name="l179" style="background-color: #ffcccc">   else if ( prefix == shr_file_mssPrefix )then</a>
+   180) <a name="l180" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   181) <a name="l181" style="background-color: #ffcccc">      ! put onto NCAR's MSS</a>
+   182) <a name="l182" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   183) <a name="l183" style="background-color: #ffcccc">      if (rtpd2 &gt; 9999) rtpd2 = 9999</a>
+   184) <a name="l184" style="background-color: #ffcccc">      write(cmd,F02) '/usr/local/bin/msrcp -period ',rtpd2</a>
+   185) <a name="l185" style="background-color: #ffcccc">      if (async2 .and. (.not. remove2) ) cmd = trim(cmd)//' -async '</a>
+   186) <a name="l186" style="background-color: #ffcccc">      if (len_trim(passwd2) &gt; 0 ) cmd = trim(cmd)//' -wpwd '//trim(passwd)</a>
+   187) <a name="l187" style="background-color: #ffcccc">      cmd = trim(cmd)//' '//trim(loc_fn)//' '//trim(rem_fn)</a>
+   188) <a name="l188" style="background-color: #ffcccc">      if (remove2) cmd = trim(cmd)//' &amp;&amp; /bin/rm -f '//trim(loc_fn)</a>
+   189) <a name="l189" style="background-color: #ffcccc">      if (async2 .and. remove2 ) cmd = trim(cmd)//' &amp; '</a>
+   190) <a name="l190" style="background-color: #ffcccc">      call shr_sys_system(trim(cmd),rcode)</a>
+   191) <a name="l191" style="background-color: #ffcccc">   else if ( prefix == shr_file_hpssPrefix )then</a>
+   192) <a name="l192" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   193) <a name="l193" style="background-color: #ffcccc">      ! put onto LANL's hpss</a>
+   194) <a name="l194" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   195) <a name="l195" style="background-color: #ffcccc">      rcode = -1</a>
+   196) <a name="l196" style="background-color: #ffcccc">      cmd = 'rem_fn='//trim(rem_fn)//' loc_fn='//trim(loc_fn)</a>
+   197) <a name="l197" style="background-color: #ffcccc">      write(s_logunit,F00) 'ERROR: hpss option not yet implemented'</a>
+   198) <a name="l198" style="background-color: #ffcccc">      call shr_sys_abort( subName//'ERROR: hpss option not yet implemented' )</a>
+   199) <a name="l199" style="background-color: #ffcccc">   else if ( prefix == shr_file_nullPrefix )then</a>
+   200) <a name="l200" style="background-color: #ffcccc">      ! do nothing</a>
+   201) <a name="l201" style="background-color: #ffcccc">      cmd = &quot;null prefix =&gt; no file archival, do nothing&quot;</a>
+   202) <a name="l202" style="background-color: #ffcccc">      rcode = 0</a>
+   203) <a name="l203" style="background-color: #ffcccc">   end if</a>
+   204) <a name="l204" style="background-color: #ffcccc"></a>
+   205) <a name="l205" style="background-color: #ffcccc">   if (s_loglev &gt; 0) write(s_logunit,F01) 'rcode =',rcode,' cmd = ', trim(cmd)</a>
+   206) <a name="l206" style="background-color: #ffcccc"></a>
+   207) <a name="l207" style="background-color: #ffcccc">END SUBROUTINE shr_file_put</a>
+   208) <a name="l208" style="background-color: #ffffff"></a>
+   209) <a name="l209" style="background-color: #ffffff">!===============================================================================</a>
+   210) <a name="l210" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   211) <a name="l211" style="background-color: #ffffff">!</a>
+   212) <a name="l212" style="background-color: #ffffff">! !IROUTINE: shr_file_get -- Get a file from archival location.</a>
+   213) <a name="l213" style="background-color: #ffffff">!</a>
+   214) <a name="l214" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   215) <a name="l215" style="background-color: #ffffff">!    a generic, extensible get-local-file-from-archive routine</a>
+   216) <a name="l216" style="background-color: #ffffff">!</a>
+   217) <a name="l217" style="background-color: #ffffff">! USAGE:</a>
+   218) <a name="l218" style="background-color: #ffffff">!    call shr_file_get(rcode,&quot;foo&quot;,&quot;/home/user/foo&quot;)</a>
+   219) <a name="l219" style="background-color: #ffffff">!    if ( rcode /= 0 ) call shr_sys_abort( &quot;error getting file foo&quot; )</a>
+   220) <a name="l220" style="background-color: #ffffff">!    call shr_file_get(rcode,&quot;foo&quot;,&quot;cp:/home/user/foo&quot;,remove=.true.)</a>
+   221) <a name="l221" style="background-color: #ffffff">!    if ( rcode /= 0 ) call shr_sys_abort( &quot;error getting file foo&quot; )</a>
+   222) <a name="l222" style="background-color: #ffffff">!    call shr_file_get(rcode,&quot;foo&quot;,&quot;mss:/USER/foo&quot;,clobber=.true.)</a>
+   223) <a name="l223" style="background-color: #ffffff">!    if ( rcode /= 0 ) call shr_sys_abort( &quot;error getting file foo from MSS&quot; )</a>
+   224) <a name="l224" style="background-color: #ffffff">!</a>
+   225) <a name="l225" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+   226) <a name="l226" style="background-color: #ffffff"></a>
+   227) <a name="l227" style="background-color: #ffffff">SUBROUTINE </a><a style="background-color: #ffcccc">shr_file_get(rcode,loc_fn,rem_fn,passwd,async,clobber)</a>
+   228) <a name="l228" style="background-color: #ffcccc"></a>
+   229) <a name="l229" style="background-color: #ffcccc">   implicit none</a>
+   230) <a name="l230" style="background-color: #ffcccc"></a>
+   231) <a name="l231" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+   232) <a name="l232" style="background-color: #ffcccc"></a>
+   233) <a name="l233" style="background-color: #ffcccc">   integer(SHR_KIND_IN),intent(out)         :: rcode   ! return code (non-zero means error)</a>
+   234) <a name="l234" style="background-color: #ffcccc">   character(*)        ,intent(in)          :: loc_fn  ! local filename</a>
+   235) <a name="l235" style="background-color: #ffcccc">   character(*)        ,intent(in)          :: rem_fn  ! remote filename</a>
+   236) <a name="l236" style="background-color: #ffcccc">   character(*)        ,intent(in),optional :: passwd  ! password</a>
+   237) <a name="l237" style="background-color: #ffcccc">   logical             ,intent(in),optional :: async   ! true &lt;=&gt; asynchronous get</a>
+   238) <a name="l238" style="background-color: #ffcccc">   logical             ,intent(in),optional :: clobber ! true &lt;=&gt; clobber existing file</a>
+   239) <a name="l239" style="background-color: #ffcccc"></a>
+   240) <a name="l240" style="background-color: #ffcccc">!EOP</a>
+   241) <a name="l241" style="background-color: #ffcccc"></a>
+   242) <a name="l242" style="background-color: #ffcccc">   !----- local -----</a>
+   243) <a name="l243" style="background-color: #ffcccc">   logical                :: async2   ! true &lt;=&gt; asynchronous get</a>
+   244) <a name="l244" style="background-color: #ffcccc">   logical                :: clobber2 ! true &lt;=&gt; clobber existing file</a>
+   245) <a name="l245" style="background-color: #ffcccc">   logical                :: exists   ! true &lt;=&gt; local file a ready exists</a>
+   246) <a name="l246" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: passwd2  ! password</a>
+   247) <a name="l247" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: rfn      ! rem_fn without the destination prefix</a>
+   248) <a name="l248" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: cmd      ! command sent to system call</a>
+   249) <a name="l249" style="background-color: #ffcccc">   integer(SHR_KIND_IN)   :: prefix   ! remote file prefix type</a>
+   250) <a name="l250" style="background-color: #ffcccc"></a>
+   251) <a name="l251" style="background-color: #ffcccc">   !----- formats -----</a>
+   252) <a name="l252" style="background-color: #ffcccc">   character(*),parameter :: subName = '(shr_file_get) '</a>
+   253) <a name="l253" style="background-color: #ffcccc">   character(*),parameter :: F00 =   &quot;('(shr_file_get) ',4a)&quot;</a>
+   254) <a name="l254" style="background-color: #ffcccc">   character(*),parameter :: F01 =   &quot;('(shr_file_get) ',a,i3,2a)&quot;</a>
+   255) <a name="l255" style="background-color: #ffcccc"></a>
+   256) <a name="l256" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   257) <a name="l257" style="background-color: #ffcccc">! Notes: </a>
+   258) <a name="l258" style="background-color: #ffcccc">! - On some machines the system call will not return a valid error code</a>
+   259) <a name="l259" style="background-color: #ffcccc">! - When things are sent asynchronously, there probably won't be a error code</a>
+   260) <a name="l260" style="background-color: #ffcccc">!   returned.</a>
+   261) <a name="l261" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   262) <a name="l262" style="background-color: #ffcccc"></a>
+   263) <a name="l263" style="background-color: #ffcccc">   passwd2  = &quot; &quot;     ; if (PRESENT(passwd )) passwd2  = passwd</a>
+   264) <a name="l264" style="background-color: #ffcccc">   async2   = .false. ; if (PRESENT(async  )) async2   = async</a>
+   265) <a name="l265" style="background-color: #ffcccc">   clobber2 = .false. ; if (PRESENT(clobber)) clobber2 = clobber</a>
+   266) <a name="l266" style="background-color: #ffcccc">   rcode    = 0</a>
+   267) <a name="l267" style="background-color: #ffcccc"></a>
+   268) <a name="l268" style="background-color: #ffcccc">   inquire(file=trim(loc_fn),exist=exists)</a>
+   269) <a name="l269" style="background-color: #ffcccc">   prefix = shr_file_queryPrefix( rem_fn )</a>
+   270) <a name="l270" style="background-color: #ffcccc"></a>
+   271) <a name="l271" style="background-color: #ffcccc">   if ( exists .and. .not. clobber2 ) then</a>
+   272) <a name="l272" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   273) <a name="l273" style="background-color: #ffcccc">      ! (file exists) and (don't clobber) =&gt; do nothing</a>
+   274) <a name="l274" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   275) <a name="l275" style="background-color: #ffcccc">      cmd = 'do nothing: file exists &amp; no-clobber for '//trim(loc_fn)</a>
+   276) <a name="l276" style="background-color: #ffcccc">      rcode = 0</a>
+   277) <a name="l277" style="background-color: #ffcccc">   else if ( trim(rem_fn) == trim(loc_fn) ) then</a>
+   278) <a name="l278" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   279) <a name="l279" style="background-color: #ffcccc">      ! (remote file name) == (local file name) =&gt; do nothing</a>
+   280) <a name="l280" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   281) <a name="l281" style="background-color: #ffcccc">      cmd = 'do nothing: remote file = local file for '//trim(loc_fn)</a>
+   282) <a name="l282" style="background-color: #ffcccc">      rcode = 0</a>
+   283) <a name="l283" style="background-color: #ffcccc">   else if ( prefix == shr_file_cpPrefix .or. prefix == shr_file_noPrefix )then</a>
+   284) <a name="l284" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   285) <a name="l285" style="background-color: #ffcccc">      ! get via unix cp</a>
+   286) <a name="l286" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   287) <a name="l287" style="background-color: #ffcccc">      rfn = rem_fn  ! remove prefix from this temp file name</a>
+   288) <a name="l288" style="background-color: #ffcccc">      if (rem_fn(1:3) == &quot;cp:&quot;) rfn = rem_fn(4:len_trim(rem_fn))</a>
+   289) <a name="l289" style="background-color: #ffcccc">#if defined(CATAMOUNT)</a>
+   290) <a name="l290" style="background-color: #ffcccc">      call shr_jlcp(trim(rfn),len(trim(rfn)),trim(loc_fn),len(trim(loc_fn)),rcode)</a>
+   291) <a name="l291" style="background-color: #ffcccc">      if (async2.and.s_loglev&gt;0) write(s_logunit,F00) 'Error: asynchronous copy not supported.'</a>
+   292) <a name="l292" style="background-color: #ffcccc">      cmd = 'shr_jlcp -f '//trim(rfn)//' '//trim(loc_fn)</a>
+   293) <a name="l293" style="background-color: #ffcccc">      rcode = 0</a>
+   294) <a name="l294" style="background-color: #ffcccc">#else</a>
+   295) <a name="l295" style="background-color: #ffcccc">      cmd = '/bin/cp -f '//trim(rfn)//' '//trim(loc_fn)</a>
+   296) <a name="l296" style="background-color: #ffcccc">      if (async2) cmd = trim(cmd)//' &amp; '</a>
+   297) <a name="l297" style="background-color: #ffcccc">      call shr_sys_system(trim(cmd),rcode)</a>
+   298) <a name="l298" style="background-color: #ffcccc">#endif</a>
+   299) <a name="l299" style="background-color: #ffcccc">   else if ( prefix == shr_file_mssPrefix )then</a>
+   300) <a name="l300" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   301) <a name="l301" style="background-color: #ffcccc">      ! get from NCAR's MSS</a>
+   302) <a name="l302" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   303) <a name="l303" style="background-color: #ffcccc">      cmd = '/usr/local/bin/msrcp '</a>
+   304) <a name="l304" style="background-color: #ffcccc">      if (async2)   cmd = trim(cmd)//' -async '</a>
+   305) <a name="l305" style="background-color: #ffcccc">      cmd = trim(cmd)//' '//trim(rem_fn)//' '//trim(loc_fn)</a>
+   306) <a name="l306" style="background-color: #ffcccc">      call shr_sys_system(trim(cmd),rcode)</a>
+   307) <a name="l307" style="background-color: #ffcccc">   else if ( prefix == shr_file_hpssPrefix )then</a>
+   308) <a name="l308" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   309) <a name="l309" style="background-color: #ffcccc">      ! get from LANL's hpss</a>
+   310) <a name="l310" style="background-color: #ffcccc">      !------------------------------------------------------</a>
+   311) <a name="l311" style="background-color: #ffcccc">      rcode = -1</a>
+   312) <a name="l312" style="background-color: #ffcccc">      cmd = 'rem_fn='//trim(rem_fn)//' loc_fn='//trim(loc_fn)</a>
+   313) <a name="l313" style="background-color: #ffcccc">      write(s_logunit,F00) 'ERROR: hpss option not yet implemented'</a>
+   314) <a name="l314" style="background-color: #ffcccc">      call shr_sys_abort( subName//'ERROR: hpss option not yet implemented' )</a>
+   315) <a name="l315" style="background-color: #ffcccc">   else if ( prefix == shr_file_nullPrefix )then</a>
+   316) <a name="l316" style="background-color: #ffcccc">      ! do nothing</a>
+   317) <a name="l317" style="background-color: #ffcccc">      cmd = &quot;null prefix =&gt; no file retrieval, do nothing&quot;</a>
+   318) <a name="l318" style="background-color: #ffcccc">      rcode = 0</a>
+   319) <a name="l319" style="background-color: #ffcccc">   end if</a>
+   320) <a name="l320" style="background-color: #ffcccc"></a>
+   321) <a name="l321" style="background-color: #ffcccc">   if (s_loglev &gt; 0) write(s_logunit,F01) 'rcode =',rcode,' cmd = ', trim(cmd)</a>
+   322) <a name="l322" style="background-color: #ffcccc"></a>
+   323) <a name="l323" style="background-color: #ffcccc">END SUBROUTINE shr_file_get</a>
+   324) <a name="l324" style="background-color: #ffffff"></a>
+   325) <a name="l325" style="background-color: #ffffff">!===============================================================================</a>
+   326) <a name="l326" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   327) <a name="l327" style="background-color: #ffffff">!</a>
+   328) <a name="l328" style="background-color: #ffffff">! !IROUTINE: shr_file_queryPrefix -- Get the prefix type from a filepath.</a>
+   329) <a name="l329" style="background-color: #ffffff">!</a>
+   330) <a name="l330" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   331) <a name="l331" style="background-color: #ffffff">!    </a>
+   332) <a name="l332" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+   333) <a name="l333" style="background-color: #ffffff"></a>
+   334) <a name="l334" style="background-color: #ffffff">integer(SHR_KIND_IN) FUNCTION shr_file_queryPrefix( filepath, prefix )</a>
+   335) <a name="l335" style="background-color: #ffffff"></a>
+   336) <a name="l336" style="background-color: #ffffff">   implicit none</a>
+   337) <a name="l337" style="background-color: #ffffff"></a>
+   338) <a name="l338" style="background-color: #ffffff">! !INPUT/OUTPUT PARAMETERS:</a>
+   339) <a name="l339" style="background-color: #ffffff"></a>
+   340) <a name="l340" style="background-color: #ffffff">   character(*), intent(in)            :: filepath ! Input filepath</a>
+   341) <a name="l341" style="background-color: #ffffff">   character(*), intent(out), optional :: prefix   ! Output prefix description</a>
+   342) <a name="l342" style="background-color: #ffffff"></a>
+   343) <a name="l343" style="background-color: #ffffff">!EOP</a>
+   344) <a name="l344" style="background-color: #ffffff"></a>
+   345) <a name="l345" style="background-color: #ffffff">   !----- local -----</a>
+   346) <a name="l346" style="background-color: #ffffff"></a>
+   347) <a name="l347" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   348) <a name="l348" style="background-color: #ffffff">! Notes: </a>
+   349) <a name="l349" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   350) <a name="l350" style="background-color: #ffffff"></a>
+   351) <a name="l351" style="background-color: #ffffff">   if (     filepath(1:5) == &quot;null:&quot; )then</a>
+   352) <a name="l352" style="background-color: #ffff99">      shr_file_queryPrefix = shr_file_nullPrefix</a>
+   353) <a name="l353" style="background-color: #ffff99">      if ( present(prefix) ) prefix = &quot;null:&quot;</a>
+   354) <a name="l354" style="background-color: #ffffff">   else if( filepath(1:3) == &quot;cp:&quot; )then</a>
+   355) <a name="l355" style="background-color: #ffff99">      shr_file_queryPrefix = shr_file_cpPrefix</a>
+   356) <a name="l356" style="background-color: #ffff99">      if ( present(prefix) ) prefix = &quot;cp:&quot;</a>
+   357) <a name="l357" style="background-color: #ffffff">   else if( filepath(1:4) == &quot;mss:&quot; )then</a>
+   358) <a name="l358" style="background-color: #ffff99">      shr_file_queryPrefix = shr_file_mssPrefix</a>
+   359) <a name="l359" style="background-color: #ffff99">      if ( present(prefix) ) prefix = &quot;mss:&quot;</a>
+   360) <a name="l360" style="background-color: #ffffff">   else if( filepath(1:5) == &quot;hpss:&quot; )then</a>
+   361) <a name="l361" style="background-color: #ffff99">      shr_file_queryPrefix = shr_file_hpssPrefix</a>
+   362) <a name="l362" style="background-color: #ffff99">      if ( present(prefix) ) prefix = &quot;hpss:&quot;</a>
+   363) <a name="l363" style="background-color: #ffff99">   else</a>
+   364) <a name="l364" style="background-color: #ffffff">      shr_file_queryPrefix = shr_file_noPrefix</a>
+   365) <a name="l365" style="background-color: #ffffff">      if ( present(prefix) ) prefix = &quot;&quot;</a>
+   366) <a name="l366" style="background-color: #ffffff">   end if</a>
+   367) <a name="l367" style="background-color: #ffffff"></a>
+   368) <a name="l368" style="background-color: #ffffff">END FUNCTION shr_file_queryPrefix</a>
+   369) <a name="l369" style="background-color: #ffffff"></a>
+   370) <a name="l370" style="background-color: #ffffff">!===============================================================================</a>
+   371) <a name="l371" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   372) <a name="l372" style="background-color: #ffffff">!</a>
+   373) <a name="l373" style="background-color: #ffffff">! !IROUTINE: shr_file_getUnit -- Get a free FORTRAN unit number</a>
+   374) <a name="l374" style="background-color: #ffffff">!</a>
+   375) <a name="l375" style="background-color: #ffffff">! !DESCRIPTION: Get the next free FORTRAN unit number.</a>
+   376) <a name="l376" style="background-color: #ffffff">!</a>
+   377) <a name="l377" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   378) <a name="l378" style="background-color: #ffffff">!     2005-Dec-14 - E. Kluzek - creation</a>
+   379) <a name="l379" style="background-color: #ffffff">!</a>
+   380) <a name="l380" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+   381) <a name="l381" style="background-color: #ffffff"></a>
+   382) <a name="l382" style="background-color: #ffffff">INTEGER FUNCTION shr_file_getUnit ( unit )</a>
+   383) <a name="l383" style="background-color: #ffffff"></a>
+   384) <a name="l384" style="background-color: #ffffff">   implicit none</a>
+   385) <a name="l385" style="background-color: #ffffff"></a>
+   386) <a name="l386" style="background-color: #ffffff">! !INPUT/OUTPUT PARAMETERS:</a>
+   387) <a name="l387" style="background-color: #ffffff"></a>
+   388) <a name="l388" style="background-color: #ffffff">   integer(SHR_KIND_IN),intent(in),optional :: unit ! desired unit number</a>
+   389) <a name="l389" style="background-color: #ffffff"></a>
+   390) <a name="l390" style="background-color: #ffffff">!EOP</a>
+   391) <a name="l391" style="background-color: #ffffff"></a>
+   392) <a name="l392" style="background-color: #ffffff">   !----- local -----</a>
+   393) <a name="l393" style="background-color: #ffffff">   integer(SHR_KIND_IN)   :: n      ! loop index</a>
+   394) <a name="l394" style="background-color: #ffffff">   logical                :: opened ! If unit opened or not</a>
+   395) <a name="l395" style="background-color: #ffffff"></a>
+   396) <a name="l396" style="background-color: #ffffff">   !----- formats -----</a>
+   397) <a name="l397" style="background-color: #ffffff">   character(*),parameter :: subName = '(shr_file_getUnit) '</a>
+   398) <a name="l398" style="background-color: #ffffff">   character(*),parameter :: F00   = &quot;('(shr_file_getUnit) ',A,I4,A)&quot;</a>
+   399) <a name="l399" style="background-color: #ffffff"></a>
+   400) <a name="l400" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   401) <a name="l401" style="background-color: #ffffff">! Notes:</a>
+   402) <a name="l402" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   403) <a name="l403" style="background-color: #ffffff"></a>
+   404) <a name="l404" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present (unit)) then</a>
+   405) <a name="l405" style="background-color: #ffff99">      inquire( unit, opened=opened )</a>
+   406) <a name="l406" style="background-color: #ffff99">      if (unit &lt; 0 .or. unit &gt; shr_file_maxUnit) then</a>
+   407) <a name="l407" style="background-color: #ffff99">         write(s_logunit,F00) 'invalid unit number request:', unit</a>
+   408) <a name="l408" style="background-color: #ffff99">         call shr_sys_abort( 'ERROR: bad input unit number' )</a>
+   409) <a name="l409" style="background-color: #ffff99">      else if (opened .or. UnitTag(unit) .or. unit == 0 .or. unit == 5 &amp;</a>
+   410) <a name="l410" style="background-color: #ffff99">               .or. unit == 6) then</a>
+   411) <a name="l411" style="background-color: #ffff99">         write(s_logunit,F00) 'unit number ', unit, ' is already in use'</a>
+   412) <a name="l412" style="background-color: #ffff99">         call shr_sys_abort( 'ERROR: Input unit number already in use' )</a>
+   413) <a name="l413" style="background-color: #ffff99">      else</a>
+   414) <a name="l414" style="background-color: #ffff99">         shr_file_getUnit = unit</a>
+   415) <a name="l415" style="background-color: #ffff99">         UnitTag (unit)   = .true.</a>
+   416) <a name="l416" style="background-color: #ffff99">         return</a>
+   417) <a name="l417" style="background-color: #ffff99">      end if</a>
+   418) <a name="l418" style="background-color: #ffff99"></a>
+   419) <a name="l419" style="background-color: #ffff99">   else</a>
+   420) <a name="l420" style="background-color: #ffff99">      ! --- Choose first available unit other than 0, 5, or 6  ------</a>
+   421) <a name="l421" style="background-color: #ffffff">      do n=shr_file_maxUnit, shr_file_minUnit, -1</a>
+   422) <a name="l422" style="background-color: #ffffff">         inquire( n, opened=opened )</a>
+   423) <a name="l423" style="background-color: #ffffff">         if (n == 5 .or. n == 6 .or. opened) then</a>
+   424) <a name="l424" style="background-color: #ffffff">            cycle</a>
+   425) <a name="l425" style="background-color: #ffffff">         end if</a>
+   426) <a name="l426" style="background-color: #ffffff">         if ( .not. UnitTag(n) ) then</a>
+   427) <a name="l427" style="background-color: #ffffff">            shr_file_getUnit = n</a>
+   428) <a name="l428" style="background-color: #ffffff">            UnitTag(n)       = .true.</a>
+   429) <a name="l429" style="background-color: #ffffff">            return</a>
+   430) <a name="l430" style="background-color: #ffffff">         end if</a>
+   431) <a name="l431" style="background-color: #ffffff">      end do</a>
+   432) <a name="l432" style="background-color: #ffffff">   end if</a>
+   433) <a name="l433" style="background-color: #ffffff"></a>
+   434) <a name="l434" style="background-color: #ffffff">   call </a><a style="background-color: #ffff99">shr_sys_abort( subName//': Error: no available units found' )</a>
+   435) <a name="l435" style="background-color: #ffff99"></a>
+   436) <a name="l436" style="background-color: #ffffff">END FUNCTION shr_file_getUnit</a>
+   437) <a name="l437" style="background-color: #ffffff"></a>
+   438) <a name="l438" style="background-color: #ffffff">!===============================================================================</a>
+   439) <a name="l439" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   440) <a name="l440" style="background-color: #ffffff">!</a>
+   441) <a name="l441" style="background-color: #ffffff">! !IROUTINE: shr_file_freeUnit -- Free up a FORTRAN unit number</a>
+   442) <a name="l442" style="background-color: #ffffff">!</a>
+   443) <a name="l443" style="background-color: #ffffff">! !DESCRIPTION: Free up the given unit number</a>
+   444) <a name="l444" style="background-color: #ffffff">!</a>
+   445) <a name="l445" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   446) <a name="l446" style="background-color: #ffffff">!     2005-Dec-14 - E. Kluzek - creation</a>
+   447) <a name="l447" style="background-color: #ffffff">!</a>
+   448) <a name="l448" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+   449) <a name="l449" style="background-color: #ffffff"></a>
+   450) <a name="l450" style="background-color: #ffffff">SUBROUTINE shr_file_freeUnit ( unit)</a>
+   451) <a name="l451" style="background-color: #ffffff"></a>
+   452) <a name="l452" style="background-color: #ffffff">   implicit none</a>
+   453) <a name="l453" style="background-color: #ffffff"></a>
+   454) <a name="l454" style="background-color: #ffffff">! !INPUT/OUTPUT PARAMETERS:</a>
+   455) <a name="l455" style="background-color: #ffffff"></a>
+   456) <a name="l456" style="background-color: #ffffff">   integer(SHR_KIND_IN),intent(in) :: unit  ! unit number to be freed</a>
+   457) <a name="l457" style="background-color: #ffffff"></a>
+   458) <a name="l458" style="background-color: #ffffff">!EOP</a>
+   459) <a name="l459" style="background-color: #ffffff"></a>
+   460) <a name="l460" style="background-color: #ffffff">   !----- local -----</a>
+   461) <a name="l461" style="background-color: #ffffff"></a>
+   462) <a name="l462" style="background-color: #ffffff">   !----- formats -----</a>
+   463) <a name="l463" style="background-color: #ffffff">   character(*), parameter :: subName = '(shr_file_freeUnit) '</a>
+   464) <a name="l464" style="background-color: #ffffff">   character(*), parameter :: F00 =   &quot;('(shr_file_freeUnit) ',A,I4,A)&quot;</a>
+   465) <a name="l465" style="background-color: #ffffff"></a>
+   466) <a name="l466" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   467) <a name="l467" style="background-color: #ffffff">! Notes:</a>
+   468) <a name="l468" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   469) <a name="l469" style="background-color: #ffffff"></a>
+   470) <a name="l470" style="background-color: #ffffff">   if (unit &lt; 0 .or. unit &gt; shr_file_maxUnit) then</a>
+   471) <a name="l471" style="background-color: #ffff99">      if (s_loglev &gt; 0) write(s_logunit,F00) 'invalid unit number request:', unit</a>
+   472) <a name="l472" style="background-color: #ffffff">   else if (unit == 0 .or. unit == 5 .or. unit == 6) then</a>
+   473) <a name="l473" style="background-color: #ffffff">      call </a><a style="background-color: #ffff99">shr_sys_abort( subName//': Error: units 0, 5, and 6 must not be freed' )</a>
+   474) <a name="l474" style="background-color: #ffffff">   else if (UnitTag(unit)) then</a>
+   475) <a name="l475" style="background-color: #ffffff">      UnitTag (unit) = .false.</a>
+   476) <a name="l476" style="background-color: #ffffff">   else</a>
+   477) <a name="l477" style="background-color: #ffffff">      if (s_loglev &gt; 0) write(s_logunit,F00) 'unit ', unit, ' was not in use'</a>
+   478) <a name="l478" style="background-color: #ffffff">   end if</a>
+   479) <a name="l479" style="background-color: #ffffff"></a>
+   480) <a name="l480" style="background-color: #ffffff">   return</a>
+   481) <a name="l481" style="background-color: #ffffff"></a>
+   482) <a name="l482" style="background-color: #ffffff">END SUBROUTINE shr_file_freeUnit</a>
+   483) <a name="l483" style="background-color: #ffffff"></a>
+   484) <a name="l484" style="background-color: #ffffff">!===============================================================================</a>
+   485) <a name="l485" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   486) <a name="l486" style="background-color: #ffffff">!</a>
+   487) <a name="l487" style="background-color: #ffffff">! !IROUTINE: shr_file_stdio -- Change working directory, and redirect stdin/stdout</a>
+   488) <a name="l488" style="background-color: #ffffff">!</a>
+   489) <a name="l489" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   490) <a name="l490" style="background-color: #ffffff">!   1) change the cwd (current working directory) and </a>
+   491) <a name="l491" style="background-color: #ffffff">!   2) redirect stdin &amp; stdout (units 5 &amp; 6) to named files,</a>
+   492) <a name="l492" style="background-color: #ffffff">!   where the desired cwd &amp; files are specified by namelist file.</a>
+   493) <a name="l493" style="background-color: #ffffff">!</a>
+   494) <a name="l494" style="background-color: #ffffff">!   Normally this is done to work around limitations in the execution syntax</a>
+   495) <a name="l495" style="background-color: #ffffff">!   of common MPI implementations.  For example, SGI's mpirun syntax is not </a>
+   496) <a name="l496" style="background-color: #ffffff">!   flexible enough to allow MPMD models to select different execution</a>
+   497) <a name="l497" style="background-color: #ffffff">!   directories or to redirect stdin &amp; stdout on the command line.  </a>
+   498) <a name="l498" style="background-color: #ffffff">!   Such functionality is highly desireable for CCSM purposes.  </a>
+   499) <a name="l499" style="background-color: #ffffff">!   ie. mpirun can't handle this:</a>
+   500) <a name="l500" style="background-color: #ffffff">!   unix&gt; cd /usr/tmp/jdoe/csm/case01/atm ; atm &lt; atm.parm &gt; atm.log &amp;</a>
+   501) <a name="l501" style="background-color: #ffffff">!   unix&gt; cd /usr/tmp/jdoe/csm/case01/cpl ; cpl &lt; cpl.parm &gt; cpl.log &amp;</a>
+   502) <a name="l502" style="background-color: #ffffff">!   etc.</a>
+   503) <a name="l503" style="background-color: #ffffff">!</a>
+   504) <a name="l504" style="background-color: #ffffff">! ASSUMPTIONS:</a>
+   505) <a name="l505" style="background-color: #ffffff">! o if the cwd, stdin, or stdout are to be changed, there must be a namelist</a>
+   506) <a name="l506" style="background-color: #ffffff">!   file in the cwd named &lt;model&gt;_stdio.nml  where &lt;model&gt; is provided via</a>
+   507) <a name="l507" style="background-color: #ffffff">!   subroutine dummy argument. </a>
+   508) <a name="l508" style="background-color: #ffffff">!</a>
+   509) <a name="l509" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+   510) <a name="l510" style="background-color: #ffffff"></a>
+   511) <a name="l511" style="background-color: #ffffff">SUBROUTINE </a><a style="background-color: #ffcccc">shr_file_stdio(model)</a>
+   512) <a name="l512" style="background-color: #ffcccc"></a>
+   513) <a name="l513" style="background-color: #ffcccc">   implicit none</a>
+   514) <a name="l514" style="background-color: #ffcccc"></a>
+   515) <a name="l515" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+   516) <a name="l516" style="background-color: #ffcccc"></a>
+   517) <a name="l517" style="background-color: #ffcccc">   character(*),intent(in) :: model ! used to construct env varible name</a>
+   518) <a name="l518" style="background-color: #ffcccc"></a>
+   519) <a name="l519" style="background-color: #ffcccc">!EOP</a>
+   520) <a name="l520" style="background-color: #ffcccc"></a>
+   521) <a name="l521" style="background-color: #ffcccc">   !--- formats ---</a>
+   522) <a name="l522" style="background-color: #ffcccc">   character(*),parameter :: subName = '(shr_file_stdio) '</a>
+   523) <a name="l523" style="background-color: #ffcccc">   character(*),parameter :: F00   = &quot;('(shr_file_stdio) ',4a)&quot;</a>
+   524) <a name="l524" style="background-color: #ffcccc"></a>
+   525) <a name="l525" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   526) <a name="l526" style="background-color: #ffcccc">! Notes:</a>
+   527) <a name="l527" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   528) <a name="l528" style="background-color: #ffcccc"></a>
+   529) <a name="l529" style="background-color: #ffcccc">   call shr_file_chdir   (model) ! changes cwd</a>
+   530) <a name="l530" style="background-color: #ffcccc">   call shr_file_chStdOut(model) ! open units 5 &amp; 6 to named files</a>
+   531) <a name="l531" style="background-color: #ffcccc">   call shr_file_chStdIn (model) ! open units 5 &amp; 6 to named files</a>
+   532) <a name="l532" style="background-color: #ffcccc"> </a>
+   533) <a name="l533" style="background-color: #ffcccc">END SUBROUTINE shr_file_stdio</a>
+   534) <a name="l534" style="background-color: #ffffff"></a>
+   535) <a name="l535" style="background-color: #ffffff">!===============================================================================</a>
+   536) <a name="l536" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   537) <a name="l537" style="background-color: #ffffff">!</a>
+   538) <a name="l538" style="background-color: #ffffff">! !IROUTINE: shr_file_chdir -- Change working directory.</a>
+   539) <a name="l539" style="background-color: #ffffff">!</a>
+   540) <a name="l540" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   541) <a name="l541" style="background-color: #ffffff">!   change the cwd (current working directory), see shr_file_stdio for notes</a>
+   542) <a name="l542" style="background-color: #ffffff">!</a>
+   543) <a name="l543" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+   544) <a name="l544" style="background-color: #ffffff"></a>
+   545) <a name="l545" style="background-color: #ffffff">SUBROUTINE </a><a style="background-color: #ffcccc">shr_file_chdir(model, rcodeOut)</a>
+   546) <a name="l546" style="background-color: #ffcccc"></a>
+   547) <a name="l547" style="background-color: #ffcccc">! !USES:</a>
+   548) <a name="l548" style="background-color: #ffcccc"></a>
+   549) <a name="l549" style="background-color: #ffcccc">   implicit none</a>
+   550) <a name="l550" style="background-color: #ffcccc"></a>
+   551) <a name="l551" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+   552) <a name="l552" style="background-color: #ffcccc"></a>
+   553) <a name="l553" style="background-color: #ffcccc">   character(*)        ,intent(in)           :: model    ! used to construct env varible name</a>
+   554) <a name="l554" style="background-color: #ffcccc">   integer(SHR_KIND_IN),intent(out),optional :: rcodeOut ! Return error code</a>
+   555) <a name="l555" style="background-color: #ffcccc"></a>
+   556) <a name="l556" style="background-color: #ffcccc">!EOP</a>
+   557) <a name="l557" style="background-color: #ffcccc"></a>
+   558) <a name="l558" style="background-color: #ffcccc">   !--- local ---</a>
+   559) <a name="l559" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: dir      ! directory to cd to</a>
+   560) <a name="l560" style="background-color: #ffcccc">   integer  (SHR_KIND_IN) :: rcode    ! Return error code</a>
+   561) <a name="l561" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: filename ! namelist file to read</a>
+   562) <a name="l562" style="background-color: #ffcccc"></a>
+   563) <a name="l563" style="background-color: #ffcccc">   !--- formats ---</a>
+   564) <a name="l564" style="background-color: #ffcccc">   character(*),parameter :: subName = '(shr_file_chdir) '</a>
+   565) <a name="l565" style="background-color: #ffcccc">   character(*),parameter :: F00 =   &quot;('(shr_file_chdir) ',4a)&quot;</a>
+   566) <a name="l566" style="background-color: #ffcccc"></a>
+   567) <a name="l567" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   568) <a name="l568" style="background-color: #ffcccc">! Notes:</a>
+   569) <a name="l569" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   570) <a name="l570" style="background-color: #ffcccc"></a>
+   571) <a name="l571" style="background-color: #ffcccc">   call shr_file_stdioReadNL( model, filename, dirOut=dir, rcodeOut=rcode )</a>
+   572) <a name="l572" style="background-color: #ffcccc">   if (dir /= &quot;nochange&quot;) then</a>
+   573) <a name="l573" style="background-color: #ffcccc">      call shr_sys_chdir(dir ,rcode)</a>
+   574) <a name="l574" style="background-color: #ffcccc">      if (s_loglev &gt; 0) write(s_logunit,F00) &quot;read &quot;,trim(filename),&quot;, changed cwd to &quot;,trim(dir)</a>
+   575) <a name="l575" style="background-color: #ffcccc">   else</a>
+   576) <a name="l576" style="background-color: #ffcccc">      if (s_loglev &gt; 0) write(s_logunit,F00) &quot;read &quot;,trim(filename),&quot;, cwd has *not* been changed&quot;</a>
+   577) <a name="l577" style="background-color: #ffcccc">      rcode = 1</a>
+   578) <a name="l578" style="background-color: #ffcccc">   endif</a>
+   579) <a name="l579" style="background-color: #ffcccc">   if ( present(rcodeOut) ) rcodeOut = rcode</a>
+   580) <a name="l580" style="background-color: #ffcccc"> </a>
+   581) <a name="l581" style="background-color: #ffcccc">END SUBROUTINE shr_file_chdir</a>
+   582) <a name="l582" style="background-color: #ffffff"></a>
+   583) <a name="l583" style="background-color: #ffffff">!===============================================================================</a>
+   584) <a name="l584" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   585) <a name="l585" style="background-color: #ffffff">!</a>
+   586) <a name="l586" style="background-color: #ffffff">! !IROUTINE: shr_file_dirio --- Change stdin and stdout.</a>
+   587) <a name="l587" style="background-color: #ffffff">!</a>
+   588) <a name="l588" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   589) <a name="l589" style="background-color: #ffffff">!   change the stdin &amp; stdout (units 5 &amp; 6), see shr_file_stdio for notes</a>
+   590) <a name="l590" style="background-color: #ffffff">!</a>
+   591) <a name="l591" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+   592) <a name="l592" style="background-color: #ffffff"></a>
+   593) <a name="l593" style="background-color: #ffffff">SUBROUTINE </a><a style="background-color: #ffcccc">shr_file_dirio(model)</a>
+   594) <a name="l594" style="background-color: #ffcccc"></a>
+   595) <a name="l595" style="background-color: #ffcccc">   implicit none</a>
+   596) <a name="l596" style="background-color: #ffcccc"></a>
+   597) <a name="l597" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+   598) <a name="l598" style="background-color: #ffcccc"></a>
+   599) <a name="l599" style="background-color: #ffcccc">   character(*),intent(in) :: model ! used to construct env varible name</a>
+   600) <a name="l600" style="background-color: #ffcccc"></a>
+   601) <a name="l601" style="background-color: #ffcccc">!EOP</a>
+   602) <a name="l602" style="background-color: #ffcccc"></a>
+   603) <a name="l603" style="background-color: #ffcccc">   !--- local ---</a>
+   604) <a name="l604" style="background-color: #ffcccc"></a>
+   605) <a name="l605" style="background-color: #ffcccc">   !--- formats ---</a>
+   606) <a name="l606" style="background-color: #ffcccc">   character(*),parameter :: subName = '(shr_file_dirio) '</a>
+   607) <a name="l607" style="background-color: #ffcccc"></a>
+   608) <a name="l608" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   609) <a name="l609" style="background-color: #ffcccc">! Notes:</a>
+   610) <a name="l610" style="background-color: #ffcccc">!</a>
+   611) <a name="l611" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   612) <a name="l612" style="background-color: #ffcccc"></a>
+   613) <a name="l613" style="background-color: #ffcccc">   call shr_file_chStdIn (model)</a>
+   614) <a name="l614" style="background-color: #ffcccc">   call shr_file_chStdOut(model)</a>
+   615) <a name="l615" style="background-color: #ffcccc"> </a>
+   616) <a name="l616" style="background-color: #ffcccc">END SUBROUTINE shr_file_dirio</a>
+   617) <a name="l617" style="background-color: #ffffff"></a>
+   618) <a name="l618" style="background-color: #ffffff">!===============================================================================</a>
+   619) <a name="l619" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   620) <a name="l620" style="background-color: #ffffff">!</a>
+   621) <a name="l621" style="background-color: #ffffff">! !IROUTINE: shr_file_chStdIn -- Change stdin</a>
+   622) <a name="l622" style="background-color: #ffffff">!</a>
+   623) <a name="l623" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   624) <a name="l624" style="background-color: #ffffff">!   change the stdin (unit 5), see shr_file_stdio for notes</a>
+   625) <a name="l625" style="background-color: #ffffff">!</a>
+   626) <a name="l626" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+   627) <a name="l627" style="background-color: #ffffff"></a>
+   628) <a name="l628" style="background-color: #ffffff">SUBROUTINE </a><a style="background-color: #ffcccc">shr_file_chStdIn( model, NLFilename, rcodeOut )</a>
+   629) <a name="l629" style="background-color: #ffcccc"></a>
+   630) <a name="l630" style="background-color: #ffcccc">   implicit none</a>
+   631) <a name="l631" style="background-color: #ffcccc"></a>
+   632) <a name="l632" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+   633) <a name="l633" style="background-color: #ffcccc"></a>
+   634) <a name="l634" style="background-color: #ffcccc">   character(*)          ,intent(in)           :: model      ! used to construct env var name</a>
+   635) <a name="l635" style="background-color: #ffcccc">   character(SHR_KIND_CL),intent(out),optional :: NLFilename ! open unit 5 to this</a>
+   636) <a name="l636" style="background-color: #ffcccc">   integer  (SHR_KIND_IN),intent(out),optional :: rcodeOut   ! return code</a>
+   637) <a name="l637" style="background-color: #ffcccc"></a>
+   638) <a name="l638" style="background-color: #ffcccc">!EOP</a>
+   639) <a name="l639" style="background-color: #ffcccc"></a>
+   640) <a name="l640" style="background-color: #ffcccc">   !--- local ---</a>
+   641) <a name="l641" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: stdin    ! open unit 5 to this file</a>
+   642) <a name="l642" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: nlfile   ! Namelist filename for model to read from</a>
+   643) <a name="l643" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: filename ! namelist file to read</a>
+   644) <a name="l644" style="background-color: #ffcccc">   integer  (SHR_KIND_IN) :: rcode    ! return code</a>
+   645) <a name="l645" style="background-color: #ffcccc"></a>
+   646) <a name="l646" style="background-color: #ffcccc">   !--- formats ---</a>
+   647) <a name="l647" style="background-color: #ffcccc">   character(*),parameter :: subName = '(shr_file_chStdIn) '</a>
+   648) <a name="l648" style="background-color: #ffcccc">   character(*),parameter :: F00   = &quot;('(shr_file_chStdIn) ',4a)&quot;</a>
+   649) <a name="l649" style="background-color: #ffcccc"></a>
+   650) <a name="l650" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   651) <a name="l651" style="background-color: #ffcccc">! Notes:</a>
+   652) <a name="l652" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   653) <a name="l653" style="background-color: #ffcccc"></a>
+   654) <a name="l654" style="background-color: #ffcccc">   call shr_file_stdioReadNL( model, filename, stdinOut=stdin, &amp;</a>
+   655) <a name="l655" style="background-color: #ffcccc">                              nlfileOut=nlfile, rcodeOut=rcode )</a>
+   656) <a name="l656" style="background-color: #ffcccc">   if (stdin  /= &quot;nochange&quot;) then</a>
+   657) <a name="l657" style="background-color: #ffcccc">      open(unit=5,file=stdin ,status='UNKNOWN',iostat=rcode)</a>
+   658) <a name="l658" style="background-color: #ffcccc">      if ( rcode /= 0 )then</a>
+   659) <a name="l659" style="background-color: #ffcccc">         if (s_loglev &gt; 0) &amp;</a>
+   660) <a name="l660" style="background-color: #ffcccc">            write(s_logunit,F00) &quot;read &quot;,trim(filename),': error opening file as unit 5:', &amp;</a>
+   661) <a name="l661" style="background-color: #ffcccc">                      trim(nlfile)</a>
+   662) <a name="l662" style="background-color: #ffcccc">      else</a>
+   663) <a name="l663" style="background-color: #ffcccc">         if (s_loglev &gt; 0) &amp;</a>
+   664) <a name="l664" style="background-color: #ffcccc">            write(s_logunit,F00) &quot;read &quot;,trim(filename),': unit 5 connected to ', &amp;</a>
+   665) <a name="l665" style="background-color: #ffcccc">                      trim(stdin)</a>
+   666) <a name="l666" style="background-color: #ffcccc">      end if</a>
+   667) <a name="l667" style="background-color: #ffcccc">   else</a>
+   668) <a name="l668" style="background-color: #ffcccc">      if (s_loglev &gt; 0) write(s_logunit,F00) &quot;read &quot;,trim(filename), &amp;</a>
+   669) <a name="l669" style="background-color: #ffcccc">         ': unit 5 has *not* been redirected'</a>
+   670) <a name="l670" style="background-color: #ffcccc">   endif</a>
+   671) <a name="l671" style="background-color: #ffcccc">   if ( len_trim(nlfile) &gt; 0) then</a>
+   672) <a name="l672" style="background-color: #ffcccc">      if (s_loglev &gt; 0) write(s_logunit,F00) &quot;read &quot;,trim(filename), &amp;</a>
+   673) <a name="l673" style="background-color: #ffcccc">         ': read namelist from file:',trim(nlfile)</a>
+   674) <a name="l674" style="background-color: #ffcccc">      if ( .not. present(NLFilename) )then</a>
+   675) <a name="l675" style="background-color: #ffcccc">         if (s_loglev &gt; 0) write(s_logunit,F00) &quot;error: namelist filename NOT present&quot;</a>
+   676) <a name="l676" style="background-color: #ffcccc">         rcode = 7</a>
+   677) <a name="l677" style="background-color: #ffcccc">      end if</a>
+   678) <a name="l678" style="background-color: #ffcccc">   else</a>
+   679) <a name="l679" style="background-color: #ffcccc">      if (s_loglev &gt; 0) write(s_logunit,F00) &quot;read &quot;,trim(filename),&quot;, &quot;</a>
+   680) <a name="l680" style="background-color: #ffcccc">      if ( present(NLFilename) )then</a>
+   681) <a name="l681" style="background-color: #ffcccc">         if (s_loglev &gt; 0) write(s_logunit,F00) &quot;error: namelist filename present, but null&quot;</a>
+   682) <a name="l682" style="background-color: #ffcccc">         rcode = 8</a>
+   683) <a name="l683" style="background-color: #ffcccc">      end if</a>
+   684) <a name="l684" style="background-color: #ffcccc">   endif</a>
+   685) <a name="l685" style="background-color: #ffcccc">   if ( present(NLFilename) ) NLFilename = nlfile</a>
+   686) <a name="l686" style="background-color: #ffcccc">   if ( present(rcodeOut)   ) rcodeOut   = rcode</a>
+   687) <a name="l687" style="background-color: #ffcccc"> </a>
+   688) <a name="l688" style="background-color: #ffcccc">END SUBROUTINE shr_file_chStdIn</a>
+   689) <a name="l689" style="background-color: #ffffff"></a>
+   690) <a name="l690" style="background-color: #ffffff">!===============================================================================</a>
+   691) <a name="l691" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   692) <a name="l692" style="background-color: #ffffff">!</a>
+   693) <a name="l693" style="background-color: #ffffff">! !IROUTINE: shr_file_stdout -- Change stdout</a>
+   694) <a name="l694" style="background-color: #ffffff">!</a>
+   695) <a name="l695" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   696) <a name="l696" style="background-color: #ffffff">!   change the stdout (unit 6), see shr_file_stdio for notes</a>
+   697) <a name="l697" style="background-color: #ffffff">!</a>
+   698) <a name="l698" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+   699) <a name="l699" style="background-color: #ffffff"></a>
+   700) <a name="l700" style="background-color: #ffffff">SUBROUTINE </a><a style="background-color: #ffcccc">shr_file_chStdOut(model,rcodeOut)</a>
+   701) <a name="l701" style="background-color: #ffcccc"></a>
+   702) <a name="l702" style="background-color: #ffcccc">   implicit none</a>
+   703) <a name="l703" style="background-color: #ffcccc"></a>
+   704) <a name="l704" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+   705) <a name="l705" style="background-color: #ffcccc">   !--- arguments ---</a>
+   706) <a name="l706" style="background-color: #ffcccc">   character(*)        ,intent(in)           :: model    ! used to construct env varible name</a>
+   707) <a name="l707" style="background-color: #ffcccc">   integer(SHR_KIND_IN),intent(out),optional :: rcodeOut ! Return error code</a>
+   708) <a name="l708" style="background-color: #ffcccc">!EOP</a>
+   709) <a name="l709" style="background-color: #ffcccc"></a>
+   710) <a name="l710" style="background-color: #ffcccc">   !--- local ---</a>
+   711) <a name="l711" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: filename ! namelist file to read</a>
+   712) <a name="l712" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: stdout   ! open unit 6 to this file</a>
+   713) <a name="l713" style="background-color: #ffcccc">   integer  (SHR_KIND_IN) :: rcode    ! return code</a>
+   714) <a name="l714" style="background-color: #ffcccc"></a>
+   715) <a name="l715" style="background-color: #ffcccc">   !--- formats ---</a>
+   716) <a name="l716" style="background-color: #ffcccc">   character(*),parameter :: subName = '(shr_file_chStdOut) '</a>
+   717) <a name="l717" style="background-color: #ffcccc">   character(*),parameter :: F00   = &quot;('(shr_file_chStdOut) ',4a)&quot;</a>
+   718) <a name="l718" style="background-color: #ffcccc"></a>
+   719) <a name="l719" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   720) <a name="l720" style="background-color: #ffcccc">! Notes:</a>
+   721) <a name="l721" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   722) <a name="l722" style="background-color: #ffcccc"></a>
+   723) <a name="l723" style="background-color: #ffcccc">   call shr_file_stdioReadNL( model, filename, stdoutOut=stdout, &amp;</a>
+   724) <a name="l724" style="background-color: #ffcccc">                              rcodeOut=rcode )</a>
+   725) <a name="l725" style="background-color: #ffcccc">   if (stdout /= &quot;nochange&quot;) then</a>
+   726) <a name="l726" style="background-color: #ffcccc">      close(6)</a>
+   727) <a name="l727" style="background-color: #ffcccc">      open(unit=6,file=stdout,position='APPEND')</a>
+   728) <a name="l728" style="background-color: #ffcccc">      if (s_loglev &gt; 0) write(s_logunit,F00) &quot;read &quot;,trim(filename),  &amp;</a>
+   729) <a name="l729" style="background-color: #ffcccc">         ': unit 6 connected to ',trim(stdout)</a>
+   730) <a name="l730" style="background-color: #ffcccc">      call shr_sys_flush(s_logunit)</a>
+   731) <a name="l731" style="background-color: #ffcccc">   else</a>
+   732) <a name="l732" style="background-color: #ffcccc">      if (s_loglev &gt; 0) write(s_logunit,F00) &quot;read &quot;,trim(filename),  &amp;</a>
+   733) <a name="l733" style="background-color: #ffcccc">         ': unit 6 has *not* been redirected'</a>
+   734) <a name="l734" style="background-color: #ffcccc">      rcode = 1</a>
+   735) <a name="l735" style="background-color: #ffcccc">   endif</a>
+   736) <a name="l736" style="background-color: #ffcccc"> </a>
+   737) <a name="l737" style="background-color: #ffcccc">   if ( present(rcodeOut)   ) rcodeOut = rcode</a>
+   738) <a name="l738" style="background-color: #ffcccc"> </a>
+   739) <a name="l739" style="background-color: #ffcccc">END SUBROUTINE shr_file_chStdOut</a>
+   740) <a name="l740" style="background-color: #ffffff"></a>
+   741) <a name="l741" style="background-color: #ffffff">!===============================================================================</a>
+   742) <a name="l742" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   743) <a name="l743" style="background-color: #ffffff">!</a>
+   744) <a name="l744" style="background-color: #ffffff">! !IROUTINE: shr_file_stdioReadNL -- read in stdio namelist</a>
+   745) <a name="l745" style="background-color: #ffffff">!</a>
+   746) <a name="l746" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   747) <a name="l747" style="background-color: #ffffff">!   Read in the stdio namelist for any given model type. Return any of the</a>
+   748) <a name="l748" style="background-color: #ffffff">! needed input namelist variables as optional arguments. Return &quot;nochange&quot; in</a>
+   749) <a name="l749" style="background-color: #ffffff">! dir, stdin, or stdout if shouldn't change.</a>
+   750) <a name="l750" style="background-color: #ffffff">!</a>
+   751) <a name="l751" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+   752) <a name="l752" style="background-color: #ffffff"></a>
+   753) <a name="l753" style="background-color: #ffffff">SUBROUTINE </a><a style="background-color: #ffcccc">shr_file_stdioReadNL( model, filename, dirOut, stdinOut, stdoutOut, &amp;</a>
+   754) <a name="l754" style="background-color: #ffcccc">                                 NLFileOut, rcodeOut )</a>
+   755) <a name="l755" style="background-color: #ffcccc"></a>
+   756) <a name="l756" style="background-color: #ffcccc">   implicit none</a>
+   757) <a name="l757" style="background-color: #ffcccc"></a>
+   758) <a name="l758" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+   759) <a name="l759" style="background-color: #ffcccc"></a>
+   760) <a name="l760" style="background-color: #ffcccc">   character(*)          ,intent(in)           :: model     ! used to construct env varible name</a>
+   761) <a name="l761" style="background-color: #ffcccc">   character(SHR_KIND_CL),intent(out)          :: filename  ! nml file to read from unit 5</a>
+   762) <a name="l762" style="background-color: #ffcccc">   character(SHR_KIND_CL),intent(out),optional :: NLFileOut ! open unit 6 to this file</a>
+   763) <a name="l763" style="background-color: #ffcccc">   character(SHR_KIND_CL),intent(out),optional :: dirOut    ! directory to cd to</a>
+   764) <a name="l764" style="background-color: #ffcccc">   character(SHR_KIND_CL),intent(out),optional :: stdinOut  ! open unit 5 to this file</a>
+   765) <a name="l765" style="background-color: #ffcccc">   character(SHR_KIND_CL),intent(out),optional :: stdoutOut ! open unit 6 to this file</a>
+   766) <a name="l766" style="background-color: #ffcccc">   integer  (SHR_KIND_IN),intent(out),optional :: rcodeOut  ! return code</a>
+   767) <a name="l767" style="background-color: #ffcccc"></a>
+   768) <a name="l768" style="background-color: #ffcccc">!EOP</a>
+   769) <a name="l769" style="background-color: #ffcccc"></a>
+   770) <a name="l770" style="background-color: #ffcccc">   !--- local ---</a>
+   771) <a name="l771" style="background-color: #ffcccc">   logical                :: exists   ! true iff file exists</a>
+   772) <a name="l772" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: dir      ! directory to cd to</a>
+   773) <a name="l773" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: stdin    ! open unit 5 to this file</a>
+   774) <a name="l774" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: stdout   ! open unit 6 to this file</a>
+   775) <a name="l775" style="background-color: #ffcccc">   character(SHR_KIND_CL) :: NLFile   ! namelist file to read seperately</a>
+   776) <a name="l776" style="background-color: #ffcccc">   integer  (SHR_KIND_IN) :: rcode    ! return code</a>
+   777) <a name="l777" style="background-color: #ffcccc">   integer  (SHR_KIND_IN) :: unit     ! Unit to read from</a>
+   778) <a name="l778" style="background-color: #ffcccc"></a>
+   779) <a name="l779" style="background-color: #ffcccc">   namelist / stdio / dir,stdin,stdout,NLFile</a>
+   780) <a name="l780" style="background-color: #ffcccc"></a>
+   781) <a name="l781" style="background-color: #ffcccc">   !--- formats ---</a>
+   782) <a name="l782" style="background-color: #ffcccc">   character(*),parameter :: subName = '(shr_file_stdioReadNL) '</a>
+   783) <a name="l783" style="background-color: #ffcccc">   character(*),parameter :: F00   = &quot;('(shr_file_stdioReadNL) ',4a)&quot;</a>
+   784) <a name="l784" style="background-color: #ffcccc">   character(*),parameter :: F01   = &quot;('(shr_file_stdioReadNL) ',2a,i6)&quot;</a>
+   785) <a name="l785" style="background-color: #ffcccc"></a>
+   786) <a name="l786" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   787) <a name="l787" style="background-color: #ffcccc">! Notes:</a>
+   788) <a name="l788" style="background-color: #ffcccc">!</a>
+   789) <a name="l789" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   790) <a name="l790" style="background-color: #ffcccc"></a>
+   791) <a name="l791" style="background-color: #ffcccc">   rcode  = 0</a>
+   792) <a name="l792" style="background-color: #ffcccc">   dir    = &quot;nochange&quot;</a>
+   793) <a name="l793" style="background-color: #ffcccc">   stdin  = &quot;nochange&quot;</a>
+   794) <a name="l794" style="background-color: #ffcccc">   stdout = &quot;nochange&quot;</a>
+   795) <a name="l795" style="background-color: #ffcccc">   NLFile = &quot; &quot;</a>
+   796) <a name="l796" style="background-color: #ffcccc"></a>
+   797) <a name="l797" style="background-color: #ffcccc">   filename = trim(model)//&quot;_stdio.nml&quot;  ! eg. file=&quot;cpl_stdio.nml&quot;</a>
+   798) <a name="l798" style="background-color: #ffcccc">   inquire(file=filename,exist=exists)</a>
+   799) <a name="l799" style="background-color: #ffcccc"></a>
+   800) <a name="l800" style="background-color: #ffcccc">   if (.not. exists) then</a>
+   801) <a name="l801" style="background-color: #ffcccc">      if (s_loglev &gt; 0) write(s_logunit,F00) &quot;file &quot;,trim(filename),&amp; </a>
+   802) <a name="l802" style="background-color: #ffcccc">      &amp; &quot; doesn't exist, can not read stdio namelist from it&quot;</a>
+   803) <a name="l803" style="background-color: #ffcccc">      rcode = 9</a>
+   804) <a name="l804" style="background-color: #ffcccc">   else</a>
+   805) <a name="l805" style="background-color: #ffcccc">      unit = shr_file_getUnit()</a>
+   806) <a name="l806" style="background-color: #ffcccc">      open (unit,file=filename,action=&quot;READ&quot;)</a>
+   807) <a name="l807" style="background-color: #ffcccc">      read (unit,nml=stdio,iostat=rcode)</a>
+   808) <a name="l808" style="background-color: #ffcccc">      close(unit)</a>
+   809) <a name="l809" style="background-color: #ffcccc">      call shr_file_freeUnit( unit )</a>
+   810) <a name="l810" style="background-color: #ffcccc">      if (rcode /= 0) then</a>
+   811) <a name="l811" style="background-color: #ffcccc">         write(s_logunit,F01) 'ERROR: reading ',trim(filename),': iostat=',rcode</a>
+   812) <a name="l812" style="background-color: #ffcccc">         call shr_sys_abort(subName//&quot; ERROR reading &quot;//trim(filename) )</a>
+   813) <a name="l813" style="background-color: #ffcccc">      end if</a>
+   814) <a name="l814" style="background-color: #ffcccc">   endif</a>
+   815) <a name="l815" style="background-color: #ffcccc">   if ( len_trim(NLFile) &gt; 0 .and. trim(stdin) /= &quot;nochange&quot; )then</a>
+   816) <a name="l816" style="background-color: #ffcccc">      write(s_logunit,F00) &quot;Error: input namelist:&quot;</a>
+   817) <a name="l817" style="background-color: #ffcccc">      write(s_logunit,nml=stdio)</a>
+   818) <a name="l818" style="background-color: #ffcccc">      call shr_sys_abort(subName//&quot; ERROR trying to both redirect AND &quot;// &amp;</a>
+   819) <a name="l819" style="background-color: #ffcccc">                         &quot;open namelist filename&quot; )</a>
+   820) <a name="l820" style="background-color: #ffcccc">   end if</a>
+   821) <a name="l821" style="background-color: #ffcccc">   if ( present(NLFileOut) ) NLFileOut = NLFile</a>
+   822) <a name="l822" style="background-color: #ffcccc">   if ( present(dirOut)    ) dirOut    = dir</a>
+   823) <a name="l823" style="background-color: #ffcccc">   if ( present(stdinOut)  ) stdinOut  = stdin</a>
+   824) <a name="l824" style="background-color: #ffcccc">   if ( present(stdoutOut) ) stdoutOut = stdout</a>
+   825) <a name="l825" style="background-color: #ffcccc">   if ( present(rcodeOut)  ) rcodeOut  = rcode</a>
+   826) <a name="l826" style="background-color: #ffcccc"> </a>
+   827) <a name="l827" style="background-color: #ffcccc">END SUBROUTINE shr_file_stdioReadNL</a>
+   828) <a name="l828" style="background-color: #ffffff"></a>
+   829) <a name="l829" style="background-color: #ffffff">!===============================================================================</a>
+   830) <a name="l830" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   831) <a name="l831" style="background-color: #ffffff">!</a>
+   832) <a name="l832" style="background-color: #ffffff">! !IROUTINE: shr_file_setIO -- read in stdio namelist</a>
+   833) <a name="l833" style="background-color: #ffffff">!</a>
+   834) <a name="l834" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   835) <a name="l835" style="background-color: #ffffff">!   This opens a namelist file specified as an argument and then opens</a>
+   836) <a name="l836" style="background-color: #ffffff">!   a log file associated with the unit argument.  This may be extended</a>
+   837) <a name="l837" style="background-color: #ffffff">!   in the future.</a>
+   838) <a name="l838" style="background-color: #ffffff">!</a>
+   839) <a name="l839" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+   840) <a name="l840" style="background-color: #ffffff"></a>
+   841) <a name="l841" style="background-color: #ffffff">SUBROUTINE shr_file_setIO( nmlfile, funit)</a>
+   842) <a name="l842" style="background-color: #ffffff"></a>
+   843) <a name="l843" style="background-color: #ffffff">   implicit none</a>
+   844) <a name="l844" style="background-color: #ffffff"></a>
+   845) <a name="l845" style="background-color: #ffffff">! !INPUT/OUTPUT PARAMETERS:</a>
+   846) <a name="l846" style="background-color: #ffffff"></a>
+   847) <a name="l847" style="background-color: #ffffff">   character(len=*)    ,intent(in)  :: nmlfile  ! namelist filename</a>
+   848) <a name="l848" style="background-color: #ffffff">   integer(SHR_KIND_IN),intent(in)  :: funit    ! unit number for log file</a>
+   849) <a name="l849" style="background-color: #ffffff"></a>
+   850) <a name="l850" style="background-color: #ffffff">!EOP</a>
+   851) <a name="l851" style="background-color: #ffffff"></a>
+   852) <a name="l852" style="background-color: #ffffff">   !--- local ---</a>
+   853) <a name="l853" style="background-color: #ffffff">   logical                :: exists   ! true if file exists</a>
+   854) <a name="l854" style="background-color: #ffffff">   character(SHR_KIND_CL) :: diri     ! directory to cd to</a>
+   855) <a name="l855" style="background-color: #ffffff">   character(SHR_KIND_CL) :: diro     ! directory to cd to</a>
+   856) <a name="l856" style="background-color: #ffffff">   character(SHR_KIND_CL) :: logfile  ! open unit 6 to this file</a>
+   857) <a name="l857" style="background-color: #ffffff">   integer(SHR_KIND_IN)   :: unit     ! unit number</a>
+   858) <a name="l858" style="background-color: #ffffff">   integer(SHR_KIND_IN)   :: rcode    ! error code</a>
+   859) <a name="l859" style="background-color: #ffffff"></a>
+   860) <a name="l860" style="background-color: #ffffff">   namelist / modelio / diri,diro,logfile</a>
+   861) <a name="l861" style="background-color: #ffffff"></a>
+   862) <a name="l862" style="background-color: #ffffff">   !--- formats ---</a>
+   863) <a name="l863" style="background-color: #ffffff">   character(*),parameter :: subName = '(shr_file_setIO) '</a>
+   864) <a name="l864" style="background-color: #ffffff">   character(*),parameter :: F00   = &quot;('(shr_file_setIO) ',4a)&quot;</a>
+   865) <a name="l865" style="background-color: #ffffff">   character(*),parameter :: F01   = &quot;('(shr_file_setIO) ',2a,i6)&quot;</a>
+   866) <a name="l866" style="background-color: #ffffff"></a>
+   867) <a name="l867" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   868) <a name="l868" style="background-color: #ffffff">! Notes:</a>
+   869) <a name="l869" style="background-color: #ffffff">!</a>
+   870) <a name="l870" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   871) <a name="l871" style="background-color: #ffffff"></a>
+   872) <a name="l872" style="background-color: #ffffff">   diri = &quot;.&quot;</a>
+   873) <a name="l873" style="background-color: #ffffff">   diro = &quot;.&quot;</a>
+   874) <a name="l874" style="background-color: #ffffff">   logfile = &quot;&quot;</a>
+   875) <a name="l875" style="background-color: #ffffff"></a>
+   876) <a name="l876" style="background-color: #ffffff">   inquire(file=nmlfile,exist=exists)</a>
+   877) <a name="l877" style="background-color: #ffffff"></a>
+   878) <a name="l878" style="background-color: #ffffff">   if (.not. exists) then</a>
+   879) <a name="l879" style="background-color: #ffff99">      if (s_loglev &gt; 0) write(s_logunit,F00) &quot;file &quot;,trim(nmlfile),&quot; nonexistent&quot;</a>
+   880) <a name="l880" style="background-color: #ffff99">      return</a>
+   881) <a name="l881" style="background-color: #ffff99">   else</a>
+   882) <a name="l882" style="background-color: #ffffff">      unit = shr_file_getUnit()</a>
+   883) <a name="l883" style="background-color: #ffffff">      open (unit,file=nmlfile,action=&quot;READ&quot;)</a>
+   884) <a name="l884" style="background-color: #ffffff">      read (unit,nml=modelio,iostat=rcode)</a>
+   885) <a name="l885" style="background-color: #ffffff">      close(unit)</a>
+   886) <a name="l886" style="background-color: #ffffff">      call shr_file_freeUnit( unit )</a>
+   887) <a name="l887" style="background-color: #ffffff">      if (rcode /= 0) then</a>
+   888) <a name="l888" style="background-color: #ffff99">         write(s_logunit,F01) 'ERROR: reading ',trim(nmlfile),': iostat=',rcode</a>
+   889) <a name="l889" style="background-color: #ffff99">         call shr_sys_abort(subName//&quot; ERROR reading &quot;//trim(nmlfile) )</a>
+   890) <a name="l890" style="background-color: #ffff99">      end if</a>
+   891) <a name="l891" style="background-color: #ffff99">   endif</a>
+   892) <a name="l892" style="background-color: #ffff99"></a>
+   893) <a name="l893" style="background-color: #ffff99">   if (</a><a style="background-color: #ffffff">len_trim(logfile) &gt; 0) then</a>
+   894) <a name="l894" style="background-color: #ffffff">      open(funit,file=trim(diro)//&quot;/&quot;//trim(logfile))</a>
+   895) <a name="l895" style="background-color: #ffffff">   else</a>
+   896) <a name="l896" style="background-color: #ffff99">      if (s_loglev &gt; 0) write(s_logunit,F00) &quot;logfile not opened&quot;</a>
+   897) <a name="l897" style="background-color: #ffff99">   endif</a>
+   898) <a name="l898" style="background-color: #ffff99"></a>
+   899) <a name="l899" style="background-color: #ffffff">END SUBROUTINE shr_file_setIO</a>
+   900) <a name="l900" style="background-color: #ffffff"></a>
+   901) <a name="l901" style="background-color: #ffffff">!===============================================================================</a>
+   902) <a name="l902" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   903) <a name="l903" style="background-color: #ffffff">!</a>
+   904) <a name="l904" style="background-color: #ffffff">! !IROUTINE: shr_file_setLogUnit -- Set the Log I/O Unit number</a>
+   905) <a name="l905" style="background-color: #ffffff">!</a>
+   906) <a name="l906" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+   907) <a name="l907" style="background-color: #ffffff"></a>
+   908) <a name="l908" style="background-color: #ffffff">SUBROUTINE shr_file_setLogUnit(unit)</a>
+   909) <a name="l909" style="background-color: #ffffff"></a>
+   910) <a name="l910" style="background-color: #ffffff">   implicit none</a>
+   911) <a name="l911" style="background-color: #ffffff"></a>
+   912) <a name="l912" style="background-color: #ffffff">! !INPUT/OUTPUT PARAMETERS:</a>
+   913) <a name="l913" style="background-color: #ffffff"></a>
+   914) <a name="l914" style="background-color: #ffffff">   integer(SHR_KIND_IN),intent(in) :: unit     ! new unit number</a>
+   915) <a name="l915" style="background-color: #ffffff"></a>
+   916) <a name="l916" style="background-color: #ffffff">!EOP</a>
+   917) <a name="l917" style="background-color: #ffffff"></a>
+   918) <a name="l918" style="background-color: #ffffff">   !--- formats ---</a>
+   919) <a name="l919" style="background-color: #ffffff">   character(*),parameter :: subName = '(shr_file_setLogUnit) '</a>
+   920) <a name="l920" style="background-color: #ffffff">   character(*),parameter :: F00   = &quot;('(shr_file_setLogUnit) ',4a)&quot;</a>
+   921) <a name="l921" style="background-color: #ffffff"></a>
+   922) <a name="l922" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   923) <a name="l923" style="background-color: #ffffff">! Notes: Caller must be sure it's a valid unit number</a>
+   924) <a name="l924" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   925) <a name="l925" style="background-color: #ffffff"></a>
+   926) <a name="l926" style="background-color: #ffffff">   if (s_loglev </a><a style="background-color: #ffff99">&gt; 1 .and. s_logunit-unit /= 0) then</a>
+   927) <a name="l927" style="background-color: #ffff99">      write(s_logunit,*) subName,': reset log unit number from/to ',s_logunit, unit</a>
+   928) <a name="l928" style="background-color: #ffff99">      write(     unit,*) subName,': reset log unit number from/to ',s_logunit, unit</a>
+   929) <a name="l929" style="background-color: #ffff99">   endif</a>
+   930) <a name="l930" style="background-color: #ffff99"></a>
+   931) <a name="l931" style="background-color: #ffffff">   s_logunit = unit</a>
+   932) <a name="l932" style="background-color: #ffffff"> </a>
+   933) <a name="l933" style="background-color: #ffffff">END SUBROUTINE shr_file_setLogUnit</a>
+   934) <a name="l934" style="background-color: #ffffff"></a>
+   935) <a name="l935" style="background-color: #ffffff">!===============================================================================</a>
+   936) <a name="l936" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   937) <a name="l937" style="background-color: #ffffff">!</a>
+   938) <a name="l938" style="background-color: #ffffff">! !IROUTINE: shr_file_setLogLevel -- Set the Log I/O Unit number</a>
+   939) <a name="l939" style="background-color: #ffffff">!</a>
+   940) <a name="l940" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+   941) <a name="l941" style="background-color: #ffffff"></a>
+   942) <a name="l942" style="background-color: #ffffff">SUBROUTINE shr_file_setLogLevel(newlevel)</a>
+   943) <a name="l943" style="background-color: #ffffff"></a>
+   944) <a name="l944" style="background-color: #ffffff">   implicit none</a>
+   945) <a name="l945" style="background-color: #ffffff"></a>
+   946) <a name="l946" style="background-color: #ffffff">! !INPUT/OUTPUT PARAMETERS:</a>
+   947) <a name="l947" style="background-color: #ffffff"></a>
+   948) <a name="l948" style="background-color: #ffffff">   integer(SHR_KIND_IN),intent(in) :: newlevel     ! new log level</a>
+   949) <a name="l949" style="background-color: #ffffff"></a>
+   950) <a name="l950" style="background-color: #ffffff">!EOP</a>
+   951) <a name="l951" style="background-color: #ffffff"></a>
+   952) <a name="l952" style="background-color: #ffffff">   !--- formats ---</a>
+   953) <a name="l953" style="background-color: #ffffff">   character(*),parameter :: subName = '(shr_file_setLogLevel) '</a>
+   954) <a name="l954" style="background-color: #ffffff">   character(*),parameter :: F00   = &quot;('(shr_file_setLogLevel) ',4a)&quot;</a>
+   955) <a name="l955" style="background-color: #ffffff"></a>
+   956) <a name="l956" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   957) <a name="l957" style="background-color: #ffffff">! Notes: </a>
+   958) <a name="l958" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   959) <a name="l959" style="background-color: #ffffff"></a>
+   960) <a name="l960" style="background-color: #ffffff">   if (s_loglev+newlevel </a><a style="background-color: #ffff99">&gt; 2 .and. s_loglev-newlevel /= 0) &amp;</a>
+   961) <a name="l961" style="background-color: #ffff99">      write(s_logunit,*) subName,': reset log level from/to ',s_loglev, newlevel</a>
+   962) <a name="l962" style="background-color: #ffff99"></a>
+   963) <a name="l963" style="background-color: #ffffff">   s_loglev = newlevel</a>
+   964) <a name="l964" style="background-color: #ffffff"> </a>
+   965) <a name="l965" style="background-color: #ffffff">END SUBROUTINE shr_file_setLogLevel</a>
+   966) <a name="l966" style="background-color: #ffffff"></a>
+   967) <a name="l967" style="background-color: #ffffff">!===============================================================================</a>
+   968) <a name="l968" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   969) <a name="l969" style="background-color: #ffffff">!</a>
+   970) <a name="l970" style="background-color: #ffffff">! !IROUTINE: shr_file_getLogUnit -- Set the Log I/O Unit number</a>
+   971) <a name="l971" style="background-color: #ffffff">!</a>
+   972) <a name="l972" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+   973) <a name="l973" style="background-color: #ffffff"></a>
+   974) <a name="l974" style="background-color: #ffffff">SUBROUTINE shr_file_getLogUnit(unit)</a>
+   975) <a name="l975" style="background-color: #ffffff"></a>
+   976) <a name="l976" style="background-color: #ffffff">   implicit none</a>
+   977) <a name="l977" style="background-color: #ffffff"></a>
+   978) <a name="l978" style="background-color: #ffffff">! !INPUT/OUTPUT PARAMETERS:</a>
+   979) <a name="l979" style="background-color: #ffffff"></a>
+   980) <a name="l980" style="background-color: #ffffff">   integer(SHR_KIND_IN),intent(out) :: unit     ! new unit number</a>
+   981) <a name="l981" style="background-color: #ffffff"></a>
+   982) <a name="l982" style="background-color: #ffffff">!EOP</a>
+   983) <a name="l983" style="background-color: #ffffff"></a>
+   984) <a name="l984" style="background-color: #ffffff">   !--- formats ---</a>
+   985) <a name="l985" style="background-color: #ffffff">   character(*),parameter :: subName = '(shr_file_getLogUnit) '</a>
+   986) <a name="l986" style="background-color: #ffffff">   character(*),parameter :: F00   = &quot;('(shr_file_getLogUnit) ',4a)&quot;</a>
+   987) <a name="l987" style="background-color: #ffffff"></a>
+   988) <a name="l988" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   989) <a name="l989" style="background-color: #ffffff">! Notes: </a>
+   990) <a name="l990" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   991) <a name="l991" style="background-color: #ffffff"></a>
+   992) <a name="l992" style="background-color: #ffffff">   unit = s_logunit</a>
+   993) <a name="l993" style="background-color: #ffffff"> </a>
+   994) <a name="l994" style="background-color: #ffffff">END SUBROUTINE shr_file_getLogUnit</a>
+   995) <a name="l995" style="background-color: #ffffff"></a>
+   996) <a name="l996" style="background-color: #ffffff">!===============================================================================</a>
+   997) <a name="l997" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   998) <a name="l998" style="background-color: #ffffff">!</a>
+   999) <a name="l999" style="background-color: #ffffff">! !IROUTINE: shr_file_getLogLevel -- Set the Log I/O Unit number</a>
+  1000) <a name="l1000" style="background-color: #ffffff">!</a>
+  1001) <a name="l1001" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------  </a>
+  1002) <a name="l1002" style="background-color: #ffffff"></a>
+  1003) <a name="l1003" style="background-color: #ffffff">SUBROUTINE shr_file_getLogLevel(curlevel)</a>
+  1004) <a name="l1004" style="background-color: #ffffff"></a>
+  1005) <a name="l1005" style="background-color: #ffffff">   implicit none</a>
+  1006) <a name="l1006" style="background-color: #ffffff"></a>
+  1007) <a name="l1007" style="background-color: #ffffff">! !INPUT/OUTPUT PARAMETERS:</a>
+  1008) <a name="l1008" style="background-color: #ffffff"></a>
+  1009) <a name="l1009" style="background-color: #ffffff">   integer(SHR_KIND_IN),intent(out) :: curlevel     ! new log level</a>
+  1010) <a name="l1010" style="background-color: #ffffff"></a>
+  1011) <a name="l1011" style="background-color: #ffffff">!EOP</a>
+  1012) <a name="l1012" style="background-color: #ffffff"></a>
+  1013) <a name="l1013" style="background-color: #ffffff">   !--- formats ---</a>
+  1014) <a name="l1014" style="background-color: #ffffff">   character(*),parameter :: subName = '(shr_file_getLogLevel) '</a>
+  1015) <a name="l1015" style="background-color: #ffffff">   character(*),parameter :: F00   = &quot;('(shr_file_getLogLevel) ',4a)&quot;</a>
+  1016) <a name="l1016" style="background-color: #ffffff"></a>
+  1017) <a name="l1017" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+  1018) <a name="l1018" style="background-color: #ffffff">! Notes: </a>
+  1019) <a name="l1019" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+  1020) <a name="l1020" style="background-color: #ffffff"></a>
+  1021) <a name="l1021" style="background-color: #ffffff">   curlevel = s_loglev</a>
+  1022) <a name="l1022" style="background-color: #ffffff"> </a>
+  1023) <a name="l1023" style="background-color: #ffffff">END SUBROUTINE shr_file_getLogLevel</a>
+  1024) <a name="l1024" style="background-color: #ffffff"></a>
+  1025) <a name="l1025" style="background-color: #ffffff">!===============================================================================</a>
+  1026) <a name="l1026" style="background-color: #ffffff">!===============================================================================</a>
+  1027) <a name="l1027" style="background-color: #ffffff"></a>
+  1028) <a name="l1028" style="background-color: #ffffff">END MODULE shr_file_mod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

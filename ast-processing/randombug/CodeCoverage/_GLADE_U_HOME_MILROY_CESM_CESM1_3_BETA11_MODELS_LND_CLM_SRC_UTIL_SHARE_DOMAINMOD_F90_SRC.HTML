@@ -1,0 +1,272 @@
+<html>
+<head>
+<title>Listing of domainMod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;domainMod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 89.61&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module domainMod</a>
+     2) <a name="l2" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     3) <a name="l3" style="background-color: #ffffff">!BOP</a>
+     4) <a name="l4" style="background-color: #ffffff">!</a>
+     5) <a name="l5" style="background-color: #ffffff">! !MODULE: domainMod</a>
+     6) <a name="l6" style="background-color: #ffffff">!</a>
+     7) <a name="l7" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     8) <a name="l8" style="background-color: #ffffff">! Module containing 2-d global surface boundary data information</a>
+     9) <a name="l9" style="background-color: #ffffff">!</a>
+    10) <a name="l10" style="background-color: #ffffff">! !USES:</a>
+    11) <a name="l11" style="background-color: #ffffff">  use shr_kind_mod, only : r8 =&gt; shr_kind_r8</a>
+    12) <a name="l12" style="background-color: #ffffff">  use shr_sys_mod , only : shr_sys_abort</a>
+    13) <a name="l13" style="background-color: #ffffff">  use spmdMod     , only : masterproc</a>
+    14) <a name="l14" style="background-color: #ffffff">  use clm_varctl  , only : iulog</a>
+    15) <a name="l15" style="background-color: #ffffff">!</a>
+    16) <a name="l16" style="background-color: #ffffff">! !PUBLIC TYPES:</a>
+    17) <a name="l17" style="background-color: #ffffff">  implicit none</a>
+    18) <a name="l18" style="background-color: #ffffff">  private</a>
+    19) <a name="l19" style="background-color: #ffffff">!</a>
+    20) <a name="l20" style="background-color: #ffffff">  public :: domain_type</a>
+    21) <a name="l21" style="background-color: #ffffff"></a>
+    22) <a name="l22" style="background-color: #ffffff">  !--- this typically contains local domain info with arrays dim begg:endg ---</a>
+    23) <a name="l23" style="background-color: #ffffff">  type domain_type</a>
+    24) <a name="l24" style="background-color: #ffffff">     integer          :: ns         ! global size of domain</a>
+    25) <a name="l25" style="background-color: #ffffff">     integer          :: ni,nj      ! global axis if 2d (nj=1 if unstructured)</a>
+    26) <a name="l26" style="background-color: #ffffff">     logical          :: isgrid2d   ! true =&gt; global grid is lat/lon</a>
+    27) <a name="l27" style="background-color: #ffffff">     integer          :: nbeg,nend  ! local beg/end indices</a>
+    28) <a name="l28" style="background-color: #ffffff">     character(len=8) :: clmlevel   ! grid type</a>
+    29) <a name="l29" style="background-color: #ffffff">     integer ,pointer :: mask(:)    ! land mask: 1 = land, 0 = ocean</a>
+    30) <a name="l30" style="background-color: #ffffff">     real(r8),pointer :: frac(:)    ! fractional land</a>
+    31) <a name="l31" style="background-color: #ffffff">     real(r8),pointer :: topo(:)    ! topography</a>
+    32) <a name="l32" style="background-color: #ffffff">     real(r8),pointer :: latc(:)    ! latitude of grid cell (deg)</a>
+    33) <a name="l33" style="background-color: #ffffff">     real(r8),pointer :: lonc(:)    ! longitude of grid cell (deg)</a>
+    34) <a name="l34" style="background-color: #ffffff">     real(r8),pointer :: area(:)    ! grid cell area (km**2)</a>
+    35) <a name="l35" style="background-color: #ffffff">     integer ,pointer :: pftm(:)    ! pft mask: 1=real, 0=fake, -1=notset</a>
+    36) <a name="l36" style="background-color: #ffffff">     integer ,pointer :: glcmask(:) ! glc mask: 1=sfc mass balance required by GLC component</a>
+    37) <a name="l37" style="background-color: #ffffff">                                    ! 0=SMB not required (default)</a>
+    38) <a name="l38" style="background-color: #ffffff">                                    ! (glcmask is just a guess at the appropriate mask, known at initialization - in contrast to icemask, which is the true mask obtained from glc)</a>
+    39) <a name="l39" style="background-color: #ffffff">     character*16     :: set        ! flag to check if domain is set</a>
+    40) <a name="l40" style="background-color: #ffffff">     logical          :: decomped   ! decomposed locally or global copy</a>
+    41) <a name="l41" style="background-color: #ffffff">  end type domain_type</a>
+    42) <a name="l42" style="background-color: #ffffff"></a>
+    43) <a name="l43" style="background-color: #ffffff">  type(domain_type)    , public :: ldomain</a>
+    44) <a name="l44" style="background-color: #ffffff">  real(r8), allocatable, public :: lon1d(:), lat1d(:) ! 1d lat/lons for 2d grids</a>
+    45) <a name="l45" style="background-color: #ffffff">!</a>
+    46) <a name="l46" style="background-color: #ffffff">! !PUBLIC MEMBER FUNCTIONS:</a>
+    47) <a name="l47" style="background-color: #ffffff">  public domain_init          ! allocates/nans domain types</a>
+    48) <a name="l48" style="background-color: #ffffff">  public domain_clean         ! deallocates domain types</a>
+    49) <a name="l49" style="background-color: #ffffff">  public domain_check         ! write out domain info</a>
+    50) <a name="l50" style="background-color: #ffffff">!</a>
+    51) <a name="l51" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    52) <a name="l52" style="background-color: #ffffff">! Originally clm_varsur by Mariana Vertenstein</a>
+    53) <a name="l53" style="background-color: #ffffff">! Migrated from clm_varsur to domainMod by T Craig</a>
+    54) <a name="l54" style="background-color: #ffffff">!</a>
+    55) <a name="l55" style="background-color: #ffffff">  character*16,parameter :: set   = 'domain_set      '</a>
+    56) <a name="l56" style="background-color: #ffffff">  character*16,parameter :: unset = 'NOdomain_unsetNO'</a>
+    57) <a name="l57" style="background-color: #ffffff">!</a>
+    58) <a name="l58" style="background-color: #ffffff">!EOP</a>
+    59) <a name="l59" style="background-color: #ffffff">!------------------------------------------------------------------------------</a>
+    60) <a name="l60" style="background-color: #ffffff"></a>
+    61) <a name="l61" style="background-color: #ffffff">contains</a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">!------------------------------------------------------------------------------</a>
+    64) <a name="l64" style="background-color: #ffffff">!BOP</a>
+    65) <a name="l65" style="background-color: #ffffff">!</a>
+    66) <a name="l66" style="background-color: #ffffff">! !IROUTINE: domain_init</a>
+    67) <a name="l67" style="background-color: #ffffff">!</a>
+    68) <a name="l68" style="background-color: #ffffff">! !INTERFACE:</a>
+    69) <a name="l69" style="background-color: #ffffff">  subroutine domain_init(domain,isgrid2d,ni,nj,nbeg,nend,clmlevel)</a>
+    70) <a name="l70" style="background-color: #ffffff">    use shr_infnan_mod, only : nan =&gt; shr_infnan_nan, assignment(=)</a>
+    71) <a name="l71" style="background-color: #ffffff">!</a>
+    72) <a name="l72" style="background-color: #ffffff">! !DESCRIPTION:</a>
+    73) <a name="l73" style="background-color: #ffffff">! This subroutine allocates and nans the domain type</a>
+    74) <a name="l74" style="background-color: #ffffff">!</a>
+    75) <a name="l75" style="background-color: #ffffff">! !USES:</a>
+    76) <a name="l76" style="background-color: #ffffff">!</a>
+    77) <a name="l77" style="background-color: #ffffff">! !ARGUMENTS:</a>
+    78) <a name="l78" style="background-color: #ffffff">    implicit none</a>
+    79) <a name="l79" style="background-color: #ffffff">    type(domain_type)   :: domain        ! domain datatype</a>
+    80) <a name="l80" style="background-color: #ffffff">    logical, intent(in) :: isgrid2d      ! true =&gt; global grid is lat/lon</a>
+    81) <a name="l81" style="background-color: #ffffff">    integer, intent(in) :: ni,nj         ! grid size, 2d</a>
+    82) <a name="l82" style="background-color: #ffffff">    integer         , intent(in), optional  :: nbeg,nend  ! beg/end indices</a>
+    83) <a name="l83" style="background-color: #ffffff">    character(len=*), intent(in), optional  :: clmlevel   ! grid type</a>
+    84) <a name="l84" style="background-color: #ffffff">!</a>
+    85) <a name="l85" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    86) <a name="l86" style="background-color: #ffffff">!   Created by T Craig</a>
+    87) <a name="l87" style="background-color: #ffffff">!</a>
+    88) <a name="l88" style="background-color: #ffffff">!</a>
+    89) <a name="l89" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+    90) <a name="l90" style="background-color: #ffffff">!EOP</a>
+    91) <a name="l91" style="background-color: #ffffff">    integer ier</a>
+    92) <a name="l92" style="background-color: #ffffff">    integer nb,ne</a>
+    93) <a name="l93" style="background-color: #ffffff">!</a>
+    94) <a name="l94" style="background-color: #ffffff">!------------------------------------------------------------------------------</a>
+    95) <a name="l95" style="background-color: #ffffff"></a>
+    96) <a name="l96" style="background-color: #ffffff">    nb = 1</a>
+    97) <a name="l97" style="background-color: #ffffff">    ne = ni*nj</a>
+    98) <a name="l98" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(nbeg)) then</a>
+    99) <a name="l99" style="background-color: #ffffff">       if (</a><a style="background-color: #fafad2">present(nend)) then</a>
+   100) <a name="l100" style="background-color: #ffffff">          nb = nbeg</a>
+   101) <a name="l101" style="background-color: #ffffff">          ne = nend</a>
+   102) <a name="l102" style="background-color: #ffffff">       endif</a>
+   103) <a name="l103" style="background-color: #ffffff">    endif</a>
+   104) <a name="l104" style="background-color: #ffffff"></a>
+   105) <a name="l105" style="background-color: #ffffff">    if (domain%set == set) then</a>
+   106) <a name="l106" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">domain_clean(domain)</a>
+   107) <a name="l107" style="background-color: #ffff99">    endif</a>
+   108) <a name="l108" style="background-color: #fafad2">    allocate(domain%mask(nb:ne),domain%frac(nb:ne),domain%latc(nb:ne), &amp;</a>
+   109) <a name="l109" style="background-color: #fafad2">             domain%pftm(nb:ne),domain%area(nb:ne),domain%lonc(nb:ne), &amp;</a>
+   110) <a name="l110" style="background-color: #fafad2">             domain%topo(nb:ne),domain%glcmask(nb:ne),stat=ier)</a>
+   111) <a name="l111" style="background-color: #fafad2">    if (ier /= 0) then</a>
+   112) <a name="l112" style="background-color: #fafad2">       call </a><a style="background-color: #ffff99">shr_sys_abort('domain_init ERROR: allocate mask, frac, lat, lon, area ')</a>
+   113) <a name="l113" style="background-color: #ffff99">    endif</a>
+   114) <a name="l114" style="background-color: #ffff99"></a>
+   115) <a name="l115" style="background-color: #ffffff">    if (present(clmlevel)) then</a>
+   116) <a name="l116" style="background-color: #ffffff">       domain%clmlevel = clmlevel</a>
+   117) <a name="l117" style="background-color: #ffffff">    endif</a>
+   118) <a name="l118" style="background-color: #ffffff"></a>
+   119) <a name="l119" style="background-color: #ffffff">    domain%isgrid2d = isgrid2d</a>
+   120) <a name="l120" style="background-color: #ffffff">    domain%ns       = ni*nj</a>
+   121) <a name="l121" style="background-color: #ffffff">    domain%ni       = ni</a>
+   122) <a name="l122" style="background-color: #ffffff">    domain%nj       = nj</a>
+   123) <a name="l123" style="background-color: #ffffff">    domain%nbeg     = nb</a>
+   124) <a name="l124" style="background-color: #ffffff">    domain%nend     = ne</a>
+   125) <a name="l125" style="background-color: #ffffff">    domain%mask     = -9999</a>
+   126) <a name="l126" style="background-color: #ffffff">    domain%frac     = -1.0e36</a>
+   127) <a name="l127" style="background-color: #ffffff">    domain%topo     = 0._r8</a>
+   128) <a name="l128" style="background-color: #ffffff">    domain%latc     = nan</a>
+   129) <a name="l129" style="background-color: #ffffff">    domain%lonc     = nan</a>
+   130) <a name="l130" style="background-color: #ffffff">    domain%area     = nan</a>
+   131) <a name="l131" style="background-color: #ffffff"></a>
+   132) <a name="l132" style="background-color: #ffffff">    domain%set      = set</a>
+   133) <a name="l133" style="background-color: #ffffff">    if (domain%nbeg == 1 .and. domain%nend == domain%ns) then</a>
+   134) <a name="l134" style="background-color: #ffff99">       domain%decomped = .false.</a>
+   135) <a name="l135" style="background-color: #ffff99">    else</a>
+   136) <a name="l136" style="background-color: #ffffff">       domain%decomped = .true.</a>
+   137) <a name="l137" style="background-color: #ffffff">    endif</a>
+   138) <a name="l138" style="background-color: #ffffff"></a>
+   139) <a name="l139" style="background-color: #ffffff">    domain%pftm     = -9999</a>
+   140) <a name="l140" style="background-color: #ffffff">    domain%glcmask  = 0  </a>
+   141) <a name="l141" style="background-color: #ffffff"></a>
+   142) <a name="l142" style="background-color: #ffffff">end subroutine domain_init</a>
+   143) <a name="l143" style="background-color: #ffffff">!------------------------------------------------------------------------------</a>
+   144) <a name="l144" style="background-color: #ffffff">!BOP</a>
+   145) <a name="l145" style="background-color: #ffffff">!</a>
+   146) <a name="l146" style="background-color: #ffffff">! !IROUTINE: domain_clean</a>
+   147) <a name="l147" style="background-color: #ffffff">!</a>
+   148) <a name="l148" style="background-color: #ffffff">! !INTERFACE:</a>
+   149) <a name="l149" style="background-color: #ffffff">  subroutine domain_clean(domain)</a>
+   150) <a name="l150" style="background-color: #ffffff">!</a>
+   151) <a name="l151" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   152) <a name="l152" style="background-color: #ffffff">! This subroutine deallocates the domain type</a>
+   153) <a name="l153" style="background-color: #ffffff">!</a>
+   154) <a name="l154" style="background-color: #ffffff">! !ARGUMENTS:</a>
+   155) <a name="l155" style="background-color: #ffffff">    implicit none</a>
+   156) <a name="l156" style="background-color: #ffffff">    type(domain_type) :: domain        ! domain datatype</a>
+   157) <a name="l157" style="background-color: #ffffff">!</a>
+   158) <a name="l158" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   159) <a name="l159" style="background-color: #ffffff">!   Created by T Craig</a>
+   160) <a name="l160" style="background-color: #ffffff">!</a>
+   161) <a name="l161" style="background-color: #ffffff">!</a>
+   162) <a name="l162" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+   163) <a name="l163" style="background-color: #ffffff">!EOP</a>
+   164) <a name="l164" style="background-color: #ffffff">    integer ier</a>
+   165) <a name="l165" style="background-color: #ffffff">!</a>
+   166) <a name="l166" style="background-color: #ffffff">!------------------------------------------------------------------------------</a>
+   167) <a name="l167" style="background-color: #ffffff">    if (domain%set == set) then</a>
+   168) <a name="l168" style="background-color: #ffffff">       if (masterproc) then</a>
+   169) <a name="l169" style="background-color: #ffffff">          write(iulog,*) 'domain_clean: cleaning ',domain%ni,domain%nj</a>
+   170) <a name="l170" style="background-color: #ffffff">       endif</a>
+   171) <a name="l171" style="background-color: #ffffff">       deallocate(domain%mask,domain%frac,domain%latc, &amp;</a>
+   172) <a name="l172" style="background-color: #ffffff">                  domain%lonc,domain%area,domain%pftm, &amp;</a>
+   173) <a name="l173" style="background-color: #ffffff">                  domain%topo,domain%glcmask,stat=ier)</a>
+   174) <a name="l174" style="background-color: #ffffff">       if (ier /= 0) then</a>
+   175) <a name="l175" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">shr_sys_abort('domain_clean ERROR: deallocate mask, frac, lat, lon, area ')</a>
+   176) <a name="l176" style="background-color: #ffff99">       endif</a>
+   177) <a name="l177" style="background-color: #ffff99">    else</a>
+   178) <a name="l178" style="background-color: #ffff99">       if (masterproc) then</a>
+   179) <a name="l179" style="background-color: #ffff99">          write(iulog,*) 'domain_clean WARN: clean domain unecessary '</a>
+   180) <a name="l180" style="background-color: #ffff99">       endif</a>
+   181) <a name="l181" style="background-color: #ffff99">    endif</a>
+   182) <a name="l182" style="background-color: #ffff99"></a>
+   183) <a name="l183" style="background-color: #ffffff">    domain%clmlevel   = unset</a>
+   184) <a name="l184" style="background-color: #ffffff">    domain%ns         = huge(1)</a>
+   185) <a name="l185" style="background-color: #ffffff">    domain%ni         = huge(1)</a>
+   186) <a name="l186" style="background-color: #ffffff">    domain%nj         = huge(1)</a>
+   187) <a name="l187" style="background-color: #ffffff">    domain%nbeg       = huge(1)</a>
+   188) <a name="l188" style="background-color: #ffffff">    domain%nend       = huge(1)</a>
+   189) <a name="l189" style="background-color: #ffffff">    domain%set        = unset</a>
+   190) <a name="l190" style="background-color: #ffffff">    domain%decomped   = .true.</a>
+   191) <a name="l191" style="background-color: #ffffff"></a>
+   192) <a name="l192" style="background-color: #ffffff">end subroutine domain_clean</a>
+   193) <a name="l193" style="background-color: #ffffff">!------------------------------------------------------------------------------</a>
+   194) <a name="l194" style="background-color: #ffffff">!BOP</a>
+   195) <a name="l195" style="background-color: #ffffff">!</a>
+   196) <a name="l196" style="background-color: #ffffff">! !IROUTINE: domain_check</a>
+   197) <a name="l197" style="background-color: #ffffff">!</a>
+   198) <a name="l198" style="background-color: #ffffff">! !INTERFACE:</a>
+   199) <a name="l199" style="background-color: #ffffff">  subroutine domain_check(domain)</a>
+   200) <a name="l200" style="background-color: #ffffff">!</a>
+   201) <a name="l201" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   202) <a name="l202" style="background-color: #ffffff">! This subroutine write domain info</a>
+   203) <a name="l203" style="background-color: #ffffff">!</a>
+   204) <a name="l204" style="background-color: #ffffff">! !USES:</a>
+   205) <a name="l205" style="background-color: #ffffff">!</a>
+   206) <a name="l206" style="background-color: #ffffff">! !ARGUMENTS:</a>
+   207) <a name="l207" style="background-color: #ffffff">    implicit none</a>
+   208) <a name="l208" style="background-color: #ffffff">    type(domain_type),intent(in)  :: domain        ! domain datatype</a>
+   209) <a name="l209" style="background-color: #ffffff">!</a>
+   210) <a name="l210" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   211) <a name="l211" style="background-color: #ffffff">!   Created by T Craig</a>
+   212) <a name="l212" style="background-color: #ffffff">!</a>
+   213) <a name="l213" style="background-color: #ffffff">!</a>
+   214) <a name="l214" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+   215) <a name="l215" style="background-color: #ffffff">!</a>
+   216) <a name="l216" style="background-color: #ffffff">!EOP</a>
+   217) <a name="l217" style="background-color: #ffffff">!------------------------------------------------------------------------------</a>
+   218) <a name="l218" style="background-color: #ffffff"></a>
+   219) <a name="l219" style="background-color: #ffffff">  if (masterproc) then</a>
+   220) <a name="l220" style="background-color: #ffffff">    write(iulog,*) '  domain_check set       = ',trim(domain%set)</a>
+   221) <a name="l221" style="background-color: #ffffff">    write(iulog,*) '  domain_check decomped  = ',domain%decomped</a>
+   222) <a name="l222" style="background-color: #ffffff">    write(iulog,*) '  domain_check ns        = ',domain%ns</a>
+   223) <a name="l223" style="background-color: #ffffff">    write(iulog,*) '  domain_check ni,nj     = ',domain%ni,domain%nj</a>
+   224) <a name="l224" style="background-color: #ffffff">    write(iulog,*) '  domain_check clmlevel  = ',trim(domain%clmlevel)</a>
+   225) <a name="l225" style="background-color: #ffffff">    write(iulog,*) '  domain_check nbeg,nend = ',domain%nbeg,domain%nend</a>
+   226) <a name="l226" style="background-color: #ffffff">    write(iulog,*) '  domain_check lonc      = ',</a><a style="background-color: #fafad2">minval(domain%lonc),maxval(domain%lonc)</a>
+   227) <a name="l227" style="background-color: #ffffff">    write(iulog,*) '  domain_check latc      = ',</a><a style="background-color: #fafad2">minval(domain%latc),maxval(domain%latc)</a>
+   228) <a name="l228" style="background-color: #ffffff">    write(iulog,*) '  domain_check mask      = ',minval(domain%mask),maxval(domain%mask)</a>
+   229) <a name="l229" style="background-color: #ffffff">    write(iulog,*) '  domain_check frac      = ',</a><a style="background-color: #fafad2">minval(domain%frac),maxval(domain%frac)</a>
+   230) <a name="l230" style="background-color: #ffffff">    write(iulog,*) '  domain_check topo      = ',</a><a style="background-color: #fafad2">minval(domain%topo),maxval(domain%topo)</a>
+   231) <a name="l231" style="background-color: #ffffff">    write(iulog,*) '  domain_check area      = ',</a><a style="background-color: #fafad2">minval(domain%area),maxval(domain%area)</a>
+   232) <a name="l232" style="background-color: #ffffff">    write(iulog,*) '  domain_check pftm      = ',minval(domain%pftm),maxval(domain%pftm)</a>
+   233) <a name="l233" style="background-color: #ffffff">    write(iulog,*) '  domain_check glcmask   = ',minval(domain%glcmask),maxval(domain%glcmask)</a>
+   234) <a name="l234" style="background-color: #ffffff">    write(iulog,*) ' '</a>
+   235) <a name="l235" style="background-color: #ffffff">  endif</a>
+   236) <a name="l236" style="background-color: #ffffff"></a>
+   237) <a name="l237" style="background-color: #ffffff">end subroutine domain_check</a>
+   238) <a name="l238" style="background-color: #ffffff"></a>
+   239) <a name="l239" style="background-color: #ffffff">!------------------------------------------------------------------------------</a>
+   240) <a name="l240" style="background-color: #ffffff"></a>
+   241) <a name="l241" style="background-color: #ffffff">end module domainMod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

@@ -1,0 +1,294 @@
+<html>
+<head>
+<title>Listing of clm_glclnd.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;clm_glclnd.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module clm_glclnd</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">!BOP</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !MODULE: clm_glclnd</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     9) <a name="l9" style="background-color: #ffffff">! Handle arrays used for exchanging data between glc and land model.</a>
+    10) <a name="l10" style="background-color: #ffffff">! Based on clm_atmlnd (but without mapping routines because glc data</a>
+    11) <a name="l11" style="background-color: #ffffff">!  is send and received on the lnd decomposition, at least for now).</a>
+    12) <a name="l12" style="background-color: #ffffff">!</a>
+    13) <a name="l13" style="background-color: #ffffff">! The fields sent from the lnd component to the glc component via</a>
+    14) <a name="l14" style="background-color: #ffffff">!  the coupler are labeled 's2x', or sno to coupler.</a>
+    15) <a name="l15" style="background-color: #ffffff">! The fields received by the lnd component from the glc component</a>
+    16) <a name="l16" style="background-color: #ffffff">!  via the coupler are labeled 'x2s', or coupler to sno.</a>
+    17) <a name="l17" style="background-color: #ffffff">! 'Sno' is a misnomer in that the exchanged data are related to</a>
+    18) <a name="l18" style="background-color: #ffffff">!  the ice beneath the snow, not the snow itself.  But by CESM convention,</a>
+    19) <a name="l19" style="background-color: #ffffff">! 'ice' refers to sea ice, not land ice.</a>
+    20) <a name="l20" style="background-color: #ffffff">!</a>
+    21) <a name="l21" style="background-color: #ffffff">! !USES:</a>
+    22) <a name="l22" style="background-color: #ffffff">  use decompMod   , only : get_proc_bounds</a>
+    23) <a name="l23" style="background-color: #ffffff">  use shr_kind_mod, only : r8 =&gt; shr_kind_r8</a>
+    24) <a name="l24" style="background-color: #ffffff">  use shr_infnan_mod, only : nan =&gt; shr_infnan_nan, assignment(=)</a>
+    25) <a name="l25" style="background-color: #ffffff">  use spmdMod     , only : masterproc</a>
+    26) <a name="l26" style="background-color: #ffffff">  use clm_varpar  , only : maxpatch_glcmec</a>
+    27) <a name="l27" style="background-color: #ffffff">  use clm_varctl  , only : iulog, glc_smb</a>
+    28) <a name="l28" style="background-color: #ffffff">  use abortutils  , only : endrun</a>
+    29) <a name="l29" style="background-color: #ffffff">!</a>
+    30) <a name="l30" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    31) <a name="l31" style="background-color: #ffffff">! Created by William Lipscomb, Dec. 2007, based on clm_atmlnd.F90.</a>
+    32) <a name="l32" style="background-color: #ffffff">!</a>
+    33) <a name="l33" style="background-color: #ffffff">! !PUBLIC TYPES:</a>
+    34) <a name="l34" style="background-color: #ffffff">  implicit none</a>
+    35) <a name="l35" style="background-color: #ffffff">  private</a>
+    36) <a name="l36" style="background-color: #ffffff">  save</a>
+    37) <a name="l37" style="background-color: #ffffff"></a>
+    38) <a name="l38" style="background-color: #ffffff">!----------------------------------------------------</a>
+    39) <a name="l39" style="background-color: #ffffff">! glc -&gt; land variables structure</a>
+    40) <a name="l40" style="background-color: #ffffff">!----------------------------------------------------</a>
+    41) <a name="l41" style="background-color: #ffffff">  type, public :: glc2lnd_type</a>
+    42) <a name="l42" style="background-color: #ffffff">     real(r8), pointer :: frac(:,:) =&gt; null()</a>
+    43) <a name="l43" style="background-color: #ffffff">     real(r8), pointer :: topo(:,:) =&gt; null()</a>
+    44) <a name="l44" style="background-color: #ffffff">     real(r8), pointer :: hflx(:,:) =&gt; null()</a>
+    45) <a name="l45" style="background-color: #ffffff">     real(r8), pointer :: icemask(:) =&gt; null()   </a>
+    46) <a name="l46" style="background-color: #ffffff">  end type glc2lnd_type</a>
+    47) <a name="l47" style="background-color: #ffffff"></a>
+    48) <a name="l48" style="background-color: #ffffff">!----------------------------------------------------</a>
+    49) <a name="l49" style="background-color: #ffffff">! land -&gt; glc variables structure</a>
+    50) <a name="l50" style="background-color: #ffffff">!----------------------------------------------------</a>
+    51) <a name="l51" style="background-color: #ffffff">  type, public :: lnd2glc_type</a>
+    52) <a name="l52" style="background-color: #ffffff">     real(r8), pointer :: tsrf(:,:) =&gt; null()</a>
+    53) <a name="l53" style="background-color: #ffffff">     real(r8), pointer :: topo(:,:) =&gt; null()</a>
+    54) <a name="l54" style="background-color: #ffffff">     real(r8), pointer :: qice(:,:) =&gt; null()</a>
+    55) <a name="l55" style="background-color: #ffffff">  end type lnd2glc_type</a>
+    56) <a name="l56" style="background-color: #ffffff"></a>
+    57) <a name="l57" style="background-color: #ffffff">  type (lnd2glc_type), public, target :: clm_s2x  ! s2x fields on clm grid</a>
+    58) <a name="l58" style="background-color: #ffffff">  type (glc2lnd_type), public, target :: clm_x2s  ! x2s fields on clm grid</a>
+    59) <a name="l59" style="background-color: #ffffff"></a>
+    60) <a name="l60" style="background-color: #ffffff">! !PUBLIC MEMBER FUNCTIONS:</a>
+    61) <a name="l61" style="background-color: #ffffff">  public :: init_glc2lnd_type</a>
+    62) <a name="l62" style="background-color: #ffffff">  public :: init_lnd2glc_type</a>
+    63) <a name="l63" style="background-color: #ffffff">  public :: update_clm_s2x</a>
+    64) <a name="l64" style="background-color: #ffffff">!</a>
+    65) <a name="l65" style="background-color: #ffffff">! !PRIVATE MEMBER FUNCTIONS:</a>
+    66) <a name="l66" style="background-color: #ffffff"></a>
+    67) <a name="l67" style="background-color: #ffffff">!EOP</a>
+    68) <a name="l68" style="background-color: #ffffff">!----------------------------------------------------</a>
+    69) <a name="l69" style="background-color: #ffffff"></a>
+    70) <a name="l70" style="background-color: #ffffff">contains</a>
+    71) <a name="l71" style="background-color: #ffffff"></a>
+    72) <a name="l72" style="background-color: #ffffff"></a>
+    73) <a name="l73" style="background-color: #ffffff">!------------------------------------------------------------------------</a>
+    74) <a name="l74" style="background-color: #ffffff">!BOP</a>
+    75) <a name="l75" style="background-color: #ffffff">!</a>
+    76) <a name="l76" style="background-color: #ffffff">! !IROUTINE: init_glc2lnd_type</a>
+    77) <a name="l77" style="background-color: #ffffff">!</a>
+    78) <a name="l78" style="background-color: #ffffff">! !INTERFACE:</a>
+    79) <a name="l79" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">init_glc2lnd_type(beg, end, x2s)</a>
+    80) <a name="l80" style="background-color: #ffcccc">!</a>
+    81) <a name="l81" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+    82) <a name="l82" style="background-color: #ffcccc">! Initialize glc variables required by the land</a>
+    83) <a name="l83" style="background-color: #ffcccc">!</a>
+    84) <a name="l84" style="background-color: #ffcccc">! !ARGUMENTS:</a>
+    85) <a name="l85" style="background-color: #ffcccc">  implicit none</a>
+    86) <a name="l86" style="background-color: #ffcccc">  integer, intent(in) :: beg, end</a>
+    87) <a name="l87" style="background-color: #ffcccc">  type (glc2lnd_type), intent(inout):: x2s</a>
+    88) <a name="l88" style="background-color: #ffcccc">!</a>
+    89) <a name="l89" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+    90) <a name="l90" style="background-color: #ffcccc">! Created by William Lipscomb, based on init_atm2lnd_type</a>
+    91) <a name="l91" style="background-color: #ffcccc">!EOP</a>
+    92) <a name="l92" style="background-color: #ffcccc">!</a>
+    93) <a name="l93" style="background-color: #ffcccc">! !LOCAL VARIABLES:</a>
+    94) <a name="l94" style="background-color: #ffcccc">  real(r8) :: ival   ! initial value</a>
+    95) <a name="l95" style="background-color: #ffcccc">!------------------------------------------------------------------------</a>
+    96) <a name="l96" style="background-color: #ffcccc"></a>
+    97) <a name="l97" style="background-color: #ffcccc">  allocate(x2s%frac(beg:end,0:maxpatch_glcmec))</a>
+    98) <a name="l98" style="background-color: #ffcccc">  allocate(x2s%topo(beg:end,0:maxpatch_glcmec))</a>
+    99) <a name="l99" style="background-color: #ffcccc">  allocate(x2s%hflx(beg:end,0:maxpatch_glcmec))</a>
+   100) <a name="l100" style="background-color: #ffcccc">  allocate(x2s%icemask(beg:end))</a>
+   101) <a name="l101" style="background-color: #ffcccc">  </a>
+   102) <a name="l102" style="background-color: #ffcccc">! ival = nan      ! causes core dump in map_maparray, tcx fix</a>
+   103) <a name="l103" style="background-color: #ffcccc">  ival = 0.0_r8</a>
+   104) <a name="l104" style="background-color: #ffcccc"></a>
+   105) <a name="l105" style="background-color: #ffcccc">  x2s%frac(beg:end,0:) = ival</a>
+   106) <a name="l106" style="background-color: #ffcccc">  x2s%topo(beg:end,0:) = ival</a>
+   107) <a name="l107" style="background-color: #ffcccc">  x2s%hflx(beg:end,0:) = ival</a>
+   108) <a name="l108" style="background-color: #ffcccc">  x2s%icemask(beg:end)= ival</a>
+   109) <a name="l109" style="background-color: #ffcccc"></a>
+   110) <a name="l110" style="background-color: #ffcccc">end subroutine init_glc2lnd_type</a>
+   111) <a name="l111" style="background-color: #ffffff"></a>
+   112) <a name="l112" style="background-color: #ffffff">!------------------------------------------------------------------------</a>
+   113) <a name="l113" style="background-color: #ffffff">!BOP</a>
+   114) <a name="l114" style="background-color: #ffffff">!</a>
+   115) <a name="l115" style="background-color: #ffffff">! !IROUTINE: init_lnd2glc_type</a>
+   116) <a name="l116" style="background-color: #ffffff">!</a>
+   117) <a name="l117" style="background-color: #ffffff">! !INTERFACE:</a>
+   118) <a name="l118" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">init_lnd2glc_type(beg, end, s2x)</a>
+   119) <a name="l119" style="background-color: #ffcccc">!</a>
+   120) <a name="l120" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+   121) <a name="l121" style="background-color: #ffcccc">! Initialize land variables required by glc</a>
+   122) <a name="l122" style="background-color: #ffcccc">!</a>
+   123) <a name="l123" style="background-color: #ffcccc">! !ARGUMENTS:</a>
+   124) <a name="l124" style="background-color: #ffcccc">  implicit none</a>
+   125) <a name="l125" style="background-color: #ffcccc">  integer, intent(in) :: beg, end</a>
+   126) <a name="l126" style="background-color: #ffcccc">  type (lnd2glc_type), intent(inout):: s2x</a>
+   127) <a name="l127" style="background-color: #ffcccc">!</a>
+   128) <a name="l128" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   129) <a name="l129" style="background-color: #ffcccc">! Created by William Lipscomb, based on init_lnd2atm_type</a>
+   130) <a name="l130" style="background-color: #ffcccc">!</a>
+   131) <a name="l131" style="background-color: #ffcccc">!EOP</a>
+   132) <a name="l132" style="background-color: #ffcccc">!</a>
+   133) <a name="l133" style="background-color: #ffcccc">! !LOCAL VARIABLES:</a>
+   134) <a name="l134" style="background-color: #ffcccc">  real(r8) :: ival   ! initial value</a>
+   135) <a name="l135" style="background-color: #ffcccc">!------------------------------------------------------------------------</a>
+   136) <a name="l136" style="background-color: #ffcccc"></a>
+   137) <a name="l137" style="background-color: #ffcccc">  allocate(s2x%tsrf(beg:end,0:maxpatch_glcmec))</a>
+   138) <a name="l138" style="background-color: #ffcccc">  allocate(s2x%topo(beg:end,0:maxpatch_glcmec))</a>
+   139) <a name="l139" style="background-color: #ffcccc">  allocate(s2x%qice(beg:end,0:maxpatch_glcmec))</a>
+   140) <a name="l140" style="background-color: #ffcccc"></a>
+   141) <a name="l141" style="background-color: #ffcccc">! ival = nan      ! causes core dump in map_maparray, tcx fix</a>
+   142) <a name="l142" style="background-color: #ffcccc">  ival = 0.0_r8</a>
+   143) <a name="l143" style="background-color: #ffcccc"></a>
+   144) <a name="l144" style="background-color: #ffcccc">  s2x%tsrf(beg:end,0:) = ival</a>
+   145) <a name="l145" style="background-color: #ffcccc">  s2x%topo(beg:end,0:) = ival</a>
+   146) <a name="l146" style="background-color: #ffcccc">  s2x%qice(beg:end,0:) = ival</a>
+   147) <a name="l147" style="background-color: #ffcccc"></a>
+   148) <a name="l148" style="background-color: #ffcccc">end subroutine init_lnd2glc_type</a>
+   149) <a name="l149" style="background-color: #ffffff"></a>
+   150) <a name="l150" style="background-color: #ffffff">!------------------------------------------------------------------------------</a>
+   151) <a name="l151" style="background-color: #ffffff">!BOP</a>
+   152) <a name="l152" style="background-color: #ffffff">!</a>
+   153) <a name="l153" style="background-color: #ffffff">! !IROUTINE: update_clm_s2x</a>
+   154) <a name="l154" style="background-color: #ffffff">!</a>
+   155) <a name="l155" style="background-color: #ffffff">! !INTERFACE:</a>
+   156) <a name="l156" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">update_clm_s2x(init)</a>
+   157) <a name="l157" style="background-color: #ffcccc">!</a>
+   158) <a name="l158" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+   159) <a name="l159" style="background-color: #ffcccc">! Assign values to clm_s2x based on the appropriate derived types</a>
+   160) <a name="l160" style="background-color: #ffcccc">!</a>
+   161) <a name="l161" style="background-color: #ffcccc">! !USES:</a>
+   162) <a name="l162" style="background-color: #ffcccc">  use clmtype     </a>
+   163) <a name="l163" style="background-color: #ffcccc">  use domainMod   , only : ldomain</a>
+   164) <a name="l164" style="background-color: #ffcccc">  use clm_varcon  , only : istice_mec</a>
+   165) <a name="l165" style="background-color: #ffcccc">  use clm_atmlnd  , only : clm_l2a, clm_a2l</a>
+   166) <a name="l166" style="background-color: #ffcccc">  use clm_varcon  , only : spval, tfrz</a>
+   167) <a name="l167" style="background-color: #ffcccc">!</a>
+   168) <a name="l168" style="background-color: #ffcccc">! !ARGUMENTS:</a>
+   169) <a name="l169" style="background-color: #ffcccc">  implicit none</a>
+   170) <a name="l170" style="background-color: #ffcccc"></a>
+   171) <a name="l171" style="background-color: #ffcccc">  logical, intent(in)   :: init    ! if true=&gt;only set a subset of fields</a>
+   172) <a name="l172" style="background-color: #ffcccc">!</a>
+   173) <a name="l173" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   174) <a name="l174" style="background-color: #ffcccc">! Written by William Lipscomb, Feb. 2009 </a>
+   175) <a name="l175" style="background-color: #ffcccc">!</a>
+   176) <a name="l176" style="background-color: #ffcccc"></a>
+   177) <a name="l177" style="background-color: #ffcccc">    integer :: begg, endg              ! per-proc beginning and ending gridcell indices</a>
+   178) <a name="l178" style="background-color: #ffcccc">    integer :: begc, endc              ! per-proc beginning and ending column indices</a>
+   179) <a name="l179" style="background-color: #ffcccc">    integer :: c, l, g, n              ! indices</a>
+   180) <a name="l180" style="background-color: #ffcccc">    integer , pointer :: ityplun(:)    ! landunit type</a>
+   181) <a name="l181" style="background-color: #ffcccc">    integer , pointer :: clandunit(:)  ! column's landunit index</a>
+   182) <a name="l182" style="background-color: #ffcccc">    integer , pointer :: cgridcell(:)  ! column's gridcell index</a>
+   183) <a name="l183" style="background-color: #ffcccc"></a>
+   184) <a name="l184" style="background-color: #ffcccc">    ! Assign local pointers to derived type members</a>
+   185) <a name="l185" style="background-color: #ffcccc"></a>
+   186) <a name="l186" style="background-color: #ffcccc">    clandunit =&gt; col%landunit</a>
+   187) <a name="l187" style="background-color: #ffcccc">    cgridcell =&gt; col%gridcell</a>
+   188) <a name="l188" style="background-color: #ffcccc">    ityplun   =&gt; lun%itype</a>
+   189) <a name="l189" style="background-color: #ffcccc"></a>
+   190) <a name="l190" style="background-color: #ffcccc">    ! Get processor bounds</a>
+   191) <a name="l191" style="background-color: #ffcccc">    call get_proc_bounds(begg, endg, begc=begc, endc=endc)</a>
+   192) <a name="l192" style="background-color: #ffcccc"></a>
+   193) <a name="l193" style="background-color: #ffcccc">    ! Initialize qice because otherwise it will remain unset if init=true and</a>
+   194) <a name="l194" style="background-color: #ffcccc">    ! glc_smb=true; note that the value here is the value qice will keep if these</a>
+   195) <a name="l195" style="background-color: #ffcccc">    ! conditions hold. Also, need to set a reasonable default for elevation class 0,</a>
+   196) <a name="l196" style="background-color: #ffcccc">    ! which is used by the CLM4.5 code, but not by CLM4.0.</a>
+   197) <a name="l197" style="background-color: #ffcccc"></a>
+   198) <a name="l198" style="background-color: #ffcccc">    clm_s2x%qice(:,0:) = 0._r8</a>
+   199) <a name="l199" style="background-color: #ffcccc"></a>
+   200) <a name="l200" style="background-color: #ffcccc">    ! and initialize the other variables just to be safe; also need to set a reasonable</a>
+   201) <a name="l201" style="background-color: #ffcccc">    ! default for elevation class 0 (for tsrf, note that we initialize other elevation</a>
+   202) <a name="l202" style="background-color: #ffcccc">    ! classes to 0, to remain consistent with what was done before, but set elevation</a>
+   203) <a name="l203" style="background-color: #ffcccc">    ! class 0 to a reasonable default, because it will remain at its default value).</a>
+   204) <a name="l204" style="background-color: #ffcccc"></a>
+   205) <a name="l205" style="background-color: #ffcccc">    clm_s2x%tsrf(:,0)  = tfrz</a>
+   206) <a name="l206" style="background-color: #ffcccc">    clm_s2x%tsrf(:,1:) = 0._r8</a>
+   207) <a name="l207" style="background-color: #ffcccc">    clm_s2x%topo(:,:)  = 0._r8</a>
+   208) <a name="l208" style="background-color: #ffcccc"></a>
+   209) <a name="l209" style="background-color: #ffcccc">    ! Fill the clm_s2x vector on the clm grid</a>
+   210) <a name="l210" style="background-color: #ffcccc"></a>
+   211) <a name="l211" style="background-color: #ffcccc">    if (glc_smb) then   ! send surface mass balance info</a>
+   212) <a name="l212" style="background-color: #ffcccc">       do c = begc, endc</a>
+   213) <a name="l213" style="background-color: #ffcccc">          l = clandunit(c)</a>
+   214) <a name="l214" style="background-color: #ffcccc">          g = cgridcell(c)</a>
+   215) <a name="l215" style="background-color: #ffcccc"></a>
+   216) <a name="l216" style="background-color: #ffcccc">          ! Following assumes all elevation classes are populated</a>
+   217) <a name="l217" style="background-color: #ffcccc">          if (ityplun(l) == istice_mec) then</a>
+   218) <a name="l218" style="background-color: #ffcccc">             n = c - lun%coli(l) + 1    ! elevation class index</a>
+   219) <a name="l219" style="background-color: #ffcccc"></a>
+   220) <a name="l220" style="background-color: #ffcccc">             ! t_soisno and glc_topo are valid even in initialization, so tsrf and topo</a>
+   221) <a name="l221" style="background-color: #ffcccc">             ! are set here regardless of the value of init. But qflx_glcice is not valid</a>
+   222) <a name="l222" style="background-color: #ffcccc">             ! until the run loop; thus, in initialization, we will use the default value</a>
+   223) <a name="l223" style="background-color: #ffcccc">             ! for qice, as set above.</a>
+   224) <a name="l224" style="background-color: #ffcccc">             clm_s2x%tsrf(g,n) = ces%t_soisno(c,1)</a>
+   225) <a name="l225" style="background-color: #ffcccc">             clm_s2x%topo(g,n) = cps%glc_topo(c)</a>
+   226) <a name="l226" style="background-color: #ffcccc">             if (.not. init) then</a>
+   227) <a name="l227" style="background-color: #ffcccc">                clm_s2x%qice(g,n) = cwf%qflx_glcice(c)</a>
+   228) <a name="l228" style="background-color: #ffcccc"></a>
+   229) <a name="l229" style="background-color: #ffcccc">                ! Check for bad values of qice</a>
+   230) <a name="l230" style="background-color: #ffcccc">                if ( abs(clm_s2x%qice(g,n)) &gt; 1.0_r8 .and. clm_s2x%qice(g,n) /= spval) then</a>
+   231) <a name="l231" style="background-color: #ffcccc">                   write(iulog,*) 'WARNING: qice out of bounds: g, n, qice =', g, n, clm_s2x%qice(g,n)</a>
+   232) <a name="l232" style="background-color: #ffcccc">                endif</a>
+   233) <a name="l233" style="background-color: #ffcccc">             end if</a>
+   234) <a name="l234" style="background-color: #ffcccc"></a>
+   235) <a name="l235" style="background-color: #ffcccc">           endif    ! istice_mec</a>
+   236) <a name="l236" style="background-color: #ffcccc">       enddo        ! c</a>
+   237) <a name="l237" style="background-color: #ffcccc">    else  ! Pass PDD info (same info in each elevation class)</a>
+   238) <a name="l238" style="background-color: #ffcccc">       ! Require maxpatch_glcmec = 1 for this case </a>
+   239) <a name="l239" style="background-color: #ffcccc">       if (maxpatch_glcmec .ne. 1) then</a>
+   240) <a name="l240" style="background-color: #ffcccc">          call endrun('update_clm_s2x error: maxpatch_glcmec must be 1 if glc_smb is false') </a>
+   241) <a name="l241" style="background-color: #ffcccc">       end if</a>
+   242) <a name="l242" style="background-color: #ffcccc">       n = 1</a>
+   243) <a name="l243" style="background-color: #ffcccc">       do g = begg, endg</a>
+   244) <a name="l244" style="background-color: #ffcccc">          clm_s2x%tsrf(g,n) = clm_l2a%t_ref2m(g)</a>
+   245) <a name="l245" style="background-color: #ffcccc">          clm_s2x%qice(g,n) = clm_a2l%forc_snow(g)   ! Assume rain runs off</a>
+   246) <a name="l246" style="background-color: #ffcccc">          clm_s2x%topo(g,n) = ldomain%topo(g)</a>
+   247) <a name="l247" style="background-color: #ffcccc">          ! Check for bad values of qice</a>
+   248) <a name="l248" style="background-color: #ffcccc">          if (clm_s2x%qice(g,n) &gt; -1.0_r8 .and. clm_s2x%qice(g,n) &lt; 1.0_r8) then</a>
+   249) <a name="l249" style="background-color: #ffcccc">             continue</a>
+   250) <a name="l250" style="background-color: #ffcccc">          else</a>
+   251) <a name="l251" style="background-color: #ffcccc">             write(iulog,*) 'WARNING: qice out of bounds: g, n, qice =', g, n, clm_s2x%qice(g,n)</a>
+   252) <a name="l252" style="background-color: #ffcccc">             write(iulog,*) 'forc_rain =', clm_a2l%forc_rain(g)</a>
+   253) <a name="l253" style="background-color: #ffcccc">             write(iulog,*) 'forc_snow =', clm_a2l%forc_snow(g)</a>
+   254) <a name="l254" style="background-color: #ffcccc">          endif</a>
+   255) <a name="l255" style="background-color: #ffcccc">       enddo</a>
+   256) <a name="l256" style="background-color: #ffcccc">    endif   ! glc_smb</a>
+   257) <a name="l257" style="background-color: #ffcccc"></a>
+   258) <a name="l258" style="background-color: #ffcccc">end subroutine update_clm_s2x</a>
+   259) <a name="l259" style="background-color: #ffffff"></a>
+   260) <a name="l260" style="background-color: #ffffff">!------------------------------------------------------------------------</a>
+   261) <a name="l261" style="background-color: #ffffff"></a>
+   262) <a name="l262" style="background-color: #ffffff">end module clm_glclnd</a>
+   263) <a name="l263" style="background-color: #ffffff"></a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

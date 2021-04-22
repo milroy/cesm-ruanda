@@ -1,0 +1,614 @@
+<html>
+<head>
+<title>Listing of restart_dynamics.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;restart_dynamics.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module restart_dynamics</a>
+     2) <a name="l2" style="background-color: #ffffff">  use shr_kind_mod, only: r8 =&gt; shr_kind_r8</a>
+     3) <a name="l3" style="background-color: #ffffff"></a>
+     4) <a name="l4" style="background-color: #ffffff">  use dyn_comp, only : dyn_import_t, dyn_export_t</a>
+     5) <a name="l5" style="background-color: #ffffff">  use pio, only : var_desc_t, io_desc_t, file_desc_t</a>
+     6) <a name="l6" style="background-color: #ffffff">  use pio, only : pio_global, pio_unlimited, pio_double, pio_def_dim, &amp;</a>
+     7) <a name="l7" style="background-color: #ffffff">         pio_put_att, pio_def_var, pio_initdecomp, &amp;</a>
+     8) <a name="l8" style="background-color: #ffffff">         pio_setdebuglevel, pio_inq_dimid</a>
+     9) <a name="l9" style="background-color: #ffffff">  use pio, only : file_desc_t, pio_global, pio_double, pio_offset, &amp;</a>
+    10) <a name="l10" style="background-color: #ffffff">         pio_get_att, pio_inq_dimid, pio_inq_dimlen, pio_initdecomp, pio_inq_varid, &amp;</a>
+    11) <a name="l11" style="background-color: #ffffff">         pio_read_darray, pio_setframe, file_desc_t, io_desc_t, pio_double</a>
+    12) <a name="l12" style="background-color: #ffffff">  use spmd_utils, only : iam</a>
+    13) <a name="l13" style="background-color: #ffffff"></a>
+    14) <a name="l14" style="background-color: #ffffff">  use cam_logfile, only : iulog</a>
+    15) <a name="l15" style="background-color: #ffffff"></a>
+    16) <a name="l16" style="background-color: #ffffff">  implicit none</a>
+    17) <a name="l17" style="background-color: #ffffff"></a>
+    18) <a name="l18" style="background-color: #ffffff">  type(var_desc_t) :: udesc, vdesc, tdesc, psdesc, phisdesc, timedesc</a>
+    19) <a name="l19" style="background-color: #ffffff"></a>
+    20) <a name="l20" style="background-color: #ffffff">  type(var_desc_t) :: FQpsdesc, omegadesc</a>
+    21) <a name="l21" style="background-color: #ffffff"></a>
+    22) <a name="l22" style="background-color: #ffffff">  type(var_desc_t), pointer :: qdesc(:), qdesc_dp(:)</a>
+    23) <a name="l23" style="background-color: #ffffff"></a>
+    24) <a name="l24" style="background-color: #ffffff">  integer :: ncol_dimid,  nlev_dimid, nlevp_dimid</a>
+    25) <a name="l25" style="background-color: #ffffff">  public :: init_restart_dynamics</a>
+    26) <a name="l26" style="background-color: #ffffff"></a>
+    27) <a name="l27" style="background-color: #ffffff">  logical :: initialized=.false.</a>
+    28) <a name="l28" style="background-color: #ffffff"></a>
+    29) <a name="l29" style="background-color: #ffffff">CONTAINS</a>
+    30) <a name="l30" style="background-color: #ffffff"></a>
+    31) <a name="l31" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">init_restart_dynamics(File, hdimids, dyn_out)</a>
+    32) <a name="l32" style="background-color: #ffcccc">    use pio, only : pio_global, pio_unlimited, pio_double, pio_def_dim, &amp;</a>
+    33) <a name="l33" style="background-color: #ffcccc">         pio_put_att, pio_def_var, pio_initdecomp, &amp;</a>
+    34) <a name="l34" style="background-color: #ffcccc">         pio_setdebuglevel, pio_inq_dimid</a>
+    35) <a name="l35" style="background-color: #ffcccc">    use cam_pio_utils, only : pio_subsystem</a>
+    36) <a name="l36" style="background-color: #ffcccc">    use dimensions_mod, only : np, ne, nlev, qsize_d, nlevp, nelem , nelemd</a>
+    37) <a name="l37" style="background-color: #ffcccc">    use constituents, only : cnst_name</a>
+    38) <a name="l38" style="background-color: #ffcccc">    use dyn_grid, only : get_horiz_grid_dim_d</a>
+    39) <a name="l39" style="background-color: #ffcccc">    use hycoef, only: init_restart_hycoef</a>
+    40) <a name="l40" style="background-color: #ffcccc"></a>
+    41) <a name="l41" style="background-color: #ffcccc">    type(file_desc_t),  intent(inout) :: file</a>
+    42) <a name="l42" style="background-color: #ffcccc">    integer,            pointer       :: hdimids(:)</a>
+    43) <a name="l43" style="background-color: #ffcccc">    type(dyn_export_t), intent(in)    :: dyn_out</a>
+    44) <a name="l44" style="background-color: #ffcccc"></a>
+    45) <a name="l45" style="background-color: #ffcccc">    integer :: vdimids(2)</a>
+    46) <a name="l46" style="background-color: #ffcccc">    integer :: ierr, i, ncols, dummy, j, k, ie</a>
+    47) <a name="l47" style="background-color: #ffcccc">    integer :: timelevels_dimid</a>
+    48) <a name="l48" style="background-color: #ffcccc"></a>
+    49) <a name="l49" style="background-color: #ffcccc">    call init_restart_hycoef(File, vdimids)</a>
+    50) <a name="l50" style="background-color: #ffcccc"></a>
+    51) <a name="l51" style="background-color: #ffcccc">    call get_horiz_grid_dim_d(ncols)</a>
+    52) <a name="l52" style="background-color: #ffcccc"></a>
+    53) <a name="l53" style="background-color: #ffcccc">    allocate(hdimids(1))</a>
+    54) <a name="l54" style="background-color: #ffcccc"></a>
+    55) <a name="l55" style="background-color: #ffcccc">    call PIO_Setdebuglevel(0)</a>
+    56) <a name="l56" style="background-color: #ffcccc">    ierr = PIO_Def_Dim(File,'ncol_d',nelem*np*np,ncol_dimid)</a>
+    57) <a name="l57" style="background-color: #ffcccc"></a>
+    58) <a name="l58" style="background-color: #ffcccc">!   To be used by physics</a>
+    59) <a name="l59" style="background-color: #ffcccc">    ierr = PIO_Def_Dim(File, 'ncol', ncols ,hdimids(1))</a>
+    60) <a name="l60" style="background-color: #ffcccc"></a>
+    61) <a name="l61" style="background-color: #ffcccc">    ierr = PIO_Def_Dim(File,'timelevels',PIO_UNLIMITED,timelevels_dimid)</a>
+    62) <a name="l62" style="background-color: #ffcccc"></a>
+    63) <a name="l63" style="background-color: #ffcccc">    nlev_dimid = vdimids(1)</a>
+    64) <a name="l64" style="background-color: #ffcccc">    nlevp_dimid = vdimids(2)</a>
+    65) <a name="l65" style="background-color: #ffcccc"></a>
+    66) <a name="l66" style="background-color: #ffcccc"></a>
+    67) <a name="l67" style="background-color: #ffcccc">    ierr = PIO_Put_Att(File, PIO_GLOBAL, 'ne', ne)</a>
+    68) <a name="l68" style="background-color: #ffcccc">    ierr = PIO_Put_Att(File, PIO_GLOBAL, 'np', np)</a>
+    69) <a name="l69" style="background-color: #ffcccc"></a>
+    70) <a name="l70" style="background-color: #ffcccc">    ierr = PIO_Def_Var(File, 'time', pio_double, (/timelevels_dimid/), timedesc)</a>
+    71) <a name="l71" style="background-color: #ffcccc"></a>
+    72) <a name="l72" style="background-color: #ffcccc">    ierr = PIO_Def_Var(File, 'U', pio_double, (/ncol_dimid, nlev_dimid, timelevels_dimid/), Udesc)</a>
+    73) <a name="l73" style="background-color: #ffcccc">    ierr = PIO_Def_Var(File, 'V', pio_double, (/ncol_dimid, nlev_dimid, timelevels_dimid/), Vdesc)</a>
+    74) <a name="l74" style="background-color: #ffcccc">    ierr = PIO_Def_Var(File, 'T', pio_double, (/ncol_dimid, nlev_dimid, timelevels_dimid/), Tdesc)</a>
+    75) <a name="l75" style="background-color: #ffcccc">    !</a>
+    76) <a name="l76" style="background-color: #ffcccc">    ! Omega is not strictly needed, it could be rederived - but this is easier</a>
+    77) <a name="l77" style="background-color: #ffcccc">    !</a>
+    78) <a name="l78" style="background-color: #ffcccc"></a>
+    79) <a name="l79" style="background-color: #ffcccc">    ierr = PIO_Def_Var(File, 'OMEGA', pio_double, (/ncol_dimid, nlev_dimid/), omegadesc)</a>
+    80) <a name="l80" style="background-color: #ffcccc">    ierr = PIO_Def_Var(File, 'PS', pio_double, (/ncol_dimid, timelevels_dimid/), PSdesc)</a>
+    81) <a name="l81" style="background-color: #ffcccc">    ierr = PIO_Def_Var(File, 'PHIS', pio_double, (/ncol_dimid/), phisdesc)</a>
+    82) <a name="l82" style="background-color: #ffcccc"></a>
+    83) <a name="l83" style="background-color: #ffcccc">    allocate(Qdesc(qsize_d), qdesc_dp(qsize_d))</a>
+    84) <a name="l84" style="background-color: #ffcccc"></a>
+    85) <a name="l85" style="background-color: #ffcccc">    do i=1,qsize_d</a>
+    86) <a name="l86" style="background-color: #ffcccc">       ierr = PIO_Def_Var(File,cnst_name(i), pio_double, (/ncol_dimid, nlev_dimid, timelevels_dimid/), Qdesc(i))</a>
+    87) <a name="l87" style="background-color: #ffcccc">       ierr = PIO_Def_Var(File,&quot;dp&quot;//cnst_name(i), pio_double, (/ncol_dimid, nlev_dimid, timelevels_dimid/), Qdesc_dp(i))</a>
+    88) <a name="l88" style="background-color: #ffcccc">    end do</a>
+    89) <a name="l89" style="background-color: #ffcccc"></a>
+    90) <a name="l90" style="background-color: #ffcccc">  end subroutine init_restart_dynamics</a>
+    91) <a name="l91" style="background-color: #ffffff"></a>
+    92) <a name="l92" style="background-color: #ffffff"></a>
+    93) <a name="l93" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">write_restart_dynamics(File, dyn_out)</a>
+    94) <a name="l94" style="background-color: #ffcccc">    use pio, only : pio_offset, io_desc_t, pio_double, pio_write_darray, &amp;</a>
+    95) <a name="l95" style="background-color: #ffcccc">         pio_setframe, pio_put_var, pio_initdecomp, pio_setframe, pio_def_dim, &amp;</a>
+    96) <a name="l96" style="background-color: #ffcccc">         pio_freedecomp, pio_enddef</a>
+    97) <a name="l97" style="background-color: #ffcccc">    use cam_pio_utils, only : pio_subsystem</a>
+    98) <a name="l98" style="background-color: #ffcccc">    use dyn_comp, only : timelevel</a>
+    99) <a name="l99" style="background-color: #ffcccc">    use control_mod, only: qsplit</a>
+   100) <a name="l100" style="background-color: #ffcccc">    use time_mod, only : tstep, TimeLevel_Qdp</a>
+   101) <a name="l101" style="background-color: #ffcccc">    use element_mod, only : element_t</a>
+   102) <a name="l102" style="background-color: #ffcccc">    use fvm_control_volume_mod, only : fvm_struct</a>
+   103) <a name="l103" style="background-color: #ffcccc">    use dimensions_mod, only : nlev, qsize_d, nlevp, np, ne, nelemd, nelem</a>
+   104) <a name="l104" style="background-color: #ffcccc">    use dof_mod, only : UniquePoints</a>
+   105) <a name="l105" style="background-color: #ffcccc">    use time_manager, only: get_curr_time</a>
+   106) <a name="l106" style="background-color: #ffcccc">    use parallel_mod, only: par</a>
+   107) <a name="l107" style="background-color: #ffcccc">    use hycoef, only: write_restart_hycoef</a>
+   108) <a name="l108" style="background-color: #ffcccc"></a>
+   109) <a name="l109" style="background-color: #ffcccc"></a>
+   110) <a name="l110" style="background-color: #ffcccc">    implicit none</a>
+   111) <a name="l111" style="background-color: #ffcccc">    type(file_desc_t) :: File</a>
+   112) <a name="l112" style="background-color: #ffcccc">    type(dyn_export_t), intent(in)  :: dyn_out</a>
+   113) <a name="l113" style="background-color: #ffcccc"></a>
+   114) <a name="l114" style="background-color: #ffcccc">    type(io_desc_t) :: iodesc2d, iodesc3d</a>
+   115) <a name="l115" style="background-color: #ffcccc">    integer :: st, ie, k, en, tl, tlQdp, ierr, vsize3d, vsize2d, q</a>
+   116) <a name="l116" style="background-color: #ffcccc">    integer(kind=PIO_OFFSET), parameter :: t = 1</a>
+   117) <a name="l117" style="background-color: #ffcccc"></a>
+   118) <a name="l118" style="background-color: #ffcccc">    real(kind=r8),pointer :: vartmp(:,:,:), var3d(:,:,:,:), var2d(:,:,:)</a>
+   119) <a name="l119" style="background-color: #ffcccc">    integer :: i, j</a>
+   120) <a name="l120" style="background-color: #ffcccc"></a>
+   121) <a name="l121" style="background-color: #ffcccc">    type(element_t), pointer :: elem(:)</a>
+   122) <a name="l122" style="background-color: #ffcccc">    type(fvm_struct), pointer :: fvm(:)</a>
+   123) <a name="l123" style="background-color: #ffcccc">    real(kind=r8) :: time</a>
+   124) <a name="l124" style="background-color: #ffcccc">    integer :: ndcur, nscur</a>
+   125) <a name="l125" style="background-color: #ffcccc">    integer, pointer :: ldof(:)</a>
+   126) <a name="l126" style="background-color: #ffcccc"></a>
+   127) <a name="l127" style="background-color: #ffcccc">    call write_restart_hycoef(File)</a>
+   128) <a name="l128" style="background-color: #ffcccc"></a>
+   129) <a name="l129" style="background-color: #ffcccc">   if (iam .lt. par%nprocs) then</a>
+   130) <a name="l130" style="background-color: #ffcccc">    elem =&gt; dyn_out%elem</a>
+   131) <a name="l131" style="background-color: #ffcccc">    fvm =&gt; dyn_out%fvm</a>
+   132) <a name="l132" style="background-color: #ffcccc">   else</a>
+   133) <a name="l133" style="background-color: #ffcccc">    allocate (elem(0), fvm(0))</a>
+   134) <a name="l134" style="background-color: #ffcccc">   endif</a>
+   135) <a name="l135" style="background-color: #ffcccc"></a>
+   136) <a name="l136" style="background-color: #ffcccc">    ldof =&gt; get_restart_decomp(elem, 1)</a>
+   137) <a name="l137" style="background-color: #ffcccc">    call PIO_InitDecomp(pio_subsystem, pio_double, (/nelem*np*np/) , ldof , iodesc2d)</a>
+   138) <a name="l138" style="background-color: #ffcccc">    deallocate(ldof)</a>
+   139) <a name="l139" style="background-color: #ffcccc"></a>
+   140) <a name="l140" style="background-color: #ffcccc">    ldof =&gt; get_restart_decomp(elem, nlev)       </a>
+   141) <a name="l141" style="background-color: #ffcccc">    call PIO_InitDecomp(pio_subsystem, pio_double, (/nelem*np*np,nlev/),ldof , iodesc3d)</a>
+   142) <a name="l142" style="background-color: #ffcccc">    deallocate(ldof)</a>
+   143) <a name="l143" style="background-color: #ffcccc">    initialized = .true.</a>
+   144) <a name="l144" style="background-color: #ffcccc"></a>
+   145) <a name="l145" style="background-color: #ffcccc"></a>
+   146) <a name="l146" style="background-color: #ffcccc">    call get_curr_time(ndcur, nscur)</a>
+   147) <a name="l147" style="background-color: #ffcccc"></a>
+   148) <a name="l148" style="background-color: #ffcccc">    allocate(vartmp(np,np,nlev))</a>
+   149) <a name="l149" style="background-color: #ffcccc">    en=0</a>
+   150) <a name="l150" style="background-color: #ffcccc">    do ie=1,nelemd</a>
+   151) <a name="l151" style="background-color: #ffcccc">       en=en+elem(ie)%idxp%NumUniquePts</a>
+   152) <a name="l152" style="background-color: #ffcccc">    end do</a>
+   153) <a name="l153" style="background-color: #ffcccc"></a>
+   154) <a name="l154" style="background-color: #ffcccc">    allocate(var2d(np,np,nelemd ))</a>
+   155) <a name="l155" style="background-color: #ffcccc">    vsize2d=np*np*nelemd</a>
+   156) <a name="l156" style="background-color: #ffcccc"></a>
+   157) <a name="l157" style="background-color: #ffcccc">    allocate(var3d(np,np,nelemd,nlev))</a>
+   158) <a name="l158" style="background-color: #ffcccc">    vsize3d=vsize2d*nlev</a>
+   159) <a name="l159" style="background-color: #ffcccc"></a>
+   160) <a name="l160" style="background-color: #ffcccc">!$omp parallel do private(ie, j, i)</a>
+   161) <a name="l161" style="background-color: #ffcccc">    do ie=1,nelemd</a>
+   162) <a name="l162" style="background-color: #ffcccc">       do j=1,np</a>
+   163) <a name="l163" style="background-color: #ffcccc">          do i=1,np</a>
+   164) <a name="l164" style="background-color: #ffcccc">             var2d(i,j,ie) = elem(ie)%state%phis(i,j)</a>
+   165) <a name="l165" style="background-color: #ffcccc">          end do</a>
+   166) <a name="l166" style="background-color: #ffcccc">       end do</a>
+   167) <a name="l167" style="background-color: #ffcccc">    end do</a>
+   168) <a name="l168" style="background-color: #ffcccc">    call PIO_Write_Darray(File,Phisdesc,iodesc2d, var2d,ierr)</a>
+   169) <a name="l169" style="background-color: #ffcccc"></a>
+   170) <a name="l170" style="background-color: #ffcccc">!$omp parallel do private(ie, k, j, i)</a>
+   171) <a name="l171" style="background-color: #ffcccc">    do ie=1,nelemd</a>
+   172) <a name="l172" style="background-color: #ffcccc">       do k=1,nlev</a>
+   173) <a name="l173" style="background-color: #ffcccc">          do j=1,np</a>
+   174) <a name="l174" style="background-color: #ffcccc">             do i=1,np</a>
+   175) <a name="l175" style="background-color: #ffcccc">                var3d(i,j,ie,k) = elem(ie)%derived%omega_p(i,j,k)</a>
+   176) <a name="l176" style="background-color: #ffcccc">             end do</a>
+   177) <a name="l177" style="background-color: #ffcccc">          end do</a>
+   178) <a name="l178" style="background-color: #ffcccc">       end do</a>
+   179) <a name="l179" style="background-color: #ffcccc">    end do</a>
+   180) <a name="l180" style="background-color: #ffcccc">    call PIO_Write_Darray(File,omegadesc,iodesc3d, var3d,ierr)</a>
+   181) <a name="l181" style="background-color: #ffcccc"></a>
+   182) <a name="l182" style="background-color: #ffcccc"></a>
+   183) <a name="l183" style="background-color: #ffcccc">    tl = timelevel%n0</a>
+   184) <a name="l184" style="background-color: #ffcccc">    call TimeLevel_Qdp(timelevel, qsplit, tlQdp)</a>
+   185) <a name="l185" style="background-color: #ffcccc">    time = ndcur+real(nscur,kind=r8)/86400_r8</a>
+   186) <a name="l186" style="background-color: #ffcccc"></a>
+   187) <a name="l187" style="background-color: #ffcccc">    ierr = pio_put_var(File,timedesc%varid, (/int(t)/), time)</a>
+   188) <a name="l188" style="background-color: #ffcccc"></a>
+   189) <a name="l189" style="background-color: #ffcccc">!$omp parallel do private(ie, j, i)</a>
+   190) <a name="l190" style="background-color: #ffcccc">    do ie=1,nelemd</a>
+   191) <a name="l191" style="background-color: #ffcccc">       do j=1,np</a>
+   192) <a name="l192" style="background-color: #ffcccc">          do i=1,np</a>
+   193) <a name="l193" style="background-color: #ffcccc">             var2d(i,j,ie) = elem(ie)%state%ps_v(i,j,tl)</a>
+   194) <a name="l194" style="background-color: #ffcccc">          end do</a>
+   195) <a name="l195" style="background-color: #ffcccc">       end do</a>
+   196) <a name="l196" style="background-color: #ffcccc">    end do</a>
+   197) <a name="l197" style="background-color: #ffcccc">    call PIO_SetFrame(PSdesc, t)</a>
+   198) <a name="l198" style="background-color: #ffcccc">    call PIO_Write_Darray(File,PSdesc,iodesc2d, var2d,ierr)</a>
+   199) <a name="l199" style="background-color: #ffcccc"></a>
+   200) <a name="l200" style="background-color: #ffcccc">    ! Write the U component of Velocity</a>
+   201) <a name="l201" style="background-color: #ffcccc">!$omp parallel do private(ie, k, j, i)</a>
+   202) <a name="l202" style="background-color: #ffcccc">    do ie=1,nelemd</a>
+   203) <a name="l203" style="background-color: #ffcccc">       do k=1,nlev</a>
+   204) <a name="l204" style="background-color: #ffcccc">          do j=1,np</a>
+   205) <a name="l205" style="background-color: #ffcccc">             do i=1,np</a>
+   206) <a name="l206" style="background-color: #ffcccc">                var3d(i,j,ie,k) = elem(ie)%state%V(i,j,1,k,tl)</a>
+   207) <a name="l207" style="background-color: #ffcccc">             end do</a>
+   208) <a name="l208" style="background-color: #ffcccc">          end do</a>
+   209) <a name="l209" style="background-color: #ffcccc">       end do</a>
+   210) <a name="l210" style="background-color: #ffcccc">    end do</a>
+   211) <a name="l211" style="background-color: #ffcccc"></a>
+   212) <a name="l212" style="background-color: #ffcccc"></a>
+   213) <a name="l213" style="background-color: #ffcccc">    call PIO_SetFrame(Udesc, t)</a>
+   214) <a name="l214" style="background-color: #ffcccc">    call PIO_Write_Darray(File,Udesc,iodesc3d,var3d,ierr)</a>
+   215) <a name="l215" style="background-color: #ffcccc"></a>
+   216) <a name="l216" style="background-color: #ffcccc"></a>
+   217) <a name="l217" style="background-color: #ffcccc">       ! Write the V component of Velocity</a>
+   218) <a name="l218" style="background-color: #ffcccc">!$omp parallel do private(ie, k, j, i)</a>
+   219) <a name="l219" style="background-color: #ffcccc">    do ie=1,nelemd</a>
+   220) <a name="l220" style="background-color: #ffcccc">       do k=1,nlev</a>
+   221) <a name="l221" style="background-color: #ffcccc">          do j=1,np</a>
+   222) <a name="l222" style="background-color: #ffcccc">             do i=1,np</a>
+   223) <a name="l223" style="background-color: #ffcccc">                var3d(i,j,ie,k) = elem(ie)%state%V(i,j,2,k,tl)</a>
+   224) <a name="l224" style="background-color: #ffcccc">             end do</a>
+   225) <a name="l225" style="background-color: #ffcccc">          end do</a>
+   226) <a name="l226" style="background-color: #ffcccc">       end do</a>
+   227) <a name="l227" style="background-color: #ffcccc">    end do</a>
+   228) <a name="l228" style="background-color: #ffcccc"></a>
+   229) <a name="l229" style="background-color: #ffcccc">    call PIO_SetFrame(Vdesc, t)</a>
+   230) <a name="l230" style="background-color: #ffcccc">    call PIO_Write_Darray(File,Vdesc,iodesc3d,var3d,ierr)</a>
+   231) <a name="l231" style="background-color: #ffcccc"></a>
+   232) <a name="l232" style="background-color: #ffcccc">    ! Write T</a>
+   233) <a name="l233" style="background-color: #ffcccc">!$omp parallel do private(ie, k, j, i)</a>
+   234) <a name="l234" style="background-color: #ffcccc">    do ie=1,nelemd</a>
+   235) <a name="l235" style="background-color: #ffcccc">       do k=1,nlev</a>
+   236) <a name="l236" style="background-color: #ffcccc">          do j=1,np</a>
+   237) <a name="l237" style="background-color: #ffcccc">             do i=1,np</a>
+   238) <a name="l238" style="background-color: #ffcccc">                var3d(i,j,ie,k) = elem(ie)%state%T(i,j,k,tl)</a>
+   239) <a name="l239" style="background-color: #ffcccc">             end do</a>
+   240) <a name="l240" style="background-color: #ffcccc">          end do</a>
+   241) <a name="l241" style="background-color: #ffcccc">       end do</a>
+   242) <a name="l242" style="background-color: #ffcccc">    end do</a>
+   243) <a name="l243" style="background-color: #ffcccc"></a>
+   244) <a name="l244" style="background-color: #ffcccc">    call PIO_SetFrame(Tdesc, t)</a>
+   245) <a name="l245" style="background-color: #ffcccc">    call PIO_Write_Darray(File,Tdesc,iodesc3d,var3d,ierr)</a>
+   246) <a name="l246" style="background-color: #ffcccc"></a>
+   247) <a name="l247" style="background-color: #ffcccc"></a>
+   248) <a name="l248" style="background-color: #ffcccc">    do q=1,qsize_d</a>
+   249) <a name="l249" style="background-color: #ffcccc"></a>
+   250) <a name="l250" style="background-color: #ffcccc">       ! Write Q</a>
+   251) <a name="l251" style="background-color: #ffcccc">!$omp parallel do private(ie, k, j, i)</a>
+   252) <a name="l252" style="background-color: #ffcccc">       do ie=1,nelemd</a>
+   253) <a name="l253" style="background-color: #ffcccc">          do k=1,nlev</a>
+   254) <a name="l254" style="background-color: #ffcccc">             do j=1,np</a>
+   255) <a name="l255" style="background-color: #ffcccc">                do i=1,np</a>
+   256) <a name="l256" style="background-color: #ffcccc">                   var3d(i,j,ie,k) = elem(ie)%state%Q(i,j,k,q)</a>
+   257) <a name="l257" style="background-color: #ffcccc">                end do</a>
+   258) <a name="l258" style="background-color: #ffcccc">             end do</a>
+   259) <a name="l259" style="background-color: #ffcccc">          end do</a>
+   260) <a name="l260" style="background-color: #ffcccc">       end do</a>
+   261) <a name="l261" style="background-color: #ffcccc">       call PIO_SetFrame(Qdesc(q), t)</a>
+   262) <a name="l262" style="background-color: #ffcccc">       call PIO_Write_Darray(File,Qdesc(q),iodesc3d,var3d,ierr)</a>
+   263) <a name="l263" style="background-color: #ffcccc"></a>
+   264) <a name="l264" style="background-color: #ffcccc">       ! Write Q</a>
+   265) <a name="l265" style="background-color: #ffcccc">!$omp parallel do private(ie, k, j, i)</a>
+   266) <a name="l266" style="background-color: #ffcccc">       do ie=1,nelemd</a>
+   267) <a name="l267" style="background-color: #ffcccc">          do k=1,nlev</a>
+   268) <a name="l268" style="background-color: #ffcccc">             do j=1,np</a>
+   269) <a name="l269" style="background-color: #ffcccc">                do i=1,np</a>
+   270) <a name="l270" style="background-color: #ffcccc">                   var3d(i,j,ie,k) = elem(ie)%state%Qdp(i,j,k,q,tlQdp)</a>
+   271) <a name="l271" style="background-color: #ffcccc">                end do</a>
+   272) <a name="l272" style="background-color: #ffcccc">             end do</a>
+   273) <a name="l273" style="background-color: #ffcccc">          end do</a>
+   274) <a name="l274" style="background-color: #ffcccc">       end do</a>
+   275) <a name="l275" style="background-color: #ffcccc">       call PIO_SetFrame(Qdesc_dp(q), t)</a>
+   276) <a name="l276" style="background-color: #ffcccc">       call PIO_Write_Darray(File,Qdesc_dp(q),iodesc3d,var3d,ierr)</a>
+   277) <a name="l277" style="background-color: #ffcccc"></a>
+   278) <a name="l278" style="background-color: #ffcccc">    end do</a>
+   279) <a name="l279" style="background-color: #ffcccc"></a>
+   280) <a name="l280" style="background-color: #ffcccc"></a>
+   281) <a name="l281" style="background-color: #ffcccc">    deallocate(var3d)</a>
+   282) <a name="l282" style="background-color: #ffcccc">    deallocate(var2d)</a>
+   283) <a name="l283" style="background-color: #ffcccc">    deallocate(qdesc, qdesc_dp)</a>
+   284) <a name="l284" style="background-color: #ffcccc">    call pio_freedecomp(File, iodesc2d)</a>
+   285) <a name="l285" style="background-color: #ffcccc">    call pio_freedecomp(File, iodesc3d)</a>
+   286) <a name="l286" style="background-color: #ffcccc"></a>
+   287) <a name="l287" style="background-color: #ffcccc">   if (iam .lt. par%nprocs) then</a>
+   288) <a name="l288" style="background-color: #ffcccc">   else</a>
+   289) <a name="l289" style="background-color: #ffcccc">    deallocate(elem, fvm)</a>
+   290) <a name="l290" style="background-color: #ffcccc">   endif  !!  iam .lt. par%nprocs</a>
+   291) <a name="l291" style="background-color: #ffcccc"></a>
+   292) <a name="l292" style="background-color: #ffcccc">  end subroutine write_restart_dynamics</a>
+   293) <a name="l293" style="background-color: #ffffff"></a>
+   294) <a name="l294" style="background-color: #ffffff">  !</a>
+   295) <a name="l295" style="background-color: #ffffff">  ! Get the integer mapping of a variable in the dynamics decomp in memory.  </a>
+   296) <a name="l296" style="background-color: #ffffff">  ! The canonical ordering is as on the file. A 0 value indicates that the</a>
+   297) <a name="l297" style="background-color: #ffffff">  ! variable is not on the file (eg halo or boundary values)</a>
+   298) <a name="l298" style="background-color: #ffffff">  !</a>
+   299) <a name="l299" style="background-color: #ffffff"></a>
+   300) <a name="l300" style="background-color: #ffffff">  function </a><a style="background-color: #ffcccc">get_restart_decomp(elem, lev) result(ldof)</a>
+   301) <a name="l301" style="background-color: #ffcccc">    use element_mod, only : element_t</a>
+   302) <a name="l302" style="background-color: #ffcccc">    use dimensions_mod, only : np, nelemd, nelem</a>
+   303) <a name="l303" style="background-color: #ffcccc">    type(element_t), intent(in) :: elem(:)</a>
+   304) <a name="l304" style="background-color: #ffcccc">    integer, pointer :: ldof(:)</a>
+   305) <a name="l305" style="background-color: #ffcccc">    integer, intent(in) :: lev</a>
+   306) <a name="l306" style="background-color: #ffcccc"></a>
+   307) <a name="l307" style="background-color: #ffcccc">    integer ::  i, j, k, ie</a>
+   308) <a name="l308" style="background-color: #ffcccc"></a>
+   309) <a name="l309" style="background-color: #ffcccc">    j=1</a>
+   310) <a name="l310" style="background-color: #ffcccc"></a>
+   311) <a name="l311" style="background-color: #ffcccc">    allocate(ldof(nelemd*np*np*lev))</a>
+   312) <a name="l312" style="background-color: #ffcccc">    do k=1,lev</a>
+   313) <a name="l313" style="background-color: #ffcccc">       do ie=1,nelemd</a>
+   314) <a name="l314" style="background-color: #ffcccc">          do i=1,np*np</a>
+   315) <a name="l315" style="background-color: #ffcccc">             ldof(j) = (elem(ie)%GlobalID-1)*np*np+(k-1)*nelem*np*np+i</a>
+   316) <a name="l316" style="background-color: #ffcccc">             j=j+1</a>
+   317) <a name="l317" style="background-color: #ffcccc">          end do</a>
+   318) <a name="l318" style="background-color: #ffcccc">       end do</a>
+   319) <a name="l319" style="background-color: #ffcccc">    end do</a>
+   320) <a name="l320" style="background-color: #ffcccc"></a>
+   321) <a name="l321" style="background-color: #ffcccc"></a>
+   322) <a name="l322" style="background-color: #ffcccc">  end function get_restart_decomp</a>
+   323) <a name="l323" style="background-color: #ffffff"></a>
+   324) <a name="l324" style="background-color: #ffffff"></a>
+   325) <a name="l325" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">read_restart_dynamics (File, dyn_in, dyn_out, NLFileName)</a>
+   326) <a name="l326" style="background-color: #ffcccc">    ! for restart and initial condition, timelevel == timelevel_dyn</a>
+   327) <a name="l327" style="background-color: #ffcccc">    ! so we wont update this routine to use both  </a>
+   328) <a name="l328" style="background-color: #ffcccc">    use dyn_comp, only : timelevel</a>
+   329) <a name="l329" style="background-color: #ffcccc">    use parallel_mod, only : initmp, par</a>
+   330) <a name="l330" style="background-color: #ffcccc">    use element_mod, only : element_t</a>
+   331) <a name="l331" style="background-color: #ffcccc">    use pio, only : file_desc_t, pio_global, pio_double, pio_offset, &amp;</a>
+   332) <a name="l332" style="background-color: #ffcccc">         pio_get_att, pio_inq_dimid, pio_inq_dimlen, pio_initdecomp, pio_inq_varid, &amp;</a>
+   333) <a name="l333" style="background-color: #ffcccc">         pio_read_darray, pio_setframe, file_desc_t, io_desc_t, pio_double</a>
+   334) <a name="l334" style="background-color: #ffcccc">    use dyn_comp, only : dyn_init1, dyn_init2</a>
+   335) <a name="l335" style="background-color: #ffcccc">    use dimensions_mod, only : nlev, np, ne, nelemd, qsize_d</a>
+   336) <a name="l336" style="background-color: #ffcccc">    use abortutils,   only: endrun</a>
+   337) <a name="l337" style="background-color: #ffcccc">    use namelist_mod, only: readnl</a>
+   338) <a name="l338" style="background-color: #ffcccc">    use constituents, only : cnst_name</a>
+   339) <a name="l339" style="background-color: #ffcccc">    use bndry_mod,   only: bndry_exchangeV</a>
+   340) <a name="l340" style="background-color: #ffcccc">    use edge_mod,       only: EdgeBuffer_t, initEdgeBuffer, FreeEdgeBuffer, &amp;</a>
+   341) <a name="l341" style="background-color: #ffcccc">         edgeVpack, edgeVunpack</a>
+   342) <a name="l342" style="background-color: #ffcccc">    use cam_pio_utils, only : pio_subsystem</a>
+   343) <a name="l343" style="background-color: #ffcccc">    use spmd_dyn, only: spmd_readnl</a>
+   344) <a name="l344" style="background-color: #ffcccc">    use fvm_control_volume_mod, only: fvm_struct</a>
+   345) <a name="l345" style="background-color: #ffcccc">    use control_mod, only: qsplit</a>
+   346) <a name="l346" style="background-color: #ffcccc">    use time_mod, only: TimeLevel_Qdp</a>
+   347) <a name="l347" style="background-color: #ffcccc">    !</a>
+   348) <a name="l348" style="background-color: #ffcccc">    ! Input arguments</a>
+   349) <a name="l349" style="background-color: #ffcccc">    !</a>
+   350) <a name="l350" style="background-color: #ffcccc">    type(File_desc_t), intent(inout) :: File</a>
+   351) <a name="l351" style="background-color: #ffcccc">    type(dyn_import_t), intent(inout)  :: dyn_in</a>
+   352) <a name="l352" style="background-color: #ffcccc">    type(dyn_export_t), intent(inout)  :: dyn_out</a>
+   353) <a name="l353" style="background-color: #ffcccc">    character(len=*), intent(in) :: NLFileName</a>
+   354) <a name="l354" style="background-color: #ffcccc"></a>
+   355) <a name="l355" style="background-color: #ffcccc">    type(io_desc_t) :: iodesc2d, iodesc3d</a>
+   356) <a name="l356" style="background-color: #ffcccc">    real(r8), allocatable :: var3d(:), var2d(:)</a>
+   357) <a name="l357" style="background-color: #ffcccc">    integer :: ie, ierr, fne, fnp, fnlev</a>
+   358) <a name="l358" style="background-color: #ffcccc">    integer :: ncols</a>
+   359) <a name="l359" style="background-color: #ffcccc">    integer, pointer :: ldof(:)</a>
+   360) <a name="l360" style="background-color: #ffcccc">    type(element_t), pointer :: elem(:)               ! pointer to dyn_in element array</a>
+   361) <a name="l361" style="background-color: #ffcccc">    type(fvm_struct), pointer :: fvm(:)</a>
+   362) <a name="l362" style="background-color: #ffcccc">    integer(kind=PIO_OFFSET), parameter :: t = 1</a>
+   363) <a name="l363" style="background-color: #ffcccc">    integer :: i, k, cnt, st, en, tl, tlQdp, ii, jj, s2d, q, j</a>
+   364) <a name="l364" style="background-color: #ffcccc">    type(EdgeBuffer_T) :: edgebuf</a>
+   365) <a name="l365" style="background-color: #ffcccc">    integer :: timelevel_dimid, timelevel_chk</a>
+   366) <a name="l366" style="background-color: #ffcccc">    integer :: npes_se</a>
+   367) <a name="l367" style="background-color: #ffcccc">!    type(file_desc_t) :: ncid</a>
+   368) <a name="l368" style="background-color: #ffcccc">!    integer :: ncid</a>
+   369) <a name="l369" style="background-color: #ffcccc"></a>
+   370) <a name="l370" style="background-color: #ffcccc">    call dyn_init1(file, NLFileName, dyn_in, dyn_out)</a>
+   371) <a name="l371" style="background-color: #ffcccc"></a>
+   372) <a name="l372" style="background-color: #ffcccc">   if (iam .lt. par%nprocs) then</a>
+   373) <a name="l373" style="background-color: #ffcccc">    elem=&gt;dyn_in%elem</a>
+   374) <a name="l374" style="background-color: #ffcccc">   else</a>
+   375) <a name="l375" style="background-color: #ffcccc">    allocate (elem(0))</a>
+   376) <a name="l376" style="background-color: #ffcccc">   endif</a>
+   377) <a name="l377" style="background-color: #ffcccc"></a>
+   378) <a name="l378" style="background-color: #ffcccc">    ierr = PIO_Get_Att(File, PIO_GLOBAL, 'ne', fne)</a>
+   379) <a name="l379" style="background-color: #ffcccc">    ierr = PIO_Get_Att(File, PIO_GLOBAL, 'np', fnp)</a>
+   380) <a name="l380" style="background-color: #ffcccc"></a>
+   381) <a name="l381" style="background-color: #ffcccc">    if(ne/=fne .or. np/=fnp) then</a>
+   382) <a name="l382" style="background-color: #ffcccc">       write(iulog,*) 'Restart file np or ne does not match model. np (file, model):',fnp,np,&amp;</a>
+   383) <a name="l383" style="background-color: #ffcccc">            ' ne (file, model) ', fne, ne</a>
+   384) <a name="l384" style="background-color: #ffcccc">       call endrun()</a>
+   385) <a name="l385" style="background-color: #ffcccc">    end if</a>
+   386) <a name="l386" style="background-color: #ffcccc"></a>
+   387) <a name="l387" style="background-color: #ffcccc">    ierr = PIO_Inq_DimID(File, 'lev', nlev_dimid)</a>
+   388) <a name="l388" style="background-color: #ffcccc">    ierr = PIO_Inq_dimlen(File, nlev_dimid, fnlev)</a>
+   389) <a name="l389" style="background-color: #ffcccc">    if(ne/=fne .or. np/=fnp) then</a>
+   390) <a name="l390" style="background-color: #ffcccc">       write(iulog,*) 'Restart file nlev does not match model. nlev (file, namelist):',fnlev, nlev</a>
+   391) <a name="l391" style="background-color: #ffcccc">       call endrun()</a>
+   392) <a name="l392" style="background-color: #ffcccc">    end if</a>
+   393) <a name="l393" style="background-color: #ffcccc"></a>
+   394) <a name="l394" style="background-color: #ffcccc">    ierr = PIO_Inq_DimID(File, 'timelevels', timelevel_dimid)</a>
+   395) <a name="l395" style="background-color: #ffcccc">    ierr = PIO_Inq_dimlen(File, timelevel_dimid, timelevel_chk)</a>
+   396) <a name="l396" style="background-color: #ffcccc"></a>
+   397) <a name="l397" style="background-color: #ffcccc"></a>
+   398) <a name="l398" style="background-color: #ffcccc">    ierr = PIO_Inq_DimID(File, 'ncol_d', ncol_dimid)</a>
+   399) <a name="l399" style="background-color: #ffcccc"></a>
+   400) <a name="l400" style="background-color: #ffcccc">    ierr = PIO_Inq_dimlen(File, ncol_dimid, ncols)</a>
+   401) <a name="l401" style="background-color: #ffcccc"></a>
+   402) <a name="l402" style="background-color: #ffcccc"></a>
+   403) <a name="l403" style="background-color: #ffcccc">    ldof =&gt; get_restart_decomp(elem, 1)</a>
+   404) <a name="l404" style="background-color: #ffcccc">    s2d=size(ldof)</a>
+   405) <a name="l405" style="background-color: #ffcccc">    allocate(var3d(s2d*nlev), var2d(s2d))</a>
+   406) <a name="l406" style="background-color: #ffcccc">    var2d = 0._r8</a>
+   407) <a name="l407" style="background-color: #ffcccc">    var3d = 0._r8</a>
+   408) <a name="l408" style="background-color: #ffcccc">    call PIO_InitDecomp(pio_subsystem, pio_double, (/ncols/) , ldof , iodesc2d)</a>
+   409) <a name="l409" style="background-color: #ffcccc">    deallocate(ldof)</a>
+   410) <a name="l410" style="background-color: #ffcccc"></a>
+   411) <a name="l411" style="background-color: #ffcccc">    ldof =&gt; get_restart_decomp(elem, nlev)</a>
+   412) <a name="l412" style="background-color: #ffcccc">    call PIO_InitDecomp(pio_subsystem, pio_double, (/ncols,nlev/),ldof , iodesc3d)</a>
+   413) <a name="l413" style="background-color: #ffcccc">    deallocate(ldof)</a>
+   414) <a name="l414" style="background-color: #ffcccc"></a>
+   415) <a name="l415" style="background-color: #ffcccc">    initialized = .true.</a>
+   416) <a name="l416" style="background-color: #ffcccc"></a>
+   417) <a name="l417" style="background-color: #ffcccc">    ierr = PIO_Inq_varid(File, 'U', udesc)</a>
+   418) <a name="l418" style="background-color: #ffcccc"></a>
+   419) <a name="l419" style="background-color: #ffcccc">    ierr = PIO_Inq_varid(File, 'V', Vdesc)</a>
+   420) <a name="l420" style="background-color: #ffcccc"></a>
+   421) <a name="l421" style="background-color: #ffcccc">    ierr = PIO_Inq_varid(File, 'T', tdesc)</a>
+   422) <a name="l422" style="background-color: #ffcccc"></a>
+   423) <a name="l423" style="background-color: #ffcccc">    ierr = PIO_Inq_varid(File, 'OMEGA', OMEGAdesc)</a>
+   424) <a name="l424" style="background-color: #ffcccc"></a>
+   425) <a name="l425" style="background-color: #ffcccc">    ierr = PIO_Inq_varid(File, 'PS', psdesc)</a>
+   426) <a name="l426" style="background-color: #ffcccc"></a>
+   427) <a name="l427" style="background-color: #ffcccc">    ierr = PIO_Inq_varid(File, 'PHIS', phisdesc)</a>
+   428) <a name="l428" style="background-color: #ffcccc"></a>
+   429) <a name="l429" style="background-color: #ffcccc"></a>
+   430) <a name="l430" style="background-color: #ffcccc">    allocate(qdesc(qsize_d), qdesc_dp(qsize_d))</a>
+   431) <a name="l431" style="background-color: #ffcccc"></a>
+   432) <a name="l432" style="background-color: #ffcccc">    do q=1,qsize_d</a>
+   433) <a name="l433" style="background-color: #ffcccc">       ierr = PIO_Inq_varid(File, cnst_name(q) ,Qdesc(q))</a>
+   434) <a name="l434" style="background-color: #ffcccc">       ierr = PIO_Inq_varid(File, &quot;dp&quot;//cnst_name(q) ,Qdesc_dp(q))</a>
+   435) <a name="l435" style="background-color: #ffcccc">    end do</a>
+   436) <a name="l436" style="background-color: #ffcccc"></a>
+   437) <a name="l437" style="background-color: #ffcccc"></a>
+   438) <a name="l438" style="background-color: #ffcccc">    call pio_setframe(phisdesc, int(1,kind=PIO_OFFSET))</a>
+   439) <a name="l439" style="background-color: #ffcccc"></a>
+   440) <a name="l440" style="background-color: #ffcccc">    call pio_read_darray(File, phisdesc, iodesc2d, var2d, ierr)</a>
+   441) <a name="l441" style="background-color: #ffcccc"></a>
+   442) <a name="l442" style="background-color: #ffcccc">    cnt=0</a>
+   443) <a name="l443" style="background-color: #ffcccc">    do ie=1,nelemd</a>
+   444) <a name="l444" style="background-color: #ffcccc">       do j=1,np</a>
+   445) <a name="l445" style="background-color: #ffcccc">          do i=1,np</a>
+   446) <a name="l446" style="background-color: #ffcccc">             cnt=cnt+1</a>
+   447) <a name="l447" style="background-color: #ffcccc">             elem(ie)%state%phis(i,j) = var2d(cnt)</a>
+   448) <a name="l448" style="background-color: #ffcccc">          end do</a>
+   449) <a name="l449" style="background-color: #ffcccc">       end do</a>
+   450) <a name="l450" style="background-color: #ffcccc">    end do</a>
+   451) <a name="l451" style="background-color: #ffcccc"></a>
+   452) <a name="l452" style="background-color: #ffcccc"></a>
+   453) <a name="l453" style="background-color: #ffcccc">    do ie=1,nelemd</a>
+   454) <a name="l454" style="background-color: #ffcccc">       elem(ie)%derived%fM = 0._r8</a>
+   455) <a name="l455" style="background-color: #ffcccc">       elem(ie)%derived%fT = 0._r8</a>
+   456) <a name="l456" style="background-color: #ffcccc">       elem(ie)%derived%fQ = 0._r8</a>
+   457) <a name="l457" style="background-color: #ffcccc">       elem(ie)%state%Q = 0._r8</a>
+   458) <a name="l458" style="background-color: #ffcccc">    end do</a>
+   459) <a name="l459" style="background-color: #ffcccc"></a>
+   460) <a name="l460" style="background-color: #ffcccc">    call pio_read_darray(File, omegadesc, iodesc3d, var3d, ierr)</a>
+   461) <a name="l461" style="background-color: #ffcccc">    cnt=0</a>
+   462) <a name="l462" style="background-color: #ffcccc"></a>
+   463) <a name="l463" style="background-color: #ffcccc">    do k=1,nlev</a>
+   464) <a name="l464" style="background-color: #ffcccc">       do ie=1,nelemd</a>
+   465) <a name="l465" style="background-color: #ffcccc">          do j=1,np</a>
+   466) <a name="l466" style="background-color: #ffcccc">             do i=1,np</a>
+   467) <a name="l467" style="background-color: #ffcccc">                cnt=cnt+1</a>
+   468) <a name="l468" style="background-color: #ffcccc">                elem(ie)%derived%omega_p(i,j,k) = var3d(cnt)</a>
+   469) <a name="l469" style="background-color: #ffcccc">             end do</a>
+   470) <a name="l470" style="background-color: #ffcccc">          end do</a>
+   471) <a name="l471" style="background-color: #ffcccc">       end do</a>
+   472) <a name="l472" style="background-color: #ffcccc">    end do</a>
+   473) <a name="l473" style="background-color: #ffcccc"></a>
+   474) <a name="l474" style="background-color: #ffcccc"></a>
+   475) <a name="l475" style="background-color: #ffcccc">    tl = timelevel%n0</a>
+   476) <a name="l476" style="background-color: #ffcccc">    call TimeLevel_Qdp(timelevel, qsplit, tlQdp)</a>
+   477) <a name="l477" style="background-color: #ffcccc"></a>
+   478) <a name="l478" style="background-color: #ffcccc">    call pio_setframe(psdesc, t)</a>
+   479) <a name="l479" style="background-color: #ffcccc">    call pio_read_darray(File, psdesc, iodesc2d, var2d, ierr)</a>
+   480) <a name="l480" style="background-color: #ffcccc"></a>
+   481) <a name="l481" style="background-color: #ffcccc">    cnt=0</a>
+   482) <a name="l482" style="background-color: #ffcccc">    do ie=1,nelemd</a>
+   483) <a name="l483" style="background-color: #ffcccc">       do j=1,np</a>
+   484) <a name="l484" style="background-color: #ffcccc">          do i=1,np</a>
+   485) <a name="l485" style="background-color: #ffcccc">             cnt=cnt+1</a>
+   486) <a name="l486" style="background-color: #ffcccc">             elem(ie)%state%ps_v(i,j,tl) = var2d(cnt)</a>
+   487) <a name="l487" style="background-color: #ffcccc">             elem(ie)%state%lnps(i,j,tl) = log(var2d(cnt))</a>
+   488) <a name="l488" style="background-color: #ffcccc">          end do</a>
+   489) <a name="l489" style="background-color: #ffcccc">       end do</a>
+   490) <a name="l490" style="background-color: #ffcccc">    end do</a>
+   491) <a name="l491" style="background-color: #ffcccc"></a>
+   492) <a name="l492" style="background-color: #ffcccc">    call pio_setframe(udesc, t)</a>
+   493) <a name="l493" style="background-color: #ffcccc">    call pio_read_darray(File, udesc, iodesc3d, var3d, ierr)</a>
+   494) <a name="l494" style="background-color: #ffcccc"></a>
+   495) <a name="l495" style="background-color: #ffcccc">    cnt=0</a>
+   496) <a name="l496" style="background-color: #ffcccc">    do k=1,nlev</a>
+   497) <a name="l497" style="background-color: #ffcccc">       do ie=1,nelemd</a>
+   498) <a name="l498" style="background-color: #ffcccc">          do j=1,np</a>
+   499) <a name="l499" style="background-color: #ffcccc">             do i=1,np</a>
+   500) <a name="l500" style="background-color: #ffcccc">                cnt=cnt+1</a>
+   501) <a name="l501" style="background-color: #ffcccc">                elem(ie)%state%v(i,j,1,k,tl) = var3d(cnt)</a>
+   502) <a name="l502" style="background-color: #ffcccc">             end do</a>
+   503) <a name="l503" style="background-color: #ffcccc">          end do</a>
+   504) <a name="l504" style="background-color: #ffcccc">       end do</a>
+   505) <a name="l505" style="background-color: #ffcccc">    end do</a>
+   506) <a name="l506" style="background-color: #ffcccc"></a>
+   507) <a name="l507" style="background-color: #ffcccc">    call pio_setframe(vdesc, t)</a>
+   508) <a name="l508" style="background-color: #ffcccc">    call pio_read_darray(File, vdesc, iodesc3d, var3d, ierr)</a>
+   509) <a name="l509" style="background-color: #ffcccc">    cnt=0</a>
+   510) <a name="l510" style="background-color: #ffcccc">    do k=1,nlev</a>
+   511) <a name="l511" style="background-color: #ffcccc">       do ie=1,nelemd</a>
+   512) <a name="l512" style="background-color: #ffcccc">          do j=1,np</a>
+   513) <a name="l513" style="background-color: #ffcccc">             do i=1,np</a>
+   514) <a name="l514" style="background-color: #ffcccc">                cnt=cnt+1</a>
+   515) <a name="l515" style="background-color: #ffcccc">                elem(ie)%state%v(i,j,2,k,tl) = var3d(cnt)</a>
+   516) <a name="l516" style="background-color: #ffcccc">             end do</a>
+   517) <a name="l517" style="background-color: #ffcccc">          end do</a>
+   518) <a name="l518" style="background-color: #ffcccc">       end do</a>
+   519) <a name="l519" style="background-color: #ffcccc">    end do</a>
+   520) <a name="l520" style="background-color: #ffcccc"></a>
+   521) <a name="l521" style="background-color: #ffcccc">    call pio_setframe(tdesc, t)</a>
+   522) <a name="l522" style="background-color: #ffcccc">    call pio_read_darray(File, tdesc, iodesc3d, var3d, ierr)</a>
+   523) <a name="l523" style="background-color: #ffcccc">    cnt=0</a>
+   524) <a name="l524" style="background-color: #ffcccc">    do k=1,nlev</a>
+   525) <a name="l525" style="background-color: #ffcccc">       do ie=1,nelemd</a>
+   526) <a name="l526" style="background-color: #ffcccc">          do j=1,np</a>
+   527) <a name="l527" style="background-color: #ffcccc">             do i=1,np</a>
+   528) <a name="l528" style="background-color: #ffcccc">                cnt=cnt+1</a>
+   529) <a name="l529" style="background-color: #ffcccc">                elem(ie)%state%T(i,j,k,tl) = var3d(cnt)</a>
+   530) <a name="l530" style="background-color: #ffcccc">             end do</a>
+   531) <a name="l531" style="background-color: #ffcccc">          end do</a>
+   532) <a name="l532" style="background-color: #ffcccc">       end do</a>
+   533) <a name="l533" style="background-color: #ffcccc">    end do</a>
+   534) <a name="l534" style="background-color: #ffcccc"></a>
+   535) <a name="l535" style="background-color: #ffcccc">    do q=1,qsize_d</a>
+   536) <a name="l536" style="background-color: #ffcccc"></a>
+   537) <a name="l537" style="background-color: #ffcccc">       call pio_setframe(qdesc(q), t)</a>
+   538) <a name="l538" style="background-color: #ffcccc">       call pio_read_darray(File, qdesc(q), iodesc3d, var3d, ierr)</a>
+   539) <a name="l539" style="background-color: #ffcccc">       cnt=0</a>
+   540) <a name="l540" style="background-color: #ffcccc">       do k=1,nlev</a>
+   541) <a name="l541" style="background-color: #ffcccc">          do ie=1,nelemd</a>
+   542) <a name="l542" style="background-color: #ffcccc">             do j=1,np</a>
+   543) <a name="l543" style="background-color: #ffcccc">                do i=1,np</a>
+   544) <a name="l544" style="background-color: #ffcccc">                   cnt=cnt+1</a>
+   545) <a name="l545" style="background-color: #ffcccc">                   elem(ie)%state%Q(i,j,k,q) = var3d(cnt)</a>
+   546) <a name="l546" style="background-color: #ffcccc">                end do</a>
+   547) <a name="l547" style="background-color: #ffcccc">             end do</a>
+   548) <a name="l548" style="background-color: #ffcccc">          end do</a>
+   549) <a name="l549" style="background-color: #ffcccc">       end do</a>
+   550) <a name="l550" style="background-color: #ffcccc"></a>
+   551) <a name="l551" style="background-color: #ffcccc">       call pio_setframe(qdesc_dp(q), t)</a>
+   552) <a name="l552" style="background-color: #ffcccc">       call pio_read_darray(File, qdesc_dp(q), iodesc3d, var3d, ierr)</a>
+   553) <a name="l553" style="background-color: #ffcccc">       cnt=0</a>
+   554) <a name="l554" style="background-color: #ffcccc">       do k=1,nlev</a>
+   555) <a name="l555" style="background-color: #ffcccc">          do ie=1,nelemd</a>
+   556) <a name="l556" style="background-color: #ffcccc">             do j=1,np</a>
+   557) <a name="l557" style="background-color: #ffcccc">                do i=1,np</a>
+   558) <a name="l558" style="background-color: #ffcccc">                   cnt=cnt+1</a>
+   559) <a name="l559" style="background-color: #ffcccc">                   elem(ie)%state%Qdp(i,j,k,q,tlQdp) = var3d(cnt)</a>
+   560) <a name="l560" style="background-color: #ffcccc">                end do</a>
+   561) <a name="l561" style="background-color: #ffcccc">             end do</a>
+   562) <a name="l562" style="background-color: #ffcccc">          end do</a>
+   563) <a name="l563" style="background-color: #ffcccc">       end do</a>
+   564) <a name="l564" style="background-color: #ffcccc"></a>
+   565) <a name="l565" style="background-color: #ffcccc">    end do</a>
+   566) <a name="l566" style="background-color: #ffcccc"></a>
+   567) <a name="l567" style="background-color: #ffcccc">    deallocate(var3d,var2d)</a>
+   568) <a name="l568" style="background-color: #ffcccc"></a>
+   569) <a name="l569" style="background-color: #ffcccc">    deallocate(qdesc, qdesc_dp)</a>
+   570) <a name="l570" style="background-color: #ffcccc"></a>
+   571) <a name="l571" style="background-color: #ffcccc">    call dyn_init2(dyn_in)</a>
+   572) <a name="l572" style="background-color: #ffcccc"></a>
+   573) <a name="l573" style="background-color: #ffcccc">   if (iam .lt. par%nprocs) then</a>
+   574) <a name="l574" style="background-color: #ffcccc">   else</a>
+   575) <a name="l575" style="background-color: #ffcccc">    deallocate(elem)</a>
+   576) <a name="l576" style="background-color: #ffcccc">    deallocate(fvm)</a>
+   577) <a name="l577" style="background-color: #ffcccc">   endif  !!  iam .lt. par%nprocs</a>
+   578) <a name="l578" style="background-color: #ffcccc"></a>
+   579) <a name="l579" style="background-color: #ffcccc">    return</a>
+   580) <a name="l580" style="background-color: #ffcccc"></a>
+   581) <a name="l581" style="background-color: #ffcccc">  end subroutine read_restart_dynamics</a>
+   582) <a name="l582" style="background-color: #ffffff"></a>
+   583) <a name="l583" style="background-color: #ffffff">end module restart_dynamics</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

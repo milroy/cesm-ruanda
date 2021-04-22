@@ -1,0 +1,1152 @@
+<html>
+<head>
+<title>Listing of surfrdMod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;surfrdMod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 71.43&#160;%func&#160;&#160;&#160;&#160; 35.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module surfrdMod</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">!BOP</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !MODULE: surfrdMod</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     9) <a name="l9" style="background-color: #ffffff">! Contains methods for reading in surface data file and determining</a>
+    10) <a name="l10" style="background-color: #ffffff">! two-dimensional subgrid weights as well as writing out new surface</a>
+    11) <a name="l11" style="background-color: #ffffff">! dataset. When reading in the surface dataset, determines array</a>
+    12) <a name="l12" style="background-color: #ffffff">! which sets the PFT for each of the [maxpatch] patches and</a>
+    13) <a name="l13" style="background-color: #ffffff">! array which sets the relative abundance of the PFT.</a>
+    14) <a name="l14" style="background-color: #ffffff">! Also fills in the PFTs for vegetated portion of each grid cell.</a>
+    15) <a name="l15" style="background-color: #ffffff">! Fractional areas for these points pertain to &quot;vegetated&quot;</a>
+    16) <a name="l16" style="background-color: #ffffff">! area not to total grid area. Need to adjust them for fraction of grid</a>
+    17) <a name="l17" style="background-color: #ffffff">! that is vegetated. Also fills in urban, lake, wetland, and glacier patches.</a>
+    18) <a name="l18" style="background-color: #ffffff">!</a>
+    19) <a name="l19" style="background-color: #ffffff">! !USES:</a>
+    20) <a name="l20" style="background-color: #ffffff">  use shr_kind_mod, only : r8 =&gt; shr_kind_r8</a>
+    21) <a name="l21" style="background-color: #ffffff">  use abortutils  , only : endrun</a>
+    22) <a name="l22" style="background-color: #ffffff">  use clm_varpar  , only : nlevsoi, numpft, &amp;</a>
+    23) <a name="l23" style="background-color: #ffffff">                           maxpatch_pft, numcft, maxpatch, &amp;</a>
+    24) <a name="l24" style="background-color: #ffffff">                           npatch_urban, npatch_lake, npatch_wet, &amp;</a>
+    25) <a name="l25" style="background-color: #ffffff">                           npatch_glacier,maxpatch_urb, npatch_glacier_mec, &amp;</a>
+    26) <a name="l26" style="background-color: #ffffff">                           maxpatch_glcmec</a>
+    27) <a name="l27" style="background-color: #ffffff">  use clm_varctl  , only : glc_topomax, iulog, scmlat, scmlon, single_column, &amp;</a>
+    28) <a name="l28" style="background-color: #ffffff">                           create_glacier_mec_landunit, use_cndv</a>
+    29) <a name="l29" style="background-color: #ffffff">  use clm_varsur  , only : wtxy, vegxy, topoxy, pctspec</a>
+    30) <a name="l30" style="background-color: #ffffff">  use decompMod   , only : get_proc_bounds</a>
+    31) <a name="l31" style="background-color: #ffffff">  use clmtype</a>
+    32) <a name="l32" style="background-color: #ffffff">  use spmdMod                         </a>
+    33) <a name="l33" style="background-color: #ffffff">  use ncdio_pio   , only : file_desc_t, var_desc_t, ncd_pio_openfile, ncd_pio_closefile, &amp;</a>
+    34) <a name="l34" style="background-color: #ffffff">                           ncd_io, check_var, ncd_inqfdims, check_dim</a>
+    35) <a name="l35" style="background-color: #ffffff">  use pio</a>
+    36) <a name="l36" style="background-color: #ffffff">!</a>
+    37) <a name="l37" style="background-color: #ffffff">! !PUBLIC TYPES:</a>
+    38) <a name="l38" style="background-color: #ffffff">  implicit none</a>
+    39) <a name="l39" style="background-color: #ffffff">  save</a>
+    40) <a name="l40" style="background-color: #ffffff">!</a>
+    41) <a name="l41" style="background-color: #ffffff">! !PUBLIC MEMBER FUNCTIONS:</a>
+    42) <a name="l42" style="background-color: #ffffff">  public :: surfrd_get_globmask  ! Reads global land mask (needed for setting domain decomp)</a>
+    43) <a name="l43" style="background-color: #ffffff">  public :: surfrd_get_grid      ! Read grid/ladnfrac data into domain (after domain decomp)</a>
+    44) <a name="l44" style="background-color: #ffffff">  public :: surfrd_get_topo      ! Read grid topography into domain (after domain decomp)</a>
+    45) <a name="l45" style="background-color: #ffffff">  public :: surfrd_get_data      ! Read surface dataset and determine subgrid weights</a>
+    46) <a name="l46" style="background-color: #ffffff">!</a>
+    47) <a name="l47" style="background-color: #ffffff">! !PUBLIC DATA MEMBERS:</a>
+    48) <a name="l48" style="background-color: #ffffff">  logical, public :: crop_prog = .false. ! If prognostic crops is turned on</a>
+    49) <a name="l49" style="background-color: #ffffff">!</a>
+    50) <a name="l50" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    51) <a name="l51" style="background-color: #ffffff">! Created by Mariana Vertenstein</a>
+    52) <a name="l52" style="background-color: #ffffff">! Updated by T Craig</a>
+    53) <a name="l53" style="background-color: #ffffff">! Updated by Mariana Vertenstein Jan 2011</a>
+    54) <a name="l54" style="background-color: #ffffff">!</a>
+    55) <a name="l55" style="background-color: #ffffff">!</a>
+    56) <a name="l56" style="background-color: #ffffff">! !PRIVATE MEMBER FUNCTIONS:</a>
+    57) <a name="l57" style="background-color: #ffffff">  private :: surfrd_wtxy_special</a>
+    58) <a name="l58" style="background-color: #ffffff">  private :: surfrd_wtxy_veg_all</a>
+    59) <a name="l59" style="background-color: #ffffff">  private :: surfrd_wtxy_veg_dgvm</a>
+    60) <a name="l60" style="background-color: #ffffff">!EOP</a>
+    61) <a name="l61" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">contains</a>
+    64) <a name="l64" style="background-color: #ffffff"></a>
+    65) <a name="l65" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    66) <a name="l66" style="background-color: #ffffff">!BOP</a>
+    67) <a name="l67" style="background-color: #ffffff">!</a>
+    68) <a name="l68" style="background-color: #ffffff">! !IROUTINE: surfrd_get_globmask</a>
+    69) <a name="l69" style="background-color: #ffffff">!</a>
+    70) <a name="l70" style="background-color: #ffffff">! !INTERFACE:</a>
+    71) <a name="l71" style="background-color: #ffffff">  subroutine surfrd_get_globmask(filename, mask, ni, nj)</a>
+    72) <a name="l72" style="background-color: #ffffff">!</a>
+    73) <a name="l73" style="background-color: #ffffff">! !DESCRIPTION:</a>
+    74) <a name="l74" style="background-color: #ffffff">! Read the surface dataset grid related information:</a>
+    75) <a name="l75" style="background-color: #ffffff">! This is the first routine called by clm_initialize </a>
+    76) <a name="l76" style="background-color: #ffffff">! NO DOMAIN DECOMPOSITION  HAS BEEN SET YET</a>
+    77) <a name="l77" style="background-color: #ffffff">!</a>
+    78) <a name="l78" style="background-color: #ffffff">! !USES:</a>
+    79) <a name="l79" style="background-color: #ffffff">    use fileutils , only : getfil</a>
+    80) <a name="l80" style="background-color: #ffffff">!</a>
+    81) <a name="l81" style="background-color: #ffffff">! !ARGUMENTS:</a>
+    82) <a name="l82" style="background-color: #ffffff">    implicit none</a>
+    83) <a name="l83" style="background-color: #ffffff">    character(len=*), intent(in)    :: filename  ! grid filename</a>
+    84) <a name="l84" style="background-color: #ffffff">    integer         , pointer       :: mask(:)   ! grid mask </a>
+    85) <a name="l85" style="background-color: #ffffff">    integer         , intent(out)   :: ni, nj    ! global grid sizes</a>
+    86) <a name="l86" style="background-color: #ffffff">!</a>
+    87) <a name="l87" style="background-color: #ffffff">! !CALLED FROM:</a>
+    88) <a name="l88" style="background-color: #ffffff">! subroutine surfrd in this module</a>
+    89) <a name="l89" style="background-color: #ffffff">!</a>
+    90) <a name="l90" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    91) <a name="l91" style="background-color: #ffffff">! Created by Mariana Vertenstein</a>
+    92) <a name="l92" style="background-color: #ffffff">!</a>
+    93) <a name="l93" style="background-color: #ffffff">!</a>
+    94) <a name="l94" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+    95) <a name="l95" style="background-color: #ffffff">!EOP</a>
+    96) <a name="l96" style="background-color: #ffffff">    logical :: isgrid2d</a>
+    97) <a name="l97" style="background-color: #ffffff">    integer :: dimid,varid         ! netCDF id's</a>
+    98) <a name="l98" style="background-color: #ffffff">    integer :: ns                  ! size of grid on file</a>
+    99) <a name="l99" style="background-color: #ffffff">    integer :: n,i,j               ! index </a>
+   100) <a name="l100" style="background-color: #ffffff">    integer :: ier                 ! error status</a>
+   101) <a name="l101" style="background-color: #ffffff">    type(file_desc_t)  :: ncid     ! netcdf id</a>
+   102) <a name="l102" style="background-color: #ffffff">    type(var_desc_t)   :: vardesc  ! variable descriptor</a>
+   103) <a name="l103" style="background-color: #ffffff">    character(len=256) :: varname  ! variable name</a>
+   104) <a name="l104" style="background-color: #ffffff">    character(len=256) :: locfn    ! local file name</a>
+   105) <a name="l105" style="background-color: #ffffff">    logical :: readvar             ! read variable in or not</a>
+   106) <a name="l106" style="background-color: #ffffff">    integer , allocatable :: idata2d(:,:)</a>
+   107) <a name="l107" style="background-color: #ffffff">    character(len=32) :: subname = 'surfrd_get_globmask' ! subroutine name</a>
+   108) <a name="l108" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   109) <a name="l109" style="background-color: #ffffff"></a>
+   110) <a name="l110" style="background-color: #ffffff">    if (filename == ' ') then</a>
+   111) <a name="l111" style="background-color: #ffff99">       mask(:) = 1</a>
+   112) <a name="l112" style="background-color: #ffff99">       RETURN</a>
+   113) <a name="l113" style="background-color: #ffff99">    end if</a>
+   114) <a name="l114" style="background-color: #ffff99"></a>
+   115) <a name="l115" style="background-color: #ffffff">    if (masterproc) then</a>
+   116) <a name="l116" style="background-color: #ffffff">       if (filename == ' ') then</a>
+   117) <a name="l117" style="background-color: #ffff99">          write(iulog,*) trim(subname),' ERROR: filename must be specified '</a>
+   118) <a name="l118" style="background-color: #ffff99">          call endrun()</a>
+   119) <a name="l119" style="background-color: #ffff99">       endif</a>
+   120) <a name="l120" style="background-color: #ffff99">    end if</a>
+   121) <a name="l121" style="background-color: #ffff99"></a>
+   122) <a name="l122" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">getfil( filename, locfn, 0 )</a>
+   123) <a name="l123" style="background-color: #ffffff">    call ncd_pio_openfile (ncid, trim(locfn), 0)</a>
+   124) <a name="l124" style="background-color: #ffffff"></a>
+   125) <a name="l125" style="background-color: #ffffff">    ! Determine dimensions and if grid file is 2d or 1d</a>
+   126) <a name="l126" style="background-color: #ffffff"></a>
+   127) <a name="l127" style="background-color: #ffffff">    call ncd_inqfdims(ncid, isgrid2d, ni, nj, ns)</a>
+   128) <a name="l128" style="background-color: #ffffff">    if (masterproc) then</a>
+   129) <a name="l129" style="background-color: #ffffff">       write(iulog,*)'lat/lon grid flag (isgrid2d) is ',isgrid2d</a>
+   130) <a name="l130" style="background-color: #ffffff">    end if</a>
+   131) <a name="l131" style="background-color: #ffffff"></a>
+   132) <a name="l132" style="background-color: #fafad2">    allocate(mask(ns))</a>
+   133) <a name="l133" style="background-color: #ffffff">    mask(:) = 1</a>
+   134) <a name="l134" style="background-color: #ffffff"></a>
+   135) <a name="l135" style="background-color: #ffffff">    if (isgrid2d) then</a>
+   136) <a name="l136" style="background-color: #ffff99">       allocate(idata2d(ni,nj))</a>
+   137) <a name="l137" style="background-color: #ffff99">       idata2d(:,:) = 1	</a>
+   138) <a name="l138" style="background-color: #ffff99">       call ncd_io(ncid=ncid, varname='LANDMASK', data=idata2d, flag='read', readvar=readvar)</a>
+   139) <a name="l139" style="background-color: #ffff99">       if (.not. readvar) then</a>
+   140) <a name="l140" style="background-color: #ffff99">          call ncd_io(ncid=ncid, varname='mask', data=idata2d, flag='read', readvar=readvar)</a>
+   141) <a name="l141" style="background-color: #ffff99">       end if</a>
+   142) <a name="l142" style="background-color: #ffff99">       if (readvar) then</a>
+   143) <a name="l143" style="background-color: #ffff99">          do j = 1,nj</a>
+   144) <a name="l144" style="background-color: #ffff99">          do i = 1,ni</a>
+   145) <a name="l145" style="background-color: #ffff99">             n = (j-1)*ni + i	</a>
+   146) <a name="l146" style="background-color: #ffff99">             mask(n) = idata2d(i,j)</a>
+   147) <a name="l147" style="background-color: #ffff99">          enddo</a>
+   148) <a name="l148" style="background-color: #ffff99">          enddo</a>
+   149) <a name="l149" style="background-color: #ffff99">       end if</a>
+   150) <a name="l150" style="background-color: #ffff99">       deallocate(idata2d)</a>
+   151) <a name="l151" style="background-color: #ffff99">    else</a>
+   152) <a name="l152" style="background-color: #ffff99">       call </a><a style="background-color: #ffffff">ncd_io(ncid=ncid, varname='LANDMASK', data=mask, flag='read', readvar=readvar)</a>
+   153) <a name="l153" style="background-color: #ffffff">       if (.not. readvar) then</a>
+   154) <a name="l154" style="background-color: #ffffff">          call ncd_io(ncid=ncid, varname='mask', data=mask, flag='read', readvar=readvar)</a>
+   155) <a name="l155" style="background-color: #ffffff">       end if</a>
+   156) <a name="l156" style="background-color: #ffffff">    end if</a>
+   157) <a name="l157" style="background-color: #ffffff">    if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: landmask not on fatmlndfrc file' )</a>
+   158) <a name="l158" style="background-color: #ffff99"></a>
+   159) <a name="l159" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">ncd_pio_closefile(ncid)</a>
+   160) <a name="l160" style="background-color: #ffffff"></a>
+   161) <a name="l161" style="background-color: #fafad2">  end subroutine surfrd_get_globmask</a>
+   162) <a name="l162" style="background-color: #ffffff"></a>
+   163) <a name="l163" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   164) <a name="l164" style="background-color: #ffffff">!BOP</a>
+   165) <a name="l165" style="background-color: #ffffff">!</a>
+   166) <a name="l166" style="background-color: #ffffff">! !IROUTINE: surfrd_get_grid</a>
+   167) <a name="l167" style="background-color: #ffffff">!</a>
+   168) <a name="l168" style="background-color: #ffffff">! !INTERFACE:</a>
+   169) <a name="l169" style="background-color: #ffffff">  subroutine surfrd_get_grid(ldomain, filename, glcfilename)</a>
+   170) <a name="l170" style="background-color: #ffffff">!</a>
+   171) <a name="l171" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   172) <a name="l172" style="background-color: #ffffff">! THIS IS CALLED AFTER THE DOMAIN DECOMPOSITION HAS BEEN CREATED</a>
+   173) <a name="l173" style="background-color: #ffffff">! Read the surface dataset grid related information:</a>
+   174) <a name="l174" style="background-color: #ffffff">! o real latitude  of grid cell (degrees)</a>
+   175) <a name="l175" style="background-color: #ffffff">! o real longitude of grid cell (degrees)</a>
+   176) <a name="l176" style="background-color: #ffffff">!</a>
+   177) <a name="l177" style="background-color: #ffffff">! !USES:</a>
+   178) <a name="l178" style="background-color: #ffffff">    use clm_varcon, only : spval, re</a>
+   179) <a name="l179" style="background-color: #ffffff">    use domainMod , only : domain_type, domain_init, domain_clean, lon1d, lat1d</a>
+   180) <a name="l180" style="background-color: #ffffff">    use decompMod , only : get_proc_bounds</a>
+   181) <a name="l181" style="background-color: #ffffff">    use fileutils , only : getfil</a>
+   182) <a name="l182" style="background-color: #ffffff">!</a>
+   183) <a name="l183" style="background-color: #ffffff">! !ARGUMENTS:</a>
+   184) <a name="l184" style="background-color: #ffffff">    implicit none</a>
+   185) <a name="l185" style="background-color: #ffffff">    type(domain_type),intent(inout) :: ldomain   ! domain to init</a>
+   186) <a name="l186" style="background-color: #ffffff">    character(len=*) ,intent(in)    :: filename  ! grid filename</a>
+   187) <a name="l187" style="background-color: #ffffff">    character(len=*) ,optional, intent(in) :: glcfilename ! glc mask filename</a>
+   188) <a name="l188" style="background-color: #ffffff">!</a>
+   189) <a name="l189" style="background-color: #ffffff">! !CALLED FROM:</a>
+   190) <a name="l190" style="background-color: #ffffff">! subroutine surfrd in this module</a>
+   191) <a name="l191" style="background-color: #ffffff">!</a>
+   192) <a name="l192" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   193) <a name="l193" style="background-color: #ffffff">! Created by Mariana Vertenstein</a>
+   194) <a name="l194" style="background-color: #ffffff">!</a>
+   195) <a name="l195" style="background-color: #ffffff">!</a>
+   196) <a name="l196" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+   197) <a name="l197" style="background-color: #ffffff">!EOP</a>
+   198) <a name="l198" style="background-color: #ffffff">    type(file_desc_t) :: ncid               ! netcdf id</a>
+   199) <a name="l199" style="background-color: #ffffff">    type(file_desc_t) :: ncidg              ! netCDF id for glcmask</a>
+   200) <a name="l200" style="background-color: #ffffff">    type(var_desc_t)  :: vardesc            ! variable descriptor</a>
+   201) <a name="l201" style="background-color: #ffffff">    integer :: beg                          ! local beg index</a>
+   202) <a name="l202" style="background-color: #ffffff">    integer :: end                          ! local end index</a>
+   203) <a name="l203" style="background-color: #ffffff">    integer :: ni,nj,ns                     ! size of grid on file</a>
+   204) <a name="l204" style="background-color: #ffffff">    integer :: dimid,varid                  ! netCDF id's</a>
+   205) <a name="l205" style="background-color: #ffffff">    integer :: start(1), count(1)           ! 1d lat/lon array sections</a>
+   206) <a name="l206" style="background-color: #ffffff">    integer :: ier,ret                      ! error status</a>
+   207) <a name="l207" style="background-color: #ffffff">    logical :: readvar                      ! true =&gt; variable is on input file </a>
+   208) <a name="l208" style="background-color: #ffffff">    logical :: isgrid2d                     ! true =&gt; file is 2d lat/lon</a>
+   209) <a name="l209" style="background-color: #ffffff">    logical :: istype_domain                ! true =&gt; input file is of type domain</a>
+   210) <a name="l210" style="background-color: #ffffff">    real(r8), allocatable :: rdata2d(:,:)   ! temporary</a>
+   211) <a name="l211" style="background-color: #ffffff">    character(len=16) :: vname              ! temporary</a>
+   212) <a name="l212" style="background-color: #ffffff">    character(len=256):: locfn              ! local file name</a>
+   213) <a name="l213" style="background-color: #ffffff">    integer :: n                            ! indices</a>
+   214) <a name="l214" style="background-color: #ffffff">    real(r8):: eps = 1.0e-12_r8             ! lat/lon error tolerance</a>
+   215) <a name="l215" style="background-color: #ffffff">    character(len=32) :: subname = 'surfrd_get_grid'     ! subroutine name</a>
+   216) <a name="l216" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   217) <a name="l217" style="background-color: #ffffff"></a>
+   218) <a name="l218" style="background-color: #ffffff">    if (masterproc) then</a>
+   219) <a name="l219" style="background-color: #ffffff">       if (filename == ' ') then</a>
+   220) <a name="l220" style="background-color: #ffff99">          write(iulog,*) trim(subname),' ERROR: filename must be specified '</a>
+   221) <a name="l221" style="background-color: #ffff99">          call endrun()</a>
+   222) <a name="l222" style="background-color: #ffff99">       endif</a>
+   223) <a name="l223" style="background-color: #ffff99">    end if</a>
+   224) <a name="l224" style="background-color: #ffff99"></a>
+   225) <a name="l225" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">getfil( filename, locfn, 0 )</a>
+   226) <a name="l226" style="background-color: #ffffff">    call ncd_pio_openfile (ncid, trim(locfn), 0)</a>
+   227) <a name="l227" style="background-color: #ffffff"></a>
+   228) <a name="l228" style="background-color: #ffffff">    ! Determine dimensions</a>
+   229) <a name="l229" style="background-color: #ffffff"></a>
+   230) <a name="l230" style="background-color: #ffffff">    call ncd_inqfdims(ncid, isgrid2d, ni, nj, ns)</a>
+   231) <a name="l231" style="background-color: #ffffff"></a>
+   232) <a name="l232" style="background-color: #ffffff">    ! Determine isgrid2d flag for domain</a>
+   233) <a name="l233" style="background-color: #ffffff"></a>
+   234) <a name="l234" style="background-color: #ffffff">    call get_proc_bounds(beg, end)</a>
+   235) <a name="l235" style="background-color: #ffffff">    call domain_init(ldomain, isgrid2d=isgrid2d, ni=ni, nj=nj, nbeg=beg, nend=end)</a>
+   236) <a name="l236" style="background-color: #ffffff">    ! Determine type of file - old style grid file or new style domain file</a>
+   237) <a name="l237" style="background-color: #ffffff"></a>
+   238) <a name="l238" style="background-color: #ffffff">    call check_var(ncid=ncid, varname='LONGXY', vardesc=vardesc, readvar=readvar) </a>
+   239) <a name="l239" style="background-color: #ffffff">    if (readvar) </a><a style="background-color: #ffff99">istype_domain = .false.</a>
+   240) <a name="l240" style="background-color: #ffff99"></a>
+   241) <a name="l241" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">check_var(ncid=ncid, varname='xc', vardesc=vardesc, readvar=readvar) </a>
+   242) <a name="l242" style="background-color: #ffffff">    if (readvar) istype_domain = .true.</a>
+   243) <a name="l243" style="background-color: #ffffff"></a>
+   244) <a name="l244" style="background-color: #ffffff">    ! Read in area, lon, lat</a>
+   245) <a name="l245" style="background-color: #ffffff"></a>
+   246) <a name="l246" style="background-color: #ffffff">    if (istype_domain) then</a>
+   247) <a name="l247" style="background-color: #ffffff">       call ncd_io(ncid=ncid, varname= 'area', flag='read', data=ldomain%area, &amp;</a>
+   248) <a name="l248" style="background-color: #ffffff">            dim1name=grlnd, readvar=readvar)</a>
+   249) <a name="l249" style="background-color: #ffffff">       ! convert from radians**2 to km**2</a>
+   250) <a name="l250" style="background-color: #ffffff">       ldomain%area = ldomain%area * (re**2)</a>
+   251) <a name="l251" style="background-color: #ffffff">       if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: area NOT on file' )</a>
+   252) <a name="l252" style="background-color: #ffff99">       </a>
+   253) <a name="l253" style="background-color: #ffff99">       call </a><a style="background-color: #ffffff">ncd_io(ncid=ncid, varname= 'xc', flag='read', data=ldomain%lonc, &amp;</a>
+   254) <a name="l254" style="background-color: #ffffff">            dim1name=grlnd, readvar=readvar)</a>
+   255) <a name="l255" style="background-color: #ffffff">       if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: xc NOT on file' )</a>
+   256) <a name="l256" style="background-color: #ffff99">       </a>
+   257) <a name="l257" style="background-color: #ffff99">       call </a><a style="background-color: #ffffff">ncd_io(ncid=ncid, varname= 'yc', flag='read', data=ldomain%latc, &amp;</a>
+   258) <a name="l258" style="background-color: #ffffff">            dim1name=grlnd, readvar=readvar)</a>
+   259) <a name="l259" style="background-color: #ffffff">       if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: yc NOT on file' )</a>
+   260) <a name="l260" style="background-color: #ffff99">    else</a>
+   261) <a name="l261" style="background-color: #ffff99">       call ncd_io(ncid=ncid, varname= 'AREA', flag='read', data=ldomain%area, &amp;</a>
+   262) <a name="l262" style="background-color: #ffff99">            dim1name=grlnd, readvar=readvar)</a>
+   263) <a name="l263" style="background-color: #ffff99">       if (.not. readvar) call endrun( trim(subname)//' ERROR: AREA NOT on file' )</a>
+   264) <a name="l264" style="background-color: #ffff99">       </a>
+   265) <a name="l265" style="background-color: #ffff99">       call ncd_io(ncid=ncid, varname= 'LONGXY', flag='read', data=ldomain%lonc, &amp;</a>
+   266) <a name="l266" style="background-color: #ffff99">            dim1name=grlnd, readvar=readvar)</a>
+   267) <a name="l267" style="background-color: #ffff99">       if (.not. readvar) call endrun( trim(subname)//' ERROR: LONGXY NOT on file' )</a>
+   268) <a name="l268" style="background-color: #ffff99">       </a>
+   269) <a name="l269" style="background-color: #ffff99">       call ncd_io(ncid=ncid, varname= 'LATIXY', flag='read', data=ldomain%latc, &amp;</a>
+   270) <a name="l270" style="background-color: #ffff99">            dim1name=grlnd, readvar=readvar)</a>
+   271) <a name="l271" style="background-color: #ffff99">       if (.not. readvar) call endrun( trim(subname)//' ERROR: LATIXY NOT on file' )</a>
+   272) <a name="l272" style="background-color: #ffff99">    end if</a>
+   273) <a name="l273" style="background-color: #ffff99"></a>
+   274) <a name="l274" style="background-color: #ffffff">    if (isgrid2d) then</a>
+   275) <a name="l275" style="background-color: #ffff99">       allocate(rdata2d(ni,nj), lon1d(ni), lat1d(nj))</a>
+   276) <a name="l276" style="background-color: #ffff99">       if (istype_domain) then</a>
+   277) <a name="l277" style="background-color: #ffff99">          vname = 'xc'</a>
+   278) <a name="l278" style="background-color: #ffff99">       else</a>
+   279) <a name="l279" style="background-color: #ffff99">          vname = 'LONGXY'</a>
+   280) <a name="l280" style="background-color: #ffff99">       end if</a>
+   281) <a name="l281" style="background-color: #ffff99">       call ncd_io(ncid=ncid, varname=trim(vname), data=rdata2d, flag='read', readvar=readvar)</a>
+   282) <a name="l282" style="background-color: #ffff99">       lon1d(:) = rdata2d(:,1)</a>
+   283) <a name="l283" style="background-color: #ffff99">       if (istype_domain) then</a>
+   284) <a name="l284" style="background-color: #ffff99">          vname = 'yc'</a>
+   285) <a name="l285" style="background-color: #ffff99">       else</a>
+   286) <a name="l286" style="background-color: #ffff99">          vname = 'LATIXY'</a>
+   287) <a name="l287" style="background-color: #ffff99">       end if</a>
+   288) <a name="l288" style="background-color: #ffff99">       call ncd_io(ncid=ncid, varname=trim(vname), data=rdata2d, flag='read', readvar=readvar)</a>
+   289) <a name="l289" style="background-color: #ffff99">       lat1d(:) = rdata2d(1,:)</a>
+   290) <a name="l290" style="background-color: #ffff99">       deallocate(rdata2d)</a>
+   291) <a name="l291" style="background-color: #ffff99">    end if</a>
+   292) <a name="l292" style="background-color: #ffff99"></a>
+   293) <a name="l293" style="background-color: #ffff99">    ! Check lat limited to -90,90</a>
+   294) <a name="l294" style="background-color: #ffff99"></a>
+   295) <a name="l295" style="background-color: #ffff99">    if (</a><a style="background-color: #fafad2">minval(ldomain%latc) &lt; -90.0_r8 .or. &amp;</a>
+   296) <a name="l296" style="background-color: #fafad2">        maxval(ldomain%latc) &gt;  90.0_r8) then</a>
+   297) <a name="l297" style="background-color: #ffff99">       write(iulog,*) trim(subname),' WARNING: lat/lon min/max is ', &amp;</a>
+   298) <a name="l298" style="background-color: #ffff99">            minval(ldomain%latc),maxval(ldomain%latc)</a>
+   299) <a name="l299" style="background-color: #ffff99">       ! call endrun( trim(subname)//' ERROR: lat is outside [-90,90]' )</a>
+   300) <a name="l300" style="background-color: #ffff99">       ! write(iulog,*) trim(subname),' Limiting lat/lon to [-90/90] from ', &amp;</a>
+   301) <a name="l301" style="background-color: #ffff99">       !     minval(domain%latc),maxval(domain%latc)</a>
+   302) <a name="l302" style="background-color: #ffff99">       ! where (ldomain%latc &lt; -90.0_r8) ldomain%latc = -90.0_r8</a>
+   303) <a name="l303" style="background-color: #ffff99">       ! where (ldomain%latc &gt;  90.0_r8) ldomain%latc =  90.0_r8</a>
+   304) <a name="l304" style="background-color: #ffff99">    endif</a>
+   305) <a name="l305" style="background-color: #ffff99"></a>
+   306) <a name="l306" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">ncd_io(ncid=ncid, varname='LANDMASK', flag='read', data=ldomain%mask, &amp;</a>
+   307) <a name="l307" style="background-color: #ffffff">         dim1name=grlnd, readvar=readvar)</a>
+   308) <a name="l308" style="background-color: #ffffff">    if (.not. readvar) then</a>
+   309) <a name="l309" style="background-color: #ffffff">       call ncd_io(ncid=ncid, varname='mask', flag='read', data=ldomain%mask, &amp;</a>
+   310) <a name="l310" style="background-color: #ffffff">            dim1name=grlnd, readvar=readvar)</a>
+   311) <a name="l311" style="background-color: #ffffff">       if (.not. readvar) then</a>
+   312) <a name="l312" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">endrun( trim(subname)//' ERROR: LANDMASK NOT on fracdata file' )</a>
+   313) <a name="l313" style="background-color: #ffff99">       end if</a>
+   314) <a name="l314" style="background-color: #ffff99">    end if</a>
+   315) <a name="l315" style="background-color: #ffff99"></a>
+   316) <a name="l316" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">ncd_io(ncid=ncid, varname='LANDFRAC', flag='read', data=ldomain%frac, &amp;</a>
+   317) <a name="l317" style="background-color: #ffffff">         dim1name=grlnd, readvar=readvar)</a>
+   318) <a name="l318" style="background-color: #ffffff">    if (.not. readvar) then</a>
+   319) <a name="l319" style="background-color: #ffffff">       call ncd_io(ncid=ncid, varname='frac', flag='read', data=ldomain%frac, &amp;</a>
+   320) <a name="l320" style="background-color: #ffffff">            dim1name=grlnd, readvar=readvar)</a>
+   321) <a name="l321" style="background-color: #ffffff">       if (.not. readvar) then</a>
+   322) <a name="l322" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">endrun( trim(subname)//' ERROR: LANDFRAC NOT on fracdata file' )</a>
+   323) <a name="l323" style="background-color: #ffff99">       end if</a>
+   324) <a name="l324" style="background-color: #ffff99">    end if</a>
+   325) <a name="l325" style="background-color: #ffff99"></a>
+   326) <a name="l326" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">ncd_pio_closefile(ncid)</a>
+   327) <a name="l327" style="background-color: #ffffff"></a>
+   328) <a name="l328" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(glcfilename)) then</a>
+   329) <a name="l329" style="background-color: #ffff99">       if (masterproc) then</a>
+   330) <a name="l330" style="background-color: #ffff99">          if (glcfilename == ' ') then</a>
+   331) <a name="l331" style="background-color: #ffff99">             write(iulog,*) trim(subname),' ERROR: glc filename must be specified '</a>
+   332) <a name="l332" style="background-color: #ffff99">             call endrun()</a>
+   333) <a name="l333" style="background-color: #ffff99">          endif</a>
+   334) <a name="l334" style="background-color: #ffff99">       end if</a>
+   335) <a name="l335" style="background-color: #ffff99">       call getfil( glcfilename, locfn, 0 )</a>
+   336) <a name="l336" style="background-color: #ffff99">       call ncd_pio_openfile (ncidg, trim(locfn), 0)</a>
+   337) <a name="l337" style="background-color: #ffff99"></a>
+   338) <a name="l338" style="background-color: #ffff99">       ldomain%glcmask(:) = 0</a>
+   339) <a name="l339" style="background-color: #ffff99">       call ncd_io(ncid=ncidg, varname='GLCMASK', flag='read', data=ldomain%glcmask, &amp;</a>
+   340) <a name="l340" style="background-color: #ffff99">            dim1name=grlnd, readvar=readvar)</a>
+   341) <a name="l341" style="background-color: #ffff99">       if (.not. readvar) call endrun( trim(subname)//' ERROR: GLCMASK NOT in file' )</a>
+   342) <a name="l342" style="background-color: #ffff99"></a>
+   343) <a name="l343" style="background-color: #ffff99">       ! Make sure the glc mask is a subset of the land mask</a>
+   344) <a name="l344" style="background-color: #ffff99">       do n = beg,end</a>
+   345) <a name="l345" style="background-color: #ffff99">          if (ldomain%glcmask(n)==1 .and. ldomain%mask(n)==0) then</a>
+   346) <a name="l346" style="background-color: #ffff99">             write(iulog,*)trim(subname),&amp;</a>
+   347) <a name="l347" style="background-color: #ffff99">                  'initialize1: landmask/glcmask mismatch'</a>
+   348) <a name="l348" style="background-color: #ffff99">             write(iulog,*)trim(subname),&amp;</a>
+   349) <a name="l349" style="background-color: #ffff99">                  'glc requires input where landmask = 0, gridcell index', n</a>
+   350) <a name="l350" style="background-color: #ffff99">             call endrun()</a>
+   351) <a name="l351" style="background-color: #ffff99">          endif</a>
+   352) <a name="l352" style="background-color: #ffff99">       enddo</a>
+   353) <a name="l353" style="background-color: #ffff99">       call ncd_pio_closefile(ncidg)</a>
+   354) <a name="l354" style="background-color: #ffff99">    endif   ! present(glcfilename)</a>
+   355) <a name="l355" style="background-color: #ffff99"></a>
+   356) <a name="l356" style="background-color: #fafad2">  end subroutine surfrd_get_grid</a>
+   357) <a name="l357" style="background-color: #ffffff"></a>
+   358) <a name="l358" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   359) <a name="l359" style="background-color: #ffffff">!BOP</a>
+   360) <a name="l360" style="background-color: #ffffff">!</a>
+   361) <a name="l361" style="background-color: #ffffff">! !IROUTINE: surfrd_get_topo</a>
+   362) <a name="l362" style="background-color: #ffffff">!</a>
+   363) <a name="l363" style="background-color: #ffffff">! !INTERFACE:</a>
+   364) <a name="l364" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">surfrd_get_topo(domain,filename)</a>
+   365) <a name="l365" style="background-color: #ffcccc">!</a>
+   366) <a name="l366" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+   367) <a name="l367" style="background-color: #ffcccc">! Read the topo dataset grid related information:</a>
+   368) <a name="l368" style="background-color: #ffcccc">! Assume domain has already been initialized and read</a>
+   369) <a name="l369" style="background-color: #ffcccc">!</a>
+   370) <a name="l370" style="background-color: #ffcccc">! !USES:</a>
+   371) <a name="l371" style="background-color: #ffcccc">    use domainMod , only : domain_type</a>
+   372) <a name="l372" style="background-color: #ffcccc">    use fileutils , only : getfil</a>
+   373) <a name="l373" style="background-color: #ffcccc">!</a>
+   374) <a name="l374" style="background-color: #ffcccc">! !ARGUMENTS:</a>
+   375) <a name="l375" style="background-color: #ffcccc">    implicit none</a>
+   376) <a name="l376" style="background-color: #ffcccc">    type(domain_type),intent(inout) :: domain   ! domain to init</a>
+   377) <a name="l377" style="background-color: #ffcccc">    character(len=*) ,intent(in)    :: filename ! grid filename</a>
+   378) <a name="l378" style="background-color: #ffcccc">!</a>
+   379) <a name="l379" style="background-color: #ffcccc">! !CALLED FROM:</a>
+   380) <a name="l380" style="background-color: #ffcccc">! subroutine initialize</a>
+   381) <a name="l381" style="background-color: #ffcccc">!</a>
+   382) <a name="l382" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   383) <a name="l383" style="background-color: #ffcccc">! Created by T Craig</a>
+   384) <a name="l384" style="background-color: #ffcccc">!</a>
+   385) <a name="l385" style="background-color: #ffcccc">!</a>
+   386) <a name="l386" style="background-color: #ffcccc">! !LOCAL VARIABLES:</a>
+   387) <a name="l387" style="background-color: #ffcccc">!EOP</a>
+   388) <a name="l388" style="background-color: #ffcccc">    type(file_desc_t) :: ncid      ! netcdf file id</a>
+   389) <a name="l389" style="background-color: #ffcccc">    integer :: n                   ! indices</a>
+   390) <a name="l390" style="background-color: #ffcccc">    integer :: ni,nj,ns            ! size of grid on file</a>
+   391) <a name="l391" style="background-color: #ffcccc">    integer :: dimid,varid         ! netCDF id's</a>
+   392) <a name="l392" style="background-color: #ffcccc">    integer :: ier                 ! error status</a>
+   393) <a name="l393" style="background-color: #ffcccc">    real(r8):: eps = 1.0e-12_r8             ! lat/lon error tolerance</a>
+   394) <a name="l394" style="background-color: #ffcccc">    integer :: beg,end                      ! local beg,end indices</a>
+   395) <a name="l395" style="background-color: #ffcccc">    logical             :: isgrid2d         ! true =&gt; file is 2d lat/lon</a>
+   396) <a name="l396" style="background-color: #ffcccc">    real(r8),pointer    :: lonc(:),latc(:)  ! local lat/lon</a>
+   397) <a name="l397" style="background-color: #ffcccc">    character(len=256)  :: locfn            ! local file name</a>
+   398) <a name="l398" style="background-color: #ffcccc">    logical :: readvar                      ! is variable on file</a>
+   399) <a name="l399" style="background-color: #ffcccc">    character(len=32) :: subname = 'surfrd_get_topo'     ! subroutine name</a>
+   400) <a name="l400" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   401) <a name="l401" style="background-color: #ffcccc"></a>
+   402) <a name="l402" style="background-color: #ffcccc">    if (masterproc) then</a>
+   403) <a name="l403" style="background-color: #ffcccc">       if (filename == ' ') then</a>
+   404) <a name="l404" style="background-color: #ffcccc">          write(iulog,*) trim(subname),' ERROR: filename must be specified '</a>
+   405) <a name="l405" style="background-color: #ffcccc">          call endrun()</a>
+   406) <a name="l406" style="background-color: #ffcccc">       else</a>
+   407) <a name="l407" style="background-color: #ffcccc">          write(iulog,*) 'Attempting to read lnd topo from flndtopo ',trim(filename)</a>
+   408) <a name="l408" style="background-color: #ffcccc">       endif</a>
+   409) <a name="l409" style="background-color: #ffcccc">    end if</a>
+   410) <a name="l410" style="background-color: #ffcccc"></a>
+   411) <a name="l411" style="background-color: #ffcccc">    call getfil( filename, locfn, 0 )</a>
+   412) <a name="l412" style="background-color: #ffcccc">    call ncd_pio_openfile (ncid, trim(locfn), 0)</a>
+   413) <a name="l413" style="background-color: #ffcccc">    call ncd_inqfdims(ncid, isgrid2d, ni, nj, ns)</a>
+   414) <a name="l414" style="background-color: #ffcccc"></a>
+   415) <a name="l415" style="background-color: #ffcccc">    if (domain%ns /= ns) then</a>
+   416) <a name="l416" style="background-color: #ffcccc">       write(iulog,*) trim(subname),' ERROR: topo file mismatch ns',&amp;</a>
+   417) <a name="l417" style="background-color: #ffcccc">            domain%ns,ns</a>
+   418) <a name="l418" style="background-color: #ffcccc">       call endrun()</a>
+   419) <a name="l419" style="background-color: #ffcccc">    endif</a>
+   420) <a name="l420" style="background-color: #ffcccc">    </a>
+   421) <a name="l421" style="background-color: #ffcccc">    beg = domain%nbeg</a>
+   422) <a name="l422" style="background-color: #ffcccc">    end = domain%nend</a>
+   423) <a name="l423" style="background-color: #ffcccc"></a>
+   424) <a name="l424" style="background-color: #ffcccc">    allocate(latc(beg:end),lonc(beg:end))</a>
+   425) <a name="l425" style="background-color: #ffcccc"></a>
+   426) <a name="l426" style="background-color: #ffcccc">    call ncd_io(ncid=ncid, varname='LONGXY', flag='read', data=lonc, &amp;</a>
+   427) <a name="l427" style="background-color: #ffcccc">         dim1name=grlnd, readvar=readvar)</a>
+   428) <a name="l428" style="background-color: #ffcccc">    if (.not. readvar) call endrun( trim(subname)//' ERROR: LONGXY  NOT on topodata file' )</a>
+   429) <a name="l429" style="background-color: #ffcccc"></a>
+   430) <a name="l430" style="background-color: #ffcccc">    call ncd_io(ncid=ncid, varname='LATIXY', flag='read', data=latc, &amp;</a>
+   431) <a name="l431" style="background-color: #ffcccc">         dim1name=grlnd, readvar=readvar)</a>
+   432) <a name="l432" style="background-color: #ffcccc">    if (.not. readvar) call endrun( trim(subname)//' ERROR: LONGXY  NOT on topodata file' )</a>
+   433) <a name="l433" style="background-color: #ffcccc"></a>
+   434) <a name="l434" style="background-color: #ffcccc">    do n = beg,end</a>
+   435) <a name="l435" style="background-color: #ffcccc">       if (abs(latc(n)-domain%latc(n)) &gt; eps .or. &amp;</a>
+   436) <a name="l436" style="background-color: #ffcccc">           abs(lonc(n)-domain%lonc(n)) &gt; eps) then</a>
+   437) <a name="l437" style="background-color: #ffcccc">          write(iulog,*) trim(subname),' ERROR: topo file mismatch lat,lon',latc(n),&amp;</a>
+   438) <a name="l438" style="background-color: #ffcccc">               domain%latc(n),lonc(n),domain%lonc(n),eps</a>
+   439) <a name="l439" style="background-color: #ffcccc">          call endrun()</a>
+   440) <a name="l440" style="background-color: #ffcccc">       endif</a>
+   441) <a name="l441" style="background-color: #ffcccc">    enddo</a>
+   442) <a name="l442" style="background-color: #ffcccc"></a>
+   443) <a name="l443" style="background-color: #ffcccc">    call ncd_io(ncid=ncid, varname='TOPO', flag='read', data=domain%topo, &amp;</a>
+   444) <a name="l444" style="background-color: #ffcccc">         dim1name=grlnd, readvar=readvar)</a>
+   445) <a name="l445" style="background-color: #ffcccc">    if (.not. readvar) call endrun( trim(subname)//' ERROR: LONGXY  NOT on topodata file' )</a>
+   446) <a name="l446" style="background-color: #ffcccc"></a>
+   447) <a name="l447" style="background-color: #ffcccc">    deallocate(latc,lonc)</a>
+   448) <a name="l448" style="background-color: #ffcccc"></a>
+   449) <a name="l449" style="background-color: #ffcccc">    call ncd_pio_closefile(ncid)</a>
+   450) <a name="l450" style="background-color: #ffcccc"></a>
+   451) <a name="l451" style="background-color: #ffcccc">  end subroutine surfrd_get_topo</a>
+   452) <a name="l452" style="background-color: #ffffff"></a>
+   453) <a name="l453" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   454) <a name="l454" style="background-color: #ffffff">!BOP</a>
+   455) <a name="l455" style="background-color: #ffffff">!</a>
+   456) <a name="l456" style="background-color: #ffffff">! !IROUTINE: surfrd_get_data</a>
+   457) <a name="l457" style="background-color: #ffffff">!</a>
+   458) <a name="l458" style="background-color: #ffffff">! !INTERFACE:</a>
+   459) <a name="l459" style="background-color: #ffffff">  subroutine surfrd_get_data (ldomain, lfsurdat)</a>
+   460) <a name="l460" style="background-color: #ffffff">!</a>
+   461) <a name="l461" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   462) <a name="l462" style="background-color: #ffffff">! Read the surface dataset and create subgrid weights.</a>
+   463) <a name="l463" style="background-color: #ffffff">! The model's surface dataset recognizes 6 basic land cover types within a grid</a>
+   464) <a name="l464" style="background-color: #ffffff">! cell: lake, wetland, urban, glacier, glacier_mec and vegetated. The vegetated</a>
+   465) <a name="l465" style="background-color: #ffffff">! portion of the grid cell is comprised of up to [maxpatch_pft] PFTs. These</a>
+   466) <a name="l466" style="background-color: #ffffff">! subgrid patches are read in explicitly for each grid cell. This is in</a>
+   467) <a name="l467" style="background-color: #ffffff">! contrast to LSMv1, where the PFTs were built implicitly from biome types.</a>
+   468) <a name="l468" style="background-color: #ffffff">!    o real latitude  of grid cell (degrees)</a>
+   469) <a name="l469" style="background-color: #ffffff">!    o real longitude of grid cell (degrees)</a>
+   470) <a name="l470" style="background-color: #ffffff">!    o integer surface type: 0 = ocean or 1 = land</a>
+   471) <a name="l471" style="background-color: #ffffff">!    o integer soil color (1 to 20) for use with soil albedos</a>
+   472) <a name="l472" style="background-color: #ffffff">!    o real soil texture, %sand, for thermal and hydraulic properties</a>
+   473) <a name="l473" style="background-color: #ffffff">!    o real soil texture, %clay, for thermal and hydraulic properties</a>
+   474) <a name="l474" style="background-color: #ffffff">!    o real % of cell covered by lake    for use as subgrid patch</a>
+   475) <a name="l475" style="background-color: #ffffff">!    o real % of cell covered by wetland for use as subgrid patch</a>
+   476) <a name="l476" style="background-color: #ffffff">!    o real % of cell that is urban      for use as subgrid patch</a>
+   477) <a name="l477" style="background-color: #ffffff">!    o real % of cell that is glacier    for use as subgrid patch</a>
+   478) <a name="l478" style="background-color: #ffffff">!    o real % of cell that is glacier_mec for use as subgrid patch</a>
+   479) <a name="l479" style="background-color: #ffffff">!    o integer PFTs</a>
+   480) <a name="l480" style="background-color: #ffffff">!    o real % abundance PFTs (as a percent of vegetated area)</a>
+   481) <a name="l481" style="background-color: #ffffff">!</a>
+   482) <a name="l482" style="background-color: #ffffff">! !USES:</a>
+   483) <a name="l483" style="background-color: #ffffff">    use clm_varctl  , only : allocate_all_vegpfts, create_crop_landunit</a>
+   484) <a name="l484" style="background-color: #ffffff">    use pftvarcon   , only : noveg</a>
+   485) <a name="l485" style="background-color: #ffffff">    use fileutils   , only : getfil</a>
+   486) <a name="l486" style="background-color: #ffffff">    use domainMod   , only : domain_type, domain_init, domain_clean</a>
+   487) <a name="l487" style="background-color: #ffffff">!</a>
+   488) <a name="l488" style="background-color: #ffffff">! !ARGUMENTS:</a>
+   489) <a name="l489" style="background-color: #ffffff">    implicit none</a>
+   490) <a name="l490" style="background-color: #ffffff">    type(domain_type),intent(in) :: ldomain     ! land domain associated with wtxy</a>
+   491) <a name="l491" style="background-color: #ffffff">    character(len=*), intent(in) :: lfsurdat    ! surface dataset filename</a>
+   492) <a name="l492" style="background-color: #ffffff">!</a>
+   493) <a name="l493" style="background-color: #ffffff">! !CALLED FROM:</a>
+   494) <a name="l494" style="background-color: #ffffff">! subroutine initialize in module initializeMod</a>
+   495) <a name="l495" style="background-color: #ffffff">!</a>
+   496) <a name="l496" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   497) <a name="l497" style="background-color: #ffffff">! Created by Mariana Vertenstein, Sam Levis and Gordon Bonan</a>
+   498) <a name="l498" style="background-color: #ffffff">!</a>
+   499) <a name="l499" style="background-color: #ffffff">!</a>
+   500) <a name="l500" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+   501) <a name="l501" style="background-color: #ffffff">!EOP</a>
+   502) <a name="l502" style="background-color: #ffffff">    type(var_desc_t)  :: vardesc              ! pio variable descriptor</a>
+   503) <a name="l503" style="background-color: #ffffff">    type(domain_type) :: surfdata_domain      ! local domain associated with surface dataset</a>
+   504) <a name="l504" style="background-color: #ffffff">    character(len=256):: locfn                ! local file name</a>
+   505) <a name="l505" style="background-color: #ffffff">    integer           :: n                    ! loop indices</a>
+   506) <a name="l506" style="background-color: #ffffff">    integer           :: ni,nj,ns             ! domain sizes</a>
+   507) <a name="l507" style="background-color: #ffffff">    character(len=16) :: lon_var, lat_var     ! names of lat/lon on dataset</a>
+   508) <a name="l508" style="background-color: #ffffff">    logical           :: readvar              ! true =&gt; variable is on dataset</a>
+   509) <a name="l509" style="background-color: #ffffff">    real(r8)          :: rmaxlon,rmaxlat      ! local min/max vars</a>
+   510) <a name="l510" style="background-color: #ffffff">    type(file_desc_t) :: ncid                 ! netcdf id</a>
+   511) <a name="l511" style="background-color: #ffffff">    integer           :: begg,endg            ! beg,end gridcell indices</a>
+   512) <a name="l512" style="background-color: #ffffff">    logical           :: istype_domain        ! true =&gt; input file is of type domain</a>
+   513) <a name="l513" style="background-color: #ffffff">    logical           :: isgrid2d             ! true =&gt; intut grid is 2d </a>
+   514) <a name="l514" style="background-color: #ffffff">    character(len=32) :: subname = 'surfrd_get_data'    ! subroutine name</a>
+   515) <a name="l515" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   516) <a name="l516" style="background-color: #ffffff"></a>
+   517) <a name="l517" style="background-color: #ffffff">    if (masterproc) then</a>
+   518) <a name="l518" style="background-color: #ffffff">       write(iulog,*) 'Attempting to read surface boundary data .....'</a>
+   519) <a name="l519" style="background-color: #ffffff">       if (lfsurdat == ' ') then</a>
+   520) <a name="l520" style="background-color: #ffff99">          write(iulog,*)'lfsurdat must be specified'; call endrun()</a>
+   521) <a name="l521" style="background-color: #ffff99">       endif</a>
+   522) <a name="l522" style="background-color: #ffff99">    endif</a>
+   523) <a name="l523" style="background-color: #ffff99"></a>
+   524) <a name="l524" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">get_proc_bounds(begg,endg)</a>
+   525) <a name="l525" style="background-color: #fafad2">    allocate(pctspec(begg:endg))</a>
+   526) <a name="l526" style="background-color: #fafad2"></a>
+   527) <a name="l527" style="background-color: #ffffff">    vegxy(:,:) = noveg</a>
+   528) <a name="l528" style="background-color: #ffffff">    wtxy(:,:)  = 0._r8</a>
+   529) <a name="l529" style="background-color: #ffffff">    pctspec(:) = 0._r8</a>
+   530) <a name="l530" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">allocated(topoxy)) </a><a style="background-color: #ffffff">topoxy(:,:) = 0._r8</a>
+   531) <a name="l531" style="background-color: #ffffff"></a>
+   532) <a name="l532" style="background-color: #ffffff">    ! Read surface data</a>
+   533) <a name="l533" style="background-color: #ffffff"></a>
+   534) <a name="l534" style="background-color: #ffffff">    call getfil( lfsurdat, locfn, 0 )</a>
+   535) <a name="l535" style="background-color: #ffffff">    call ncd_pio_openfile (ncid, trim(locfn), 0)</a>
+   536) <a name="l536" style="background-color: #ffffff"></a>
+   537) <a name="l537" style="background-color: #ffffff">    ! Read in pft mask - this variable is only on the surface dataset - but not</a>
+   538) <a name="l538" style="background-color: #ffffff">    ! on the domain dataset</a>
+   539) <a name="l539" style="background-color: #ffffff"></a>
+   540) <a name="l540" style="background-color: #ffffff">    call ncd_io(ncid=ncid, varname= 'PFTDATA_MASK', flag='read', data=ldomain%pftm, &amp;</a>
+   541) <a name="l541" style="background-color: #ffffff">         dim1name=grlnd, readvar=readvar)</a>
+   542) <a name="l542" style="background-color: #ffffff">    if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: pftm NOT on surface dataset' )</a>
+   543) <a name="l543" style="background-color: #ffff99"></a>
+   544) <a name="l544" style="background-color: #ffff99">    ! Check if fsurdat grid is &quot;close&quot; to fatmlndfrc grid, exit if lats/lon &gt; 0.001</a>
+   545) <a name="l545" style="background-color: #ffff99"></a>
+   546) <a name="l546" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">check_var(ncid=ncid, varname='xc', vardesc=vardesc, readvar=readvar) </a>
+   547) <a name="l547" style="background-color: #ffffff">    if (readvar) then</a>
+   548) <a name="l548" style="background-color: #ffff99">       istype_domain = .true.</a>
+   549) <a name="l549" style="background-color: #ffff99">    else</a>
+   550) <a name="l550" style="background-color: #ffff99">       call </a><a style="background-color: #ffffff">check_var(ncid=ncid, varname='LONGXY', vardesc=vardesc, readvar=readvar) </a>
+   551) <a name="l551" style="background-color: #ffffff">       if (readvar) then</a>
+   552) <a name="l552" style="background-color: #ffffff">          istype_domain = .false.</a>
+   553) <a name="l553" style="background-color: #ffffff">       else</a>
+   554) <a name="l554" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">endrun( trim(subname)//' ERROR: unknown domain type')</a>
+   555) <a name="l555" style="background-color: #ffff99">       end if</a>
+   556) <a name="l556" style="background-color: #ffff99">    end if</a>
+   557) <a name="l557" style="background-color: #ffffff">    if (istype_domain) then</a>
+   558) <a name="l558" style="background-color: #ffff99">       lon_var  = 'xc'</a>
+   559) <a name="l559" style="background-color: #ffff99">       lat_var  = 'yc'</a>
+   560) <a name="l560" style="background-color: #ffff99">    else</a>
+   561) <a name="l561" style="background-color: #ffffff">       lon_var  = 'LONGXY'</a>
+   562) <a name="l562" style="background-color: #ffffff">       lat_var  = 'LATIXY'</a>
+   563) <a name="l563" style="background-color: #ffffff">    end if</a>
+   564) <a name="l564" style="background-color: #ffffff">    if ( masterproc )then</a>
+   565) <a name="l565" style="background-color: #ffffff">       write(iulog,*) trim(subname),' lon_var = ',trim(lon_var),' lat_var =',trim(lat_var)</a>
+   566) <a name="l566" style="background-color: #ffffff">    end if</a>
+   567) <a name="l567" style="background-color: #ffffff"></a>
+   568) <a name="l568" style="background-color: #ffffff">    call ncd_inqfdims(ncid, isgrid2d, ni, nj, ns)</a>
+   569) <a name="l569" style="background-color: #ffffff">    call domain_init(surfdata_domain, isgrid2d, ni, nj, begg, endg, clmlevel=grlnd)</a>
+   570) <a name="l570" style="background-color: #ffffff"></a>
+   571) <a name="l571" style="background-color: #ffffff">    call ncd_io(ncid=ncid, varname=lon_var, flag='read', data=surfdata_domain%lonc, &amp;</a>
+   572) <a name="l572" style="background-color: #ffffff">         dim1name=grlnd, readvar=readvar)</a>
+   573) <a name="l573" style="background-color: #ffffff">    if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: lon var NOT on surface dataset' )</a>
+   574) <a name="l574" style="background-color: #ffff99"></a>
+   575) <a name="l575" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">ncd_io(ncid=ncid, varname=lat_var, flag='read', data=surfdata_domain%latc, &amp;</a>
+   576) <a name="l576" style="background-color: #ffffff">         dim1name=grlnd, readvar=readvar)</a>
+   577) <a name="l577" style="background-color: #ffffff">    if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: lat var NOT on surface dataset' )</a>
+   578) <a name="l578" style="background-color: #ffff99"></a>
+   579) <a name="l579" style="background-color: #ffffff">    rmaxlon = 0.0_r8</a>
+   580) <a name="l580" style="background-color: #ffffff">    rmaxlat = 0.0_r8</a>
+   581) <a name="l581" style="background-color: #ffffff">    do n = begg,endg</a>
+   582) <a name="l582" style="background-color: #ffffff">       if (ldomain%lonc(n)-surfdata_domain%lonc(n) &gt; 300.) then</a>
+   583) <a name="l583" style="background-color: #ffff99">          rmaxlon = max(rmaxlon,abs(ldomain%lonc(n)-surfdata_domain%lonc(n)-360._r8))</a>
+   584) <a name="l584" style="background-color: #ffffff">       elseif (ldomain%lonc(n)-surfdata_domain%lonc(n) &lt; -300.) then</a>
+   585) <a name="l585" style="background-color: #ffff99">          rmaxlon = max(rmaxlon,abs(ldomain%lonc(n)-surfdata_domain%lonc(n)+360._r8))</a>
+   586) <a name="l586" style="background-color: #ffff99">       else</a>
+   587) <a name="l587" style="background-color: #ffffff">          rmaxlon = max(rmaxlon,abs(ldomain%lonc(n)-surfdata_domain%lonc(n)))</a>
+   588) <a name="l588" style="background-color: #ffffff">       endif</a>
+   589) <a name="l589" style="background-color: #ffffff">       rmaxlat = max(rmaxlat,abs(ldomain%latc(n)-surfdata_domain%latc(n)))</a>
+   590) <a name="l590" style="background-color: #ffffff">    enddo</a>
+   591) <a name="l591" style="background-color: #ffffff">    if (rmaxlon &gt; 0.001_r8 .or. rmaxlat &gt; 0.001_r8) then</a>
+   592) <a name="l592" style="background-color: #ffff99">       write(iulog,*) trim(subname)//': surfdata/fatmgrid lon/lat mismatch error',&amp;</a>
+   593) <a name="l593" style="background-color: #ffff99">            rmaxlon,rmaxlat</a>
+   594) <a name="l594" style="background-color: #ffff99">       call endrun(trim(subname))</a>
+   595) <a name="l595" style="background-color: #ffff99">    end if</a>
+   596) <a name="l596" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">domain_clean(surfdata_domain)</a>
+   597) <a name="l597" style="background-color: #ffffff"></a>
+   598) <a name="l598" style="background-color: #ffffff">    ! Obtain special landunit info</a>
+   599) <a name="l599" style="background-color: #ffffff"></a>
+   600) <a name="l600" style="background-color: #ffffff">    call surfrd_wtxy_special(ncid, ldomain%ns)</a>
+   601) <a name="l601" style="background-color: #ffffff"></a>
+   602) <a name="l602" style="background-color: #ffffff">    ! Obtain vegetated landunit info</a>
+   603) <a name="l603" style="background-color: #ffffff"></a>
+   604) <a name="l604" style="background-color: #ffffff">    if (use_cndv) then</a>
+   605) <a name="l605" style="background-color: #ffff99">       if (create_crop_landunit) then ! CNDV means allocate_all_vegpfts = .true.</a>
+   606) <a name="l606" style="background-color: #ffff99">          call surfrd_wtxy_veg_all(ncid, ldomain%ns, ldomain%pftm)</a>
+   607) <a name="l607" style="background-color: #ffff99">       end if</a>
+   608) <a name="l608" style="background-color: #ffff99">       call surfrd_wtxy_veg_dgvm()</a>
+   609) <a name="l609" style="background-color: #ffff99">    else</a>
+   610) <a name="l610" style="background-color: #ffffff">       if (allocate_all_vegpfts) then</a>
+   611) <a name="l611" style="background-color: #ffffff">          call surfrd_wtxy_veg_all(ncid, ldomain%ns, ldomain%pftm)</a>
+   612) <a name="l612" style="background-color: #ffffff">       else</a>
+   613) <a name="l613" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">endrun (trim(subname) // 'only allocate_all_vegpfts is supported')</a>
+   614) <a name="l614" style="background-color: #ffff99">       end if</a>
+   615) <a name="l615" style="background-color: #ffff99">    end if</a>
+   616) <a name="l616" style="background-color: #ffff99"></a>
+   617) <a name="l617" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">ncd_pio_closefile(ncid)</a>
+   618) <a name="l618" style="background-color: #ffffff"></a>
+   619) <a name="l619" style="background-color: #ffffff">    if ( masterproc )then</a>
+   620) <a name="l620" style="background-color: #ffffff">       write(iulog,*) 'Successfully read surface boundary data'</a>
+   621) <a name="l621" style="background-color: #ffffff">       write(iulog,*)</a>
+   622) <a name="l622" style="background-color: #ffffff">    end if</a>
+   623) <a name="l623" style="background-color: #ffffff"></a>
+   624) <a name="l624" style="background-color: #ffffff">  end subroutine surfrd_get_data</a>
+   625) <a name="l625" style="background-color: #ffffff"></a>
+   626) <a name="l626" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   627) <a name="l627" style="background-color: #ffffff">!BOP</a>
+   628) <a name="l628" style="background-color: #ffffff">!</a>
+   629) <a name="l629" style="background-color: #ffffff">! !IROUTINE: surfrd_wtxy_special </a>
+   630) <a name="l630" style="background-color: #ffffff">!</a>
+   631) <a name="l631" style="background-color: #ffffff">! !INTERFACE:</a>
+   632) <a name="l632" style="background-color: #ffffff">  subroutine surfrd_wtxy_special(ncid, ns)</a>
+   633) <a name="l633" style="background-color: #ffffff">!</a>
+   634) <a name="l634" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   635) <a name="l635" style="background-color: #ffffff">! Determine weight with respect to gridcell of all special &quot;pfts&quot; as well</a>
+   636) <a name="l636" style="background-color: #ffffff">! as soil color and percent sand and clay</a>
+   637) <a name="l637" style="background-color: #ffffff">!</a>
+   638) <a name="l638" style="background-color: #ffffff">! !USES:</a>
+   639) <a name="l639" style="background-color: #ffffff">    use pftvarcon     , only : noveg</a>
+   640) <a name="l640" style="background-color: #ffffff">    use UrbanInputMod , only : urbinp</a>
+   641) <a name="l641" style="background-color: #ffffff">    use clm_varpar    , only : maxpatch_glcmec</a>
+   642) <a name="l642" style="background-color: #ffffff">!</a>
+   643) <a name="l643" style="background-color: #ffffff">! !ARGUMENTS:</a>
+   644) <a name="l644" style="background-color: #ffffff">    implicit none</a>
+   645) <a name="l645" style="background-color: #ffffff">    type(file_desc_t), intent(inout) :: ncid   ! netcdf id</a>
+   646) <a name="l646" style="background-color: #ffffff">    integer          , intent(in)    :: ns     ! domain size</a>
+   647) <a name="l647" style="background-color: #ffffff">!</a>
+   648) <a name="l648" style="background-color: #ffffff">! !CALLED FROM:</a>
+   649) <a name="l649" style="background-color: #ffffff">! subroutine surfrd in this module</a>
+   650) <a name="l650" style="background-color: #ffffff">!</a>
+   651) <a name="l651" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   652) <a name="l652" style="background-color: #ffffff">! Created by Mariana Vertenstein, Sam Levis and Gordon Bonan</a>
+   653) <a name="l653" style="background-color: #ffffff">!</a>
+   654) <a name="l654" style="background-color: #ffffff">!</a>
+   655) <a name="l655" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+   656) <a name="l656" style="background-color: #ffffff">!EOP</a>
+   657) <a name="l657" style="background-color: #ffffff">    integer  :: n,nl,nurb,g                ! indices</a>
+   658) <a name="l658" style="background-color: #ffffff">    integer  :: begg,endg                  ! gcell beg/end</a>
+   659) <a name="l659" style="background-color: #ffffff">    integer  :: dimid,varid                ! netCDF id's</a>
+   660) <a name="l660" style="background-color: #ffffff">    real(r8) :: nlevsoidata(nlevsoi)</a>
+   661) <a name="l661" style="background-color: #ffffff">    logical  :: found                      ! temporary for error check</a>
+   662) <a name="l662" style="background-color: #ffffff">    integer  :: nindx                      ! temporary for error check</a>
+   663) <a name="l663" style="background-color: #ffffff">    integer  :: ier                        ! error status</a>
+   664) <a name="l664" style="background-color: #ffffff">    integer  :: nlev                       ! level</a>
+   665) <a name="l665" style="background-color: #ffffff">    integer  :: npatch</a>
+   666) <a name="l666" style="background-color: #ffffff">    logical  :: readvar</a>
+   667) <a name="l667" style="background-color: #ffffff">    real(r8),pointer :: pctgla(:)      ! percent of grid cell is glacier</a>
+   668) <a name="l668" style="background-color: #ffffff">    real(r8),pointer :: pctlak(:)      ! percent of grid cell is lake</a>
+   669) <a name="l669" style="background-color: #ffffff">    real(r8),pointer :: pctwet(:)      ! percent of grid cell is wetland</a>
+   670) <a name="l670" style="background-color: #ffffff">    real(r8),pointer :: pcturb(:)      ! percent of grid cell is urbanized</a>
+   671) <a name="l671" style="background-color: #ffffff">    real(r8),pointer :: pctglc_mec(:,:)   ! percent of grid cell is glacier_mec (in each elev class)</a>
+   672) <a name="l672" style="background-color: #ffffff">    real(r8),pointer :: pctglc_mec_tot(:) ! percent of grid cell is glacier (sum over classes)</a>
+   673) <a name="l673" style="background-color: #ffffff">    real(r8),pointer :: topoglc_mec(:,:)  ! surface elevation in each elev class</a>
+   674) <a name="l674" style="background-color: #ffffff">    character(len=32) :: subname = 'surfrd_wtxy_special'  ! subroutine name</a>
+   675) <a name="l675" style="background-color: #ffffff">    real(r8) closelat,closelon</a>
+   676) <a name="l676" style="background-color: #ffffff">!!-----------------------------------------------------------------------</a>
+   677) <a name="l677" style="background-color: #ffffff"></a>
+   678) <a name="l678" style="background-color: #ffffff">    call get_proc_bounds(begg,endg)</a>
+   679) <a name="l679" style="background-color: #ffffff"></a>
+   680) <a name="l680" style="background-color: #fafad2">    allocate(pctgla(begg:endg),pctlak(begg:endg))</a>
+   681) <a name="l681" style="background-color: #fafad2">    allocate(pctwet(begg:endg),pcturb(begg:endg))</a>
+   682) <a name="l682" style="background-color: #ffffff">    if (create_glacier_mec_landunit) then</a>
+   683) <a name="l683" style="background-color: #ffff99">       allocate(pctglc_mec(begg:endg,maxpatch_glcmec))</a>
+   684) <a name="l684" style="background-color: #ffff99">       allocate(pctglc_mec_tot(begg:endg))</a>
+   685) <a name="l685" style="background-color: #ffff99">       allocate(topoglc_mec(begg:endg,maxpatch_glcmec))</a>
+   686) <a name="l686" style="background-color: #ffff99">       allocate(glc_topomax(0:maxpatch_glcmec))</a>
+   687) <a name="l687" style="background-color: #ffff99">    endif</a>
+   688) <a name="l688" style="background-color: #ffff99"></a>
+   689) <a name="l689" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">check_dim(ncid, 'nlevsoi', nlevsoi)</a>
+   690) <a name="l690" style="background-color: #ffffff"></a>
+   691) <a name="l691" style="background-color: #ffffff">       ! Obtain non-grid surface properties of surface dataset other than percent pft</a>
+   692) <a name="l692" style="background-color: #ffffff"></a>
+   693) <a name="l693" style="background-color: #ffffff">    call ncd_io(ncid=ncid, varname='PCT_WETLAND', flag='read', data=pctwet, &amp;</a>
+   694) <a name="l694" style="background-color: #ffffff">         dim1name=grlnd, readvar=readvar)</a>
+   695) <a name="l695" style="background-color: #ffffff">    if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: PCT_WETLAND  NOT on surfdata file' )</a>
+   696) <a name="l696" style="background-color: #ffff99"></a>
+   697) <a name="l697" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">ncd_io(ncid=ncid, varname='PCT_LAKE'   , flag='read', data=pctlak, &amp;</a>
+   698) <a name="l698" style="background-color: #ffffff">         dim1name=grlnd, readvar=readvar)</a>
+   699) <a name="l699" style="background-color: #ffffff">    if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: PCT_LAKE NOT on surfdata file' )</a>
+   700) <a name="l700" style="background-color: #ffff99"></a>
+   701) <a name="l701" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">ncd_io(ncid=ncid, varname='PCT_GLACIER', flag='read', data=pctgla, &amp;</a>
+   702) <a name="l702" style="background-color: #ffffff">         dim1name=grlnd, readvar=readvar)</a>
+   703) <a name="l703" style="background-color: #ffffff">    if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: PCT_GLACIER NOT on surfdata file' )</a>
+   704) <a name="l704" style="background-color: #ffff99"></a>
+   705) <a name="l705" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">ncd_io(ncid=ncid, varname='PCT_URBAN'  , flag='read', data=pcturb, &amp;</a>
+   706) <a name="l706" style="background-color: #ffffff">         dim1name=grlnd, readvar=readvar)</a>
+   707) <a name="l707" style="background-color: #ffffff">    if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: PCT_URBAN NOT on surfdata file' )</a>
+   708) <a name="l708" style="background-color: #ffff99"></a>
+   709) <a name="l709" style="background-color: #ffffff">    if (create_glacier_mec_landunit) then          ! call ncd_io_gs_int2d</a>
+   710) <a name="l710" style="background-color: #ffffff"></a>
+   711) <a name="l711" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">check_dim(ncid, 'nglcec',   maxpatch_glcmec   )</a>
+   712) <a name="l712" style="background-color: #ffff99">       call check_dim(ncid, 'nglcecp1', maxpatch_glcmec+1 )</a>
+   713) <a name="l713" style="background-color: #ffff99"></a>
+   714) <a name="l714" style="background-color: #ffff99">       call ncd_io(ncid=ncid, varname='GLC_MEC', flag='read', data=glc_topomax, &amp;</a>
+   715) <a name="l715" style="background-color: #ffff99">            readvar=readvar)</a>
+   716) <a name="l716" style="background-color: #ffff99">       if (.not. readvar) call endrun( trim(subname)//'ERROR: GLC_MEC was NOT on the input surfdata file' )</a>
+   717) <a name="l717" style="background-color: #ffff99"></a>
+   718) <a name="l718" style="background-color: #ffff99">       call ncd_io(ncid=ncid, varname='PCT_GLC_MEC', flag='read', data=pctglc_mec, &amp;</a>
+   719) <a name="l719" style="background-color: #ffff99">            dim1name=grlnd, readvar=readvar)</a>
+   720) <a name="l720" style="background-color: #ffff99">       if (.not. readvar) call endrun( trim(subname)//' ERROR: PCT_GLC_MEC NOT on surfdata file' )</a>
+   721) <a name="l721" style="background-color: #ffff99"></a>
+   722) <a name="l722" style="background-color: #ffff99">       call ncd_io(ncid=ncid, varname='TOPO_GLC_MEC',  flag='read', data=topoglc_mec, &amp;</a>
+   723) <a name="l723" style="background-color: #ffff99">            dim1name=grlnd, readvar=readvar)</a>
+   724) <a name="l724" style="background-color: #ffff99">       if (.not. readvar) call endrun( trim(subname)//' ERROR: TOPO_GLC_MEC NOT on surfdata file' )</a>
+   725) <a name="l725" style="background-color: #ffff99"></a>
+   726) <a name="l726" style="background-color: #ffff99">       pctglc_mec_tot(:) = 0._r8</a>
+   727) <a name="l727" style="background-color: #ffff99">       do n = 1, maxpatch_glcmec</a>
+   728) <a name="l728" style="background-color: #ffff99">          do nl = begg,endg</a>
+   729) <a name="l729" style="background-color: #ffff99">             pctglc_mec_tot(nl) = pctglc_mec_tot(nl) + pctglc_mec(nl,n)</a>
+   730) <a name="l730" style="background-color: #ffff99">          enddo</a>
+   731) <a name="l731" style="background-color: #ffff99">       enddo</a>
+   732) <a name="l732" style="background-color: #ffff99"></a>
+   733) <a name="l733" style="background-color: #ffff99">       ! Make sure sum of pctglc_mec = pctgla (approximately), then correct pctglc_mec so</a>
+   734) <a name="l734" style="background-color: #ffff99">       ! that its sum more exactly equals pctgla, then zero out pctgla</a>
+   735) <a name="l735" style="background-color: #ffff99">       !</a>
+   736) <a name="l736" style="background-color: #ffff99">       ! WJS (9-28-12): The reason for the correction piece of this is: in the surface</a>
+   737) <a name="l737" style="background-color: #ffff99">       ! dataset, pctgla underwent various minor corrections that make it the trusted</a>
+   738) <a name="l738" style="background-color: #ffff99">       ! value (as opposed to sum(pctglc_mec). sum(pctglc_mec) can differ from pctgla by</a>
+   739) <a name="l739" style="background-color: #ffff99">       ! single precision roundoff. This difference can cause problems later (e.g., in the</a>
+   740) <a name="l740" style="background-color: #ffff99">       ! consistency check in pftdynMod), so we do this correction here. It might be</a>
+   741) <a name="l741" style="background-color: #ffff99">       ! better to do this correction in mksurfdata_map, but because of time constraints,</a>
+   742) <a name="l742" style="background-color: #ffff99">       ! which make me unable to recreate surface datasets, I have to do it here instead</a>
+   743) <a name="l743" style="background-color: #ffff99">       ! (and there are arguments for putting it here anyway).</a>
+   744) <a name="l744" style="background-color: #ffff99"></a>
+   745) <a name="l745" style="background-color: #ffff99">       do nl = begg,endg</a>
+   746) <a name="l746" style="background-color: #ffff99">          ! We need to use a fairly high threshold for equality (2.0e-5) because pctgla</a>
+   747) <a name="l747" style="background-color: #ffff99">          ! and pctglc_mec are computed using single precision inputs. Note that this</a>
+   748) <a name="l748" style="background-color: #ffff99">          ! threshold agrees with the threshold in the error checks in mkglcmecMod:</a>
+   749) <a name="l749" style="background-color: #ffff99">          ! mkglcmec in mksurfdata_map. </a>
+   750) <a name="l750" style="background-color: #ffff99">          if (abs(pctgla(nl) - pctglc_mec_tot(nl)) &gt; 2.0e-5) then</a>
+   751) <a name="l751" style="background-color: #ffff99">             write(iulog,*) ' '</a>
+   752) <a name="l752" style="background-color: #ffff99">             write(iulog,*) 'surfrd error: pctgla not equal to sum of pctglc_mec for nl=', nl</a>
+   753) <a name="l753" style="background-color: #ffff99">             write(iulog,*) 'pctgla =', pctgla(nl)</a>
+   754) <a name="l754" style="background-color: #ffff99">             write(iulog,*) 'pctglc_mec_tot =', pctglc_mec_tot(nl)</a>
+   755) <a name="l755" style="background-color: #ffff99">             call endrun()</a>
+   756) <a name="l756" style="background-color: #ffff99">          endif</a>
+   757) <a name="l757" style="background-color: #ffff99"></a>
+   758) <a name="l758" style="background-color: #ffff99">          ! Correct the remaining minor differences in pctglc_mec so sum more exactly</a>
+   759) <a name="l759" style="background-color: #ffff99">          ! equals pctglc (see notes above for justification)</a>
+   760) <a name="l760" style="background-color: #ffff99">          if (pctglc_mec_tot(nl) &gt; 0.0_r8) then</a>
+   761) <a name="l761" style="background-color: #ffff99">             pctglc_mec(nl,:) = pctglc_mec(nl,:) * pctgla(nl)/pctglc_mec_tot(nl)</a>
+   762) <a name="l762" style="background-color: #ffff99">          end if</a>
+   763) <a name="l763" style="background-color: #ffff99"></a>
+   764) <a name="l764" style="background-color: #ffff99">          ! Now recompute pctglc_mec_tot, and confirm that we are now much closer to pctgla</a>
+   765) <a name="l765" style="background-color: #ffff99">          pctglc_mec_tot(nl) = 0._r8</a>
+   766) <a name="l766" style="background-color: #ffff99">          do n = 1, maxpatch_glcmec</a>
+   767) <a name="l767" style="background-color: #ffff99">             pctglc_mec_tot(nl) = pctglc_mec_tot(nl) + pctglc_mec(nl,n)</a>
+   768) <a name="l768" style="background-color: #ffff99">          end do</a>
+   769) <a name="l769" style="background-color: #ffff99"></a>
+   770) <a name="l770" style="background-color: #ffff99">          if (abs(pctgla(nl) - pctglc_mec_tot(nl)) &gt; 1.0e-13) then</a>
+   771) <a name="l771" style="background-color: #ffff99">             write(iulog,*) ' '</a>
+   772) <a name="l772" style="background-color: #ffff99">             write(iulog,*) 'surfrd error: after correction, pctgla not equal to sum of pctglc_mec for nl=', nl</a>
+   773) <a name="l773" style="background-color: #ffff99">             write(iulog,*) 'pctgla =', pctgla(nl)</a>
+   774) <a name="l774" style="background-color: #ffff99">             write(iulog,*) 'pctglc_mec_tot =', pctglc_mec_tot(nl)</a>
+   775) <a name="l775" style="background-color: #ffff99">             call endrun()</a>
+   776) <a name="l776" style="background-color: #ffff99">          endif</a>
+   777) <a name="l777" style="background-color: #ffff99"></a>
+   778) <a name="l778" style="background-color: #ffff99">          ! Finally, zero out pctgla</a>
+   779) <a name="l779" style="background-color: #ffff99">          pctgla(nl) = 0._r8</a>
+   780) <a name="l780" style="background-color: #ffff99">       enddo</a>
+   781) <a name="l781" style="background-color: #ffff99"></a>
+   782) <a name="l782" style="background-color: #ffff99">       ! If pctglc_mec_tot is very close to 100%, round to 100%</a>
+   783) <a name="l783" style="background-color: #ffff99"></a>
+   784) <a name="l784" style="background-color: #ffff99">       do nl = begg,endg</a>
+   785) <a name="l785" style="background-color: #ffff99">          ! The inequality here ( &lt;= 2.0e-5 ) is designed to be the complement of the</a>
+   786) <a name="l786" style="background-color: #ffff99">          ! above check that makes sure pctglc_mec_tot is close to pctgla: so if pctglc=</a>
+   787) <a name="l787" style="background-color: #ffff99">          ! 100 (exactly), then exactly one of these conditionals will be triggered.</a>
+   788) <a name="l788" style="background-color: #ffff99">          ! Update 9-28-12: Now that there is a rescaling of pctglc_mec to bring it more</a>
+   789) <a name="l789" style="background-color: #ffff99">          ! in line with pctgla, we could probably decrease this tolerance again (the</a>
+   790) <a name="l790" style="background-color: #ffff99">          ! point about exactly one of these conditionals being triggered no longer holds)</a>
+   791) <a name="l791" style="background-color: #ffff99">          ! - or perhaps even get rid of this whole block of code. But I'm keeping this as</a>
+   792) <a name="l792" style="background-color: #ffff99">          ! is for now because that's how I tested it, and I don't think it will hurt</a>
+   793) <a name="l793" style="background-color: #ffff99">          ! anything to use this larger tolerance.</a>
+   794) <a name="l794" style="background-color: #ffff99">          if (abs(pctglc_mec_tot(nl) - 100._r8) &lt;= 2.0e-5) then</a>
+   795) <a name="l795" style="background-color: #ffff99">             pctglc_mec(nl,:) = pctglc_mec(nl,:) * 100._r8 / pctglc_mec_tot(nl)</a>
+   796) <a name="l796" style="background-color: #ffff99">             pctglc_mec_tot(nl) = 100._r8</a>
+   797) <a name="l797" style="background-color: #ffff99">          endif</a>
+   798) <a name="l798" style="background-color: #ffff99">       enddo</a>
+   799) <a name="l799" style="background-color: #ffff99"></a>
+   800) <a name="l800" style="background-color: #ffff99">       pctspec = pctwet + pctlak + pcturb + pctglc_mec_tot</a>
+   801) <a name="l801" style="background-color: #ffff99"></a>
+   802) <a name="l802" style="background-color: #ffff99">       if ( masterproc ) write(iulog,*) '   elevation limits = ', glc_topomax</a>
+   803) <a name="l803" style="background-color: #ffff99"></a>
+   804) <a name="l804" style="background-color: #ffff99">    else</a>
+   805) <a name="l805" style="background-color: #ffff99"></a>
+   806) <a name="l806" style="background-color: #ffffff">       pctspec = pctwet + pctlak + pcturb + pctgla</a>
+   807) <a name="l807" style="background-color: #ffffff"> </a>
+   808) <a name="l808" style="background-color: #ffffff">    endif</a>
+   809) <a name="l809" style="background-color: #ffffff"></a>
+   810) <a name="l810" style="background-color: #ffffff">    ! Error check: glacier, lake, wetland, urban sum must be less than 100</a>
+   811) <a name="l811" style="background-color: #ffffff"></a>
+   812) <a name="l812" style="background-color: #ffffff">    found = .false.</a>
+   813) <a name="l813" style="background-color: #ffffff">    do nl = begg,endg</a>
+   814) <a name="l814" style="background-color: #ffffff">       if (pctspec(nl) &gt; 100._r8+1.e-04_r8) then</a>
+   815) <a name="l815" style="background-color: #ffff99">          found = .true.</a>
+   816) <a name="l816" style="background-color: #ffff99">          nindx = nl</a>
+   817) <a name="l817" style="background-color: #ffff99">          exit</a>
+   818) <a name="l818" style="background-color: #ffff99">       end if</a>
+   819) <a name="l819" style="background-color: #ffffff">       if (found) exit</a>
+   820) <a name="l820" style="background-color: #ffffff">    end do</a>
+   821) <a name="l821" style="background-color: #ffffff">    if ( found ) then</a>
+   822) <a name="l822" style="background-color: #ffff99">       write(iulog,*)'surfrd error: PFT cover&gt;100 for nl=',nindx</a>
+   823) <a name="l823" style="background-color: #ffff99">       call endrun()</a>
+   824) <a name="l824" style="background-color: #ffff99">    end if</a>
+   825) <a name="l825" style="background-color: #ffff99"></a>
+   826) <a name="l826" style="background-color: #ffff99">    ! Determine veg and wtxy for special landunits</a>
+   827) <a name="l827" style="background-color: #ffff99"></a>
+   828) <a name="l828" style="background-color: #ffffff">    do nl = begg,endg</a>
+   829) <a name="l829" style="background-color: #ffffff"></a>
+   830) <a name="l830" style="background-color: #ffffff">       vegxy(nl,npatch_lake)   = noveg</a>
+   831) <a name="l831" style="background-color: #ffffff">       wtxy(nl,npatch_lake)    = pctlak(nl)/100._r8</a>
+   832) <a name="l832" style="background-color: #ffffff"></a>
+   833) <a name="l833" style="background-color: #ffffff">       vegxy(nl,npatch_wet)    = noveg</a>
+   834) <a name="l834" style="background-color: #ffffff">       wtxy(nl,npatch_wet)     = pctwet(nl)/100._r8</a>
+   835) <a name="l835" style="background-color: #ffffff"></a>
+   836) <a name="l836" style="background-color: #ffffff">       vegxy(nl,npatch_glacier)= noveg</a>
+   837) <a name="l837" style="background-color: #ffffff">       wtxy(nl,npatch_glacier) = pctgla(nl)/100._r8</a>
+   838) <a name="l838" style="background-color: #ffffff"></a>
+   839) <a name="l839" style="background-color: #ffffff">       ! Initialize urban weights</a>
+   840) <a name="l840" style="background-color: #ffffff"></a>
+   841) <a name="l841" style="background-color: #ffffff">       do nurb = npatch_urban, npatch_lake-1 </a>
+   842) <a name="l842" style="background-color: #ffffff">          vegxy(nl,nurb) = noveg</a>
+   843) <a name="l843" style="background-color: #ffffff">          wtxy(nl,nurb)  = pcturb(nl) / 100._r8</a>
+   844) <a name="l844" style="background-color: #ffffff">       end do</a>
+   845) <a name="l845" style="background-color: #ffffff">       if ( pcturb(nl) &gt; 0.0_r8 )then</a>
+   846) <a name="l846" style="background-color: #ffffff">          wtxy(nl,npatch_urban)   = wtxy(nl,npatch_urban)*urbinp%wtlunit_roof(nl)</a>
+   847) <a name="l847" style="background-color: #ffffff">          wtxy(nl,npatch_urban+1) = wtxy(nl,npatch_urban+1)*(1 - urbinp%wtlunit_roof(nl))/3</a>
+   848) <a name="l848" style="background-color: #ffffff">          wtxy(nl,npatch_urban+2) = wtxy(nl,npatch_urban+2)*(1 - urbinp%wtlunit_roof(nl))/3</a>
+   849) <a name="l849" style="background-color: #ffffff">          wtxy(nl,npatch_urban+3) = wtxy(nl,npatch_urban+3)*(1 - urbinp%wtlunit_roof(nl))/3 * (1.-urbinp%wtroad_perv(nl))</a>
+   850) <a name="l850" style="background-color: #ffffff">          wtxy(nl,npatch_urban+4) = wtxy(nl,npatch_urban+4)*(1 - urbinp%wtlunit_roof(nl))/3 * urbinp%wtroad_perv(nl)</a>
+   851) <a name="l851" style="background-color: #ffffff">       end if</a>
+   852) <a name="l852" style="background-color: #ffffff"></a>
+   853) <a name="l853" style="background-color: #ffffff">    end do</a>
+   854) <a name="l854" style="background-color: #ffffff"></a>
+   855) <a name="l855" style="background-color: #ffffff">    ! Check to make sure we have valid urban data for each urban patch</a>
+   856) <a name="l856" style="background-color: #ffffff"></a>
+   857) <a name="l857" style="background-color: #ffffff">    found = .false.</a>
+   858) <a name="l858" style="background-color: #ffffff">    do nl = begg,endg</a>
+   859) <a name="l859" style="background-color: #ffffff">       if ( pcturb(nl) &gt; 0.0_r8 )then</a>
+   860) <a name="l860" style="background-color: #ffffff">         if (urbinp%canyon_hwr(nl)            .le. 0._r8 .or. &amp;</a>
+   861) <a name="l861" style="background-color: #ffffff">             urbinp%em_improad(nl)            .le. 0._r8 .or. &amp;</a>
+   862) <a name="l862" style="background-color: #ffffff">             urbinp%em_perroad(nl)            .le. 0._r8 .or. &amp;</a>
+   863) <a name="l863" style="background-color: #ffffff">             urbinp%em_roof(nl)               .le. 0._r8 .or. &amp;</a>
+   864) <a name="l864" style="background-color: #ffffff">             urbinp%em_wall(nl)               .le. 0._r8 .or. &amp;</a>
+   865) <a name="l865" style="background-color: #ffffff">             urbinp%ht_roof(nl)               .le. 0._r8 .or. &amp;</a>
+   866) <a name="l866" style="background-color: #ffffff">             urbinp%thick_roof(nl)            .le. 0._r8 .or. &amp;</a>
+   867) <a name="l867" style="background-color: #ffffff">             urbinp%thick_wall(nl)            .le. 0._r8 .or. &amp;</a>
+   868) <a name="l868" style="background-color: #ffffff">             urbinp%t_building_max(nl)        .le. 0._r8 .or. &amp;</a>
+   869) <a name="l869" style="background-color: #ffffff">             urbinp%t_building_min(nl)        .le. 0._r8 .or. &amp;</a>
+   870) <a name="l870" style="background-color: #ffffff">             urbinp%wind_hgt_canyon(nl)       .le. 0._r8 .or. &amp;</a>
+   871) <a name="l871" style="background-color: #ffffff">             urbinp%wtlunit_roof(nl)          .le. 0._r8 .or. &amp;</a>
+   872) <a name="l872" style="background-color: #ffffff">             urbinp%wtroad_perv(nl)           .le. 0._r8 .or. &amp;</a>
+   873) <a name="l873" style="background-color: #ffffff">             any(urbinp%alb_improad_dir(nl,:) </a><a style="background-color: #fafad2">.le. 0._r8) .or. &amp;</a>
+   874) <a name="l874" style="background-color: #ffffff">             any(urbinp%alb_improad_dif(nl,:) </a><a style="background-color: #fafad2">.le. 0._r8) .or. &amp;</a>
+   875) <a name="l875" style="background-color: #ffffff">             any(urbinp%alb_perroad_dir(nl,:) </a><a style="background-color: #fafad2">.le. 0._r8) .or. &amp;</a>
+   876) <a name="l876" style="background-color: #ffffff">             any(urbinp%alb_perroad_dif(nl,:) </a><a style="background-color: #fafad2">.le. 0._r8) .or. &amp;</a>
+   877) <a name="l877" style="background-color: #ffffff">             any(urbinp%alb_roof_dir(nl,:)    </a><a style="background-color: #fafad2">.le. 0._r8) .or. &amp;</a>
+   878) <a name="l878" style="background-color: #ffffff">             any(urbinp%alb_roof_dif(nl,:)    </a><a style="background-color: #fafad2">.le. 0._r8) .or. &amp;</a>
+   879) <a name="l879" style="background-color: #ffffff">             any(urbinp%alb_wall_dir(nl,:)    </a><a style="background-color: #fafad2">.le. 0._r8) .or. &amp;</a>
+   880) <a name="l880" style="background-color: #ffffff">             any(urbinp%alb_wall_dif(nl,:)    </a><a style="background-color: #fafad2">.le. 0._r8) .or. &amp;</a>
+   881) <a name="l881" style="background-color: #ffffff">             any(urbinp%tk_roof(nl,:)         </a><a style="background-color: #fafad2">.le. 0._r8) .or. &amp;</a>
+   882) <a name="l882" style="background-color: #ffffff">             any(urbinp%tk_wall(nl,:)         </a><a style="background-color: #fafad2">.le. 0._r8) .or. &amp;</a>
+   883) <a name="l883" style="background-color: #ffffff">             any(urbinp%cv_roof(nl,:)         </a><a style="background-color: #fafad2">.le. 0._r8) .or. &amp;</a>
+   884) <a name="l884" style="background-color: #ffffff">             any(urbinp%cv_wall(nl,:)         </a><a style="background-color: #fafad2">.le. 0._r8)) then</a>
+   885) <a name="l885" style="background-color: #ffff99">            found = .true.</a>
+   886) <a name="l886" style="background-color: #ffff99">            nindx = nl</a>
+   887) <a name="l887" style="background-color: #ffff99">            exit</a>
+   888) <a name="l888" style="background-color: #ffff99">         else</a>
+   889) <a name="l889" style="background-color: #ffffff">            if (urbinp%nlev_improad(nl) .gt. 0) then</a>
+   890) <a name="l890" style="background-color: #ffffff">               nlev = urbinp%nlev_improad(nl)</a>
+   891) <a name="l891" style="background-color: #ffffff">               if (any(urbinp%tk_improad(nl,1:nlev) </a><a style="background-color: #fafad2">.le. 0._r8) .or. &amp;</a>
+   892) <a name="l892" style="background-color: #ffffff">                   any(urbinp%cv_improad(nl,1:nlev) </a><a style="background-color: #fafad2">.le. 0._r8)) then</a>
+   893) <a name="l893" style="background-color: #ffff99">                  found = .true.</a>
+   894) <a name="l894" style="background-color: #ffff99">                  nindx = nl</a>
+   895) <a name="l895" style="background-color: #ffff99">                  exit</a>
+   896) <a name="l896" style="background-color: #ffff99">               end if</a>
+   897) <a name="l897" style="background-color: #ffff99">            end if</a>
+   898) <a name="l898" style="background-color: #ffff99">         end if</a>
+   899) <a name="l899" style="background-color: #ffffff">         if (found) exit</a>
+   900) <a name="l900" style="background-color: #ffffff">       end if</a>
+   901) <a name="l901" style="background-color: #ffffff">    end do</a>
+   902) <a name="l902" style="background-color: #ffffff">    if ( found ) then</a>
+   903) <a name="l903" style="background-color: #ffff99">       write(iulog,*)'surfrd error: no valid urban data for nl=',nindx</a>
+   904) <a name="l904" style="background-color: #ffff99">       write(iulog,*)'canyon_hwr:      ',urbinp%canyon_hwr(nindx)</a>
+   905) <a name="l905" style="background-color: #ffff99">       write(iulog,*)'em_improad:      ',urbinp%em_improad(nindx)</a>
+   906) <a name="l906" style="background-color: #ffff99">       write(iulog,*)'em_perroad:      ',urbinp%em_perroad(nindx)</a>
+   907) <a name="l907" style="background-color: #ffff99">       write(iulog,*)'em_roof:         ',urbinp%em_roof(nindx)</a>
+   908) <a name="l908" style="background-color: #ffff99">       write(iulog,*)'em_wall:         ',urbinp%em_wall(nindx)</a>
+   909) <a name="l909" style="background-color: #ffff99">       write(iulog,*)'ht_roof:         ',urbinp%ht_roof(nindx)</a>
+   910) <a name="l910" style="background-color: #ffff99">       write(iulog,*)'thick_roof:      ',urbinp%thick_roof(nindx)</a>
+   911) <a name="l911" style="background-color: #ffff99">       write(iulog,*)'thick_wall:      ',urbinp%thick_wall(nindx)</a>
+   912) <a name="l912" style="background-color: #ffff99">       write(iulog,*)'t_building_max:  ',urbinp%t_building_max(nindx)</a>
+   913) <a name="l913" style="background-color: #ffff99">       write(iulog,*)'t_building_min:  ',urbinp%t_building_min(nindx)</a>
+   914) <a name="l914" style="background-color: #ffff99">       write(iulog,*)'wind_hgt_canyon: ',urbinp%wind_hgt_canyon(nindx)</a>
+   915) <a name="l915" style="background-color: #ffff99">       write(iulog,*)'wtlunit_roof:    ',urbinp%wtlunit_roof(nindx)</a>
+   916) <a name="l916" style="background-color: #ffff99">       write(iulog,*)'wtroad_perv:     ',urbinp%wtroad_perv(nindx)</a>
+   917) <a name="l917" style="background-color: #ffff99">       write(iulog,*)'alb_improad_dir: ',urbinp%alb_improad_dir(nindx,:)</a>
+   918) <a name="l918" style="background-color: #ffff99">       write(iulog,*)'alb_improad_dif: ',urbinp%alb_improad_dif(nindx,:)</a>
+   919) <a name="l919" style="background-color: #ffff99">       write(iulog,*)'alb_perroad_dir: ',urbinp%alb_perroad_dir(nindx,:)</a>
+   920) <a name="l920" style="background-color: #ffff99">       write(iulog,*)'alb_perroad_dif: ',urbinp%alb_perroad_dif(nindx,:)</a>
+   921) <a name="l921" style="background-color: #ffff99">       write(iulog,*)'alb_roof_dir:    ',urbinp%alb_roof_dir(nindx,:)</a>
+   922) <a name="l922" style="background-color: #ffff99">       write(iulog,*)'alb_roof_dif:    ',urbinp%alb_roof_dif(nindx,:)</a>
+   923) <a name="l923" style="background-color: #ffff99">       write(iulog,*)'alb_wall_dir:    ',urbinp%alb_wall_dir(nindx,:)</a>
+   924) <a name="l924" style="background-color: #ffff99">       write(iulog,*)'alb_wall_dif:    ',urbinp%alb_wall_dif(nindx,:)</a>
+   925) <a name="l925" style="background-color: #ffff99">       write(iulog,*)'tk_roof:         ',urbinp%tk_roof(nindx,:)</a>
+   926) <a name="l926" style="background-color: #ffff99">       write(iulog,*)'tk_wall:         ',urbinp%tk_wall(nindx,:)</a>
+   927) <a name="l927" style="background-color: #ffff99">       write(iulog,*)'cv_roof:         ',urbinp%cv_roof(nindx,:)</a>
+   928) <a name="l928" style="background-color: #ffff99">       write(iulog,*)'cv_wall:         ',urbinp%cv_wall(nindx,:)</a>
+   929) <a name="l929" style="background-color: #ffff99">       if (urbinp%nlev_improad(nindx) .gt. 0) then</a>
+   930) <a name="l930" style="background-color: #ffff99">          nlev = urbinp%nlev_improad(nindx)</a>
+   931) <a name="l931" style="background-color: #ffff99">          write(iulog,*)'tk_improad: ',urbinp%tk_improad(nindx,1:nlev)</a>
+   932) <a name="l932" style="background-color: #ffff99">          write(iulog,*)'cv_improad: ',urbinp%cv_improad(nindx,1:nlev)</a>
+   933) <a name="l933" style="background-color: #ffff99">       end if</a>
+   934) <a name="l934" style="background-color: #ffff99">       call endrun()</a>
+   935) <a name="l935" style="background-color: #ffff99">    end if</a>
+   936) <a name="l936" style="background-color: #ffff99"></a>
+   937) <a name="l937" style="background-color: #ffff99">    ! Initialize glacier_mec weights</a>
+   938) <a name="l938" style="background-color: #ffff99"></a>
+   939) <a name="l939" style="background-color: #ffffff">    if (create_glacier_mec_landunit) then</a>
+   940) <a name="l940" style="background-color: #ffff99">       do n = 1, maxpatch_glcmec</a>
+   941) <a name="l941" style="background-color: #ffff99">          npatch = npatch_glacier_mec - maxpatch_glcmec + n</a>
+   942) <a name="l942" style="background-color: #ffff99">          do nl = begg, endg</a>
+   943) <a name="l943" style="background-color: #ffff99">             vegxy (nl,npatch) = noveg</a>
+   944) <a name="l944" style="background-color: #ffff99">             wtxy  (nl,npatch) = pctglc_mec(nl,n)/100._r8</a>
+   945) <a name="l945" style="background-color: #ffff99">             topoxy(nl,npatch) = topoglc_mec(nl,n)</a>
+   946) <a name="l946" style="background-color: #ffff99">          enddo   ! nl</a>
+   947) <a name="l947" style="background-color: #ffff99">       enddo      ! maxpatch_glcmec</a>
+   948) <a name="l948" style="background-color: #ffff99">       deallocate(pctglc_mec, pctglc_mec_tot, topoglc_mec)</a>
+   949) <a name="l949" style="background-color: #ffff99">    endif          ! create_glacier_mec_landunit</a>
+   950) <a name="l950" style="background-color: #ffff99"></a>
+   951) <a name="l951" style="background-color: #ffffff">    deallocate(pctgla,pctlak,pctwet,pcturb)</a>
+   952) <a name="l952" style="background-color: #ffffff"></a>
+   953) <a name="l953" style="background-color: #ffffff">  end subroutine surfrd_wtxy_special</a>
+   954) <a name="l954" style="background-color: #ffffff"></a>
+   955) <a name="l955" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   956) <a name="l956" style="background-color: #ffffff">!BOP</a>
+   957) <a name="l957" style="background-color: #ffffff">!</a>
+   958) <a name="l958" style="background-color: #ffffff">! !IROUTINE: surfrd_wtxy_veg_all</a>
+   959) <a name="l959" style="background-color: #ffffff">!</a>
+   960) <a name="l960" style="background-color: #ffffff">! !INTERFACE:</a>
+   961) <a name="l961" style="background-color: #ffffff">  subroutine surfrd_wtxy_veg_all(ncid, ns, pftm)</a>
+   962) <a name="l962" style="background-color: #ffffff">!</a>
+   963) <a name="l963" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   964) <a name="l964" style="background-color: #ffffff">! Determine wtxy and veg arrays for non-dynamic landuse mode</a>
+   965) <a name="l965" style="background-color: #ffffff">!</a>
+   966) <a name="l966" style="background-color: #ffffff">! !USES:</a>
+   967) <a name="l967" style="background-color: #ffffff">    use clm_varctl  , only : create_crop_landunit</a>
+   968) <a name="l968" style="background-color: #ffffff">    use pftvarcon   , only : nirrig, npcropmin</a>
+   969) <a name="l969" style="background-color: #ffffff">    use spmdMod     , only : mpicom, MPI_LOGICAL, MPI_LOR</a>
+   970) <a name="l970" style="background-color: #ffffff">!</a>
+   971) <a name="l971" style="background-color: #ffffff">! !ARGUMENTS:</a>
+   972) <a name="l972" style="background-color: #ffffff">    implicit none</a>
+   973) <a name="l973" style="background-color: #ffffff">    type(file_desc_t),intent(inout) :: ncid   ! netcdf id</a>
+   974) <a name="l974" style="background-color: #ffffff">    integer          ,intent(in)    :: ns     ! domain size</a>
+   975) <a name="l975" style="background-color: #ffffff">    integer          ,pointer       :: pftm(:)</a>
+   976) <a name="l976" style="background-color: #ffffff">!</a>
+   977) <a name="l977" style="background-color: #ffffff">! !CALLED FROM:</a>
+   978) <a name="l978" style="background-color: #ffffff">! subroutine surfrd in this module</a>
+   979) <a name="l979" style="background-color: #ffffff">!</a>
+   980) <a name="l980" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   981) <a name="l981" style="background-color: #ffffff">! Created by Mariana Vertenstein, Sam Levis and Gordon Bonan</a>
+   982) <a name="l982" style="background-color: #ffffff">!</a>
+   983) <a name="l983" style="background-color: #ffffff">!</a>
+   984) <a name="l984" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+   985) <a name="l985" style="background-color: #ffffff">!EOP</a>
+   986) <a name="l986" style="background-color: #ffffff">    integer  :: m,mp7,mp8,mp11,n,nl            ! indices</a>
+   987) <a name="l987" style="background-color: #ffffff">    integer  :: begg,endg                      ! beg/end gcell index</a>
+   988) <a name="l988" style="background-color: #ffffff">    integer  :: dimid,varid                    ! netCDF id's</a>
+   989) <a name="l989" style="background-color: #ffffff">    integer  :: ier                            ! error status	</a>
+   990) <a name="l990" style="background-color: #ffffff">    logical  :: readvar                        ! is variable on dataset</a>
+   991) <a name="l991" style="background-color: #ffffff">    real(r8) :: sumpct                         ! sum of %pft over maxpatch_pft</a>
+   992) <a name="l992" style="background-color: #ffffff">    real(r8),allocatable :: pctpft(:,:)        ! percent of vegetated gridcell area for PFTs</a>
+   993) <a name="l993" style="background-color: #ffffff">    real(r8),pointer :: arrayl(:,:)            ! local array</a>
+   994) <a name="l994" style="background-color: #ffffff">    real(r8) :: numpftp1data(0:numpft)         </a>
+   995) <a name="l995" style="background-color: #ffffff">    logical  :: crop = .false.                 ! if crop data on this section of file</a>
+   996) <a name="l996" style="background-color: #ffffff">    character(len=32) :: subname = 'surfrd_wtxy_veg_all'  ! subroutine name</a>
+   997) <a name="l997" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   998) <a name="l998" style="background-color: #ffffff"></a>
+   999) <a name="l999" style="background-color: #ffffff">    call get_proc_bounds(begg,endg)</a>
+  1000) <a name="l1000" style="background-color: #fafad2">    allocate(pctpft(begg:endg,0:numpft))</a>
+  1001) <a name="l1001" style="background-color: #fafad2"></a>
+  1002) <a name="l1002" style="background-color: #fafad2">    call </a><a style="background-color: #ffffff">check_dim(ncid, 'lsmpft', numpft+1)</a>
+  1003) <a name="l1003" style="background-color: #ffffff"></a>
+  1004) <a name="l1004" style="background-color: #fafad2">    allocate(arrayl(begg:endg,0:numpft))</a>
+  1005) <a name="l1005" style="background-color: #fafad2">    call </a><a style="background-color: #ffffff">ncd_io(ncid=ncid, varname='PCT_PFT', flag='read', data=arrayl, &amp;</a>
+  1006) <a name="l1006" style="background-color: #ffffff">         dim1name=grlnd, readvar=readvar)</a>
+  1007) <a name="l1007" style="background-color: #ffffff">    if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: PCT_PFT NOT on surfdata file' )</a>
+  1008) <a name="l1008" style="background-color: #ffffff">    pctpft(begg:endg,0:numpft) = arrayl(begg:endg,0:numpft)</a>
+  1009) <a name="l1009" style="background-color: #ffffff">    deallocate(arrayl)</a>
+  1010) <a name="l1010" style="background-color: #ffffff"></a>
+  1011) <a name="l1011" style="background-color: #ffffff">    do nl = begg,endg</a>
+  1012) <a name="l1012" style="background-color: #ffffff">       if (pftm(nl) &gt;= 0) then</a>
+  1013) <a name="l1013" style="background-color: #ffffff"></a>
+  1014) <a name="l1014" style="background-color: #ffffff">          ! Error check: make sure PFTs sum to 100% cover for vegetated landunit </a>
+  1015) <a name="l1015" style="background-color: #ffffff">          ! (convert pctpft from percent with respect to gridcel to percent with </a>
+  1016) <a name="l1016" style="background-color: #ffffff">          ! respect to vegetated landunit)</a>
+  1017) <a name="l1017" style="background-color: #ffffff"></a>
+  1018) <a name="l1018" style="background-color: #ffffff">          if (pctspec(nl) &lt; 100._r8) then</a>
+  1019) <a name="l1019" style="background-color: #ffffff">             sumpct = 0._r8</a>
+  1020) <a name="l1020" style="background-color: #ffffff">             do m = 0,numpft</a>
+  1021) <a name="l1021" style="background-color: #ffffff">                sumpct = sumpct + pctpft(nl,m) * 100._r8/(100._r8-pctspec(nl))</a>
+  1022) <a name="l1022" style="background-color: #ffffff">                if (m == nirrig .and. .not. create_crop_landunit) then</a>
+  1023) <a name="l1023" style="background-color: #ffffff">                   if (pctpft(nl,m) &gt; 0._r8) then</a>
+  1024) <a name="l1024" style="background-color: #ffffff">                      call </a><a style="background-color: #ffff99">endrun( trim(subname)//' ERROR surfrdMod: irrigated crop'// &amp;</a>
+  1025) <a name="l1025" style="background-color: #ffff99">                                   ' PFT requires create_crop_landunit=.true.' )</a>
+  1026) <a name="l1026" style="background-color: #ffff99">                   end if</a>
+  1027) <a name="l1027" style="background-color: #ffff99">                end if</a>
+  1028) <a name="l1028" style="background-color: #ffff99">             end do</a>
+  1029) <a name="l1029" style="background-color: #ffffff">             if (abs(sumpct - 100._r8) &gt; 0.1e-4_r8) then</a>
+  1030) <a name="l1030" style="background-color: #ffff99">                write(iulog,*) trim(subname)//' ERROR: sum(pct) over numpft+1 is not = 100.'</a>
+  1031) <a name="l1031" style="background-color: #ffff99">                write(iulog,*) sumpct, sumpct-100._r8, nl</a>
+  1032) <a name="l1032" style="background-color: #ffff99">                call endrun()</a>
+  1033) <a name="l1033" style="background-color: #ffff99">             end if</a>
+  1034) <a name="l1034" style="background-color: #ffffff">             if (sumpct &lt; -0.000001_r8) then</a>
+  1035) <a name="l1035" style="background-color: #ffff99">                write(iulog,*) trim(subname)//' ERROR: sum(pct) over numpft+1 is &lt; 0.'</a>
+  1036) <a name="l1036" style="background-color: #ffff99">                write(iulog,*) sumpct, nl</a>
+  1037) <a name="l1037" style="background-color: #ffff99">                call endrun()</a>
+  1038) <a name="l1038" style="background-color: #ffff99">             end if</a>
+  1039) <a name="l1039" style="background-color: #fafad2">             do m = npcropmin, numpft</a>
+  1040) <a name="l1040" style="background-color: #ffff99">                if ( pctpft(nl,m) &gt; 0.0_r8 ) crop = .true.</a>
+  1041) <a name="l1041" style="background-color: #ffff99">             end do</a>
+  1042) <a name="l1042" style="background-color: #ffff99">          end if</a>
+  1043) <a name="l1043" style="background-color: #ffff99"></a>
+  1044) <a name="l1044" style="background-color: #ffff99">          ! Set weight of each pft wrt gridcell (note that maxpatch_pft = numpft+1 here)</a>
+  1045) <a name="l1045" style="background-color: #ffff99"></a>
+  1046) <a name="l1046" style="background-color: #ffffff">          do m = 1,numpft+1</a>
+  1047) <a name="l1047" style="background-color: #ffffff">             vegxy(nl,m)  = m - 1 ! 0 (bare ground) to numpft</a>
+  1048) <a name="l1048" style="background-color: #ffffff">             wtxy(nl,m) = pctpft(nl,m-1) / 100._r8</a>
+  1049) <a name="l1049" style="background-color: #ffffff">          end do</a>
+  1050) <a name="l1050" style="background-color: #ffffff"></a>
+  1051) <a name="l1051" style="background-color: #ffffff">       end if</a>
+  1052) <a name="l1052" style="background-color: #ffffff">    end do</a>
+  1053) <a name="l1053" style="background-color: #ffffff">    call mpi_allreduce(crop,crop_prog,1,MPI_LOGICAL,MPI_LOR,mpicom,ier)</a>
+  1054) <a name="l1054" style="background-color: #ffffff">    if (ier /= 0) then</a>
+  1055) <a name="l1055" style="background-color: #ffff99">       write(iulog,*) trim(subname)//' mpi_allreduce error = ',ier</a>
+  1056) <a name="l1056" style="background-color: #ffff99">       call endrun( trim(subname)//' ERROR: error in reduce of crop_prog' )</a>
+  1057) <a name="l1057" style="background-color: #ffff99">    endif</a>
+  1058) <a name="l1058" style="background-color: #ffffff">    if (</a><a style="background-color: #ffff99">crop_prog .and. .not. create_crop_landunit) then</a>
+  1059) <a name="l1059" style="background-color: #ffff99">       call endrun( trim(subname)//' ERROR: prognostic crop '// &amp;</a>
+  1060) <a name="l1060" style="background-color: #ffff99">                    'PFTs requires create_crop_landunit=.true.' )</a>
+  1061) <a name="l1061" style="background-color: #ffff99">    end if</a>
+  1062) <a name="l1062" style="background-color: #ffff99"></a>
+  1063) <a name="l1063" style="background-color: #ffffff">    deallocate(pctpft)</a>
+  1064) <a name="l1064" style="background-color: #ffffff"></a>
+  1065) <a name="l1065" style="background-color: #fafad2">  end subroutine surfrd_wtxy_veg_all</a>
+  1066) <a name="l1066" style="background-color: #ffffff"></a>
+  1067) <a name="l1067" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1068) <a name="l1068" style="background-color: #ffffff">!BOP</a>
+  1069) <a name="l1069" style="background-color: #ffffff">!</a>
+  1070) <a name="l1070" style="background-color: #ffffff">! !IROUTINE: surfrd_wtxy_veg_dgvm</a>
+  1071) <a name="l1071" style="background-color: #ffffff">!</a>
+  1072) <a name="l1072" style="background-color: #ffffff">! !INTERFACE:</a>
+  1073) <a name="l1073" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">surfrd_wtxy_veg_dgvm()</a>
+  1074) <a name="l1074" style="background-color: #ffcccc">!</a>
+  1075) <a name="l1075" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+  1076) <a name="l1076" style="background-color: #ffcccc">! Determine wtxy and vegxy for CNDV mode.</a>
+  1077) <a name="l1077" style="background-color: #ffcccc">!</a>
+  1078) <a name="l1078" style="background-color: #ffcccc">! !USES:</a>
+  1079) <a name="l1079" style="background-color: #ffcccc">    use pftvarcon , only : noveg, crop</a>
+  1080) <a name="l1080" style="background-color: #ffcccc">    use clm_varctl, only : create_crop_landunit</a>
+  1081) <a name="l1081" style="background-color: #ffcccc">!</a>
+  1082) <a name="l1082" style="background-color: #ffcccc">! !ARGUMENTS:</a>
+  1083) <a name="l1083" style="background-color: #ffcccc">    implicit none</a>
+  1084) <a name="l1084" style="background-color: #ffcccc">!</a>
+  1085) <a name="l1085" style="background-color: #ffcccc">! !CALLED FROM:</a>
+  1086) <a name="l1086" style="background-color: #ffcccc">! subroutine surfrd in this module</a>
+  1087) <a name="l1087" style="background-color: #ffcccc">!</a>
+  1088) <a name="l1088" style="background-color: #ffcccc">!</a>
+  1089) <a name="l1089" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+  1090) <a name="l1090" style="background-color: #ffcccc">! Created by Mariana Vertenstein 12/04</a>
+  1091) <a name="l1091" style="background-color: #ffcccc">!</a>
+  1092) <a name="l1092" style="background-color: #ffcccc">!</a>
+  1093) <a name="l1093" style="background-color: #ffcccc">! !LOCAL VARIABLES:</a>
+  1094) <a name="l1094" style="background-color: #ffcccc">!EOP</a>
+  1095) <a name="l1095" style="background-color: #ffcccc">    integer :: m,nl         ! indices</a>
+  1096) <a name="l1096" style="background-color: #ffcccc">    integer  :: begg,endg   ! beg/end gcell index</a>
+  1097) <a name="l1097" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1098) <a name="l1098" style="background-color: #ffcccc"></a>
+  1099) <a name="l1099" style="background-color: #ffcccc">    call get_proc_bounds(begg,endg)</a>
+  1100) <a name="l1100" style="background-color: #ffcccc">    do nl = begg,endg</a>
+  1101) <a name="l1101" style="background-color: #ffcccc">       do m = 1, maxpatch_pft ! CNDV means allocate_all_vegpfts = .true.</a>
+  1102) <a name="l1102" style="background-color: #ffcccc">          if (create_crop_landunit) then ! been through surfrd_wtxy_veg_all</a>
+  1103) <a name="l1103" style="background-color: #ffcccc">             if (crop(m-1) == 0) then    ! so update natural vegetation only</a>
+  1104) <a name="l1104" style="background-color: #ffcccc">                wtxy(nl,m) = 0._r8       ! crops should have values &gt;= 0.</a>
+  1105) <a name="l1105" style="background-color: #ffcccc">             end if</a>
+  1106) <a name="l1106" style="background-color: #ffcccc">          else                   ! not been through surfrd_wtxy_veg_all</a>
+  1107) <a name="l1107" style="background-color: #ffcccc">             wtxy(nl,m) = 0._r8  ! so update all vegetation</a>
+  1108) <a name="l1108" style="background-color: #ffcccc">             vegxy(nl,m) = m - 1 ! 0 (bare ground) to maxpatch_pft-1 (= 16)</a>
+  1109) <a name="l1109" style="background-color: #ffcccc">          end if</a>
+  1110) <a name="l1110" style="background-color: #ffcccc">       end do</a>
+  1111) <a name="l1111" style="background-color: #ffcccc">       ! bare ground weights</a>
+  1112) <a name="l1112" style="background-color: #ffcccc">       wtxy(nl,noveg+1) = max(0._r8, 1._r8 - sum(wtxy(nl,:)))</a>
+  1113) <a name="l1113" style="background-color: #ffcccc">       if (abs(sum(wtxy(nl,:)) - 1._r8) &gt; 1.e-5_r8) then</a>
+  1114) <a name="l1114" style="background-color: #ffcccc">          write(iulog,*) 'all wtxy =', wtxy(nl,:)</a>
+  1115) <a name="l1115" style="background-color: #ffcccc">          call endrun()</a>
+  1116) <a name="l1116" style="background-color: #ffcccc">       end if ! error check</a>
+  1117) <a name="l1117" style="background-color: #ffcccc">    end do</a>
+  1118) <a name="l1118" style="background-color: #ffcccc"></a>
+  1119) <a name="l1119" style="background-color: #ffcccc">  end subroutine surfrd_wtxy_veg_dgvm</a>
+  1120) <a name="l1120" style="background-color: #ffcccc"></a><a style="background-color: #ffffff">   </a>
+  1121) <a name="l1121" style="background-color: #ffffff">end module surfrdMod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

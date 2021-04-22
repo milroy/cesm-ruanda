@@ -1,0 +1,516 @@
+<html>
+<head>
+<title>Listing of element_mod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;element_mod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 33.33&#160;%func&#160;&#160;&#160;&#160; 63.10&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">#ifdef HAVE_CONFIG_H</a>
+     2) <a name="l2" style="background-color: #ffffff">#include &quot;config.h&quot;</a>
+     3) <a name="l3" style="background-color: #ffffff">#endif</a>
+     4) <a name="l4" style="background-color: #ffffff"></a>
+     5) <a name="l5" style="background-color: #ffffff">module element_mod</a>
+     6) <a name="l6" style="background-color: #ffffff"></a>
+     7) <a name="l7" style="background-color: #ffffff">  use kinds,                  only: real_kind, long_kind, int_kind</a>
+     8) <a name="l8" style="background-color: #ffffff">  use coordinate_systems_mod, only: spherical_polar_t, cartesian2D_t, cartesian3D_t, distance</a>
+     9) <a name="l9" style="background-color: #ffffff">  use dimensions_mod,         only: np, npsq, nlev, nlevp, qsize_d, max_neigh_edges</a>
+    10) <a name="l10" style="background-color: #ffffff">  use edge_mod,               only: edgedescriptor_t, rotation_t</a>
+    11) <a name="l11" style="background-color: #ffffff">  use gridgraph_mod,          only: gridvertex_t</a>
+    12) <a name="l12" style="background-color: #ffffff">#ifdef _FVM</a>
+    13) <a name="l13" style="background-color: #ffffff">  use dimensions_mod,         only: nc, nhc, ntrac_d</a>
+    14) <a name="l14" style="background-color: #ffffff">#endif</a>
+    15) <a name="l15" style="background-color: #ffffff"></a>
+    16) <a name="l16" style="background-color: #ffffff">  implicit none</a>
+    17) <a name="l17" style="background-color: #ffffff">  private</a>
+    18) <a name="l18" style="background-color: #ffffff">  integer, public, parameter :: timelevels = 3</a>
+    19) <a name="l19" style="background-color: #ffffff"></a>
+    20) <a name="l20" style="background-color: #ffffff">#ifdef _PRIM</a>
+    21) <a name="l21" style="background-color: #ffffff"></a>
+    22) <a name="l22" style="background-color: #ffffff">! =========== PRIMITIVE-EQUATION DATA-STRUCTURES =====================</a>
+    23) <a name="l23" style="background-color: #ffffff"></a>
+    24) <a name="l24" style="background-color: #ffffff">  type, public :: elem_state_t</a>
+    25) <a name="l25" style="background-color: #ffffff"></a>
+    26) <a name="l26" style="background-color: #ffffff">    ! prognostic variables for preqx solver</a>
+    27) <a name="l27" style="background-color: #ffffff"></a>
+    28) <a name="l28" style="background-color: #ffffff">    ! prognostics must match those in prim_restart_mod.F90</a>
+    29) <a name="l29" style="background-color: #ffffff">    ! vertically-lagrangian code advects dp3d instead of ps_v</a>
+    30) <a name="l30" style="background-color: #ffffff">    ! tracers Q, Qdp always use 2 level time scheme</a>
+    31) <a name="l31" style="background-color: #ffffff"></a>
+    32) <a name="l32" style="background-color: #ffffff">    real (kind=real_kind) :: v   (np,np,2,nlev,timelevels)            ! velocity                           1</a>
+    33) <a name="l33" style="background-color: #ffffff">    real (kind=real_kind) :: T   (np,np,nlev,timelevels)              ! temperature                        2</a>
+    34) <a name="l34" style="background-color: #ffffff">    real (kind=real_kind) :: dp3d(np,np,nlev,timelevels)              ! delta p on levels                  8</a>
+    35) <a name="l35" style="background-color: #ffffff">    real (kind=real_kind) :: lnps(np,np,timelevels)                   ! log surface pressure               3</a>
+    36) <a name="l36" style="background-color: #ffffff">    real (kind=real_kind) :: ps_v(np,np,timelevels)                   ! surface pressure                   4</a>
+    37) <a name="l37" style="background-color: #ffffff">    real (kind=real_kind) :: phis(np,np)                              ! surface geopotential (prescribed)  5</a>
+    38) <a name="l38" style="background-color: #ffffff">    real (kind=real_kind) :: Q   (np,np,nlev,qsize_d)                 ! Tracer concentration               6</a>
+    39) <a name="l39" style="background-color: #ffffff">    real (kind=real_kind) :: Qdp (np,np,nlev,qsize_d,2)               ! Tracer mass                        7</a>
+    40) <a name="l40" style="background-color: #ffffff">  end type elem_state_t</a>
+    41) <a name="l41" style="background-color: #ffffff"></a>
+    42) <a name="l42" style="background-color: #ffffff">  integer(kind=int_kind),public,parameter::StateComponents=8! num prognistics variables (for prim_restart_mod.F90)</a>
+    43) <a name="l43" style="background-color: #ffffff"></a>
+    44) <a name="l44" style="background-color: #ffffff">  !___________________________________________________________________  </a>
+    45) <a name="l45" style="background-color: #ffffff">  type, public :: derived_state_t</a>
+    46) <a name="l46" style="background-color: #ffffff"></a>
+    47) <a name="l47" style="background-color: #ffffff">    ! diagnostic variables for preqx solver</a>
+    48) <a name="l48" style="background-color: #ffffff"></a>
+    49) <a name="l49" style="background-color: #ffffff">    ! storage for subcycling tracers/dynamics</a>
+    50) <a name="l50" style="background-color: #ffffff">    ! if (compute_mean_flux==1) vn0=time_avg(U*dp) else vn0=U at tracer-time t</a>
+    51) <a name="l51" style="background-color: #ffffff"></a>
+    52) <a name="l52" style="background-color: #ffffff">    real (kind=real_kind) :: vn0(np,np,2,nlev)                        ! velocity for SE tracer advection</a>
+    53) <a name="l53" style="background-color: #ffffff">    real (kind=real_kind) :: vstar(np,np,2,nlev)                      ! velocity on Lagrangian surfaces</a>
+    54) <a name="l54" style="background-color: #ffffff">    real (kind=real_kind) :: dpdiss_biharmonic(np,np,nlev)            ! mean dp dissipation tendency, if nu_p&gt;0</a>
+    55) <a name="l55" style="background-color: #ffffff">    real (kind=real_kind) :: dpdiss_ave(np,np,nlev)                   ! mean dp used to compute psdiss_tens</a>
+    56) <a name="l56" style="background-color: #ffffff"></a>
+    57) <a name="l57" style="background-color: #ffffff">    ! diagnostics for explicit timestep</a>
+    58) <a name="l58" style="background-color: #ffffff">    real (kind=real_kind) :: phi(np,np,nlev)                          ! geopotential</a>
+    59) <a name="l59" style="background-color: #ffffff">    real (kind=real_kind) :: omega_p(np,np,nlev)                      ! vertical tendency (derived)       </a>
+    60) <a name="l60" style="background-color: #ffffff">    real (kind=real_kind) :: eta_dot_dpdn(np,np,nlevp)                ! mean vertical flux from dynamics</a>
+    61) <a name="l61" style="background-color: #ffffff"></a>
+    62) <a name="l62" style="background-color: #ffffff">    ! semi-implicit diagnostics: computed in explict-component, reused in Helmholtz-component.</a>
+    63) <a name="l63" style="background-color: #ffffff">    real (kind=real_kind) :: grad_lnps(np,np,2)                       ! gradient of log surface pressure               </a>
+    64) <a name="l64" style="background-color: #ffffff">    real (kind=real_kind) :: zeta(np,np,nlev)                         ! relative vorticity                             </a>
+    65) <a name="l65" style="background-color: #ffffff">    real (kind=real_kind) :: div(np,np,nlev,timelevels)               ! divergence                          </a>
+    66) <a name="l66" style="background-color: #ffffff"></a>
+    67) <a name="l67" style="background-color: #ffffff">    ! tracer advection fields used for consistency and limiters</a>
+    68) <a name="l68" style="background-color: #ffffff">    real (kind=real_kind) :: dp(np,np,nlev)                           ! for dp_tracers at physics timestep</a>
+    69) <a name="l69" style="background-color: #ffffff">    real (kind=real_kind) :: divdp(np,np,nlev)                        ! divergence of dp</a>
+    70) <a name="l70" style="background-color: #ffffff">    real (kind=real_kind) :: divdp_proj(np,np,nlev)                   ! DSSed divdp</a>
+    71) <a name="l71" style="background-color: #ffffff"></a>
+    72) <a name="l72" style="background-color: #ffffff">#ifdef CAM</a>
+    73) <a name="l73" style="background-color: #ffffff">    ! forcing terms for CAM</a>
+    74) <a name="l74" style="background-color: #ffffff">    real (kind=real_kind) :: FQ(np,np,nlev,qsize_d, 1)                ! tracer forcing  </a>
+    75) <a name="l75" style="background-color: #ffffff">    real (kind=real_kind) :: FM(np,np,2,nlev, 1)                      ! momentum forcing</a>
+    76) <a name="l76" style="background-color: #ffffff">    real (kind=real_kind) :: FT(np,np,nlev, 1)                        ! temperature forcing</a>
+    77) <a name="l77" style="background-color: #ffffff">    real (kind=real_kind) :: omega_prescribed(np,np,nlev)             ! prescribed vertical tendency</a>
+    78) <a name="l78" style="background-color: #ffffff">#else</a>
+    79) <a name="l79" style="background-color: #ffffff">    ! forcing terms for HOMME</a>
+    80) <a name="l80" style="background-color: #ffffff">    real (kind=real_kind) :: FQ(np,np,nlev,qsize_d, timelevels)       ! tracer forcing </a>
+    81) <a name="l81" style="background-color: #ffffff">    real (kind=real_kind) :: FM(np,np,2,nlev, timelevels)             ! momentum forcing</a>
+    82) <a name="l82" style="background-color: #ffffff">    real (kind=real_kind) :: FT(np,np,nlev, timelevels)               ! temperature forcing </a>
+    83) <a name="l83" style="background-color: #ffffff">#endif</a>
+    84) <a name="l84" style="background-color: #ffffff"></a>
+    85) <a name="l85" style="background-color: #ffffff">    ! forcing terms for both CAM and HOMME</a>
+    86) <a name="l86" style="background-color: #ffffff">    ! FQps for conserving dry mass in the presence of precipitation</a>
+    87) <a name="l87" style="background-color: #ffffff"></a>
+    88) <a name="l88" style="background-color: #ffffff">    real (kind=real_kind) :: pecnd(np,np,nlev)                        ! pressure perturbation from condensate</a>
+    89) <a name="l89" style="background-color: #ffffff">    real (kind=real_kind) :: FQps(np,np,timelevels)                   ! forcing of FQ on ps_v </a>
+    90) <a name="l90" style="background-color: #ffffff">                                                                  </a>
+    91) <a name="l91" style="background-color: #ffffff">  end type derived_state_t</a>
+    92) <a name="l92" style="background-color: #ffffff"></a>
+    93) <a name="l93" style="background-color: #ffffff">  !___________________________________________________________________</a>
+    94) <a name="l94" style="background-color: #ffffff">  type, public :: elem_accum_t</a>
+    95) <a name="l95" style="background-color: #ffffff"></a>
+    96) <a name="l96" style="background-color: #ffffff">#ifdef ENERGY_DIAGNOSTICS</a>
+    97) <a name="l97" style="background-color: #ffffff"></a>
+    98) <a name="l98" style="background-color: #ffffff">    ! Energy equation:</a>
+    99) <a name="l99" style="background-color: #ffffff">    ! KE_t  = T1 + T2  + D1   + Err   +  vertical &amp; horizontal advection terms</a>
+   100) <a name="l100" style="background-color: #ffffff">    ! IE_t  = S1 + D2                 +  vertical &amp; horizontal advection terms</a>
+   101) <a name="l101" style="background-color: #ffffff">    ! PE_t  = S2        </a>
+   102) <a name="l102" style="background-color: #ffffff">    !</a>
+   103) <a name="l103" style="background-color: #ffffff">    ! KEvert*  =  KE net vertical advection    (should be zero)</a>
+   104) <a name="l104" style="background-color: #ffffff">    ! KEhoriz* =  KE net horizonatl advection  (should be zero)</a>
+   105) <a name="l105" style="background-color: #ffffff">    ! IEvert*  =  IE net vertical advection    (should be zero)</a>
+   106) <a name="l106" style="background-color: #ffffff">    ! IEhoriz* =  IE net horizonatl advection  (should be zero)</a>
+   107) <a name="l107" style="background-color: #ffffff">    !</a>
+   108) <a name="l108" style="background-color: #ffffff">    ! With leapfrog, energy equations are all exact except KE </a>
+   109) <a name="l109" style="background-color: #ffffff">    ! (has an Err term that goes to zero as dt**2)</a>
+   110) <a name="l110" style="background-color: #ffffff">    !</a>
+   111) <a name="l111" style="background-color: #ffffff">    ! Transfer terms:</a>
+   112) <a name="l112" style="background-color: #ffffff">    ! T1   = -&lt; dp/dn u, RT_v/p grad_p &gt;     KE&lt;-&gt;IE:   T1 + T2-T2_s = S1</a>
+   113) <a name="l113" style="background-color: #ffffff">    ! T2   = -&lt; dp/dn u, grad_phi &gt;          KE&lt;-&gt;PE:   T2_s         = S2</a>
+   114) <a name="l114" style="background-color: #ffffff">    ! T2_s = -&lt; dp/dn u, grad_phis &gt;</a>
+   115) <a name="l115" style="background-color: #ffffff">    ! S1   = &lt; Cp_star dp/dn , RT omega_p/Cp_star &gt;  </a>
+   116) <a name="l116" style="background-color: #ffffff">    ! S2   = -&lt; div (u dp/dn), phis &gt;                </a>
+   117) <a name="l117" style="background-color: #ffffff"></a>
+   118) <a name="l118" style="background-color: #ffffff">    real (kind=real_kind) :: KEvert1(np,np)                           ! term from continuity equ</a>
+   119) <a name="l119" style="background-color: #ffffff">    real (kind=real_kind) :: KEvert2(np,np)                           ! term from momentum equ</a>
+   120) <a name="l120" style="background-color: #ffffff">    real (kind=real_kind) :: IEvert1(np,np)                           ! term from continuity equ</a>
+   121) <a name="l121" style="background-color: #ffffff">    real (kind=real_kind) :: IEvert2(np,np)                           ! term from T equ</a>
+   122) <a name="l122" style="background-color: #ffffff">    real (kind=real_kind) :: IEvert1_wet(np,np)                       ! wet term from continuity equ</a>
+   123) <a name="l123" style="background-color: #ffffff">    real (kind=real_kind) :: IEvert2_wet(np,np)                       ! wet term from T equ</a>
+   124) <a name="l124" style="background-color: #ffffff"></a>
+   125) <a name="l125" style="background-color: #ffffff">    real (kind=real_kind) :: KEhorz1(np,np)                           ! at time t</a>
+   126) <a name="l126" style="background-color: #ffffff">    real (kind=real_kind) :: KEhorz2(np,np)                           ! after calling time_advance, these will be at time t-1</a>
+   127) <a name="l127" style="background-color: #ffffff">    real (kind=real_kind) :: IEhorz1(np,np)    </a>
+   128) <a name="l128" style="background-color: #ffffff">    real (kind=real_kind) :: IEhorz2(np,np)    </a>
+   129) <a name="l129" style="background-color: #ffffff">    real (kind=real_kind) :: IEhorz1_wet(np,np)    </a>
+   130) <a name="l130" style="background-color: #ffffff">    real (kind=real_kind) :: IEhorz2_wet(np,np)    </a>
+   131) <a name="l131" style="background-color: #ffffff"></a>
+   132) <a name="l132" style="background-color: #ffffff">    real (kind=real_kind) :: T1(np,np)    </a>
+   133) <a name="l133" style="background-color: #ffffff">    real (kind=real_kind) :: T2(np,np) </a>
+   134) <a name="l134" style="background-color: #ffffff">    real (kind=real_kind) :: T2_s(np,np)    </a>
+   135) <a name="l135" style="background-color: #ffffff">    real (kind=real_kind) :: S1(np,np)    </a>
+   136) <a name="l136" style="background-color: #ffffff">    real (kind=real_kind) :: S1_wet(np,np)    </a>
+   137) <a name="l137" style="background-color: #ffffff">    real (kind=real_kind) :: S2(np,np)    </a>
+   138) <a name="l138" style="background-color: #ffffff"></a>
+   139) <a name="l139" style="background-color: #ffffff">    ! the KE conversion term and diffusion term</a>
+   140) <a name="l140" style="background-color: #ffffff">    real (kind=real_kind) :: DIFF(np,np,2,nlev)                       ! net hypervis term</a>
+   141) <a name="l141" style="background-color: #ffffff">    real (kind=real_kind) :: DIFFT(np,np,nlev)                        ! net hypervis term</a>
+   142) <a name="l142" style="background-color: #ffffff">    real (kind=real_kind) :: CONV(np,np,2,nlev)                       ! dpdn u dot CONV = T1 + T2</a>
+   143) <a name="l143" style="background-color: #ffffff">#endif</a>
+   144) <a name="l144" style="background-color: #ffffff"></a>
+   145) <a name="l145" style="background-color: #ffffff">    ! the &quot;4&quot; timelevels represents data computed at:</a>
+   146) <a name="l146" style="background-color: #ffffff">    !  1  t-.5   </a>
+   147) <a name="l147" style="background-color: #ffffff">    !  2  t+.5   after dynamics</a>
+   148) <a name="l148" style="background-color: #ffffff">    !  3  t+.5   after forcing</a>
+   149) <a name="l149" style="background-color: #ffffff">    !  4  t+.5   after Robert</a>
+   150) <a name="l150" style="background-color: #ffffff">    ! after calling TimeLevelUpdate, all times above decrease by 1.0</a>
+   151) <a name="l151" style="background-color: #ffffff"></a>
+   152) <a name="l152" style="background-color: #ffffff">    real (kind=real_kind) :: KEner(np,np,4)       </a>
+   153) <a name="l153" style="background-color: #ffffff">    real (kind=real_kind) :: PEner(np,np,4)       </a>
+   154) <a name="l154" style="background-color: #ffffff">    real (kind=real_kind) :: IEner(np,np,4)    </a>
+   155) <a name="l155" style="background-color: #ffffff">    real (kind=real_kind) :: IEner_wet(np,np,4)    </a>
+   156) <a name="l156" style="background-color: #ffffff">    real (kind=real_kind) :: Qvar(np,np,qsize_d,4)                    ! Q variance at half time levels   </a>
+   157) <a name="l157" style="background-color: #ffffff">    real (kind=real_kind) :: Qmass(np,np,qsize_d,4)                   ! Q mass at half time levels</a>
+   158) <a name="l158" style="background-color: #ffffff">    real (kind=real_kind) :: Q1mass(np,np,qsize_d)                    ! Q mass at full time levels</a>
+   159) <a name="l159" style="background-color: #ffffff"></a>
+   160) <a name="l160" style="background-color: #ffffff">  end type elem_accum_t</a>
+   161) <a name="l161" style="background-color: #ffffff"></a>
+   162) <a name="l162" style="background-color: #ffffff">#elif defined _PRIMDG</a>
+   163) <a name="l163" style="background-color: #ffffff"></a>
+   164) <a name="l164" style="background-color: #ffffff">! ============ DISCONTINUOUS-GALERKIN DATA-STRUCTURES ================</a>
+   165) <a name="l165" style="background-color: #ffffff"></a>
+   166) <a name="l166" style="background-color: #ffffff">  type, public :: elem_state_t</a>
+   167) <a name="l167" style="background-color: #ffffff"></a>
+   168) <a name="l168" style="background-color: #ffffff">    ! prognostic variables for DG primitive-eqn solver</a>
+   169) <a name="l169" style="background-color: #ffffff"></a>
+   170) <a name="l170" style="background-color: #ffffff">    real (kind=real_kind) :: p(np,np,nlev,timelevels)</a>
+   171) <a name="l171" style="background-color: #ffffff">    real (kind=real_kind) :: phis(np,np)                              ! surface geopotential</a>
+   172) <a name="l172" style="background-color: #ffffff">    real (kind=real_kind) :: gradps(np,np,2)                          ! gradient of surface geopotential</a>
+   173) <a name="l173" style="background-color: #ffffff">    real (kind=real_kind) :: v(np,np,2,nlev,timelevels)               ! contravarient comp</a>
+   174) <a name="l174" style="background-color: #ffffff"></a>
+   175) <a name="l175" style="background-color: #ffffff">    real (kind=real_kind) :: couv(np,np,2,nlev)                       ! covariant velocities</a>
+   176) <a name="l176" style="background-color: #ffffff">    real (kind=real_kind) :: uv(np,np,2,nlev)                         ! redundant copy of v (eliminate?)</a>
+   177) <a name="l177" style="background-color: #ffffff">    real (kind=real_kind) :: uv0(np,np,2,nlev)                        ! temp variable for velocities (eliminate?)</a>
+   178) <a name="l178" style="background-color: #ffffff">    real (kind=real_kind) :: pgrads(np,np,2,nlev)</a>
+   179) <a name="l179" style="background-color: #ffffff"></a>
+   180) <a name="l180" style="background-color: #ffffff">    real (kind=real_kind) :: psi(np,np,nlev)</a>
+   181) <a name="l181" style="background-color: #ffffff">    real (kind=real_kind) :: phi(np,np,nlev)</a>
+   182) <a name="l182" style="background-color: #ffffff">    real (kind=real_kind) :: ht(np,np,nlev)</a>
+   183) <a name="l183" style="background-color: #ffffff">    real (kind=real_kind) :: T(np,np,nlev,timelevels)                 ! temperature</a>
+   184) <a name="l184" style="background-color: #ffffff">    real (kind=real_kind) :: Q(np,np,nlev,timelevels)                 ! moisture</a>
+   185) <a name="l185" style="background-color: #ffffff">    real (kind=real_kind) :: pt3d(np,np,nlev)                         ! potential temperature</a>
+   186) <a name="l186" style="background-color: #ffffff">    real (kind=real_kind) :: qt3d(np,np,nlev)</a>
+   187) <a name="l187" style="background-color: #ffffff">    real (kind=real_kind) :: peta(np,np,nlev)</a>
+   188) <a name="l188" style="background-color: #ffffff">    real (kind=real_kind) :: dp3d(np,np,nlev)</a>
+   189) <a name="l189" style="background-color: #ffffff"></a>
+   190) <a name="l190" style="background-color: #ffffff">    real (kind=real_kind) :: zeta(np,np,nlev)</a>
+   191) <a name="l191" style="background-color: #ffffff">    real (kind=real_kind) :: pr3d(np,np,nlev+1)</a>
+   192) <a name="l192" style="background-color: #ffffff">    real (kind=real_kind) :: pr3d_ref(np,np,nlev+1)</a>
+   193) <a name="l193" style="background-color: #ffffff">    real (kind=real_kind) :: gp3d(np,np,nlev+1)</a>
+   194) <a name="l194" style="background-color: #ffffff"></a>
+   195) <a name="l195" style="background-color: #ffffff">    real (kind=real_kind) :: ptop(np,np)</a>
+   196) <a name="l196" style="background-color: #ffffff">    real (kind=real_kind) :: sgp(np,np)</a>
+   197) <a name="l197" style="background-color: #ffffff">    real (kind=real_kind) :: tbar(nlev)</a>
+   198) <a name="l198" style="background-color: #ffffff"></a>
+   199) <a name="l199" style="background-color: #ffffff">    ! note: non-state variables should be moved into derived_state_t</a>
+   200) <a name="l200" style="background-color: #ffffff"></a>
+   201) <a name="l201" style="background-color: #ffffff">  end type elem_state_t</a>
+   202) <a name="l202" style="background-color: #ffffff"></a>
+   203) <a name="l203" style="background-color: #ffffff">  !___________________________________________________________________</a>
+   204) <a name="l204" style="background-color: #ffffff">  type, public :: derived_state_t</a>
+   205) <a name="l205" style="background-color: #ffffff">     real (kind=real_kind) :: dummmy</a>
+   206) <a name="l206" style="background-color: #ffffff">     real (kind=real_kind) :: vstar(np,np,2,nlev)                     ! velocity on Lagrangian surfaces</a>
+   207) <a name="l207" style="background-color: #ffffff">  end type derived_state_t</a>
+   208) <a name="l208" style="background-color: #ffffff"></a>
+   209) <a name="l209" style="background-color: #ffffff">  !___________________________________________________________________</a>
+   210) <a name="l210" style="background-color: #ffffff">  type, public :: elem_accum_t</a>
+   211) <a name="l211" style="background-color: #ffffff">    real (kind=real_kind) :: u(np,np,nlev)                            ! zonal velocity on sphere</a>
+   212) <a name="l212" style="background-color: #ffffff">    real (kind=real_kind) :: T(np,np,nlev)                            ! temperature</a>
+   213) <a name="l213" style="background-color: #ffffff">    real (kind=real_kind) :: ke(np,np,nlev)                           ! kinetic energy</a>
+   214) <a name="l214" style="background-color: #ffffff">  end type</a>
+   215) <a name="l215" style="background-color: #ffffff"></a>
+   216) <a name="l216" style="background-color: #ffffff">#else</a>
+   217) <a name="l217" style="background-color: #ffffff">! ================== SHALLOW-WATER DATA-STRUCTURES ===================</a>
+   218) <a name="l218" style="background-color: #ffffff"></a>
+   219) <a name="l219" style="background-color: #ffffff">  type, public :: elem_state_t</a>
+   220) <a name="l220" style="background-color: #ffffff"></a>
+   221) <a name="l221" style="background-color: #ffffff">    ! prognostic variables for shallow-water solver</a>
+   222) <a name="l222" style="background-color: #ffffff">     real (kind=real_kind) :: p(np,np,nlev,timelevels)</a>
+   223) <a name="l223" style="background-color: #ffffff">     real (kind=real_kind) :: ps(np,np)                               ! surface geopotential</a>
+   224) <a name="l224" style="background-color: #ffffff">     real (kind=real_kind) :: gradps(np,np,2)                         ! gradient of surface geopotential     </a>
+   225) <a name="l225" style="background-color: #ffffff">     real (kind=real_kind) :: v(np,np,2,nlev,timelevels)              ! contravarient comp</a>
+   226) <a name="l226" style="background-color: #ffffff"></a>
+   227) <a name="l227" style="background-color: #ffffff">#ifdef _SWDG</a>
+   228) <a name="l228" style="background-color: #ffffff">     ! variables for discontinuous-Galerkin shallow-water</a>
+   229) <a name="l229" style="background-color: #ffffff">     real (kind=real_kind) :: couv(np,np,2,nlev)                      ! covarient velocity</a>
+   230) <a name="l230" style="background-color: #ffffff">     real (kind=real_kind) :: uv(np,np,2,nlev)                        ! spherical (u,v) velocity  vector        </a>
+   231) <a name="l231" style="background-color: #ffffff">     real (kind=real_kind) :: psi(np,np,nlev)                         ! (ht+hs)*metdet(G)</a>
+   232) <a name="l232" style="background-color: #ffffff">     real (kind=real_kind) :: ht(np,np,nlev)                          ! height variable     </a>
+   233) <a name="l233" style="background-color: #ffffff">     real (kind=real_kind) :: hs(np,np,nlev)                          ! mountain height</a>
+   234) <a name="l234" style="background-color: #ffffff">#endif</a>
+   235) <a name="l235" style="background-color: #ffffff"></a>
+   236) <a name="l236" style="background-color: #ffffff">  end type elem_state_t</a>
+   237) <a name="l237" style="background-color: #ffffff"></a>
+   238) <a name="l238" style="background-color: #ffffff">  !___________________________________________________________________</a>
+   239) <a name="l239" style="background-color: #ffffff">  type, public :: derived_state_t</a>
+   240) <a name="l240" style="background-color: #ffffff">     real (kind=real_kind) :: vstar(np,np,2,nlev)                     ! velocity on Lagrangian surfaces</a>
+   241) <a name="l241" style="background-color: #ffffff">  end type derived_state_t</a>
+   242) <a name="l242" style="background-color: #ffffff"></a>
+   243) <a name="l243" style="background-color: #ffffff">#endif</a>
+   244) <a name="l244" style="background-color: #ffffff"></a>
+   245) <a name="l245" style="background-color: #ffffff">! ============= DATA-STRUCTURES COMMON TO ALL SOLVERS ================</a>
+   246) <a name="l246" style="background-color: #ffffff"></a>
+   247) <a name="l247" style="background-color: #ffffff">  type, public :: index_t</a>
+   248) <a name="l248" style="background-color: #ffffff">     integer(kind=int_kind) :: ia(npsq),ja(npsq)</a>
+   249) <a name="l249" style="background-color: #ffffff">     integer(kind=int_kind) :: is,ie</a>
+   250) <a name="l250" style="background-color: #ffffff">     integer(kind=int_kind) :: NumUniquePts</a>
+   251) <a name="l251" style="background-color: #ffffff">     integer(kind=int_kind) :: UniquePtOffset</a>
+   252) <a name="l252" style="background-color: #ffffff">  end type index_t</a>
+   253) <a name="l253" style="background-color: #ffffff"></a>
+   254) <a name="l254" style="background-color: #ffffff">  !___________________________________________________________________</a>
+   255) <a name="l255" style="background-color: #ffffff">  type, public :: element_t</a>
+   256) <a name="l256" style="background-color: #ffffff">     integer(kind=int_kind) :: LocalId</a>
+   257) <a name="l257" style="background-color: #ffffff">     integer(kind=int_kind) :: GlobalId</a>
+   258) <a name="l258" style="background-color: #ffffff"></a>
+   259) <a name="l259" style="background-color: #ffffff">     ! Coordinate values of element points</a>
+   260) <a name="l260" style="background-color: #ffffff">     type (spherical_polar_t) :: spherep(np,np)                       ! Spherical coords of GLL points</a>
+   261) <a name="l261" style="background-color: #ffffff"></a>
+   262) <a name="l262" style="background-color: #ffffff">     ! Equ-angular gnomonic projection coordinates</a>
+   263) <a name="l263" style="background-color: #ffffff">     type (cartesian2D_t)     :: cartp(np,np)                         ! gnomonic coords of GLL points </a>
+   264) <a name="l264" style="background-color: #ffffff">     type (cartesian2D_t)     :: corners(4)                           ! gnomonic coords of element corners</a>
+   265) <a name="l265" style="background-color: #ffffff">     real (kind=real_kind)    :: u2qmap(4,2)                          ! bilinear map from ref element to quad in cubedsphere coordinates</a>
+   266) <a name="l266" style="background-color: #ffffff">                                                                      ! SHOULD BE REMOVED</a>
+   267) <a name="l267" style="background-color: #ffffff">     ! 3D cartesian coordinates</a>
+   268) <a name="l268" style="background-color: #ffffff">     type (cartesian3D_t)     :: corners3D(4)  </a>
+   269) <a name="l269" style="background-color: #ffffff"></a>
+   270) <a name="l270" style="background-color: #ffffff">     ! Element diagnostics</a>
+   271) <a name="l271" style="background-color: #ffffff">     real (kind=real_kind)    :: area                                 ! Area of element</a>
+   272) <a name="l272" style="background-color: #ffffff">     real (kind=real_kind)    :: max_eig                              ! max singular value of metinv</a>
+   273) <a name="l273" style="background-color: #ffffff">     real (kind=real_kind)    :: min_eig                              ! min singular value of metinv</a>
+   274) <a name="l274" style="background-color: #ffffff">     real (kind=real_kind)    :: max_eig_ratio                        ! max ratio of singular values</a>
+   275) <a name="l275" style="background-color: #ffffff">     real (kind=real_kind)    :: dx_short                             ! short length scale</a>
+   276) <a name="l276" style="background-color: #ffffff">     real (kind=real_kind)    :: dx_long                              ! long length scale</a>
+   277) <a name="l277" style="background-color: #ffffff"></a>
+   278) <a name="l278" style="background-color: #ffffff">     real (kind=real_kind)    :: variable_hyperviscosity(np,np)       ! hyperviscosity based on above</a>
+   279) <a name="l279" style="background-color: #ffffff">     real (kind=real_kind)    :: hv_courant                           ! hyperviscosity courant number</a>
+   280) <a name="l280" style="background-color: #ffffff">     real (kind=real_kind)    :: tensorVisc(2,2,np,np)                !og, matrix V for tensor viscosity</a>
+   281) <a name="l281" style="background-color: #ffffff"></a>
+   282) <a name="l282" style="background-color: #ffffff">     ! Edge connectivity information</a>
+   283) <a name="l283" style="background-color: #ffffff">     integer(kind=int_kind)   :: node_numbers(4)</a>
+   284) <a name="l284" style="background-color: #ffffff">     integer(kind=int_kind)   :: node_multiplicity(4)                 ! number of elements sharing corner node</a>
+   285) <a name="l285" style="background-color: #ffffff"></a>
+   286) <a name="l286" style="background-color: #ffffff">     type (GridVertex_t)      :: vertex                               ! element grid vertex information</a>
+   287) <a name="l287" style="background-color: #ffffff">     type (EdgeDescriptor_t)  :: desc</a>
+   288) <a name="l288" style="background-color: #ffffff"></a>
+   289) <a name="l289" style="background-color: #ffffff">     type (elem_state_t)      :: state</a>
+   290) <a name="l290" style="background-color: #ffffff"></a>
+   291) <a name="l291" style="background-color: #ffffff">     type (derived_state_t)   :: derived</a>
+   292) <a name="l292" style="background-color: #ffffff">#if defined _PRIM || defined _PRIMDG</a>
+   293) <a name="l293" style="background-color: #ffffff">     type (elem_accum_t)       :: accum</a>
+   294) <a name="l294" style="background-color: #ffffff">#endif</a>
+   295) <a name="l295" style="background-color: #ffffff">     ! Metric terms </a>
+   296) <a name="l296" style="background-color: #ffffff">     real (kind=real_kind)    :: met(2,2,np,np)                       ! metric tensor on velocity and pressure grid</a>
+   297) <a name="l297" style="background-color: #ffffff">     real (kind=real_kind)    :: metinv(2,2,np,np)                    ! metric tensor on velocity and pressure grid</a>
+   298) <a name="l298" style="background-color: #ffffff">     real (kind=real_kind)    :: metdet(np,np)                        ! g = SQRT(det(g_ij)) on velocity and pressure grid</a>
+   299) <a name="l299" style="background-color: #ffffff">     real (kind=real_kind)    :: rmetdet(np,np)                       ! 1/metdet on velocity pressure grid</a>
+   300) <a name="l300" style="background-color: #ffffff">     real (kind=real_kind)    :: D(2,2,np,np)                         ! Map covariant field on cube to vector field on the sphere</a>
+   301) <a name="l301" style="background-color: #ffffff">     real (kind=real_kind)    :: Dinv(2,2,np,np)                      ! Map vector field on the sphere to covariant v on cube</a>
+   302) <a name="l302" style="background-color: #ffffff"></a>
+   303) <a name="l303" style="background-color: #ffffff">     ! Convert vector fields from spherical to rectangular components</a>
+   304) <a name="l304" style="background-color: #ffffff">     ! The transpose of this operation is its pseudoinverse.</a>
+   305) <a name="l305" style="background-color: #ffffff">     real (kind=real_kind)    :: vec_sphere2cart(np,np,3,2)</a>
+   306) <a name="l306" style="background-color: #ffffff"></a>
+   307) <a name="l307" style="background-color: #ffffff">     ! Mass matrix terms for an element on a cube face</a>
+   308) <a name="l308" style="background-color: #ffffff">     real (kind=real_kind)    :: mp(np,np)                            ! mass matrix on v and p grid</a>
+   309) <a name="l309" style="background-color: #ffffff">     real (kind=real_kind)    :: rmp(np,np)                           ! inverse mass matrix on v and p grid</a>
+   310) <a name="l310" style="background-color: #ffffff"></a>
+   311) <a name="l311" style="background-color: #ffffff">     ! Mass matrix terms for an element on the sphere</a>
+   312) <a name="l312" style="background-color: #ffffff">     ! This mass matrix is used when solving the equations in weak form</a>
+   313) <a name="l313" style="background-color: #ffffff">     ! with the natural (surface area of the sphere) inner product</a>
+   314) <a name="l314" style="background-color: #ffffff">     real (kind=real_kind)    :: spheremp(np,np)                      ! mass matrix on v and p grid</a>
+   315) <a name="l315" style="background-color: #ffffff">     real (kind=real_kind)    :: rspheremp(np,np)                     ! inverse mass matrix on v and p grid</a>
+   316) <a name="l316" style="background-color: #ffffff"></a>
+   317) <a name="l317" style="background-color: #ffffff">     integer(kind=long_kind)  :: gdofP(np,np)                         ! global degree of freedom (P-grid)</a>
+   318) <a name="l318" style="background-color: #ffffff"></a>
+   319) <a name="l319" style="background-color: #ffffff">     real (kind=real_kind)    :: fcor(np,np)                          ! Coreolis term</a>
+   320) <a name="l320" style="background-color: #ffffff"></a>
+   321) <a name="l321" style="background-color: #ffffff">     type (index_t) :: idxP</a>
+   322) <a name="l322" style="background-color: #ffffff">     type (index_t),pointer :: idxV</a>
+   323) <a name="l323" style="background-color: #ffffff">     integer :: FaceNum</a>
+   324) <a name="l324" style="background-color: #ffffff"></a>
+   325) <a name="l325" style="background-color: #ffffff">     ! force element_t to be a multiple of 8 bytes.  </a>
+   326) <a name="l326" style="background-color: #ffffff">     ! on BGP, code will crash (signal 7, or signal 15) if 8 byte alignment is off</a>
+   327) <a name="l327" style="background-color: #ffffff">     ! check core file for:</a>
+   328) <a name="l328" style="background-color: #ffffff">     ! core.63:Generated by interrupt..(Alignment Exception DEAR=0xa1ef671c ESR=0x01800000 CCR0=0x4800a002)</a>
+   329) <a name="l329" style="background-color: #ffffff">     integer :: dummy</a>
+   330) <a name="l330" style="background-color: #ffffff">  end type element_t</a>
+   331) <a name="l331" style="background-color: #ffffff"></a>
+   332) <a name="l332" style="background-color: #ffffff">  !___________________________________________________________________</a>
+   333) <a name="l333" style="background-color: #ffffff">  public :: element_coordinates</a>
+   334) <a name="l334" style="background-color: #ffffff">  public :: element_var_coordinates</a>
+   335) <a name="l335" style="background-color: #ffffff">  public :: element_var_coordinates3D</a>
+   336) <a name="l336" style="background-color: #ffffff">  public :: GetColumnIdP,GetColumnIdV</a>
+   337) <a name="l337" style="background-color: #ffffff">  public :: allocate_element_desc</a>
+   338) <a name="l338" style="background-color: #ffffff"></a>
+   339) <a name="l339" style="background-color: #ffffff">contains</a>
+   340) <a name="l340" style="background-color: #ffffff"></a>
+   341) <a name="l341" style="background-color: #ffffff">! ===================== ELEMENT_MOD METHODS ==========================</a>
+   342) <a name="l342" style="background-color: #ffffff"></a>
+   343) <a name="l343" style="background-color: #ffffff">  function </a><a style="background-color: #ffcccc">GetColumnIdP(elem,i,j) result(col_id)</a>
+   344) <a name="l344" style="background-color: #ffcccc"></a>
+   345) <a name="l345" style="background-color: #ffcccc">    ! Get unique identifier for a Physics column on the P-grid</a>
+   346) <a name="l346" style="background-color: #ffcccc"></a>
+   347) <a name="l347" style="background-color: #ffcccc">    type(element_t), intent(in) :: elem</a>
+   348) <a name="l348" style="background-color: #ffcccc">    integer, intent(in) :: i,j</a>
+   349) <a name="l349" style="background-color: #ffcccc">    integer :: col_id</a>
+   350) <a name="l350" style="background-color: #ffcccc">    col_id = elem%gdofP(i,j)</a>
+   351) <a name="l351" style="background-color: #ffcccc">  end function GetColumnIdP</a>
+   352) <a name="l352" style="background-color: #ffffff"></a>
+   353) <a name="l353" style="background-color: #ffffff">  !___________________________________________________________________</a>
+   354) <a name="l354" style="background-color: #ffffff">  function </a><a style="background-color: #ffcccc">GetColumnIdV(elem,i,j) result(col_id)</a>
+   355) <a name="l355" style="background-color: #ffcccc"></a>
+   356) <a name="l356" style="background-color: #ffcccc">    !  Get unique identifier for a Physics column on the V-grid</a>
+   357) <a name="l357" style="background-color: #ffcccc"></a>
+   358) <a name="l358" style="background-color: #ffcccc">    type(element_t), intent(in) :: elem</a>
+   359) <a name="l359" style="background-color: #ffcccc">    integer, intent(in) :: i,j</a>
+   360) <a name="l360" style="background-color: #ffcccc">    integer :: col_id</a>
+   361) <a name="l361" style="background-color: #ffcccc">    col_id = elem%gdofP(i,j)</a>
+   362) <a name="l362" style="background-color: #ffcccc">  end function GetColumnIdV</a>
+   363) <a name="l363" style="background-color: #ffffff"></a>
+   364) <a name="l364" style="background-color: #ffffff">  !___________________________________________________________________</a>
+   365) <a name="l365" style="background-color: #ffffff">  function </a><a style="background-color: #ffcccc">element_coordinates(start,end,points) result(cart)</a>
+   366) <a name="l366" style="background-color: #ffcccc"></a>
+   367) <a name="l367" style="background-color: #ffcccc">    ! Initialize 2D rectilinear element colocation points</a>
+   368) <a name="l368" style="background-color: #ffcccc"></a>
+   369) <a name="l369" style="background-color: #ffcccc">    use kinds, only : longdouble_kind</a>
+   370) <a name="l370" style="background-color: #ffcccc">    type (cartesian2D_t), intent(in) :: start</a>
+   371) <a name="l371" style="background-color: #ffcccc">    type (cartesian2D_t), intent(in) :: end</a>
+   372) <a name="l372" style="background-color: #ffcccc">    real (kind=longdouble_kind), intent(in) :: points(:)</a>
+   373) <a name="l373" style="background-color: #ffcccc"></a>
+   374) <a name="l374" style="background-color: #ffcccc">    type (cartesian2D_t) :: cart(SIZE(points),SIZE(points))</a>
+   375) <a name="l375" style="background-color: #ffcccc">    type (cartesian2D_t) :: length, centroid</a>
+   376) <a name="l376" style="background-color: #ffcccc">    real (kind=longdouble_kind) :: y </a>
+   377) <a name="l377" style="background-color: #ffcccc">    integer i,j</a>
+   378) <a name="l378" style="background-color: #ffcccc"></a>
+   379) <a name="l379" style="background-color: #ffcccc">    length%x   = 0.50D0*(end%x-start%x)</a>
+   380) <a name="l380" style="background-color: #ffcccc">    length%y   = 0.50D0*(end%y-start%y)</a>
+   381) <a name="l381" style="background-color: #ffcccc">    centroid%x = 0.50D0*(end%x+start%x) </a>
+   382) <a name="l382" style="background-color: #ffcccc">    centroid%y = 0.50D0*(end%y+start%y) </a>
+   383) <a name="l383" style="background-color: #ffcccc">    do j=1,SIZE(points)</a>
+   384) <a name="l384" style="background-color: #ffcccc">       y = centroid%y + length%y*points(j)</a>
+   385) <a name="l385" style="background-color: #ffcccc">       do i=1,SIZE(points)</a>
+   386) <a name="l386" style="background-color: #ffcccc">          cart(i,j)%x = centroid%x + length%x*points(i)</a>
+   387) <a name="l387" style="background-color: #ffcccc">          cart(i,j)%y = y</a>
+   388) <a name="l388" style="background-color: #ffcccc">       end do</a>
+   389) <a name="l389" style="background-color: #ffcccc">    end do</a>
+   390) <a name="l390" style="background-color: #ffcccc">  end function element_coordinates</a>
+   391) <a name="l391" style="background-color: #ffffff"></a>
+   392) <a name="l392" style="background-color: #ffffff">  !___________________________________________________________________</a>
+   393) <a name="l393" style="background-color: #ffffff">  function element_var_coordinates(c,points) result(cart)</a>
+   394) <a name="l394" style="background-color: #ffffff"></a>
+   395) <a name="l395" style="background-color: #ffffff">    use kinds, only : longdouble_kind</a>
+   396) <a name="l396" style="background-color: #ffffff">    type (cartesian2D_t), intent(in) :: c(4)</a>
+   397) <a name="l397" style="background-color: #ffffff">    real (kind=longdouble_kind), intent(in) :: points(:)</a>
+   398) <a name="l398" style="background-color: #ffffff">    type (cartesian2D_t) :: cart(SIZE(points),SIZE(points))</a>
+   399) <a name="l399" style="background-color: #ffffff"></a>
+   400) <a name="l400" style="background-color: #ffffff">    real (kind=longdouble_kind) :: p(size(points))</a>
+   401) <a name="l401" style="background-color: #ffffff">    real (kind=longdouble_kind) :: q(size(points))</a>
+   402) <a name="l402" style="background-color: #ffffff">    integer i,j</a>
+   403) <a name="l403" style="background-color: #ffffff"></a>
+   404) <a name="l404" style="background-color: #ffffff">    p(:) = (1.0D0-points(:))/2.0D0</a>
+   405) <a name="l405" style="background-color: #ffffff">    q(:) = (1.0D0+points(:))/2.0D0</a>
+   406) <a name="l406" style="background-color: #ffffff"></a>
+   407) <a name="l407" style="background-color: #ffffff">    do j=1,SIZE(points)</a>
+   408) <a name="l408" style="background-color: #ffffff">       do i=1,SIZE(points)</a>
+   409) <a name="l409" style="background-color: #ffffff">          cart(i,j)%x = p(i)*p(j)*c(1)%x &amp;</a>
+   410) <a name="l410" style="background-color: #ffffff">                      + q(i)*p(j)*c(2)%x &amp;</a>
+   411) <a name="l411" style="background-color: #ffffff">                      + q(i)*q(j)*c(3)%x &amp;</a>
+   412) <a name="l412" style="background-color: #ffffff">                      + p(i)*q(j)*c(4)%x </a>
+   413) <a name="l413" style="background-color: #ffffff">          cart(i,j)%y = p(i)*p(j)*c(1)%y &amp;</a>
+   414) <a name="l414" style="background-color: #ffffff">                      + q(i)*p(j)*c(2)%y &amp;</a>
+   415) <a name="l415" style="background-color: #ffffff">                      + q(i)*q(j)*c(3)%y &amp;</a>
+   416) <a name="l416" style="background-color: #ffffff">                      + p(i)*q(j)*c(4)%y </a>
+   417) <a name="l417" style="background-color: #ffffff">       end do</a>
+   418) <a name="l418" style="background-color: #ffffff">    end do</a>
+   419) <a name="l419" style="background-color: #ffffff">  end function element_var_coordinates</a>
+   420) <a name="l420" style="background-color: #ffffff"></a>
+   421) <a name="l421" style="background-color: #ffffff">  !___________________________________________________________________</a>
+   422) <a name="l422" style="background-color: #ffffff">  function </a><a style="background-color: #ffcccc">element_var_coordinates3d(c,points) result(cart)</a>
+   423) <a name="l423" style="background-color: #ffcccc"></a>
+   424) <a name="l424" style="background-color: #ffcccc">    use kinds, only : longdouble_kind</a>
+   425) <a name="l425" style="background-color: #ffcccc">    type (cartesian3D_t), intent(in) :: c(4)</a>
+   426) <a name="l426" style="background-color: #ffcccc">    real (kind=longdouble_kind), intent(in) :: points(:)</a>
+   427) <a name="l427" style="background-color: #ffcccc">    type (cartesian3D_t) :: cart(SIZE(points),SIZE(points))</a>
+   428) <a name="l428" style="background-color: #ffcccc"></a>
+   429) <a name="l429" style="background-color: #ffcccc">    real (kind=longdouble_kind) :: p(size(points))</a>
+   430) <a name="l430" style="background-color: #ffcccc">    real (kind=longdouble_kind) :: q(size(points)),r</a>
+   431) <a name="l431" style="background-color: #ffcccc">    integer i,j</a>
+   432) <a name="l432" style="background-color: #ffcccc"></a>
+   433) <a name="l433" style="background-color: #ffcccc">    p(:) = (1.0D0-points(:))/2.0D0</a>
+   434) <a name="l434" style="background-color: #ffcccc">    q(:) = (1.0D0+points(:))/2.0D0</a>
+   435) <a name="l435" style="background-color: #ffcccc"></a>
+   436) <a name="l436" style="background-color: #ffcccc">    do j=1,SIZE(points)</a>
+   437) <a name="l437" style="background-color: #ffcccc">       do i=1,SIZE(points)</a>
+   438) <a name="l438" style="background-color: #ffcccc">          cart(i,j)%x = p(i)*p(j)*c(1)%x &amp;</a>
+   439) <a name="l439" style="background-color: #ffcccc">                      + q(i)*p(j)*c(2)%x &amp;</a>
+   440) <a name="l440" style="background-color: #ffcccc">                      + q(i)*q(j)*c(3)%x &amp;</a>
+   441) <a name="l441" style="background-color: #ffcccc">                      + p(i)*q(j)*c(4)%x </a>
+   442) <a name="l442" style="background-color: #ffcccc">          cart(i,j)%y = p(i)*p(j)*c(1)%y &amp;</a>
+   443) <a name="l443" style="background-color: #ffcccc">                      + q(i)*p(j)*c(2)%y &amp;</a>
+   444) <a name="l444" style="background-color: #ffcccc">                      + q(i)*q(j)*c(3)%y &amp;</a>
+   445) <a name="l445" style="background-color: #ffcccc">                      + p(i)*q(j)*c(4)%y </a>
+   446) <a name="l446" style="background-color: #ffcccc">          cart(i,j)%z = p(i)*p(j)*c(1)%z &amp;</a>
+   447) <a name="l447" style="background-color: #ffcccc">                      + q(i)*p(j)*c(2)%z &amp;</a>
+   448) <a name="l448" style="background-color: #ffcccc">                      + q(i)*q(j)*c(3)%z &amp;</a>
+   449) <a name="l449" style="background-color: #ffcccc">                      + p(i)*q(j)*c(4)%z </a>
+   450) <a name="l450" style="background-color: #ffcccc"></a>
+   451) <a name="l451" style="background-color: #ffcccc">          ! project back to sphere:</a>
+   452) <a name="l452" style="background-color: #ffcccc">          r = distance(cart(i,j))</a>
+   453) <a name="l453" style="background-color: #ffcccc">          cart(i,j)%x = cart(i,j)%x/r</a>
+   454) <a name="l454" style="background-color: #ffcccc">          cart(i,j)%y = cart(i,j)%y/r</a>
+   455) <a name="l455" style="background-color: #ffcccc">          cart(i,j)%z = cart(i,j)%z/r</a>
+   456) <a name="l456" style="background-color: #ffcccc">       end do</a>
+   457) <a name="l457" style="background-color: #ffcccc">    end do</a>
+   458) <a name="l458" style="background-color: #ffcccc">  end function element_var_coordinates3d</a>
+   459) <a name="l459" style="background-color: #ffffff"></a>
+   460) <a name="l460" style="background-color: #ffffff">  !___________________________________________________________________</a>
+   461) <a name="l461" style="background-color: #ffffff">  subroutine allocate_element_desc(elem)</a>
+   462) <a name="l462" style="background-color: #ffffff"></a>
+   463) <a name="l463" style="background-color: #ffffff">    type (element_t), intent(inout)   :: elem(:)</a>
+   464) <a name="l464" style="background-color: #ffffff">    integer                           :: num, j,i</a>
+   465) <a name="l465" style="background-color: #ffffff"></a>
+   466) <a name="l466" style="background-color: #ffffff">    num = SIZE(elem)</a>
+   467) <a name="l467" style="background-color: #ffffff">    </a>
+   468) <a name="l468" style="background-color: #ffffff">    do j=1,num</a>
+   469) <a name="l469" style="background-color: #fafad2">       allocate(elem(j)%desc%putmapP(max_neigh_edges))</a>
+   470) <a name="l470" style="background-color: #fafad2">       allocate(elem(j)%desc%getmapP(max_neigh_edges))</a>
+   471) <a name="l471" style="background-color: #fafad2">       allocate(elem(j)%desc%putmapP_ghost(max_neigh_edges))</a>
+   472) <a name="l472" style="background-color: #fafad2">       allocate(elem(j)%desc%getmapP_ghost(max_neigh_edges))</a>
+   473) <a name="l473" style="background-color: #fafad2">       allocate(elem(j)%desc%reverse(max_neigh_edges))</a>
+   474) <a name="l474" style="background-color: #fafad2">       allocate(elem(j)%desc%globalID(max_neigh_edges))</a>
+   475) <a name="l475" style="background-color: #fafad2">       allocate(elem(j)%desc%loc2buf(max_neigh_edges))</a>
+   476) <a name="l476" style="background-color: #ffffff">       do i=1,max_neigh_edges</a>
+   477) <a name="l477" style="background-color: #ffffff">          elem(j)%desc%loc2buf(i)=i</a>
+   478) <a name="l478" style="background-color: #ffffff">          elem(j)%desc%globalID(i)=-1</a>
+   479) <a name="l479" style="background-color: #ffffff">       enddo</a>
+   480) <a name="l480" style="background-color: #ffffff">       </a>
+   481) <a name="l481" style="background-color: #ffffff">    end do</a>
+   482) <a name="l482" style="background-color: #ffffff">  end subroutine allocate_element_desc</a>
+   483) <a name="l483" style="background-color: #ffffff"></a>
+   484) <a name="l484" style="background-color: #ffffff"></a>
+   485) <a name="l485" style="background-color: #ffffff">end module element_mod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

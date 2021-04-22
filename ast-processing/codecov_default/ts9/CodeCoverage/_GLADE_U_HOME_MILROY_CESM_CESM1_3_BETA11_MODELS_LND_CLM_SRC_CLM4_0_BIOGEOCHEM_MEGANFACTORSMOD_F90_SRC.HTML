@@ -1,0 +1,350 @@
+<html>
+<head>
+<title>Listing of MEGANFactorsMod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;MEGANFactorsMod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module MEGANFactorsMod</a>
+     2) <a name="l2" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     3) <a name="l3" style="background-color: #ffffff">!BOP</a>
+     4) <a name="l4" style="background-color: #ffffff">!</a>
+     5) <a name="l5" style="background-color: #ffffff">! !MODULE: MEGANFactorsMod</a>
+     6) <a name="l6" style="background-color: #ffffff">!</a>
+     7) <a name="l7" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     8) <a name="l8" style="background-color: #ffffff">! Manages input of MEGAN emissions factors from netCDF file</a>
+     9) <a name="l9" style="background-color: #ffffff">!</a>
+    10) <a name="l10" style="background-color: #ffffff">! !USES:</a>
+    11) <a name="l11" style="background-color: #ffffff">  use shr_kind_mod, only : r8 =&gt; shr_kind_r8</a>
+    12) <a name="l12" style="background-color: #ffffff">  use abortutils,   only : endrun</a>
+    13) <a name="l13" style="background-color: #ffffff">  use clm_varctl,   only : iulog</a>
+    14) <a name="l14" style="background-color: #ffffff">!</a>
+    15) <a name="l15" style="background-color: #ffffff">  implicit none</a>
+    16) <a name="l16" style="background-color: #ffffff">  private</a>
+    17) <a name="l17" style="background-color: #ffffff">  save</a>
+    18) <a name="l18" style="background-color: #ffffff">!</a>
+    19) <a name="l19" style="background-color: #ffffff">! !PUBLIC MEMBERS:</a>
+    20) <a name="l20" style="background-color: #ffffff">  public :: megan_factors_init</a>
+    21) <a name="l21" style="background-color: #ffffff">  public :: megan_factors_get</a>
+    22) <a name="l22" style="background-color: #ffffff">  public :: comp_names</a>
+    23) <a name="l23" style="background-color: #ffffff">!</a>
+    24) <a name="l24" style="background-color: #ffffff">! !PUBLIC DATA:</a>
+    25) <a name="l25" style="background-color: #ffffff">  real(r8), public, allocatable :: LDF(:)  ! light dependent fraction</a>
+    26) <a name="l26" style="background-color: #ffffff">  real(r8), public, allocatable :: Agro(:) ! growing leaf age factor</a>
+    27) <a name="l27" style="background-color: #ffffff">  real(r8), public, allocatable :: Amat(:) ! mature leaf age factor</a>
+    28) <a name="l28" style="background-color: #ffffff">  real(r8), public, allocatable :: Anew(:) ! new leaf age factor</a>
+    29) <a name="l29" style="background-color: #ffffff">  real(r8), public, allocatable :: Aold(:) ! old leaf age factor</a>
+    30) <a name="l30" style="background-color: #ffffff">  real(r8), public, allocatable :: betaT(:)! temperature factor</a>
+    31) <a name="l31" style="background-color: #ffffff">  real(r8), public, allocatable :: ct1(:)  ! temperature coefficient 1</a>
+    32) <a name="l32" style="background-color: #ffffff">  real(r8), public, allocatable :: ct2(:)  ! temperature coefficient 2</a>
+    33) <a name="l33" style="background-color: #ffffff">  real(r8), public, allocatable :: Ceo(:)  ! Eopt coefficient</a>
+    34) <a name="l34" style="background-color: #ffffff">!</a>
+    35) <a name="l35" style="background-color: #ffffff">! !PRIVATE MEMBERS:</a>
+    36) <a name="l36" style="background-color: #ffffff">  integer :: npfts ! number of plant function types</a>
+    37) <a name="l37" style="background-color: #ffffff">!</a>
+    38) <a name="l38" style="background-color: #ffffff">  type emis_eff_t</a>
+    39) <a name="l39" style="background-color: #ffffff">     real(r8), pointer :: eff(:) ! emissions efficiency factor</a>
+    40) <a name="l40" style="background-color: #ffffff">     real(r8) :: wght            ! molecular weight</a>
+    41) <a name="l41" style="background-color: #ffffff">     integer :: class_num        ! MEGAN class number</a>
+    42) <a name="l42" style="background-color: #ffffff">  endtype emis_eff_t</a>
+    43) <a name="l43" style="background-color: #ffffff">!</a>
+    44) <a name="l44" style="background-color: #ffffff">  type(emis_eff_t), pointer :: comp_factors_table(:)  ! hash table of MEGAN factors (points to an array of pointers)</a>
+    45) <a name="l45" style="background-color: #ffffff">  integer, pointer :: hash_table_indices(:)           ! pointer to hash table indices</a>
+    46) <a name="l46" style="background-color: #ffffff">  integer, parameter :: tbl_hash_sz = 2**16           ! hash table size</a>
+    47) <a name="l47" style="background-color: #ffffff">!</a>
+    48) <a name="l48" style="background-color: #ffffff">  character(len=32), allocatable :: comp_names(:)     ! MEGAN compound names</a>
+    49) <a name="l49" style="background-color: #ffffff">  real(r8),          allocatable :: comp_molecwghts(:)! MEGAN compound molecular weights</a>
+    50) <a name="l50" style="background-color: #ffffff">!</a>
+    51) <a name="l51" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    52) <a name="l52" style="background-color: #ffffff">!  28 Oct 2011: Created by Francis Vitt</a>
+    53) <a name="l53" style="background-color: #ffffff">!</a>
+    54) <a name="l54" style="background-color: #ffffff">!EOP</a>
+    55) <a name="l55" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    56) <a name="l56" style="background-color: #ffffff">contains</a>
+    57) <a name="l57" style="background-color: #ffffff"></a>
+    58) <a name="l58" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    59) <a name="l59" style="background-color: #ffffff">!BOP</a>
+    60) <a name="l60" style="background-color: #ffffff">!</a>
+    61) <a name="l61" style="background-color: #ffffff">! !IROUTINE: megan_factors_get</a>
+    62) <a name="l62" style="background-color: #ffffff">!</a>
+    63) <a name="l63" style="background-color: #ffffff">! !INTERFACE:</a>
+    64) <a name="l64" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">megan_factors_get( comp_name, factors, class_n, molecwght )</a>
+    65) <a name="l65" style="background-color: #ffcccc">!</a>
+    66) <a name="l66" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+    67) <a name="l67" style="background-color: #ffcccc">! Method for getting MEGAN information for a named compound </a>
+    68) <a name="l68" style="background-color: #ffcccc">!</a>
+    69) <a name="l69" style="background-color: #ffcccc">! !ARGUMENTS:</a>
+    70) <a name="l70" style="background-color: #ffcccc">    character(len=*),intent(in)  :: comp_name      ! MEGAN compound name</a>
+    71) <a name="l71" style="background-color: #ffcccc">    real(r8),        intent(out) :: factors(npfts) ! vegitation type factors for the compound of intrest</a>
+    72) <a name="l72" style="background-color: #ffcccc">    integer,         intent(out) :: class_n        ! MEGAN class number for the compound of intrest</a>
+    73) <a name="l73" style="background-color: #ffcccc">    real(r8),        intent(out) :: molecwght      ! molecular weight of the compound of intrest</a>
+    74) <a name="l74" style="background-color: #ffcccc">!</a>
+    75) <a name="l75" style="background-color: #ffcccc">!EOP</a>
+    76) <a name="l76" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+    77) <a name="l77" style="background-color: #ffcccc">! local vars:</a>
+    78) <a name="l78" style="background-color: #ffcccc">    integer :: hashkey, ndx</a>
+    79) <a name="l79" style="background-color: #ffcccc">    character(len=120) :: errmes</a>
+    80) <a name="l80" style="background-color: #ffcccc"></a>
+    81) <a name="l81" style="background-color: #ffcccc">    hashkey = gen_hashkey(comp_name)</a>
+    82) <a name="l82" style="background-color: #ffcccc">    ndx = hash_table_indices(hashkey)</a>
+    83) <a name="l83" style="background-color: #ffcccc"></a>
+    84) <a name="l84" style="background-color: #ffcccc">    if (ndx&lt;1) then </a>
+    85) <a name="l85" style="background-color: #ffcccc">       errmes = 'megan_factors_get: '//trim(comp_name)//' compound not found in MEGAN table'</a>
+    86) <a name="l86" style="background-color: #ffcccc">        write(iulog,*) trim(errmes)</a>
+    87) <a name="l87" style="background-color: #ffcccc">       call endrun(errmes)</a>
+    88) <a name="l88" style="background-color: #ffcccc">    endif</a>
+    89) <a name="l89" style="background-color: #ffcccc"></a>
+    90) <a name="l90" style="background-color: #ffcccc">    factors(:) = comp_factors_table( ndx )%eff(:)</a>
+    91) <a name="l91" style="background-color: #ffcccc">    class_n    = comp_factors_table( ndx )%class_num</a>
+    92) <a name="l92" style="background-color: #ffcccc">    molecwght  = comp_factors_table( ndx )%wght</a>
+    93) <a name="l93" style="background-color: #ffcccc"></a>
+    94) <a name="l94" style="background-color: #ffcccc">  end subroutine megan_factors_get</a>
+    95) <a name="l95" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    96) <a name="l96" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    97) <a name="l97" style="background-color: #ffffff">!BOP</a>
+    98) <a name="l98" style="background-color: #ffffff">!</a>
+    99) <a name="l99" style="background-color: #ffffff">! !IROUTINE: megan_factors_init</a>
+   100) <a name="l100" style="background-color: #ffffff">!</a>
+   101) <a name="l101" style="background-color: #ffffff">! !INTERFACE:</a>
+   102) <a name="l102" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">megan_factors_init( filename )</a>
+   103) <a name="l103" style="background-color: #ffcccc">!</a>
+   104) <a name="l104" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+   105) <a name="l105" style="background-color: #ffcccc">! Initializes the MEGAN factors using data from input file </a>
+   106) <a name="l106" style="background-color: #ffcccc">!</a>
+   107) <a name="l107" style="background-color: #ffcccc">! !USES:</a>
+   108) <a name="l108" style="background-color: #ffcccc">    use ncdio_pio, only : ncd_pio_openfile,ncd_inqdlen</a>
+   109) <a name="l109" style="background-color: #ffcccc">    use pio, only : pio_inq_varid,pio_get_var,file_desc_t,pio_closefile</a>
+   110) <a name="l110" style="background-color: #ffcccc">    use fileutils   , only : getfil</a>
+   111) <a name="l111" style="background-color: #ffcccc">!</a>
+   112) <a name="l112" style="background-color: #ffcccc">! !ARGUMENTS:</a>
+   113) <a name="l113" style="background-color: #ffcccc">    character(len=*),intent(in) :: filename ! MEGAN factors input file</a>
+   114) <a name="l114" style="background-color: #ffcccc"></a>
+   115) <a name="l115" style="background-color: #ffcccc">!EOP</a>
+   116) <a name="l116" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   117) <a name="l117" style="background-color: #ffcccc">!</a>
+   118) <a name="l118" style="background-color: #ffcccc">    character(len=256) :: locfn           ! local file name</a>
+   119) <a name="l119" style="background-color: #ffcccc">    type(file_desc_t) :: ncid             ! netcdf id</a>
+   120) <a name="l120" style="background-color: #ffcccc"></a>
+   121) <a name="l121" style="background-color: #ffcccc">    integer :: start(2), count(2)</a>
+   122) <a name="l122" style="background-color: #ffcccc"></a>
+   123) <a name="l123" style="background-color: #ffcccc">    integer :: ierr, i, vid</a>
+   124) <a name="l124" style="background-color: #ffcccc">    integer :: dimid, n_comps, n_classes, n_pfts</a>
+   125) <a name="l125" style="background-color: #ffcccc">    integer :: class_ef_vid,comp_ef_vid,comp_name_vid,class_num_vid</a>
+   126) <a name="l126" style="background-color: #ffcccc">    integer :: comp_mw_vid</a>
+   127) <a name="l127" style="background-color: #ffcccc">    integer, allocatable :: class_nums(:)</a>
+   128) <a name="l128" style="background-color: #ffcccc"></a>
+   129) <a name="l129" style="background-color: #ffcccc">    real(r8),allocatable :: factors(:)</a>
+   130) <a name="l130" style="background-color: #ffcccc">    real(r8),allocatable :: comp_factors(:)</a>
+   131) <a name="l131" style="background-color: #ffcccc">    real(r8),allocatable :: class_factors(:)</a>
+   132) <a name="l132" style="background-color: #ffcccc"></a>
+   133) <a name="l133" style="background-color: #ffcccc">    allocate(comp_factors_table(150))</a>
+   134) <a name="l134" style="background-color: #ffcccc">    allocate(hash_table_indices(tbl_hash_sz))</a>
+   135) <a name="l135" style="background-color: #ffcccc"></a>
+   136) <a name="l136" style="background-color: #ffcccc"></a>
+   137) <a name="l137" style="background-color: #ffcccc">    call getfil(filename, locfn, 0)</a>
+   138) <a name="l138" style="background-color: #ffcccc">    call ncd_pio_openfile (ncid, trim(locfn), 0)</a>
+   139) <a name="l139" style="background-color: #ffcccc"></a>
+   140) <a name="l140" style="background-color: #ffcccc">    call ncd_inqdlen( ncid, dimid, n_comps, name='Comp_Num')</a>
+   141) <a name="l141" style="background-color: #ffcccc">    call ncd_inqdlen( ncid, dimid, n_classes, name='Class_Num')</a>
+   142) <a name="l142" style="background-color: #ffcccc">    call ncd_inqdlen( ncid, dimid, n_pfts, name='PFT_Num')</a>
+   143) <a name="l143" style="background-color: #ffcccc"></a>
+   144) <a name="l144" style="background-color: #ffcccc">    npfts = n_pfts</a>
+   145) <a name="l145" style="background-color: #ffcccc"></a>
+   146) <a name="l146" style="background-color: #ffcccc">    ierr = pio_inq_varid(ncid,'Class_EF', class_ef_vid)</a>
+   147) <a name="l147" style="background-color: #ffcccc">    ierr = pio_inq_varid(ncid,'Comp_EF',  comp_ef_vid)</a>
+   148) <a name="l148" style="background-color: #ffcccc">    ierr = pio_inq_varid(ncid,'Comp_Name',comp_name_vid)</a>
+   149) <a name="l149" style="background-color: #ffcccc">    ierr = pio_inq_varid(ncid,'Class_Num',class_num_vid)</a>
+   150) <a name="l150" style="background-color: #ffcccc">    ierr = pio_inq_varid(ncid,'Comp_MW',  comp_mw_vid)</a>
+   151) <a name="l151" style="background-color: #ffcccc"></a>
+   152) <a name="l152" style="background-color: #ffcccc">    allocate( factors(n_pfts) )</a>
+   153) <a name="l153" style="background-color: #ffcccc">    allocate( comp_factors(n_pfts) )</a>
+   154) <a name="l154" style="background-color: #ffcccc">    allocate( class_factors(n_pfts) )</a>
+   155) <a name="l155" style="background-color: #ffcccc"></a>
+   156) <a name="l156" style="background-color: #ffcccc">    allocate( comp_names(n_comps) )</a>
+   157) <a name="l157" style="background-color: #ffcccc">    allocate( comp_molecwghts(n_comps) )</a>
+   158) <a name="l158" style="background-color: #ffcccc">    allocate( class_nums(n_comps) )</a>
+   159) <a name="l159" style="background-color: #ffcccc"></a>
+   160) <a name="l160" style="background-color: #ffcccc">    ierr =  pio_get_var( ncid, comp_name_vid, comp_names ) </a>
+   161) <a name="l161" style="background-color: #ffcccc">    ierr =  pio_get_var( ncid, comp_mw_vid, comp_molecwghts ) </a>
+   162) <a name="l162" style="background-color: #ffcccc">    ierr =  pio_get_var( ncid, class_num_vid, class_nums )</a>
+   163) <a name="l163" style="background-color: #ffcccc"> </a>
+   164) <a name="l164" style="background-color: #ffcccc">    ! set up hash table where data is stored</a>
+   165) <a name="l165" style="background-color: #ffcccc">    call  bld_hash_table_indices( comp_names )</a>
+   166) <a name="l166" style="background-color: #ffcccc">    do i=1,n_comps</a>
+   167) <a name="l167" style="background-color: #ffcccc">       start=(/i,1/)</a>
+   168) <a name="l168" style="background-color: #ffcccc">       count=(/1,16/)</a>
+   169) <a name="l169" style="background-color: #ffcccc">       ierr = pio_get_var( ncid, comp_ef_vid,  start, count, comp_factors )</a>
+   170) <a name="l170" style="background-color: #ffcccc">       start=(/class_nums(i),1/)</a>
+   171) <a name="l171" style="background-color: #ffcccc">       ierr = pio_get_var( ncid, class_ef_vid, start, count, class_factors  )</a>
+   172) <a name="l172" style="background-color: #ffcccc">       factors(:) = comp_factors(:)*class_factors(:)</a>
+   173) <a name="l173" style="background-color: #ffcccc">       call enter_hash_data( trim(comp_names(i)), factors, class_nums(i), comp_molecwghts(i) )</a>
+   174) <a name="l174" style="background-color: #ffcccc">    enddo</a>
+   175) <a name="l175" style="background-color: #ffcccc"></a>
+   176) <a name="l176" style="background-color: #ffcccc">    allocate( LDF(n_classes) )</a>
+   177) <a name="l177" style="background-color: #ffcccc">    allocate( Agro(n_classes) )</a>
+   178) <a name="l178" style="background-color: #ffcccc">    allocate( Amat(n_classes) )</a>
+   179) <a name="l179" style="background-color: #ffcccc">    allocate( Anew(n_classes) )</a>
+   180) <a name="l180" style="background-color: #ffcccc">    allocate( Aold(n_classes) )</a>
+   181) <a name="l181" style="background-color: #ffcccc">    allocate( betaT(n_classes) )</a>
+   182) <a name="l182" style="background-color: #ffcccc">    allocate( ct1(n_classes) )</a>
+   183) <a name="l183" style="background-color: #ffcccc">    allocate( ct2(n_classes) )</a>
+   184) <a name="l184" style="background-color: #ffcccc">    allocate( Ceo(n_classes) )</a>
+   185) <a name="l185" style="background-color: #ffcccc"></a>
+   186) <a name="l186" style="background-color: #ffcccc">    ierr = pio_inq_varid(ncid,'LDF', vid)</a>
+   187) <a name="l187" style="background-color: #ffcccc">    ierr = pio_get_var( ncid, vid, LDF ) </a>
+   188) <a name="l188" style="background-color: #ffcccc"></a>
+   189) <a name="l189" style="background-color: #ffcccc">    ierr = pio_inq_varid(ncid,'Agro', vid)</a>
+   190) <a name="l190" style="background-color: #ffcccc">    ierr = pio_get_var( ncid, vid, Agro ) </a>
+   191) <a name="l191" style="background-color: #ffcccc"></a>
+   192) <a name="l192" style="background-color: #ffcccc">    ierr = pio_inq_varid(ncid,'Amat', vid)</a>
+   193) <a name="l193" style="background-color: #ffcccc">    ierr = pio_get_var( ncid, vid, Amat ) </a>
+   194) <a name="l194" style="background-color: #ffcccc"></a>
+   195) <a name="l195" style="background-color: #ffcccc">    ierr = pio_inq_varid(ncid,'Anew', vid)</a>
+   196) <a name="l196" style="background-color: #ffcccc">    ierr = pio_get_var( ncid, vid, Anew ) </a>
+   197) <a name="l197" style="background-color: #ffcccc"></a>
+   198) <a name="l198" style="background-color: #ffcccc">    ierr = pio_inq_varid(ncid,'Aold', vid)</a>
+   199) <a name="l199" style="background-color: #ffcccc">    ierr = pio_get_var( ncid, vid, Aold ) </a>
+   200) <a name="l200" style="background-color: #ffcccc"></a>
+   201) <a name="l201" style="background-color: #ffcccc">    ierr = pio_inq_varid(ncid,'betaT', vid)</a>
+   202) <a name="l202" style="background-color: #ffcccc">    ierr = pio_get_var( ncid, vid, betaT ) </a>
+   203) <a name="l203" style="background-color: #ffcccc"></a>
+   204) <a name="l204" style="background-color: #ffcccc">    ierr = pio_inq_varid(ncid,'ct1', vid)</a>
+   205) <a name="l205" style="background-color: #ffcccc">    ierr = pio_get_var( ncid, vid, ct1 ) </a>
+   206) <a name="l206" style="background-color: #ffcccc"></a>
+   207) <a name="l207" style="background-color: #ffcccc">    ierr = pio_inq_varid(ncid,'ct2', vid)</a>
+   208) <a name="l208" style="background-color: #ffcccc">    ierr = pio_get_var( ncid, vid, ct2 ) </a>
+   209) <a name="l209" style="background-color: #ffcccc"></a>
+   210) <a name="l210" style="background-color: #ffcccc">    ierr = pio_inq_varid(ncid,'Ceo', vid)</a>
+   211) <a name="l211" style="background-color: #ffcccc">    ierr = pio_get_var( ncid, vid, Ceo ) </a>
+   212) <a name="l212" style="background-color: #ffcccc"></a>
+   213) <a name="l213" style="background-color: #ffcccc">    call pio_closefile(ncid)</a>
+   214) <a name="l214" style="background-color: #ffcccc"></a>
+   215) <a name="l215" style="background-color: #ffcccc">    deallocate( class_nums, comp_factors,class_factors,factors )</a>
+   216) <a name="l216" style="background-color: #ffcccc"></a>
+   217) <a name="l217" style="background-color: #ffcccc">  endsubroutine megan_factors_init</a>
+   218) <a name="l218" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   219) <a name="l219" style="background-color: #ffffff"></a>
+   220) <a name="l220" style="background-color: #ffffff">  !-----------------------------------------------------------------------</a>
+   221) <a name="l221" style="background-color: #ffffff">  ! Private methods...</a>
+   222) <a name="l222" style="background-color: #ffffff"></a>
+   223) <a name="l223" style="background-color: #ffffff">  !-----------------------------------------------------------------------</a>
+   224) <a name="l224" style="background-color: #ffffff">  !-----------------------------------------------------------------------</a>
+   225) <a name="l225" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">bld_hash_table_indices( names )</a>
+   226) <a name="l226" style="background-color: #ffcccc">    character(len=*),intent(in) :: names(:)</a>
+   227) <a name="l227" style="background-color: #ffcccc"></a>
+   228) <a name="l228" style="background-color: #ffcccc">    integer :: n, i, hashkey</a>
+   229) <a name="l229" style="background-color: #ffcccc"></a>
+   230) <a name="l230" style="background-color: #ffcccc">    hash_table_indices(:) = 0</a>
+   231) <a name="l231" style="background-color: #ffcccc"></a>
+   232) <a name="l232" style="background-color: #ffcccc">    n = size(names)</a>
+   233) <a name="l233" style="background-color: #ffcccc">    do i=1,n</a>
+   234) <a name="l234" style="background-color: #ffcccc">       hashkey = gen_hashkey(names(i))</a>
+   235) <a name="l235" style="background-color: #ffcccc">       hash_table_indices(hashkey) = i</a>
+   236) <a name="l236" style="background-color: #ffcccc">    enddo</a>
+   237) <a name="l237" style="background-color: #ffcccc"></a>
+   238) <a name="l238" style="background-color: #ffcccc">  endsubroutine bld_hash_table_indices</a>
+   239) <a name="l239" style="background-color: #ffffff"></a>
+   240) <a name="l240" style="background-color: #ffffff">  !-----------------------------------------------------------------------</a>
+   241) <a name="l241" style="background-color: #ffffff">  !-----------------------------------------------------------------------</a>
+   242) <a name="l242" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">enter_hash_data( name, data, class_n, molec_wght )</a>
+   243) <a name="l243" style="background-color: #ffcccc">    character(len=*), intent(in) :: name</a>
+   244) <a name="l244" style="background-color: #ffcccc">    real(r8), intent(in) :: data(:)</a>
+   245) <a name="l245" style="background-color: #ffcccc">    integer,  intent(in) :: class_n</a>
+   246) <a name="l246" style="background-color: #ffcccc">    real(r8), intent(in) :: molec_wght</a>
+   247) <a name="l247" style="background-color: #ffcccc"></a>
+   248) <a name="l248" style="background-color: #ffcccc">    integer :: hashkey, ndx</a>
+   249) <a name="l249" style="background-color: #ffcccc">    integer :: nfactors</a>
+   250) <a name="l250" style="background-color: #ffcccc"></a>
+   251) <a name="l251" style="background-color: #ffcccc">    hashkey = gen_hashkey(name)</a>
+   252) <a name="l252" style="background-color: #ffcccc">    nfactors = size(data)</a>
+   253) <a name="l253" style="background-color: #ffcccc"></a>
+   254) <a name="l254" style="background-color: #ffcccc">    ndx = hash_table_indices(hashkey)</a>
+   255) <a name="l255" style="background-color: #ffcccc"></a>
+   256) <a name="l256" style="background-color: #ffcccc">    allocate (comp_factors_table(ndx)%eff(nfactors))</a>
+   257) <a name="l257" style="background-color: #ffcccc"></a>
+   258) <a name="l258" style="background-color: #ffcccc">    comp_factors_table(ndx)%eff(:) = data(:)</a>
+   259) <a name="l259" style="background-color: #ffcccc">    comp_factors_table(ndx)%class_num = class_n</a>
+   260) <a name="l260" style="background-color: #ffcccc">    comp_factors_table(ndx)%wght = molec_wght</a>
+   261) <a name="l261" style="background-color: #ffcccc"></a>
+   262) <a name="l262" style="background-color: #ffcccc">  end subroutine enter_hash_data</a>
+   263) <a name="l263" style="background-color: #ffffff"></a>
+   264) <a name="l264" style="background-color: #ffffff">  !-----------------------------------------------------------------------</a>
+   265) <a name="l265" style="background-color: #ffffff">  !from cam_history</a>
+   266) <a name="l266" style="background-color: #ffffff">  !</a>
+   267) <a name="l267" style="background-color: #ffffff">  ! Purpose: Generate a hash key on the interval [0 .. tbl_hash_sz-1]</a>
+   268) <a name="l268" style="background-color: #ffffff">  !          given a character string.</a>
+   269) <a name="l269" style="background-color: #ffffff">  !</a>
+   270) <a name="l270" style="background-color: #ffffff">  ! Algorithm is a variant of perl's internal hashing function.</a>
+   271) <a name="l271" style="background-color: #ffffff">  !</a>
+   272) <a name="l272" style="background-color: #ffffff">  !-----------------------------------------------------------------------</a>
+   273) <a name="l273" style="background-color: #ffffff">  integer function </a><a style="background-color: #ffcccc">gen_hashkey(string)</a>
+   274) <a name="l274" style="background-color: #ffcccc"></a>
+   275) <a name="l275" style="background-color: #ffcccc">    implicit none</a>
+   276) <a name="l276" style="background-color: #ffcccc">    !</a>
+   277) <a name="l277" style="background-color: #ffcccc">    !  Arguments:</a>
+   278) <a name="l278" style="background-color: #ffcccc">    !</a>
+   279) <a name="l279" style="background-color: #ffcccc">    character(len=*), intent(in) :: string</a>
+   280) <a name="l280" style="background-color: #ffcccc">    !</a>
+   281) <a name="l281" style="background-color: #ffcccc">    !  Local vars</a>
+   282) <a name="l282" style="background-color: #ffcccc">    !</a>
+   283) <a name="l283" style="background-color: #ffcccc">    integer :: hash</a>
+   284) <a name="l284" style="background-color: #ffcccc">    integer :: i</a>
+   285) <a name="l285" style="background-color: #ffcccc"></a>
+   286) <a name="l286" style="background-color: #ffcccc">    integer, parameter :: tbl_max_idx = 15  ! 2**N - 1</a>
+   287) <a name="l287" style="background-color: #ffcccc">    integer, parameter :: gen_hash_key_offset = z'000053db'</a>
+   288) <a name="l288" style="background-color: #ffcccc">    integer, dimension(0:tbl_max_idx) :: tbl_gen_hash_key =  (/61,59,53,47,43,41,37,31,29,23,17,13,11,7,3,1/)</a>
+   289) <a name="l289" style="background-color: #ffcccc"></a>
+   290) <a name="l290" style="background-color: #ffcccc">    hash = gen_hash_key_offset</a>
+   291) <a name="l291" style="background-color: #ffcccc"></a>
+   292) <a name="l292" style="background-color: #ffcccc">    if ( len(string) /= 19 ) then</a>
+   293) <a name="l293" style="background-color: #ffcccc">       !</a>
+   294) <a name="l294" style="background-color: #ffcccc">       ! Process arbitrary string length.</a>
+   295) <a name="l295" style="background-color: #ffcccc">       !</a>
+   296) <a name="l296" style="background-color: #ffcccc">       do i = 1, len(string)</a>
+   297) <a name="l297" style="background-color: #ffcccc">          hash = ieor(hash , (ichar(string(i:i)) * tbl_gen_hash_key(iand(i-1,tbl_max_idx))))</a>
+   298) <a name="l298" style="background-color: #ffcccc">       end do</a>
+   299) <a name="l299" style="background-color: #ffcccc">    else</a>
+   300) <a name="l300" style="background-color: #ffcccc">       !</a>
+   301) <a name="l301" style="background-color: #ffcccc">       ! Special case string length = 19</a>
+   302) <a name="l302" style="background-color: #ffcccc">       !</a>
+   303) <a name="l303" style="background-color: #ffcccc">       do i = 1, tbl_max_idx+1</a>
+   304) <a name="l304" style="background-color: #ffcccc">          hash = ieor(hash , ichar(string(i:i))   * tbl_gen_hash_key(i-1)) </a>
+   305) <a name="l305" style="background-color: #ffcccc">       end do</a>
+   306) <a name="l306" style="background-color: #ffcccc">       do i = tbl_max_idx+2, len(string)</a>
+   307) <a name="l307" style="background-color: #ffcccc">          hash = ieor(hash , ichar(string(i:i))   * tbl_gen_hash_key(i-tbl_max_idx-2)) </a>
+   308) <a name="l308" style="background-color: #ffcccc">       end do</a>
+   309) <a name="l309" style="background-color: #ffcccc">    end if</a>
+   310) <a name="l310" style="background-color: #ffcccc"></a>
+   311) <a name="l311" style="background-color: #ffcccc">    gen_hashkey = iand(hash, tbl_hash_sz-1)</a>
+   312) <a name="l312" style="background-color: #ffcccc"></a>
+   313) <a name="l313" style="background-color: #ffcccc">    return</a>
+   314) <a name="l314" style="background-color: #ffcccc"></a>
+   315) <a name="l315" style="background-color: #ffcccc">  end function gen_hashkey</a>
+   316) <a name="l316" style="background-color: #ffffff"></a>
+   317) <a name="l317" style="background-color: #ffffff">end module MEGANFactorsMod</a>
+   318) <a name="l318" style="background-color: #ffffff"></a>
+   319) <a name="l319" style="background-color: #ffffff"></a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

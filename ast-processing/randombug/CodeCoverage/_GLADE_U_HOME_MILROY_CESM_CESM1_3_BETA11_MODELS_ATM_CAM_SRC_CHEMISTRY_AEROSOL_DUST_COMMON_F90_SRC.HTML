@@ -1,0 +1,284 @@
+<html>
+<head>
+<title>Listing of dust_common.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;dust_common.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 74.19&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!=============================================================================</a>
+     2) <a name="l2" style="background-color: #ffffff">! Common dust module</a>
+     3) <a name="l3" style="background-color: #ffffff">!=============================================================================</a>
+     4) <a name="l4" style="background-color: #ffffff">module dust_common</a>
+     5) <a name="l5" style="background-color: #ffffff"></a>
+     6) <a name="l6" style="background-color: #ffffff">  use shr_kind_mod, only: r8 =&gt; shr_kind_r8, cl =&gt; shr_kind_cl</a>
+     7) <a name="l7" style="background-color: #ffffff">  use abortutils,   only: endrun</a>
+     8) <a name="l8" style="background-color: #ffffff">  use cam_logfile,  only: iulog</a>
+     9) <a name="l9" style="background-color: #ffffff"></a>
+    10) <a name="l10" style="background-color: #ffffff">  implicit none</a>
+    11) <a name="l11" style="background-color: #ffffff">  private</a>
+    12) <a name="l12" style="background-color: #ffffff"></a>
+    13) <a name="l13" style="background-color: #ffffff">  public :: dust_set_params</a>
+    14) <a name="l14" style="background-color: #ffffff"></a>
+    15) <a name="l15" style="background-color: #ffffff">contains</a>
+    16) <a name="l16" style="background-color: #ffffff"></a>
+    17) <a name="l17" style="background-color: #ffffff">  !=============================================================================</a>
+    18) <a name="l18" style="background-color: #ffffff">  !</a>
+    19) <a name="l19" style="background-color: #ffffff">  ! !DESCRIPTION: </a>
+    20) <a name="l20" style="background-color: #ffffff">  !</a>
+    21) <a name="l21" style="background-color: #ffffff">  ! Compute source efficiency factor from topography</a>
+    22) <a name="l22" style="background-color: #ffffff">  ! Initialize other variables used in subroutine Dust:</a>
+    23) <a name="l23" style="background-color: #ffffff">  ! ovr_src_snk_mss(m,n) and tmp1.</a>
+    24) <a name="l24" style="background-color: #ffffff">  ! Define particle diameter and density needed by atm model</a>
+    25) <a name="l25" style="background-color: #ffffff">  ! as well as by dry dep model</a>
+    26) <a name="l26" style="background-color: #ffffff">  ! Source: Paul Ginoux (for source efficiency factor)</a>
+    27) <a name="l27" style="background-color: #ffffff">  ! Modifications by C. Zender and later by S. Levis</a>
+    28) <a name="l28" style="background-color: #ffffff">  ! Rest of subroutine from C. Zender's dust model</a>
+    29) <a name="l29" style="background-color: #ffffff">  !=============================================================================</a>
+    30) <a name="l30" style="background-color: #ffffff">  subroutine dust_set_params( nbin, dmt_grd, dmt_vwr, stk_crc )</a>
+    31) <a name="l31" style="background-color: #ffffff"></a>
+    32) <a name="l32" style="background-color: #ffffff">    !</a>
+    33) <a name="l33" style="background-color: #ffffff">    ! !USES</a>
+    34) <a name="l34" style="background-color: #ffffff">    !</a>
+    35) <a name="l35" style="background-color: #ffffff">    use physconst,     only: pi,rair, gravit</a>
+    36) <a name="l36" style="background-color: #ffffff">    use mo_constants,  only: dust_density</a>
+    37) <a name="l37" style="background-color: #ffffff">    use infnan,        only: nan, assignment(=)</a>
+    38) <a name="l38" style="background-color: #ffffff"></a>
+    39) <a name="l39" style="background-color: #ffffff">    !</a>
+    40) <a name="l40" style="background-color: #ffffff">    ! !ARGUMENTS:</a>
+    41) <a name="l41" style="background-color: #ffffff">    !</a>
+    42) <a name="l42" style="background-color: #ffffff">    integer, intent(in)  :: nbin</a>
+    43) <a name="l43" style="background-color: #ffffff">    real(r8),intent(in)  :: dmt_grd(:)</a>
+    44) <a name="l44" style="background-color: #ffffff">    real(r8),intent(out) :: dmt_vwr(:)</a>
+    45) <a name="l45" style="background-color: #ffffff">    real(r8),intent(out) :: stk_crc(:)</a>
+    46) <a name="l46" style="background-color: #ffffff"></a>
+    47) <a name="l47" style="background-color: #ffffff">    !</a>
+    48) <a name="l48" style="background-color: #ffffff">    ! !REVISION HISTORY</a>
+    49) <a name="l49" style="background-color: #ffffff">    ! Created by Samual Levis</a>
+    50) <a name="l50" style="background-color: #ffffff">    ! Revised for CAM by Natalie Mahowald</a>
+    51) <a name="l51" style="background-color: #ffffff">    !EOP</a>
+    52) <a name="l52" style="background-color: #ffffff">    !------------------------------------------------------------------------</a>
+    53) <a name="l53" style="background-color: #ffffff"></a>
+    54) <a name="l54" style="background-color: #ffffff">    !------------------------------------------------------------------------</a>
+    55) <a name="l55" style="background-color: #ffffff">    !Local Variables</a>
+    56) <a name="l56" style="background-color: #ffffff">    integer, parameter:: dst_src_nbr =3</a>
+    57) <a name="l57" style="background-color: #ffffff">    integer, parameter:: sz_nbr =200</a>
+    58) <a name="l58" style="background-color: #ffffff"></a>
+    59) <a name="l59" style="background-color: #ffffff">    integer  :: m,n                     !indices</a>
+    60) <a name="l60" style="background-color: #ffffff">    real(r8) :: dmt_min(nbin)      ![m] Size grid minimum</a>
+    61) <a name="l61" style="background-color: #ffffff">    real(r8) :: dmt_max(nbin)      ![m] Size grid maximum</a>
+    62) <a name="l62" style="background-color: #ffffff">    real(r8) :: dmt_ctr(nbin)      ![m] Diameter at bin center</a>
+    63) <a name="l63" style="background-color: #ffffff">    real(r8) :: dmt_dlt(nbin)      ![m] Width of size bin</a>
+    64) <a name="l64" style="background-color: #ffffff">    real(r8) :: slp_crc(nbin)      ![frc] Slip correction factor</a>
+    65) <a name="l65" style="background-color: #ffffff">    real(r8) :: vlm_rsl(nbin)      ![m3 m-3] Volume concentration resolved</a>
+    66) <a name="l66" style="background-color: #ffffff">    real(r8) :: vlc_stk(nbin)      ![m s-1] Stokes settling velocity</a>
+    67) <a name="l67" style="background-color: #ffffff">    real(r8) :: vlc_grv(nbin)      ![m s-1] Settling velocity</a>
+    68) <a name="l68" style="background-color: #ffffff">    real(r8) :: ryn_nbr_grv(nbin)  ![frc] Reynolds number at terminal velocity</a>
+    69) <a name="l69" style="background-color: #ffffff">    real(r8) :: cff_drg_grv(nbin)  ![frc] Drag coefficient at terminal velocity</a>
+    70) <a name="l70" style="background-color: #ffffff">    real(r8) :: tmp                     !temporary </a>
+    71) <a name="l71" style="background-color: #ffffff">    real(r8) :: ln_gsd                  ![frc] ln(gsd)</a>
+    72) <a name="l72" style="background-color: #ffffff">    real(r8) :: gsd_anl                 ![frc] Geometric standard deviation</a>
+    73) <a name="l73" style="background-color: #ffffff">    real(r8) :: dmt_vma                 ![m] Mass median diameter analytic She84 p.75 Tabl.1</a>
+    74) <a name="l74" style="background-color: #ffffff">    real(r8) :: dmt_nma                 ![m] Number median particle diameter</a>
+    75) <a name="l75" style="background-color: #ffffff">    real(r8) :: lgn_dst                 !Lognormal distribution at sz_ctr</a>
+    76) <a name="l76" style="background-color: #ffffff">    real(r8) :: eps_max                 ![frc] Relative accuracy for convergence</a>
+    77) <a name="l77" style="background-color: #ffffff">    real(r8) :: eps_crr                 ![frc] Current relative accuracy</a>
+    78) <a name="l78" style="background-color: #ffffff">    real(r8) :: itr_idx                 ![idx] Counting index</a>
+    79) <a name="l79" style="background-color: #ffffff">    real(r8) :: dns_mdp                 ![kg m-3] Midlayer density</a>
+    80) <a name="l80" style="background-color: #ffffff">    real(r8) :: mfp_atm                 ![m] Mean free path of air</a>
+    81) <a name="l81" style="background-color: #ffffff">    real(r8) :: vsc_dyn_atm             ![kg m-1 s-1] Dynamic viscosity of air</a>
+    82) <a name="l82" style="background-color: #ffffff">    real(r8) :: vsc_knm_atm             ![kg m-1 s-1] Kinematic viscosity of air</a>
+    83) <a name="l83" style="background-color: #ffffff">    real(r8) :: vlc_grv_old             ![m s-1] Previous gravitational settling velocity</a>
+    84) <a name="l84" style="background-color: #ffffff">    real(r8) :: series_ratio            !Factor for logarithmic grid</a>
+    85) <a name="l85" style="background-color: #ffffff">    real(r8) :: lngsdsqrttwopi_rcp      !Factor in lognormal distribution</a>
+    86) <a name="l86" style="background-color: #ffffff">    real(r8) :: sz_min(sz_nbr)          ![m] Size Bin minima</a>
+    87) <a name="l87" style="background-color: #ffffff">    real(r8) :: sz_max(sz_nbr)          ![m] Size Bin maxima</a>
+    88) <a name="l88" style="background-color: #ffffff">    real(r8) :: sz_ctr(sz_nbr)          ![m] Size Bin centers</a>
+    89) <a name="l89" style="background-color: #ffffff">    real(r8) :: sz_dlt(sz_nbr)          ![m] Size Bin widths</a>
+    90) <a name="l90" style="background-color: #ffffff"></a>
+    91) <a name="l91" style="background-color: #ffffff">    stk_crc(:) = nan</a>
+    92) <a name="l92" style="background-color: #ffffff">    dmt_vwr(:) = nan</a>
+    93) <a name="l93" style="background-color: #ffffff"></a>
+    94) <a name="l94" style="background-color: #ffffff">    ! Introducing particle diameter. Needed by atm model and by dry dep model.</a>
+    95) <a name="l95" style="background-color: #ffffff">    ! Taken from Charlie Zender's subroutines dst_psd_ini, dst_sz_rsl,</a>
+    96) <a name="l96" style="background-color: #ffffff">    ! grd_mk (dstpsd.F90) and subroutine lgn_evl (psdlgn.F90)</a>
+    97) <a name="l97" style="background-color: #ffffff"></a>
+    98) <a name="l98" style="background-color: #ffffff">    ! Charlie allows logarithmic or linear option for size distribution</a>
+    99) <a name="l99" style="background-color: #ffffff">    ! however, he hardwires the distribution to logarithmic in his code</a>
+   100) <a name="l100" style="background-color: #ffffff">    ! therefore, I take his logarithmic code only</a>
+   101) <a name="l101" style="background-color: #ffffff">    ! furthermore, if dst_nbr == 4, he overrides the automatic grid calculation</a>
+   102) <a name="l102" style="background-color: #ffffff">    ! he currently works with dst_nbr = 4, so I only take the relevant code</a>
+   103) <a name="l103" style="background-color: #ffffff">    ! if dust_number ever becomes different from 4, must add call grd_mk (dstpsd.F90)</a>
+   104) <a name="l104" style="background-color: #ffffff">    ! as done in subroutine dst_psd_ini</a>
+   105) <a name="l105" style="background-color: #ffffff">    ! note that here dust_number = dst_nbr</a>
+   106) <a name="l106" style="background-color: #ffffff"></a>
+   107) <a name="l107" style="background-color: #ffffff">    ! Override automatic grid with preset grid if available</a>
+   108) <a name="l108" style="background-color: #ffffff">    do n = 1, nbin</a>
+   109) <a name="l109" style="background-color: #ffffff">       dmt_min(n) = dmt_grd(n)                       ![m] Max diameter in bin</a>
+   110) <a name="l110" style="background-color: #ffffff">       dmt_max(n) = dmt_grd(n+1)                     ![m] Min diameter in bin</a>
+   111) <a name="l111" style="background-color: #ffffff">       dmt_ctr(n) = 0.5_r8 * (dmt_min(n)+dmt_max(n)) ![m] Diameter at bin ctr</a>
+   112) <a name="l112" style="background-color: #ffffff">       dmt_dlt(n) = dmt_max(n)-dmt_min(n)            ![m] Width of size bin</a>
+   113) <a name="l113" style="background-color: #ffffff">    end do</a>
+   114) <a name="l114" style="background-color: #ffffff"></a>
+   115) <a name="l115" style="background-color: #ffffff"> ! sets dust_dmt_vwr ....</a>
+   116) <a name="l116" style="background-color: #ffffff"></a>
+   117) <a name="l117" style="background-color: #ffffff">    ! Bin physical properties</a>
+   118) <a name="l118" style="background-color: #ffffff">    gsd_anl = 2.0_r8      ! [frc] Geometric std dev PaG77 p. 2080 Table1</a>
+   119) <a name="l119" style="background-color: #ffffff">    ln_gsd = log(gsd_anl)</a>
+   120) <a name="l120" style="background-color: #ffffff"></a>
+   121) <a name="l121" style="background-color: #ffffff">    ! Set a fundamental statistic for each bin</a>
+   122) <a name="l122" style="background-color: #ffffff">    dmt_vma = 2.524e-6_r8 ! [m] Mass median diameter analytic She84 p.75 Table1</a>
+   123) <a name="l123" style="background-color: #ffffff">    dmt_vma = 3.5e-6_r8</a>
+   124) <a name="l124" style="background-color: #ffffff">    ! Compute analytic size statistics</a>
+   125) <a name="l125" style="background-color: #ffffff">    ! Convert mass median diameter to number median diameter (call vma2nma)</a>
+   126) <a name="l126" style="background-color: #ffffff">    dmt_nma = dmt_vma * exp(-3.0_r8*ln_gsd*ln_gsd) ! [m]</a>
+   127) <a name="l127" style="background-color: #ffffff">    ! Compute resolved size statistics for each size distribution</a>
+   128) <a name="l128" style="background-color: #ffffff">    ! In C. Zender's code call dst_sz_rsl</a>
+   129) <a name="l129" style="background-color: #ffffff">    do n = 1, nbin</a>
+   130) <a name="l130" style="background-color: #ffffff">       series_ratio = (dmt_max(n)/dmt_min(n))**(1.0_r8/sz_nbr)</a>
+   131) <a name="l131" style="background-color: #ffffff">       sz_min(1) = dmt_min(n)</a>
+   132) <a name="l132" style="background-color: #ffffff">       do m = 2, sz_nbr                            ! Loop starts at 2</a>
+   133) <a name="l133" style="background-color: #ffffff">          sz_min(m) = sz_min(m-1) * series_ratio</a>
+   134) <a name="l134" style="background-color: #ffffff">       end do</a>
+   135) <a name="l135" style="background-color: #ffffff"></a>
+   136) <a name="l136" style="background-color: #ffffff">       ! Derived grid values</a>
+   137) <a name="l137" style="background-color: #ffffff">       do m = 1, sz_nbr-1                          ! Loop ends at sz_nbr-1</a>
+   138) <a name="l138" style="background-color: #ffffff">          sz_max(m) = sz_min(m+1)                  ! [m]</a>
+   139) <a name="l139" style="background-color: #ffffff">       end do</a>
+   140) <a name="l140" style="background-color: #ffffff">       sz_max(sz_nbr) = dmt_max(n)                 ! [m]</a>
+   141) <a name="l141" style="background-color: #ffffff"></a>
+   142) <a name="l142" style="background-color: #ffffff">       ! Final derived grid values</a>
+   143) <a name="l143" style="background-color: #ffffff">       do m = 1, sz_nbr</a>
+   144) <a name="l144" style="background-color: #ffffff">          sz_ctr(m) = 0.5_r8 * (sz_min(m)+sz_max(m))</a>
+   145) <a name="l145" style="background-color: #ffffff">          sz_dlt(m) = sz_max(m)-sz_min(m)</a>
+   146) <a name="l146" style="background-color: #ffffff">       end do</a>
+   147) <a name="l147" style="background-color: #ffffff">       lngsdsqrttwopi_rcp = 1.0_r8 / (ln_gsd*sqrt(2.0_r8*pi))</a>
+   148) <a name="l148" style="background-color: #ffffff">       dmt_vwr(n) = 0.0_r8 ! [m] Mass wgted diameter resolved</a>
+   149) <a name="l149" style="background-color: #ffffff">       vlm_rsl(n) = 0.0_r8 ! [m3 m-3] Volume concentration resolved</a>
+   150) <a name="l150" style="background-color: #ffffff">       do m = 1, sz_nbr</a>
+   151) <a name="l151" style="background-color: #ffffff">          ! Evaluate lognormal distribution for these sizes (call lgn_evl)</a>
+   152) <a name="l152" style="background-color: #ffffff">          tmp = log(sz_ctr(m)/dmt_nma) / ln_gsd</a>
+   153) <a name="l153" style="background-color: #ffffff">          lgn_dst = lngsdsqrttwopi_rcp * exp(-0.5_r8*tmp*tmp) / sz_ctr(m)</a>
+   154) <a name="l154" style="background-color: #ffffff">          ! Integrate moments of size distribution</a>
+   155) <a name="l155" style="background-color: #ffffff">          dmt_vwr(n) = dmt_vwr(n) + sz_ctr(m) *                    &amp;</a>
+   156) <a name="l156" style="background-color: #ffffff">               pi / 6.0_r8 * (sz_ctr(m)**3.0_r8) * &amp; ![m3] Volume</a>
+   157) <a name="l157" style="background-color: #ffffff">               lgn_dst * sz_dlt(m)                ![# m-3] Number concentrn</a>
+   158) <a name="l158" style="background-color: #ffffff">          vlm_rsl(n) = vlm_rsl(n) +                                &amp;</a>
+   159) <a name="l159" style="background-color: #ffffff">               pi / 6.0_r8 * (sz_ctr(m)**3.0_r8) * &amp; ![m3] Volume</a>
+   160) <a name="l160" style="background-color: #ffffff">               lgn_dst * sz_dlt(m)                ![# m-3] Number concentrn</a>
+   161) <a name="l161" style="background-color: #ffffff">       end do</a>
+   162) <a name="l162" style="background-color: #ffffff">       dmt_vwr(n) = dmt_vwr(n) / vlm_rsl(n) ![m] Mass weighted diameter resolved</a>
+   163) <a name="l163" style="background-color: #ffffff">    end do</a>
+   164) <a name="l164" style="background-color: #ffffff"></a>
+   165) <a name="l165" style="background-color: #ffffff">  ! sets stk_crc ...</a>
+   166) <a name="l166" style="background-color: #ffffff"></a>
+   167) <a name="l167" style="background-color: #ffffff">    ! calculate correction to Stokes' settling velocity (subroutine stk_crc_get)</a>
+   168) <a name="l168" style="background-color: #ffffff">    eps_max = 1.0e-4_r8</a>
+   169) <a name="l169" style="background-color: #ffffff">    dns_mdp = 100000._r8 / (295.0_r8*rair) ![kg m-3] const prs_mdp &amp; tpt_vrt</a>
+   170) <a name="l170" style="background-color: #ffffff">    ! Size-independent thermokinetic properties</a>
+   171) <a name="l171" style="background-color: #ffffff">    vsc_dyn_atm = 1.72e-5_r8 * ((295.0_r8/273.0_r8)**1.5_r8) * 393.0_r8 / &amp;</a>
+   172) <a name="l172" style="background-color: #ffffff">         (295.0_r8+120.0_r8)      ![kg m-1 s-1] RoY94 p.102 tpt_mdp=295.0</a>
+   173) <a name="l173" style="background-color: #ffffff">    mfp_atm = 2.0_r8 * vsc_dyn_atm / &amp;  !SeP97 p. 455 constant prs_mdp, tpt_mdp</a>
+   174) <a name="l174" style="background-color: #ffffff">         (100000._r8*sqrt(8.0_r8/(pi*rair*295.0_r8)))</a>
+   175) <a name="l175" style="background-color: #ffffff">    vsc_knm_atm = vsc_dyn_atm / dns_mdp ![m2 s-1] Kinematic viscosity of air</a>
+   176) <a name="l176" style="background-color: #ffffff"></a>
+   177) <a name="l177" style="background-color: #ffffff">    do m = 1, nbin</a>
+   178) <a name="l178" style="background-color: #ffffff">       slp_crc(m) = 1.0_r8 + 2.0_r8 * mfp_atm *                      &amp;</a>
+   179) <a name="l179" style="background-color: #ffffff">            (1.257_r8+0.4_r8*exp(-1.1_r8*dmt_vwr(m)/(2.0_r8*mfp_atm))) / &amp;</a>
+   180) <a name="l180" style="background-color: #ffffff">            dmt_vwr(m)                      ! [frc] Slip correction factor SeP97 p.464</a>
+   181) <a name="l181" style="background-color: #ffffff">       vlc_stk(m) = (1.0_r8/18.0_r8) * dmt_vwr(m) * dmt_vwr(m) * dust_density * &amp;</a>
+   182) <a name="l182" style="background-color: #ffffff">            gravit * slp_crc(m) / vsc_dyn_atm ! [m s-1] SeP97 p.466</a>
+   183) <a name="l183" style="background-color: #ffffff">    end do</a>
+   184) <a name="l184" style="background-color: #ffffff"></a>
+   185) <a name="l185" style="background-color: #ffffff">    ! For Reynolds number flows Re &lt; 0.1 Stokes' velocity is valid for</a>
+   186) <a name="l186" style="background-color: #ffffff">    ! vlc_grv SeP97 p. 466 (8.42). For larger Re, inertial effects become</a>
+   187) <a name="l187" style="background-color: #ffffff">    ! important and empirical drag coefficients must be employed</a>
+   188) <a name="l188" style="background-color: #ffffff">    ! Implicit equation for Re, Cd, and Vt is SeP97 p. 467 (8.44)</a>
+   189) <a name="l189" style="background-color: #ffffff">    ! Using Stokes' velocity rather than iterative solution with empirical</a>
+   190) <a name="l190" style="background-color: #ffffff">    ! drag coefficient causes 60% errors for D = 200 um SeP97 p. 468</a>
+   191) <a name="l191" style="background-color: #ffffff"></a>
+   192) <a name="l192" style="background-color: #ffffff">    ! Iterative solution for drag coefficient, Reynolds number, and terminal veloc</a>
+   193) <a name="l193" style="background-color: #ffffff">    do m = 1, nbin</a>
+   194) <a name="l194" style="background-color: #ffffff"></a>
+   195) <a name="l195" style="background-color: #ffffff">       ! Initialize accuracy and counter</a>
+   196) <a name="l196" style="background-color: #ffffff">       eps_crr = eps_max + 1.0_r8  ![frc] Current relative accuracy</a>
+   197) <a name="l197" style="background-color: #ffffff">       itr_idx = 0                 ![idx] Counting index</a>
+   198) <a name="l198" style="background-color: #ffffff"></a>
+   199) <a name="l199" style="background-color: #ffffff">       ! Initial guess for vlc_grv is exact for Re &lt; 0.1</a>
+   200) <a name="l200" style="background-color: #ffffff">       vlc_grv(m) = vlc_stk(m)     ![m s-1]</a>
+   201) <a name="l201" style="background-color: #ffffff">       eps_loop: do while(eps_crr &gt; eps_max)</a>
+   202) <a name="l202" style="background-color: #ffffff"></a>
+   203) <a name="l203" style="background-color: #ffffff">          ! Save terminal velocity for convergence test</a>
+   204) <a name="l204" style="background-color: #ffffff">          vlc_grv_old = vlc_grv(m) ![m s-1]</a>
+   205) <a name="l205" style="background-color: #ffffff">          ryn_nbr_grv(m) = vlc_grv(m) * dmt_vwr(m) / vsc_knm_atm !SeP97 p.460</a>
+   206) <a name="l206" style="background-color: #ffffff"></a>
+   207) <a name="l207" style="background-color: #ffffff">          ! Update drag coefficient based on new Reynolds number</a>
+   208) <a name="l208" style="background-color: #ffffff">          if (ryn_nbr_grv(m) &lt; 0.1_r8) then</a>
+   209) <a name="l209" style="background-color: #ffffff">             cff_drg_grv(m) = 24.0_r8 / ryn_nbr_grv(m) !Stokes' law Sep97 p.463 (8.32)</a>
+   210) <a name="l210" style="background-color: #ffff99">          else if (ryn_nbr_grv(m) &lt; 2.0_r8) then</a>
+   211) <a name="l211" style="background-color: #ffff99">             cff_drg_grv(m) = (24.0_r8/ryn_nbr_grv(m)) *    &amp;</a>
+   212) <a name="l212" style="background-color: #ffff99">                  (1.0_r8 + 3.0_r8*ryn_nbr_grv(m)/16.0_r8 + &amp;</a>
+   213) <a name="l213" style="background-color: #ffff99">                  9.0_r8*ryn_nbr_grv(m)*ryn_nbr_grv(m)*     &amp;</a>
+   214) <a name="l214" style="background-color: #ffff99">                  log(2.0_r8*ryn_nbr_grv(m))/160.0_r8)        !Sep97 p.463 (8.32)</a>
+   215) <a name="l215" style="background-color: #ffff99">          else if (ryn_nbr_grv(m) &lt; 500.0_r8) then</a>
+   216) <a name="l216" style="background-color: #ffff99">             cff_drg_grv(m) = (24.0_r8/ryn_nbr_grv(m)) * &amp;</a>
+   217) <a name="l217" style="background-color: #ffff99">                  (1.0_r8 + 0.15_r8*ryn_nbr_grv(m)**0.687_r8) !Sep97 p.463 (8.32)</a>
+   218) <a name="l218" style="background-color: #ffff99">          else if (ryn_nbr_grv(m) &lt; 2.0e5_r8) then</a>
+   219) <a name="l219" style="background-color: #ffff99">             cff_drg_grv(m) = 0.44_r8                         !Sep97 p.463 (8.32)</a>
+   220) <a name="l220" style="background-color: #ffff99">          else</a>
+   221) <a name="l221" style="background-color: #ffff99">             write(iulog,'(a,es9.2)') &quot;ryn_nbr_grv(m) = &quot;,ryn_nbr_grv(m)</a>
+   222) <a name="l222" style="background-color: #ffff99">             call endrun ('Dustini error: Reynolds number too large in stk_crc_get()')</a>
+   223) <a name="l223" style="background-color: #ffff99">          endif</a>
+   224) <a name="l224" style="background-color: #ffff99"></a>
+   225) <a name="l225" style="background-color: #ffff99">          ! Update terminal velocity based on new Reynolds number and drag coeff</a>
+   226) <a name="l226" style="background-color: #ffff99">          ! [m s-1] Terminal veloc SeP97 p.467 (8.44)</a>
+   227) <a name="l227" style="background-color: #ffffff">          vlc_grv(m) = sqrt(4.0_r8 * gravit * dmt_vwr(m) * slp_crc(m) * dust_density / &amp;</a>
+   228) <a name="l228" style="background-color: #ffffff">               (3.0_r8*cff_drg_grv(m)*dns_mdp))   </a>
+   229) <a name="l229" style="background-color: #ffffff">          eps_crr = abs((vlc_grv(m)-vlc_grv_old)/vlc_grv(m)) !Relative convergence</a>
+   230) <a name="l230" style="background-color: #ffffff">          if (itr_idx == 12) then</a>
+   231) <a name="l231" style="background-color: #ffffff">             ! Numerical pingpong may occur when Re = 0.1, 2.0, or 500.0</a>
+   232) <a name="l232" style="background-color: #ffffff">             ! due to discontinuities in derivative of drag coefficient</a>
+   233) <a name="l233" style="background-color: #ffff99">             vlc_grv(m) = 0.5_r8 * (vlc_grv(m)+vlc_grv_old)  ! [m s-1]</a>
+   234) <a name="l234" style="background-color: #ffff99">          endif</a>
+   235) <a name="l235" style="background-color: #ffffff">          if (itr_idx &gt; 20) then</a>
+   236) <a name="l236" style="background-color: #ffff99">             write(iulog,*) 'Dustini error: Terminal velocity not converging ',&amp;</a>
+   237) <a name="l237" style="background-color: #ffff99">                  ' in stk_crc_get(), breaking loop...'</a>
+   238) <a name="l238" style="background-color: #ffff99">             ! to next iteration</a>
+   239) <a name="l239" style="background-color: #ffff99">             exit eps_loop</a>
+   240) <a name="l240" style="background-color: #ffff99">          endif</a>
+   241) <a name="l241" style="background-color: #ffff99">          itr_idx = itr_idx + 1</a>
+   242) <a name="l242" style="background-color: #ffff99">       end do eps_loop  !end while</a>
+   243) <a name="l243" style="background-color: #ffff99">    end do   !end loop over size</a>
+   244) <a name="l244" style="background-color: #ffff99"></a>
+   245) <a name="l245" style="background-color: #ffff99">    ! Compute factors to convert Stokes' settling velocities to</a>
+   246) <a name="l246" style="background-color: #ffff99">    ! actual settling velocities</a>
+   247) <a name="l247" style="background-color: #ffffff">    do m = 1, nbin</a>
+   248) <a name="l248" style="background-color: #ffffff">       stk_crc(m) = vlc_grv(m) / vlc_stk(m)</a>
+   249) <a name="l249" style="background-color: #ffffff">    end do</a>
+   250) <a name="l250" style="background-color: #ffffff">    </a>
+   251) <a name="l251" style="background-color: #ffffff">  end subroutine dust_set_params</a>
+   252) <a name="l252" style="background-color: #ffffff"></a>
+   253) <a name="l253" style="background-color: #ffffff">end module dust_common</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

@@ -1,0 +1,112 @@
+<html>
+<head>
+<title>Listing of cpslec.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;cpslec.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 100.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff"></a>
+     2) <a name="l2" style="background-color: #ffffff">subroutine cpslec (ncol, pmid, phis, ps, t, psl, gravit, rair)</a>
+     3) <a name="l3" style="background-color: #ffffff"></a>
+     4) <a name="l4" style="background-color: #ffffff">!----------------------------------------------------------------------- </a>
+     5) <a name="l5" style="background-color: #ffffff">! </a>
+     6) <a name="l6" style="background-color: #ffffff">! Purpose: </a>
+     7) <a name="l7" style="background-color: #ffffff">! Hybrid coord version:  Compute sea level pressure for a latitude line</a>
+     8) <a name="l8" style="background-color: #ffffff">! </a>
+     9) <a name="l9" style="background-color: #ffffff">! Method: </a>
+    10) <a name="l10" style="background-color: #ffffff">! CCM2 hybrid coord version using ECMWF formulation</a>
+    11) <a name="l11" style="background-color: #ffffff">! Algorithm: See section 3.1.b in NCAR NT-396 &quot;Vertical </a>
+    12) <a name="l12" style="background-color: #ffffff">! Interpolation and Truncation of Model-Coordinate Data</a>
+    13) <a name="l13" style="background-color: #ffffff">!</a>
+    14) <a name="l14" style="background-color: #ffffff">! Author: Stolen from the Processor by Erik Kluzek</a>
+    15) <a name="l15" style="background-color: #ffffff">! </a>
+    16) <a name="l16" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    17) <a name="l17" style="background-color: #ffffff">!</a>
+    18) <a name="l18" style="background-color: #ffffff">! $Id$</a>
+    19) <a name="l19" style="background-color: #ffffff">! $Author$</a>
+    20) <a name="l20" style="background-color: #ffffff">!</a>
+    21) <a name="l21" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    22) <a name="l22" style="background-color: #ffffff"></a>
+    23) <a name="l23" style="background-color: #ffffff">  use shr_kind_mod, only: r8 =&gt; shr_kind_r8</a>
+    24) <a name="l24" style="background-color: #ffffff">  use ppgrid, only: pcols, pver</a>
+    25) <a name="l25" style="background-color: #ffffff"></a>
+    26) <a name="l26" style="background-color: #ffffff">  implicit none</a>
+    27) <a name="l27" style="background-color: #ffffff"></a>
+    28) <a name="l28" style="background-color: #ffffff">!-----------------------------Arguments---------------------------------</a>
+    29) <a name="l29" style="background-color: #ffffff">  integer , intent(in) :: ncol             ! longitude dimension</a>
+    30) <a name="l30" style="background-color: #ffffff"></a>
+    31) <a name="l31" style="background-color: #ffffff">  real(r8), intent(in) :: pmid(pcols,pver) ! Atmospheric pressure (pascals)</a>
+    32) <a name="l32" style="background-color: #ffffff">  real(r8), intent(in) :: phis(pcols)      ! Surface geopotential (m**2/sec**2)</a>
+    33) <a name="l33" style="background-color: #ffffff">  real(r8), intent(in) :: ps(pcols)        ! Surface pressure (pascals)</a>
+    34) <a name="l34" style="background-color: #ffffff">  real(r8), intent(in) :: T(pcols,pver)    ! Vertical slice of temperature (top to bot)</a>
+    35) <a name="l35" style="background-color: #ffffff">  real(r8), intent(in) :: gravit           ! Gravitational acceleration</a>
+    36) <a name="l36" style="background-color: #ffffff">  real(r8), intent(in) :: rair             ! gas constant for dry air</a>
+    37) <a name="l37" style="background-color: #ffffff"></a>
+    38) <a name="l38" style="background-color: #ffffff">  real(r8), intent(out):: psl(pcols)       ! Sea level pressures (pascals)</a>
+    39) <a name="l39" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    40) <a name="l40" style="background-color: #ffffff"></a>
+    41) <a name="l41" style="background-color: #ffffff">!-----------------------------Parameters--------------------------------</a>
+    42) <a name="l42" style="background-color: #ffffff">  real(r8), parameter :: xlapse = 6.5e-3_r8   ! Temperature lapse rate (K/m)</a>
+    43) <a name="l43" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">!-----------------------------Local Variables---------------------------</a>
+    46) <a name="l46" style="background-color: #ffffff">  integer i              ! Loop index</a>
+    47) <a name="l47" style="background-color: #ffffff">  real(r8) alpha         ! Temperature lapse rate in terms of pressure ratio (unitless)</a>
+    48) <a name="l48" style="background-color: #ffffff">  real(r8) Tstar         ! Computed surface temperature</a>
+    49) <a name="l49" style="background-color: #ffffff">  real(r8) TT0           ! Computed temperature at sea-level</a>
+    50) <a name="l50" style="background-color: #ffffff">  real(r8) alph          ! Power to raise P/Ps to get rate of increase of T with pressure</a>
+    51) <a name="l51" style="background-color: #ffffff">  real(r8) beta          ! alpha*phis/(R*T) term used in approximation of PSL</a>
+    52) <a name="l52" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    53) <a name="l53" style="background-color: #ffffff">!</a>
+    54) <a name="l54" style="background-color: #ffffff">  alpha = rair*xlapse/gravit</a>
+    55) <a name="l55" style="background-color: #ffffff">  do i=1,ncol</a>
+    56) <a name="l56" style="background-color: #ffffff">     if ( abs(phis(i)/gravit) &lt; 1.e-4_r8 )then</a>
+    57) <a name="l57" style="background-color: #ffffff">        psl(i)=ps(i)</a>
+    58) <a name="l58" style="background-color: #ffffff">     else</a>
+    59) <a name="l59" style="background-color: #ffffff">        Tstar=T(i,pver)*(1._r8+alpha*(ps(i)/pmid(i,pver)-1._r8)) ! pg 7 eq 5</a>
+    60) <a name="l60" style="background-color: #ffffff"></a>
+    61) <a name="l61" style="background-color: #ffffff">        TT0=Tstar + xlapse*phis(i)/gravit                  ! pg 8 eq 13</a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">        if ( Tstar&lt;=290.5_r8 .and. TT0&gt;290.5_r8 ) then           ! pg 8 eq 14.1</a>
+    64) <a name="l64" style="background-color: #ffffff">           alph=rair/phis(i)*(290.5_r8-Tstar)  </a>
+    65) <a name="l65" style="background-color: #ffffff">        else if (Tstar&gt;290.5_r8  .and. TT0&gt;290.5_r8) then        ! pg 8 eq 14.2</a>
+    66) <a name="l66" style="background-color: #ffffff">           alph=0._r8</a>
+    67) <a name="l67" style="background-color: #ffffff">           Tstar= 0.5_r8 * (290.5_r8 + Tstar)  </a>
+    68) <a name="l68" style="background-color: #ffffff">        else  </a>
+    69) <a name="l69" style="background-color: #ffffff">           alph=alpha  </a>
+    70) <a name="l70" style="background-color: #ffffff">           if (Tstar&lt;255._r8) then  </a>
+    71) <a name="l71" style="background-color: #ffffff">              Tstar= 0.5_r8 * (255._r8 + Tstar)                  ! pg 8 eq 14.3</a>
+    72) <a name="l72" style="background-color: #ffffff">           endif</a>
+    73) <a name="l73" style="background-color: #ffffff">        endif</a>
+    74) <a name="l74" style="background-color: #ffffff"></a>
+    75) <a name="l75" style="background-color: #ffffff">        beta = phis(i)/(rair*Tstar)</a>
+    76) <a name="l76" style="background-color: #ffffff">        psl(i)=ps(i)*exp( beta*(1._r8-alph*beta/2._r8+((alph*beta)**2)/3._r8))</a>
+    77) <a name="l77" style="background-color: #ffffff">     end if</a>
+    78) <a name="l78" style="background-color: #ffffff">  enddo</a>
+    79) <a name="l79" style="background-color: #ffffff"></a>
+    80) <a name="l80" style="background-color: #ffffff">  return</a>
+    81) <a name="l81" style="background-color: #ffffff">end subroutine cpslec</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

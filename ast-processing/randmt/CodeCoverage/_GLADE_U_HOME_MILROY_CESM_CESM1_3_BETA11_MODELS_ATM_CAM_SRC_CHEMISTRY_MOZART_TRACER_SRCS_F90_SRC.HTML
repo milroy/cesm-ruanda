@@ -1,0 +1,329 @@
+<html>
+<head>
+<title>Listing of tracer_srcs.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;tracer_srcs.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 50.00&#160;%func&#160;&#160;&#160;&#160; 61.29&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+     2) <a name="l2" style="background-color: #ffffff">! manages reading and interpolation of offline tracer sources</a>
+     3) <a name="l3" style="background-color: #ffffff">! Created by: Francis Vitt -- 2 May 2006</a>
+     4) <a name="l4" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+     5) <a name="l5" style="background-color: #ffffff">module tracer_srcs</a>
+     6) <a name="l6" style="background-color: #ffffff"></a>
+     7) <a name="l7" style="background-color: #ffffff">  use shr_kind_mod, only: r8 =&gt; shr_kind_r8</a>
+     8) <a name="l8" style="background-color: #ffffff">  use abortutils,   only : endrun</a>
+     9) <a name="l9" style="background-color: #ffffff">  use spmd_utils,   only : masterproc</a>
+    10) <a name="l10" style="background-color: #ffffff"></a>
+    11) <a name="l11" style="background-color: #ffffff">  use tracer_data,  only : trfld,trfile,MAXTRCRS</a>
+    12) <a name="l12" style="background-color: #ffffff">  use cam_logfile,  only : iulog</a>
+    13) <a name="l13" style="background-color: #ffffff"></a>
+    14) <a name="l14" style="background-color: #ffffff">  implicit none</a>
+    15) <a name="l15" style="background-color: #ffffff"></a>
+    16) <a name="l16" style="background-color: #ffffff">  private  ! all unless made public</a>
+    17) <a name="l17" style="background-color: #ffffff">  save </a>
+    18) <a name="l18" style="background-color: #ffffff"></a>
+    19) <a name="l19" style="background-color: #ffffff">  public :: tracer_srcs_init</a>
+    20) <a name="l20" style="background-color: #ffffff">  public :: num_tracer_srcs</a>
+    21) <a name="l21" style="background-color: #ffffff">  public :: tracer_src_flds</a>
+    22) <a name="l22" style="background-color: #ffffff">  public :: tracer_srcs_adv</a>
+    23) <a name="l23" style="background-color: #ffffff">  public :: get_srcs_data</a>
+    24) <a name="l24" style="background-color: #ffffff">  public :: write_tracer_srcs_restart</a>
+    25) <a name="l25" style="background-color: #ffffff">  public :: read_tracer_srcs_restart</a>
+    26) <a name="l26" style="background-color: #ffffff">  public :: tracer_srcs_defaultopts</a>
+    27) <a name="l27" style="background-color: #ffffff">  public :: tracer_srcs_setopts</a>
+    28) <a name="l28" style="background-color: #ffffff">  public :: init_tracer_srcs_restart</a>
+    29) <a name="l29" style="background-color: #ffffff"></a>
+    30) <a name="l30" style="background-color: #ffffff">  type(trfld), pointer :: fields(:) =&gt; null()</a>
+    31) <a name="l31" style="background-color: #ffffff">  type(trfile) :: file</a>
+    32) <a name="l32" style="background-color: #ffffff"></a>
+    33) <a name="l33" style="background-color: #ffffff">  integer :: num_tracer_srcs</a>
+    34) <a name="l34" style="background-color: #ffffff">  character(len=16), allocatable :: tracer_src_flds(:)</a>
+    35) <a name="l35" style="background-color: #ffffff"></a>
+    36) <a name="l36" style="background-color: #ffffff">  character(len=64)  :: specifier(MAXTRCRS) = ''</a>
+    37) <a name="l37" style="background-color: #ffffff">  character(len=256) :: filename = 'tracer_srcs_file'</a>
+    38) <a name="l38" style="background-color: #ffffff">  character(len=256) :: filelist = ''</a>
+    39) <a name="l39" style="background-color: #ffffff">  character(len=256) :: datapath = ''</a>
+    40) <a name="l40" style="background-color: #ffffff">  character(len=32)  :: data_type = 'SERIAL'</a>
+    41) <a name="l41" style="background-color: #ffffff">  logical            :: rmv_file = .false.</a>
+    42) <a name="l42" style="background-color: #ffffff">  integer            :: cycle_yr = 0</a>
+    43) <a name="l43" style="background-color: #ffffff">  integer            :: fixed_ymd = 0</a>
+    44) <a name="l44" style="background-color: #ffffff">  integer            :: fixed_tod = 0</a>
+    45) <a name="l45" style="background-color: #ffffff"></a>
+    46) <a name="l46" style="background-color: #ffffff">contains</a>
+    47) <a name="l47" style="background-color: #ffffff"></a>
+    48) <a name="l48" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+    49) <a name="l49" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+    50) <a name="l50" style="background-color: #ffffff">  subroutine tracer_srcs_init()</a>
+    51) <a name="l51" style="background-color: #ffffff"></a>
+    52) <a name="l52" style="background-color: #ffffff">    use mo_chem_utls, only : get_extfrc_ndx</a>
+    53) <a name="l53" style="background-color: #ffffff">    use tracer_data,  only : trcdata_init</a>
+    54) <a name="l54" style="background-color: #ffffff">    use cam_history,  only : addfld, phys_decomp</a>
+    55) <a name="l55" style="background-color: #ffffff">    use ppgrid,       only : pver</a>
+    56) <a name="l56" style="background-color: #ffffff">    use physics_buffer, only : physics_buffer_desc</a>
+    57) <a name="l57" style="background-color: #ffffff"></a>
+    58) <a name="l58" style="background-color: #ffffff">    implicit none</a>
+    59) <a name="l59" style="background-color: #ffffff"></a>
+    60) <a name="l60" style="background-color: #ffffff">    integer :: i ,ndx</a>
+    61) <a name="l61" style="background-color: #ffffff"></a>
+    62) <a name="l62" style="background-color: #ffffff">    allocate(file%in_pbuf(size(specifier)))</a>
+    63) <a name="l63" style="background-color: #ffffff">    file%in_pbuf(:) = .false.</a>
+    64) <a name="l64" style="background-color: #ffffff">    call trcdata_init( specifier, filename, filelist, datapath, fields, file, &amp;</a>
+    65) <a name="l65" style="background-color: #ffffff">                       rmv_file, cycle_yr, fixed_ymd, fixed_tod, data_type)</a>
+    66) <a name="l66" style="background-color: #ffffff"></a>
+    67) <a name="l67" style="background-color: #ffffff">    num_tracer_srcs = 0</a>
+    68) <a name="l68" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(fields)) </a><a style="background-color: #ffff99">num_tracer_srcs = size( fields )</a>
+    69) <a name="l69" style="background-color: #ffff99"></a>
+    70) <a name="l70" style="background-color: #ffffff">    if( num_tracer_srcs &lt; 1 ) then</a>
+    71) <a name="l71" style="background-color: #ffffff">       </a>
+    72) <a name="l72" style="background-color: #ffffff">       if (masterproc) then</a>
+    73) <a name="l73" style="background-color: #ffffff">          write(iulog,*) 'There are no offline tracer sources'</a>
+    74) <a name="l74" style="background-color: #ffffff">          write(iulog,*) ' '</a>
+    75) <a name="l75" style="background-color: #ffffff">       end if</a>
+    76) <a name="l76" style="background-color: #ffffff">       return</a>
+    77) <a name="l77" style="background-color: #ffffff">    end if</a>
+    78) <a name="l78" style="background-color: #ffffff"></a>
+    79) <a name="l79" style="background-color: #ffff99">    allocate( tracer_src_flds(num_tracer_srcs))</a>
+    80) <a name="l80" style="background-color: #ffff99"></a>
+    81) <a name="l81" style="background-color: #ffff99">    do i = 1, num_tracer_srcs</a>
+    82) <a name="l82" style="background-color: #ffff99"></a>
+    83) <a name="l83" style="background-color: #ffff99">       ndx = get_extfrc_ndx( fields(i)%fldnam )</a>
+    84) <a name="l84" style="background-color: #ffff99"></a>
+    85) <a name="l85" style="background-color: #ffff99">       if (ndx &lt; 1) then</a>
+    86) <a name="l86" style="background-color: #ffff99">          write(iulog,*) fields(i)%fldnam//' is not configured to have an external source'</a>
+    87) <a name="l87" style="background-color: #ffff99">          call endrun('tracer_srcs_init')</a>
+    88) <a name="l88" style="background-color: #ffff99">       endif</a>
+    89) <a name="l89" style="background-color: #ffff99"></a>
+    90) <a name="l90" style="background-color: #ffff99">       tracer_src_flds(i) = fields(i)%fldnam</a>
+    91) <a name="l91" style="background-color: #ffff99"> </a>
+    92) <a name="l92" style="background-color: #ffff99">       call addfld(trim(fields(i)%fldnam)//'_trsrc','/cm3/s ', pver, 'I', 'tracer source rate', phys_decomp )</a>
+    93) <a name="l93" style="background-color: #ffff99"></a>
+    94) <a name="l94" style="background-color: #ffff99">    enddo </a>
+    95) <a name="l95" style="background-color: #ffff99"></a>
+    96) <a name="l96" style="background-color: #ffffff">  end subroutine tracer_srcs_init</a>
+    97) <a name="l97" style="background-color: #ffffff"></a>
+    98) <a name="l98" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+    99) <a name="l99" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+   100) <a name="l100" style="background-color: #ffffff">  subroutine tracer_srcs_setopts(       &amp;</a>
+   101) <a name="l101" style="background-color: #ffffff">       tracer_srcs_file_in,      &amp;</a>
+   102) <a name="l102" style="background-color: #ffffff">       tracer_srcs_filelist_in,  &amp;</a>
+   103) <a name="l103" style="background-color: #ffffff">       tracer_srcs_datapath_in,  &amp;</a>
+   104) <a name="l104" style="background-color: #ffffff">       tracer_srcs_type_in,      &amp;</a>
+   105) <a name="l105" style="background-color: #ffffff">       tracer_srcs_specifier_in, &amp;</a>
+   106) <a name="l106" style="background-color: #ffffff">       tracer_srcs_rmfile_in,    &amp;</a>
+   107) <a name="l107" style="background-color: #ffffff">       tracer_srcs_cycle_yr_in,  &amp;</a>
+   108) <a name="l108" style="background-color: #ffffff">       tracer_srcs_fixed_ymd_in, &amp;</a>
+   109) <a name="l109" style="background-color: #ffffff">       tracer_srcs_fixed_tod_in  &amp;</a>
+   110) <a name="l110" style="background-color: #ffffff">       )</a>
+   111) <a name="l111" style="background-color: #ffffff"></a>
+   112) <a name="l112" style="background-color: #ffffff">    implicit none</a>
+   113) <a name="l113" style="background-color: #ffffff"></a>
+   114) <a name="l114" style="background-color: #ffffff">    character(len=*), intent(in), optional :: tracer_srcs_file_in</a>
+   115) <a name="l115" style="background-color: #ffffff">    character(len=*), intent(in), optional :: tracer_srcs_filelist_in</a>
+   116) <a name="l116" style="background-color: #ffffff">    character(len=*), intent(in), optional :: tracer_srcs_datapath_in</a>
+   117) <a name="l117" style="background-color: #ffffff">    character(len=*), intent(in), optional :: tracer_srcs_type_in</a>
+   118) <a name="l118" style="background-color: #ffffff">    character(len=*), intent(in), optional :: tracer_srcs_specifier_in(:)</a>
+   119) <a name="l119" style="background-color: #ffffff">    logical,          intent(in), optional :: tracer_srcs_rmfile_in</a>
+   120) <a name="l120" style="background-color: #ffffff">    integer,          intent(in), optional :: tracer_srcs_cycle_yr_in</a>
+   121) <a name="l121" style="background-color: #ffffff">    integer,          intent(in), optional :: tracer_srcs_fixed_ymd_in</a>
+   122) <a name="l122" style="background-color: #ffffff">    integer,          intent(in), optional :: tracer_srcs_fixed_tod_in</a>
+   123) <a name="l123" style="background-color: #ffffff"></a>
+   124) <a name="l124" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_file_in) ) then</a>
+   125) <a name="l125" style="background-color: #ffffff">       filename = tracer_srcs_file_in</a>
+   126) <a name="l126" style="background-color: #ffffff">    endif</a>
+   127) <a name="l127" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_filelist_in) ) then</a>
+   128) <a name="l128" style="background-color: #ffffff">       filelist = tracer_srcs_filelist_in</a>
+   129) <a name="l129" style="background-color: #ffffff">    endif</a>
+   130) <a name="l130" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_datapath_in) ) then</a>
+   131) <a name="l131" style="background-color: #ffffff">       datapath = tracer_srcs_datapath_in</a>
+   132) <a name="l132" style="background-color: #ffffff">    endif</a>
+   133) <a name="l133" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_type_in) ) then</a>
+   134) <a name="l134" style="background-color: #ffffff">       data_type = tracer_srcs_type_in</a>
+   135) <a name="l135" style="background-color: #ffffff">    endif</a>
+   136) <a name="l136" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_specifier_in) ) then</a>
+   137) <a name="l137" style="background-color: #ffffff">       specifier = tracer_srcs_specifier_in</a>
+   138) <a name="l138" style="background-color: #ffffff">    endif</a>
+   139) <a name="l139" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_rmfile_in) ) then</a>
+   140) <a name="l140" style="background-color: #ffffff">       rmv_file = tracer_srcs_rmfile_in</a>
+   141) <a name="l141" style="background-color: #ffffff">    endif</a>
+   142) <a name="l142" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_cycle_yr_in) ) then</a>
+   143) <a name="l143" style="background-color: #ffffff">       cycle_yr = tracer_srcs_cycle_yr_in</a>
+   144) <a name="l144" style="background-color: #ffffff">    endif</a>
+   145) <a name="l145" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_fixed_ymd_in) ) then</a>
+   146) <a name="l146" style="background-color: #ffffff">       fixed_ymd = tracer_srcs_fixed_ymd_in</a>
+   147) <a name="l147" style="background-color: #ffffff">    endif</a>
+   148) <a name="l148" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_fixed_tod_in) ) then</a>
+   149) <a name="l149" style="background-color: #ffffff">       fixed_tod = tracer_srcs_fixed_tod_in</a>
+   150) <a name="l150" style="background-color: #ffffff">    endif</a>
+   151) <a name="l151" style="background-color: #ffffff"></a>
+   152) <a name="l152" style="background-color: #ffffff">  endsubroutine tracer_srcs_setopts</a>
+   153) <a name="l153" style="background-color: #ffffff"></a>
+   154) <a name="l154" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+   155) <a name="l155" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+   156) <a name="l156" style="background-color: #ffffff">  subroutine tracer_srcs_defaultopts(   &amp;</a>
+   157) <a name="l157" style="background-color: #ffffff">       tracer_srcs_file_out,     &amp;</a>
+   158) <a name="l158" style="background-color: #ffffff">       tracer_srcs_filelist_out, &amp;</a>
+   159) <a name="l159" style="background-color: #ffffff">       tracer_srcs_datapath_out, &amp;</a>
+   160) <a name="l160" style="background-color: #ffffff">       tracer_srcs_type_out,     &amp;</a>
+   161) <a name="l161" style="background-color: #ffffff">       tracer_srcs_specifier_out,&amp;</a>
+   162) <a name="l162" style="background-color: #ffffff">       tracer_srcs_rmfile_out,   &amp;</a>
+   163) <a name="l163" style="background-color: #ffffff">       tracer_srcs_cycle_yr_out, &amp;</a>
+   164) <a name="l164" style="background-color: #ffffff">       tracer_srcs_fixed_ymd_out,&amp;</a>
+   165) <a name="l165" style="background-color: #ffffff">       tracer_srcs_fixed_tod_out &amp;</a>
+   166) <a name="l166" style="background-color: #ffffff">       ) </a>
+   167) <a name="l167" style="background-color: #ffffff"></a>
+   168) <a name="l168" style="background-color: #ffffff">    implicit none</a>
+   169) <a name="l169" style="background-color: #ffffff"></a>
+   170) <a name="l170" style="background-color: #ffffff">    character(len=*), intent(out), optional :: tracer_srcs_file_out</a>
+   171) <a name="l171" style="background-color: #ffffff">    character(len=*), intent(out), optional :: tracer_srcs_filelist_out</a>
+   172) <a name="l172" style="background-color: #ffffff">    character(len=*), intent(out), optional :: tracer_srcs_datapath_out</a>
+   173) <a name="l173" style="background-color: #ffffff">    character(len=*), intent(out), optional :: tracer_srcs_type_out</a>
+   174) <a name="l174" style="background-color: #ffffff">    character(len=*), intent(out), optional :: tracer_srcs_specifier_out(:)</a>
+   175) <a name="l175" style="background-color: #ffffff">    logical,          intent(out), optional :: tracer_srcs_rmfile_out</a>
+   176) <a name="l176" style="background-color: #ffffff">    integer,          intent(out), optional :: tracer_srcs_cycle_yr_out</a>
+   177) <a name="l177" style="background-color: #ffffff">    integer,          intent(out), optional :: tracer_srcs_fixed_ymd_out</a>
+   178) <a name="l178" style="background-color: #ffffff">    integer,          intent(out), optional :: tracer_srcs_fixed_tod_out</a>
+   179) <a name="l179" style="background-color: #ffffff"></a>
+   180) <a name="l180" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_file_out) ) then</a>
+   181) <a name="l181" style="background-color: #ffffff">       tracer_srcs_file_out = filename</a>
+   182) <a name="l182" style="background-color: #ffffff">    endif</a>
+   183) <a name="l183" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_filelist_out) ) then</a>
+   184) <a name="l184" style="background-color: #ffffff">       tracer_srcs_filelist_out = filelist</a>
+   185) <a name="l185" style="background-color: #ffffff">    endif</a>
+   186) <a name="l186" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_datapath_out) ) then</a>
+   187) <a name="l187" style="background-color: #ffffff">       tracer_srcs_datapath_out = datapath</a>
+   188) <a name="l188" style="background-color: #ffffff">    endif</a>
+   189) <a name="l189" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_type_out) ) then</a>
+   190) <a name="l190" style="background-color: #ffffff">       tracer_srcs_type_out = data_type</a>
+   191) <a name="l191" style="background-color: #ffffff">    endif</a>
+   192) <a name="l192" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_specifier_out) ) then</a>
+   193) <a name="l193" style="background-color: #ffffff">       tracer_srcs_specifier_out = specifier</a>
+   194) <a name="l194" style="background-color: #ffffff">    endif</a>
+   195) <a name="l195" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_rmfile_out) ) then</a>
+   196) <a name="l196" style="background-color: #ffffff">       tracer_srcs_rmfile_out = rmv_file</a>
+   197) <a name="l197" style="background-color: #ffffff">    endif</a>
+   198) <a name="l198" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_cycle_yr_out) ) then</a>
+   199) <a name="l199" style="background-color: #ffffff">       tracer_srcs_cycle_yr_out = cycle_yr</a>
+   200) <a name="l200" style="background-color: #ffffff">    endif</a>
+   201) <a name="l201" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_fixed_ymd_out) ) then</a>
+   202) <a name="l202" style="background-color: #ffffff">       tracer_srcs_fixed_ymd_out = fixed_ymd</a>
+   203) <a name="l203" style="background-color: #ffffff">    endif</a>
+   204) <a name="l204" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">present(tracer_srcs_fixed_tod_out) ) then</a>
+   205) <a name="l205" style="background-color: #ffffff">       tracer_srcs_fixed_tod_out = fixed_tod</a>
+   206) <a name="l206" style="background-color: #ffffff">    endif</a>
+   207) <a name="l207" style="background-color: #ffffff"></a>
+   208) <a name="l208" style="background-color: #ffffff">  endsubroutine tracer_srcs_defaultopts</a>
+   209) <a name="l209" style="background-color: #ffffff"></a>
+   210) <a name="l210" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+   211) <a name="l211" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+   212) <a name="l212" style="background-color: #ffffff">  subroutine tracer_srcs_adv( pbuf2d, state )</a>
+   213) <a name="l213" style="background-color: #ffffff"></a>
+   214) <a name="l214" style="background-color: #ffffff">    use tracer_data, only : advance_trcdata</a>
+   215) <a name="l215" style="background-color: #ffffff">    use ppgrid,      only : begchunk, endchunk</a>
+   216) <a name="l216" style="background-color: #ffffff">    use physics_types,only : physics_state</a>
+   217) <a name="l217" style="background-color: #ffffff">    use cam_history, only : outfld</a>
+   218) <a name="l218" style="background-color: #ffffff">    use physics_buffer, only : physics_buffer_desc</a>
+   219) <a name="l219" style="background-color: #ffffff"></a>
+   220) <a name="l220" style="background-color: #ffffff">    implicit none</a>
+   221) <a name="l221" style="background-color: #ffffff"></a>
+   222) <a name="l222" style="background-color: #ffffff">    type(physics_state), intent(in):: state(begchunk:endchunk)                 </a>
+   223) <a name="l223" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+   224) <a name="l224" style="background-color: #ffffff"></a>
+   225) <a name="l225" style="background-color: #ffffff">    integer :: i,c,ncol</a>
+   226) <a name="l226" style="background-color: #ffffff"></a>
+   227) <a name="l227" style="background-color: #ffffff">    if( num_tracer_srcs &lt; 1 ) return</a>
+   228) <a name="l228" style="background-color: #ffffff"></a>
+   229) <a name="l229" style="background-color: #ffffff">    call </a><a style="background-color: #ffff99">advance_trcdata( fields, file, state, pbuf2d )</a>
+   230) <a name="l230" style="background-color: #ffff99"></a>
+   231) <a name="l231" style="background-color: #ffff99">    do c = begchunk,endchunk</a>
+   232) <a name="l232" style="background-color: #ffff99">       ncol = state(c)%ncol</a>
+   233) <a name="l233" style="background-color: #ffff99">       do i = 1,num_tracer_srcs</a>
+   234) <a name="l234" style="background-color: #ffff99">          call outfld( trim(fields(i)%fldnam)//'_trsrc', fields(i)%data(:ncol,:,c), ncol, state(c)%lchnk  )</a>
+   235) <a name="l235" style="background-color: #ffff99">       enddo</a>
+   236) <a name="l236" style="background-color: #ffff99">    enddo</a>
+   237) <a name="l237" style="background-color: #ffff99"></a>
+   238) <a name="l238" style="background-color: #ffffff">  end subroutine tracer_srcs_adv</a>
+   239) <a name="l239" style="background-color: #ffffff"></a>
+   240) <a name="l240" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+   241) <a name="l241" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+   242) <a name="l242" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">get_srcs_data( field_name, data, ncol, lchnk, pbuf  )</a>
+   243) <a name="l243" style="background-color: #ffcccc"></a>
+   244) <a name="l244" style="background-color: #ffcccc">    use tracer_data, only : get_fld_data</a>
+   245) <a name="l245" style="background-color: #ffcccc">    use physics_buffer, only : physics_buffer_desc</a>
+   246) <a name="l246" style="background-color: #ffcccc"></a>
+   247) <a name="l247" style="background-color: #ffcccc">    implicit none</a>
+   248) <a name="l248" style="background-color: #ffcccc"></a>
+   249) <a name="l249" style="background-color: #ffcccc">    character(len=*), intent(in) :: field_name</a>
+   250) <a name="l250" style="background-color: #ffcccc">    real(r8), intent(out) :: data(:,:)</a>
+   251) <a name="l251" style="background-color: #ffcccc">    integer, intent(in) :: lchnk</a>
+   252) <a name="l252" style="background-color: #ffcccc">    integer, intent(in) :: ncol</a>
+   253) <a name="l253" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer :: pbuf(:)</a>
+   254) <a name="l254" style="background-color: #ffcccc"></a>
+   255) <a name="l255" style="background-color: #ffcccc">    if( num_tracer_srcs &lt; 1 ) return</a>
+   256) <a name="l256" style="background-color: #ffcccc"></a>
+   257) <a name="l257" style="background-color: #ffcccc">    call get_fld_data( fields, field_name, data, ncol, lchnk, pbuf )</a>
+   258) <a name="l258" style="background-color: #ffcccc"></a>
+   259) <a name="l259" style="background-color: #ffcccc">  end subroutine get_srcs_data</a>
+   260) <a name="l260" style="background-color: #ffffff"></a>
+   261) <a name="l261" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+   262) <a name="l262" style="background-color: #ffffff"></a>
+   263) <a name="l263" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">init_tracer_srcs_restart( piofile )</a>
+   264) <a name="l264" style="background-color: #ffcccc">    use pio, only : file_desc_t</a>
+   265) <a name="l265" style="background-color: #ffcccc">    use tracer_data, only : init_trc_restart</a>
+   266) <a name="l266" style="background-color: #ffcccc">    implicit none</a>
+   267) <a name="l267" style="background-color: #ffcccc">    type(file_desc_t),intent(inout) :: pioFile     ! pio File pointer</a>
+   268) <a name="l268" style="background-color: #ffcccc"></a>
+   269) <a name="l269" style="background-color: #ffcccc">    call init_trc_restart( 'tracer_srcs', piofile, file )</a>
+   270) <a name="l270" style="background-color: #ffcccc"></a>
+   271) <a name="l271" style="background-color: #ffcccc">  end subroutine init_tracer_srcs_restart</a>
+   272) <a name="l272" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+   273) <a name="l273" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">write_tracer_srcs_restart( piofile )</a>
+   274) <a name="l274" style="background-color: #ffcccc">    use tracer_data, only : write_trc_restart</a>
+   275) <a name="l275" style="background-color: #ffcccc">    use pio, only : file_desc_t</a>
+   276) <a name="l276" style="background-color: #ffcccc">    implicit none</a>
+   277) <a name="l277" style="background-color: #ffcccc"></a>
+   278) <a name="l278" style="background-color: #ffcccc">    type(file_desc_t) :: piofile</a>
+   279) <a name="l279" style="background-color: #ffcccc"></a>
+   280) <a name="l280" style="background-color: #ffcccc">    call write_trc_restart( piofile, file )</a>
+   281) <a name="l281" style="background-color: #ffcccc"></a>
+   282) <a name="l282" style="background-color: #ffcccc">  end subroutine write_tracer_srcs_restart</a>
+   283) <a name="l283" style="background-color: #ffffff"></a>
+   284) <a name="l284" style="background-color: #ffffff">!-------------------------------------------------------------------</a>
+   285) <a name="l285" style="background-color: #ffffff"></a>
+   286) <a name="l286" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">read_tracer_srcs_restart( pioFile )</a>
+   287) <a name="l287" style="background-color: #ffcccc">    use tracer_data, only : read_trc_restart</a>
+   288) <a name="l288" style="background-color: #ffcccc">    use pio, only : file_desc_t</a>
+   289) <a name="l289" style="background-color: #ffcccc">    implicit none</a>
+   290) <a name="l290" style="background-color: #ffcccc"></a>
+   291) <a name="l291" style="background-color: #ffcccc">    type(file_desc_t) :: piofile</a>
+   292) <a name="l292" style="background-color: #ffcccc"></a>
+   293) <a name="l293" style="background-color: #ffcccc">    call read_trc_restart( 'tracer_srcs', piofile, file )</a>
+   294) <a name="l294" style="background-color: #ffcccc"></a>
+   295) <a name="l295" style="background-color: #ffcccc">  end subroutine read_tracer_srcs_restart</a>
+   296) <a name="l296" style="background-color: #ffffff"></a>
+   297) <a name="l297" style="background-color: #ffffff"></a>
+   298) <a name="l298" style="background-color: #ffffff">end module tracer_srcs</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

@@ -1,0 +1,1553 @@
+<html>
+<head>
+<title>Listing of physics_buffer.F90.in</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;physics_buffer.F90.in&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 26.45&#160;%func&#160;&#160;&#160;&#160; 11.18&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!#define DEBUG 1</a>
+     2) <a name="l2" style="background-color: #ffffff">module physics_buffer</a>
+     3) <a name="l3" style="background-color: #ffffff"></a>
+     4) <a name="l4" style="background-color: #ffffff">  !----------------------------------------------------------------------- </a>
+     5) <a name="l5" style="background-color: #ffffff">  ! </a>
+     6) <a name="l6" style="background-color: #ffffff">  ! Purpose: </a>
+     7) <a name="l7" style="background-color: #ffffff">  !    Buffer managment for persistant variables </a>
+     8) <a name="l8" style="background-color: #ffffff">  !</a>
+     9) <a name="l9" style="background-color: #ffffff">  ! Author: J. Edwards</a>
+    10) <a name="l10" style="background-color: #ffffff">  !</a>
+    11) <a name="l11" style="background-color: #ffffff">  ! This file is used with genf90.pl to generate buffer.F90  </a>
+    12) <a name="l12" style="background-color: #ffffff">  ! </a>
+    13) <a name="l13" style="background-color: #ffffff">  !-----------------------------------------------------------------------</a>
+    14) <a name="l14" style="background-color: #ffffff"></a>
+    15) <a name="l15" style="background-color: #ffffff">  use shr_kind_mod, only: r8 =&gt; shr_kind_r8, r4=&gt; shr_kind_r4, i4=&gt; shr_kind_i4</a>
+    16) <a name="l16" style="background-color: #ffffff">  use ppgrid, only: pcols, begchunk, endchunk, psubcols</a>
+    17) <a name="l17" style="background-color: #ffffff">  use cam_logfile,     only: iulog</a>
+    18) <a name="l18" style="background-color: #ffffff">  use pio, only : var_desc_t</a>
+    19) <a name="l19" style="background-color: #ffffff">  use dyn_grid, only : ptimelevels</a>
+    20) <a name="l20" style="background-color: #ffffff">  use abortutils, only : endrun</a>
+    21) <a name="l21" style="background-color: #ffffff">  use buffer, only : buffer_field_allocate, buffer_field_deallocate, buffer_get_field_ptr, buffer_set_field, &amp;</a>
+    22) <a name="l22" style="background-color: #ffffff">       dtype_i4, dtype_r4, dtype_r8, buffer_field_default_type, buffer_field_is_alloc</a>
+    23) <a name="l23" style="background-color: #ffffff"></a>
+    24) <a name="l24" style="background-color: #ffffff">  implicit none</a>
+    25) <a name="l25" style="background-color: #ffffff">  private</a>
+    26) <a name="l26" style="background-color: #ffffff"></a>
+    27) <a name="l27" style="background-color: #ffffff">  ! ngrid_types is a private parameter denoting how many types of a field</a>
+    28) <a name="l28" style="background-color: #ffffff">  ! (e.g., grid, subcol) a pbuf can hold</a>
+    29) <a name="l29" style="background-color: #ffffff">  integer, parameter :: ngrid_types = 2 </a>
+    30) <a name="l30" style="background-color: #ffffff"></a>
+    31) <a name="l31" style="background-color: #ffffff">  ! --col_type parameters -- see pbuf_add_field and pbuf_get_field</a>
+    32) <a name="l32" style="background-color: #ffffff">  ! -- These indices should start at 1 and increment by 1 so that they</a>
+    33) <a name="l33" style="background-color: #ffffff">  ! -- may be used in a loop from 1 to ngrid_types</a>
+    34) <a name="l34" style="background-color: #ffffff"></a>
+    35) <a name="l35" style="background-color: #ffffff">  integer, parameter, public :: col_type_grid    = 1</a>
+    36) <a name="l36" style="background-color: #ffffff">  integer, parameter, public :: col_type_subcol  = 2</a>
+    37) <a name="l37" style="background-color: #ffffff"></a>
+    38) <a name="l38" style="background-color: #ffffff">  !</a>
+    39) <a name="l39" style="background-color: #ffffff">  ! PBUF field suffix strings for different grid types for restart files</a>
+    40) <a name="l40" style="background-color: #ffffff">  !      NB: There should be ngrid_types entries</a>
+    41) <a name="l41" style="background-color: #ffffff">  !</a>
+    42) <a name="l42" style="background-color: #ffffff">  character(len=5), parameter :: field_grid_suff(ngrid_types) = (/ &quot;     &quot;, &quot;_SCOL&quot; /)</a>
+    43) <a name="l43" style="background-color: #ffffff"></a>
+    44) <a name="l44" style="background-color: #ffffff">  integer :: old_time_idx = 1</a>
+    45) <a name="l45" style="background-color: #ffffff"></a>
+    46) <a name="l46" style="background-color: #ffffff">  ! The API has strings 'GLOBAL' and 'PHYSPKG' which correspond to these</a>
+    47) <a name="l47" style="background-color: #ffffff">  ! integer constants if global_allocate_all is false fields allocated with</a>
+    48) <a name="l48" style="background-color: #ffffff">  ! PHYSPKG persistence are deallocated at the end of each physics time step</a>
+    49) <a name="l49" style="background-color: #ffffff">  ! and reallocated at the beginning of the next.</a>
+    50) <a name="l50" style="background-color: #ffffff">  ! If global_allocate_all is true then all fields are allocated at model</a>
+    51) <a name="l51" style="background-color: #ffffff">  ! start and persist until model completion.</a>
+    52) <a name="l52" style="background-color: #ffffff"></a>
+    53) <a name="l53" style="background-color: #ffffff">  integer, parameter :: persistence_global  = 1</a>
+    54) <a name="l54" style="background-color: #ffffff">  integer, parameter :: persistence_physpkg = 2</a>
+    55) <a name="l55" style="background-color: #ffffff">  logical            :: global_allocate_all = .true.</a>
+    56) <a name="l56" style="background-color: #ffffff"></a>
+    57) <a name="l57" style="background-color: #ffffff">  ! </a>
+    58) <a name="l58" style="background-color: #ffffff">  ! physics_buffer_hdr carries the description info for each buffer, only one header </a>
+    59) <a name="l59" style="background-color: #ffffff">  ! is allocated for each field and each chunk of the field points to it. </a>
+    60) <a name="l60" style="background-color: #ffffff">  ! It is carried as a linkedlist for initialization only.</a>
+    61) <a name="l61" style="background-color: #ffffff">  !</a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">  type physics_buffer_hdr</a>
+    64) <a name="l64" style="background-color: #ffffff">     character(len=16) :: name                    = ''</a>
+    65) <a name="l65" style="background-color: #ffffff">     integer           :: dtype                   = -1</a>
+    66) <a name="l66" style="background-color: #ffffff">     integer           :: persistence             = -1</a>
+    67) <a name="l67" style="background-color: #ffffff">     integer           :: dimsizes(6,ngrid_types) = 0</a>
+    68) <a name="l68" style="background-color: #ffffff">     type(var_desc_t)  :: vardesc(ngrid_types)  ! var id for restart files</a>
+    69) <a name="l69" style="background-color: #ffffff">     logical           :: is_copy(ngrid_types)    = .false.</a>
+    70) <a name="l70" style="background-color: #ffffff">     logical           :: added                   = .false.</a>
+    71) <a name="l71" style="background-color: #ffffff">     type(physics_buffer_hdr), pointer :: nexthdr =&gt; null()</a>
+    72) <a name="l72" style="background-color: #ffffff"></a>
+    73) <a name="l73" style="background-color: #ffffff">  end type physics_buffer_hdr</a>
+    74) <a name="l74" style="background-color: #ffffff"></a>
+    75) <a name="l75" style="background-color: #ffffff">  !</a>
+    76) <a name="l76" style="background-color: #ffffff">  ! The default type for a buffer field is buffer_field_double (r8) since that is the </a>
+    77) <a name="l77" style="background-color: #ffffff">  ! type most often used in the model.   The F90 transfer function is used to move</a>
+    78) <a name="l78" style="background-color: #ffffff">  ! data of other types into and out of the pbuf2d</a>
+    79) <a name="l79" style="background-color: #ffffff">  ! </a>
+    80) <a name="l80" style="background-color: #ffffff"></a>
+    81) <a name="l81" style="background-color: #ffffff">  type physics_buffer_desc</a>
+    82) <a name="l82" style="background-color: #ffffff">     private</a>
+    83) <a name="l83" style="background-color: #ffffff">     integer                           :: lchnk</a>
+    84) <a name="l84" style="background-color: #ffffff">     type(physics_buffer_hdr), pointer :: hdr =&gt; null()</a>
+    85) <a name="l85" style="background-color: #ffffff">     type(buffer_field_default_type)   :: bfg(ngrid_types)</a>
+    86) <a name="l86" style="background-color: #ffffff">  end type physics_buffer_desc</a>
+    87) <a name="l87" style="background-color: #ffffff"></a>
+    88) <a name="l88" style="background-color: #ffffff">  interface pbuf_get_field</a>
+    89) <a name="l89" style="background-color: #ffffff">     ! TYPE int,double,real </a>
+    90) <a name="l90" style="background-color: #ffffff">     ! DIMS 1,2,3,4,5</a>
+    91) <a name="l91" style="background-color: #ffffff">     module procedure get_pbuf1d_field_by_index_{DIMS}d_{TYPE}</a>
+    92) <a name="l92" style="background-color: #ffffff">     ! TYPE int,double,real </a>
+    93) <a name="l93" style="background-color: #ffffff">     ! DIMS 1,2,3,4,5</a>
+    94) <a name="l94" style="background-color: #ffffff">     module procedure get_pbuf2d_field_by_index_{DIMS}d_{TYPE}</a>
+    95) <a name="l95" style="background-color: #ffffff">  end interface</a>
+    96) <a name="l96" style="background-color: #ffffff"></a>
+    97) <a name="l97" style="background-color: #ffffff">  interface pbuf_get_field_restart</a>
+    98) <a name="l98" style="background-color: #ffffff">     ! TYPE int,double,real </a>
+    99) <a name="l99" style="background-color: #ffffff">     module procedure get_pbuf2d_field_restart_{TYPE}</a>
+   100) <a name="l100" style="background-color: #ffffff">  end interface</a>
+   101) <a name="l101" style="background-color: #ffffff"></a>
+   102) <a name="l102" style="background-color: #ffffff">  interface pbuf_set_field</a>
+   103) <a name="l103" style="background-color: #ffffff">     ! TYPE int,double,real </a>
+   104) <a name="l104" style="background-color: #ffffff">     ! DIMS 1,2,3,4,5</a>
+   105) <a name="l105" style="background-color: #ffffff">     module procedure  set_pbuf2d_field_by_index_{DIMS}d_{TYPE}</a>
+   106) <a name="l106" style="background-color: #ffffff">     ! TYPE int,double,real </a>
+   107) <a name="l107" style="background-color: #ffffff">     ! DIMS 1,2,3,4,5</a>
+   108) <a name="l108" style="background-color: #ffffff">     module procedure  set_pbuf1d_field_by_index_{DIMS}d_{TYPE}</a>
+   109) <a name="l109" style="background-color: #ffffff">     ! TYPE int,double,real </a>
+   110) <a name="l110" style="background-color: #ffffff">     module procedure  set_pbuf1d_field_const_by_index_{TYPE}</a>
+   111) <a name="l111" style="background-color: #ffffff">     ! TYPE int,double,real </a>
+   112) <a name="l112" style="background-color: #ffffff">     module procedure  set_pbuf2d_field_const_by_index_{TYPE}</a>
+   113) <a name="l113" style="background-color: #ffffff">  end interface</a>
+   114) <a name="l114" style="background-color: #ffffff"></a>
+   115) <a name="l115" style="background-color: #ffffff">  interface pbuf_add_field</a>
+   116) <a name="l116" style="background-color: #ffffff">     ! TYPE int,double,real </a>
+   117) <a name="l117" style="background-color: #ffffff">     module procedure pbuf_add_field_{TYPE}</a>
+   118) <a name="l118" style="background-color: #ffffff">  end interface</a>
+   119) <a name="l119" style="background-color: #ffffff"></a>
+   120) <a name="l120" style="background-color: #ffffff">  public :: pbuf_initialize, &amp;</a>
+   121) <a name="l121" style="background-color: #ffffff">            pbuf_defaultopts,   &amp;! set namelist defaults</a>
+   122) <a name="l122" style="background-color: #ffffff">            pbuf_setopts,       &amp;! set user specified namelist values</a>
+   123) <a name="l123" style="background-color: #ffffff">            pbuf_init_time,     &amp;! Initialize dyn_time_lvls</a>
+   124) <a name="l124" style="background-color: #ffffff">            pbuf_old_tim_idx,   &amp;! return the index for the oldest time</a>
+   125) <a name="l125" style="background-color: #ffffff">            pbuf_update_tim_idx,&amp;! update the index for the oldest time</a>
+   126) <a name="l126" style="background-color: #ffffff">            pbuf_col_type_index, &amp;</a>
+   127) <a name="l127" style="background-color: #ffffff">            pbuf_get_field_name, &amp;</a>
+   128) <a name="l128" style="background-color: #ffffff">            pbuf_get_field, &amp;</a>
+   129) <a name="l129" style="background-color: #ffffff">            pbuf_add_field, &amp;</a>
+   130) <a name="l130" style="background-color: #ffffff">            pbuf_register_subcol, &amp;</a>
+   131) <a name="l131" style="background-color: #ffffff">            physics_buffer_desc, &amp;</a>
+   132) <a name="l132" style="background-color: #ffffff">            pbuf_get_index, &amp;</a>
+   133) <a name="l133" style="background-color: #ffffff">            pbuf_get_chunk, &amp;</a>
+   134) <a name="l134" style="background-color: #ffffff">            pbuf_allocate, &amp;</a>
+   135) <a name="l135" style="background-color: #ffffff">            pbuf_deallocate, &amp;</a>
+   136) <a name="l136" style="background-color: #ffffff">            pbuf_set_field, &amp;</a>
+   137) <a name="l137" style="background-color: #ffffff">            pbuf_init_restart, &amp;</a>
+   138) <a name="l138" style="background-color: #ffffff">            pbuf_write_restart, &amp;</a>
+   139) <a name="l139" style="background-color: #ffffff">            pbuf_read_restart, &amp;</a>
+   140) <a name="l140" style="background-color: #ffffff">            dtype_r8, dtype_r4, dtype_i4</a>
+   141) <a name="l141" style="background-color: #ffffff"></a>
+   142) <a name="l142" style="background-color: #ffffff">   integer, public :: dyn_time_lvls  ! number of time levels in physics buffer (dycore dependent)</a>
+   143) <a name="l143" style="background-color: #ffffff"></a>
+   144) <a name="l144" style="background-color: #ffffff"></a>
+   145) <a name="l145" style="background-color: #ffffff">  !</a>
+   146) <a name="l146" style="background-color: #ffffff">  !  Currentpbufflds is incremented in calls to pbuf_add_field and determines the size</a>
+   147) <a name="l147" style="background-color: #ffffff">  !  of the allocated pbuf2d</a>
+   148) <a name="l148" style="background-color: #ffffff">  !</a>
+   149) <a name="l149" style="background-color: #ffffff"></a>
+   150) <a name="l150" style="background-color: #ffffff">  integer :: currentpbufflds=0</a>
+   151) <a name="l151" style="background-color: #ffffff">  type(physics_buffer_hdr), pointer :: hdrbuffertop =&gt; null()</a>
+   152) <a name="l152" style="background-color: #ffffff"></a>
+   153) <a name="l153" style="background-color: #ffffff">  ! </a>
+   154) <a name="l154" style="background-color: #ffffff">  ! Insures that we do not attempt to allocate physics_buffer more than once</a>
+   155) <a name="l155" style="background-color: #ffffff">  !</a>
+   156) <a name="l156" style="background-color: #ffffff"></a>
+   157) <a name="l157" style="background-color: #ffffff">  logical :: buffer_initialized =.false.</a>
+   158) <a name="l158" style="background-color: #ffffff"></a>
+   159) <a name="l159" style="background-color: #ffffff">  !</a>
+   160) <a name="l160" style="background-color: #ffffff">  ! private pio descriptor for time</a>
+   161) <a name="l161" style="background-color: #ffffff">  !</a>
+   162) <a name="l162" style="background-color: #ffffff"></a>
+   163) <a name="l163" style="background-color: #ffffff">  type(var_desc_t) :: timeidx_desc</a>
+   164) <a name="l164" style="background-color: #ffffff"></a>
+   165) <a name="l165" style="background-color: #ffffff">CONTAINS</a>
+   166) <a name="l166" style="background-color: #ffffff"></a>
+   167) <a name="l167" style="background-color: #ffffff">  !</a>
+   168) <a name="l168" style="background-color: #ffffff">  ! Purpose: Return default runtime options</a>
+   169) <a name="l169" style="background-color: #ffffff">  !</a>
+   170) <a name="l170" style="background-color: #ffffff"></a>
+   171) <a name="l171" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">pbuf_defaultopts(pbuf_global_allocate_out)</a>
+   172) <a name="l172" style="background-color: #ffcccc">     logical, intent(out), optional :: pbuf_global_allocate_out</a>
+   173) <a name="l173" style="background-color: #ffcccc">     if ( present(pbuf_global_allocate_out) ) then</a>
+   174) <a name="l174" style="background-color: #ffcccc">        pbuf_global_allocate_out = global_allocate_all</a>
+   175) <a name="l175" style="background-color: #ffcccc">     endif</a>
+   176) <a name="l176" style="background-color: #ffcccc">  end subroutine pbuf_defaultopts</a>
+   177) <a name="l177" style="background-color: #ffffff"></a>
+   178) <a name="l178" style="background-color: #ffffff"></a>
+   179) <a name="l179" style="background-color: #ffffff">  !</a>
+   180) <a name="l180" style="background-color: #ffffff">  ! Purpose: Set runtime options</a>
+   181) <a name="l181" style="background-color: #ffffff">  !</a>
+   182) <a name="l182" style="background-color: #ffffff"></a>
+   183) <a name="l183" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">pbuf_setopts(pbuf_global_allocate_in)</a>
+   184) <a name="l184" style="background-color: #ffcccc">     logical, intent(in), optional :: pbuf_global_allocate_in</a>
+   185) <a name="l185" style="background-color: #ffcccc">     if ( present(pbuf_global_allocate_in) ) then</a>
+   186) <a name="l186" style="background-color: #ffcccc">        global_allocate_all = pbuf_global_allocate_in</a>
+   187) <a name="l187" style="background-color: #ffcccc">     endif</a>
+   188) <a name="l188" style="background-color: #ffcccc">  end subroutine pbuf_setopts</a>
+   189) <a name="l189" style="background-color: #ffffff"></a>
+   190) <a name="l190" style="background-color: #ffffff">  !</a>
+   191) <a name="l191" style="background-color: #ffffff">  ! Initialize dyn_time_lvls</a>
+   192) <a name="l192" style="background-color: #ffffff">  !</a>
+   193) <a name="l193" style="background-color: #ffffff">  subroutine pbuf_init_time()</a>
+   194) <a name="l194" style="background-color: #ffffff">     dyn_time_lvls = ptimelevels - 1</a>
+   195) <a name="l195" style="background-color: #ffffff">  end subroutine pbuf_init_time</a>
+   196) <a name="l196" style="background-color: #ffffff"></a>
+   197) <a name="l197" style="background-color: #ffffff">  !</a>
+   198) <a name="l198" style="background-color: #ffffff">  ! Return index of oldest time sample in the physics buffer.</a>
+   199) <a name="l199" style="background-color: #ffffff">  !</a>
+   200) <a name="l200" style="background-color: #ffffff"></a>
+   201) <a name="l201" style="background-color: #ffffff">  function pbuf_old_tim_idx()</a>
+   202) <a name="l202" style="background-color: #ffffff">     integer :: pbuf_old_tim_idx</a>
+   203) <a name="l203" style="background-color: #ffffff">     pbuf_old_tim_idx = old_time_idx</a>
+   204) <a name="l204" style="background-color: #ffffff">  end function pbuf_old_tim_idx</a>
+   205) <a name="l205" style="background-color: #ffffff"></a>
+   206) <a name="l206" style="background-color: #ffffff">  !</a>
+   207) <a name="l207" style="background-color: #ffffff">  ! Update index of old time sample in the physics buffer.</a>
+   208) <a name="l208" style="background-color: #ffffff">  !</a>
+   209) <a name="l209" style="background-color: #ffffff"></a>
+   210) <a name="l210" style="background-color: #ffffff">  subroutine pbuf_update_tim_idx()</a>
+   211) <a name="l211" style="background-color: #ffffff">     old_time_idx = mod(old_time_idx, dyn_time_lvls) + 1</a>
+   212) <a name="l212" style="background-color: #ffffff">  end subroutine pbuf_update_tim_idx</a>
+   213) <a name="l213" style="background-color: #ffffff"></a>
+   214) <a name="l214" style="background-color: #ffffff">  !</a>
+   215) <a name="l215" style="background-color: #ffffff">  ! pbuf_col_type_index returns an index for use with pbuf calls</a>
+   216) <a name="l216" style="background-color: #ffffff">  !</a>
+   217) <a name="l217" style="background-color: #ffffff">  ! * col_type:         is set to col_type_grid (if use_subcol=.false.) or</a>
+   218) <a name="l218" style="background-color: #ffffff">  !                     col_type_subcol (if (use_subcol=.true.). </a>
+   219) <a name="l219" style="background-color: #ffffff">  !</a>
+   220) <a name="l220" style="background-color: #ffffff"></a>
+   221) <a name="l221" style="background-color: #ffffff">  subroutine pbuf_col_type_index(use_subcol, col_type)</a>
+   222) <a name="l222" style="background-color: #ffffff"></a>
+   223) <a name="l223" style="background-color: #ffffff">    logical,                  intent(in)  :: use_subcol</a>
+   224) <a name="l224" style="background-color: #ffffff">    integer,                  intent(out) :: col_type</a>
+   225) <a name="l225" style="background-color: #ffffff"></a>
+   226) <a name="l226" style="background-color: #ffffff">    if (use_subcol) then</a>
+   227) <a name="l227" style="background-color: #ffff99">      col_type = col_type_subcol</a>
+   228) <a name="l228" style="background-color: #ffff99">    else</a>
+   229) <a name="l229" style="background-color: #ffffff">      col_type = col_type_grid</a>
+   230) <a name="l230" style="background-color: #ffffff">    end if</a>
+   231) <a name="l231" style="background-color: #ffffff"></a>
+   232) <a name="l232" style="background-color: #ffffff">  end subroutine pbuf_col_type_index</a>
+   233) <a name="l233" style="background-color: #ffffff"></a>
+   234) <a name="l234" style="background-color: #ffffff">  ! </a>
+   235) <a name="l235" style="background-color: #ffffff">  !  Return a pointer to the current chunks physics_buffer.</a>
+   236) <a name="l236" style="background-color: #ffffff">  !</a>
+   237) <a name="l237" style="background-color: #ffffff"></a>
+   238) <a name="l238" style="background-color: #ffffff">  function </a><a style="background-color: #ffcccc">pbuf_get_field_name(index)</a>
+   239) <a name="l239" style="background-color: #ffcccc">    integer, intent(in) :: index</a>
+   240) <a name="l240" style="background-color: #ffcccc">    character(len=16) :: pbuf_get_field_name</a>
+   241) <a name="l241" style="background-color: #ffcccc">    integer :: i</a>
+   242) <a name="l242" style="background-color: #ffcccc">    type(physics_buffer_hdr), pointer :: hdrbuffer</a>
+   243) <a name="l243" style="background-color: #ffcccc"></a>
+   244) <a name="l244" style="background-color: #ffcccc">    hdrbuffer =&gt; hdrbuffertop</a>
+   245) <a name="l245" style="background-color: #ffcccc">    do i=2,index</a>
+   246) <a name="l246" style="background-color: #ffcccc">       hdrbuffer=&gt;hdrbuffer%nexthdr</a>
+   247) <a name="l247" style="background-color: #ffcccc">    end do</a>
+   248) <a name="l248" style="background-color: #ffcccc">    pbuf_get_field_name = hdrbuffer%name</a>
+   249) <a name="l249" style="background-color: #ffcccc"></a>
+   250) <a name="l250" style="background-color: #ffcccc">  end function pbuf_get_field_name</a>
+   251) <a name="l251" style="background-color: #ffffff"></a>
+   252) <a name="l252" style="background-color: #ffffff"></a>
+   253) <a name="l253" style="background-color: #ffffff">  function pbuf_get_chunk(pbuf2d, lchnk)</a>
+   254) <a name="l254" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+   255) <a name="l255" style="background-color: #ffffff">    integer, intent(in) :: lchnk</a>
+   256) <a name="l256" style="background-color: #ffffff"></a>
+   257) <a name="l257" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf_get_chunk(:)</a>
+   258) <a name="l258" style="background-color: #ffffff"></a>
+   259) <a name="l259" style="background-color: #ffffff">    pbuf_get_chunk =&gt; pbuf2d(:,lchnk)</a>
+   260) <a name="l260" style="background-color: #ffffff"></a>
+   261) <a name="l261" style="background-color: #ffffff"></a>
+   262) <a name="l262" style="background-color: #ffffff">  end function pbuf_get_chunk</a>
+   263) <a name="l263" style="background-color: #ffffff"></a>
+   264) <a name="l264" style="background-color: #ffffff">  ! </a>
+   265) <a name="l265" style="background-color: #ffffff">  !  Return .true. iff pbuf has an allocated grid field</a>
+   266) <a name="l266" style="background-color: #ffffff">  !</a>
+   267) <a name="l267" style="background-color: #ffffff"></a>
+   268) <a name="l268" style="background-color: #ffffff">  logical function </a><a style="background-color: #ffcccc">pbuf_field_has_gridcols(pbuf, index) result(rval)</a>
+   269) <a name="l269" style="background-color: #ffcccc"></a>
+   270) <a name="l270" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer                :: pbuf(:)</a>
+   271) <a name="l271" style="background-color: #ffcccc">    integer,                            intent(in)    :: index</a>
+   272) <a name="l272" style="background-color: #ffcccc"></a>
+   273) <a name="l273" style="background-color: #ffcccc">    ! If the field is a copy, return .false. even if it is allocated</a>
+   274) <a name="l274" style="background-color: #ffcccc">    if (pbuf(index)%hdr%is_copy(col_type_grid)) then</a>
+   275) <a name="l275" style="background-color: #ffcccc">      rval = .false.</a>
+   276) <a name="l276" style="background-color: #ffcccc">    else</a>
+   277) <a name="l277" style="background-color: #ffcccc">      rval = buffer_field_is_alloc(pbuf(index)%bfg(col_type_grid))</a>
+   278) <a name="l278" style="background-color: #ffcccc">    end if</a>
+   279) <a name="l279" style="background-color: #ffcccc"></a>
+   280) <a name="l280" style="background-color: #ffcccc">  end function pbuf_field_has_gridcols</a>
+   281) <a name="l281" style="background-color: #ffffff"></a>
+   282) <a name="l282" style="background-color: #ffffff">  ! </a>
+   283) <a name="l283" style="background-color: #ffffff">  !  Return .true. iff pbuf has an allocated subcolumn field</a>
+   284) <a name="l284" style="background-color: #ffffff">  !</a>
+   285) <a name="l285" style="background-color: #ffffff"></a>
+   286) <a name="l286" style="background-color: #ffffff">  logical function </a><a style="background-color: #ffcccc">pbuf_field_has_subcols(pbuf, index) result(rval)</a>
+   287) <a name="l287" style="background-color: #ffcccc"></a>
+   288) <a name="l288" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer                :: pbuf(:)</a>
+   289) <a name="l289" style="background-color: #ffcccc">    integer,                            intent(in)    :: index</a>
+   290) <a name="l290" style="background-color: #ffcccc"></a>
+   291) <a name="l291" style="background-color: #ffcccc">    ! If the field is a copy, return .false. even if it is allocated</a>
+   292) <a name="l292" style="background-color: #ffcccc">    if (pbuf(index)%hdr%is_copy(col_type_subcol)) then</a>
+   293) <a name="l293" style="background-color: #ffcccc">      rval = .false.</a>
+   294) <a name="l294" style="background-color: #ffcccc">    else</a>
+   295) <a name="l295" style="background-color: #ffcccc">      rval = buffer_field_is_alloc(pbuf(index)%bfg(col_type_subcol))</a>
+   296) <a name="l296" style="background-color: #ffcccc">    end if</a>
+   297) <a name="l297" style="background-color: #ffcccc"></a>
+   298) <a name="l298" style="background-color: #ffcccc">  end function pbuf_field_has_subcols</a>
+   299) <a name="l299" style="background-color: #ffffff"></a>
+   300) <a name="l300" style="background-color: #ffffff">  ! </a>
+   301) <a name="l301" style="background-color: #ffffff">  !  Return .true. iff pbuf has an allocated col_type column field</a>
+   302) <a name="l302" style="background-color: #ffffff">  !</a>
+   303) <a name="l303" style="background-color: #ffffff"></a>
+   304) <a name="l304" style="background-color: #ffffff">  logical function </a><a style="background-color: #ffcccc">pbuf_field_has_col_type(pbuf, index, col_type) result(rval)</a>
+   305) <a name="l305" style="background-color: #ffcccc"></a>
+   306) <a name="l306" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer                :: pbuf(:)</a>
+   307) <a name="l307" style="background-color: #ffcccc">    integer,                            intent(in)    :: index</a>
+   308) <a name="l308" style="background-color: #ffcccc">    integer,                            intent(in)    :: col_type</a>
+   309) <a name="l309" style="background-color: #ffcccc"></a>
+   310) <a name="l310" style="background-color: #ffcccc">    if (col_type == col_type_grid) then</a>
+   311) <a name="l311" style="background-color: #ffcccc">      rval = pbuf_field_has_gridcols(pbuf, index)</a>
+   312) <a name="l312" style="background-color: #ffcccc">    else if(col_type == col_type_subcol) then</a>
+   313) <a name="l313" style="background-color: #ffcccc">      rval = pbuf_field_has_subcols(pbuf, index)</a>
+   314) <a name="l314" style="background-color: #ffcccc">    else</a>
+   315) <a name="l315" style="background-color: #ffcccc">      call endrun('pbuf_field_has_col_type: Invalid col_type')</a>
+   316) <a name="l316" style="background-color: #ffcccc">    end if</a>
+   317) <a name="l317" style="background-color: #ffcccc"></a>
+   318) <a name="l318" style="background-color: #ffcccc">  end function pbuf_field_has_col_type</a>
+   319) <a name="l319" style="background-color: #ffffff"></a>
+   320) <a name="l320" style="background-color: #ffffff">  !</a>
+   321) <a name="l321" style="background-color: #ffffff">  !  Initialize the buffer, should be called after all pbuf_add_field calls </a>
+   322) <a name="l322" style="background-color: #ffffff">  !  have been completed and should only be called once in a run</a>
+   323) <a name="l323" style="background-color: #ffffff">  !</a>
+   324) <a name="l324" style="background-color: #ffffff">  subroutine pbuf_initialize(pbuf2d)</a>
+   325) <a name="l325" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+   326) <a name="l326" style="background-color: #ffffff">    </a>
+   327) <a name="l327" style="background-color: #ffffff">    integer :: i, c</a>
+   328) <a name="l328" style="background-color: #ffffff">    type(physics_buffer_hdr), pointer :: hdrbuffer</a>
+   329) <a name="l329" style="background-color: #ffffff"></a>
+   330) <a name="l330" style="background-color: #ffffff">    !</a>
+   331) <a name="l331" style="background-color: #ffffff">    ! Allocate memory</a>
+   332) <a name="l332" style="background-color: #ffffff">    !</a>
+   333) <a name="l333" style="background-color: #ffffff">    if(buffer_initialized) return</a>
+   334) <a name="l334" style="background-color: #ffffff">    ! Allocate at least 1 to avoid unallocated error in ideal physics</a>
+   335) <a name="l335" style="background-color: #fafad2">    allocate(pbuf2d(max(1,currentpbufflds),begchunk:endchunk)) </a>
+   336) <a name="l336" style="background-color: #ffffff">    if(currentpbufflds&lt;1) return</a>
+   337) <a name="l337" style="background-color: #ffffff"></a>
+   338) <a name="l338" style="background-color: #ffffff">    do c = begchunk, endchunk</a>
+   339) <a name="l339" style="background-color: #ffffff">      hdrbuffer =&gt; hdrbuffertop</a>
+   340) <a name="l340" style="background-color: #ffffff">      do i = 1, currentpbufflds</a>
+   341) <a name="l341" style="background-color: #ffffff">        if(.not. hdrbuffer%added) then</a>
+   342) <a name="l342" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">endrun('pbuf_initialize: pbuf, '//trim(hdrbuffer%name)//', not added')</a>
+   343) <a name="l343" style="background-color: #ffff99">        end if</a>
+   344) <a name="l344" style="background-color: #ffff99">        pbuf2d(i,c)%lchnk = c</a>
+   345) <a name="l345" style="background-color: #ffff99">        pbuf2d(i,c)%hdr =&gt; hdrbuffer</a>
+   346) <a name="l346" style="background-color: #ffff99">        hdrbuffer =&gt; hdrbuffer%nexthdr</a>
+   347) <a name="l347" style="background-color: #ffff99">      end do</a>
+   348) <a name="l348" style="background-color: #ffff99">    end do</a>
+   349) <a name="l349" style="background-color: #ffff99">    </a>
+   350) <a name="l350" style="background-color: #ffffff">    buffer_initialized=.true.</a>
+   351) <a name="l351" style="background-color: #ffffff">    call pbuf_allocate(pbuf2d, 'global')</a>
+   352) <a name="l352" style="background-color: #ffffff">#ifdef DEBUG</a>
+   353) <a name="l353" style="background-color: #ffffff">    call pbuf2d_print(pbuf2d)</a>
+   354) <a name="l354" style="background-color: #ffffff">#endif</a>
+   355) <a name="l355" style="background-color: #ffffff">    return</a>
+   356) <a name="l356" style="background-color: #ffffff">  end subroutine pbuf_initialize</a>
+   357) <a name="l357" style="background-color: #ffffff"></a>
+   358) <a name="l358" style="background-color: #ffffff"></a>
+   359) <a name="l359" style="background-color: #ffffff">  subroutine pbuf_allocate(pbuf2d, persistence)</a>
+   360) <a name="l360" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+   361) <a name="l361" style="background-color: #ffffff">    character(len=*), intent(in) :: persistence</a>
+   362) <a name="l362" style="background-color: #ffffff">    integer :: i</a>
+   363) <a name="l363" style="background-color: #ffffff">    logical :: allocate_all</a>
+   364) <a name="l364" style="background-color: #ffffff"></a>
+   365) <a name="l365" style="background-color: #ffffff">    ! allocate_all is used to force allocation of all fields at same time as allocation</a>
+   366) <a name="l366" style="background-color: #ffffff">    ! for global scope.</a>
+   367) <a name="l367" style="background-color: #ffffff">    allocate_all = .false.</a>
+   368) <a name="l368" style="background-color: #ffffff">    if ( global_allocate_all ) then</a>
+   369) <a name="l369" style="background-color: #ffffff">       if ( persistence == 'global' ) then</a>
+   370) <a name="l370" style="background-color: #ffffff">          allocate_all = .true.</a>
+   371) <a name="l371" style="background-color: #ffffff">       else</a>
+   372) <a name="l372" style="background-color: #ffffff">          return</a>
+   373) <a name="l373" style="background-color: #ffffff">       end if</a>
+   374) <a name="l374" style="background-color: #ffffff">    end if</a>
+   375) <a name="l375" style="background-color: #ffffff"></a>
+   376) <a name="l376" style="background-color: #ffffff">    if(allocate_all) then</a>
+   377) <a name="l377" style="background-color: #ffffff">       do i=1,currentpbufflds</a>
+   378) <a name="l378" style="background-color: #ffffff">          select case(pbuf2d(i,begchunk)%hdr%dtype)</a>
+   379) <a name="l379" style="background-color: #ffffff">          case(TYPEDOUBLE)</a>
+   380) <a name="l380" style="background-color: #ffffff">             call pbuf_allocate_field_double(pbuf2d, i, dtype_r8)</a>
+   381) <a name="l381" style="background-color: #ffffff">          case(TYPEREAL)</a>
+   382) <a name="l382" style="background-color: #ffffff">             call </a><a style="background-color: #ffff99">pbuf_allocate_field_real(pbuf2d, i, dtype_r4)</a>
+   383) <a name="l383" style="background-color: #ffff99">!          case(i8)</a>
+   384) <a name="l384" style="background-color: #ffff99">!             call pbuf_allocate_field_long(pbuf2d, i)</a>
+   385) <a name="l385" style="background-color: #ffff99">          case(TYPEINT)</a>
+   386) <a name="l386" style="background-color: #ffff99">             call </a><a style="background-color: #ffffff">pbuf_allocate_field_int(pbuf2d, i, dtype_i4)</a>
+   387) <a name="l387" style="background-color: #ffffff">          end select</a>
+   388) <a name="l388" style="background-color: #ffffff">       end do</a>
+   389) <a name="l389" style="background-color: #ffff99">    else if(persistence .eq. 'physpkg') then</a>
+   390) <a name="l390" style="background-color: #ffff99">       do i=1,currentpbufflds</a>
+   391) <a name="l391" style="background-color: #ffff99">          if(pbuf2d(i,begchunk)%hdr%persistence==persistence_physpkg) then</a>
+   392) <a name="l392" style="background-color: #ffff99">             select case(pbuf2d(i,begchunk)%hdr%dtype)</a>
+   393) <a name="l393" style="background-color: #ffff99">             case(TYPEDOUBLE)</a>
+   394) <a name="l394" style="background-color: #ffff99">                call pbuf_allocate_field_double(pbuf2d, i, dtype_r8)</a>
+   395) <a name="l395" style="background-color: #ffff99">             case(TYPEREAL)</a>
+   396) <a name="l396" style="background-color: #ffff99">                call pbuf_allocate_field_real(pbuf2d, i, dtype_r4)</a>
+   397) <a name="l397" style="background-color: #ffff99">!             case(i8)</a>
+   398) <a name="l398" style="background-color: #ffff99">!                call pbuf_allocate_field_long(pbuf2d, i)</a>
+   399) <a name="l399" style="background-color: #ffff99">             case(TYPEINT)</a>
+   400) <a name="l400" style="background-color: #ffff99">                call pbuf_allocate_field_int(pbuf2d, i, dtype_i4)</a>
+   401) <a name="l401" style="background-color: #ffff99">             end select</a>
+   402) <a name="l402" style="background-color: #ffff99">          end if</a>
+   403) <a name="l403" style="background-color: #ffff99">       end do</a>
+   404) <a name="l404" style="background-color: #ffff99">    else if(persistence .eq. 'global') then</a>
+   405) <a name="l405" style="background-color: #ffff99">       do i=1,currentpbufflds</a>
+   406) <a name="l406" style="background-color: #ffff99">          if(pbuf2d(i,begchunk)%hdr%persistence==persistence_global) then</a>
+   407) <a name="l407" style="background-color: #ffff99"></a>
+   408) <a name="l408" style="background-color: #ffff99">             select case(pbuf2d(i,begchunk)%hdr%dtype)</a>
+   409) <a name="l409" style="background-color: #ffff99">             case(TYPEDOUBLE)</a>
+   410) <a name="l410" style="background-color: #ffff99">                call pbuf_allocate_field_double(pbuf2d, i, dtype_r8)</a>
+   411) <a name="l411" style="background-color: #ffff99">             case(TYPEREAL)</a>
+   412) <a name="l412" style="background-color: #ffff99">                call pbuf_allocate_field_real(pbuf2d, i, dtype_r4)</a>
+   413) <a name="l413" style="background-color: #ffff99">!             case(i8)</a>
+   414) <a name="l414" style="background-color: #ffff99">!                call pbuf_allocate_field_long(pbuf2d, i)</a>
+   415) <a name="l415" style="background-color: #ffff99">             case(TYPEINT)</a>
+   416) <a name="l416" style="background-color: #ffff99">                call pbuf_allocate_field_int(pbuf2d, i, dtype_i4)</a>
+   417) <a name="l417" style="background-color: #ffff99">             end select</a>
+   418) <a name="l418" style="background-color: #ffff99">          end if</a>
+   419) <a name="l419" style="background-color: #ffff99">       end do</a>
+   420) <a name="l420" style="background-color: #ffff99">    end if</a>
+   421) <a name="l421" style="background-color: #ffffff">  end subroutine pbuf_allocate</a>
+   422) <a name="l422" style="background-color: #ffffff"></a>
+   423) <a name="l423" style="background-color: #ffffff">  ! TYPE int,double,real </a>
+   424) <a name="l424" style="background-color: #ffffff">  subroutine pbuf_allocate_field_{TYPE}(pbuf2d, index, dtype)</a>
+   425) <a name="l425" style="background-color: #ffffff">    {VTYPE},                            intent(in)    :: dtype</a>
+   426) <a name="l426" style="background-color: #ffffff">    type(physics_buffer_desc), pointer                :: pbuf2d(:,:)</a>
+   427) <a name="l427" style="background-color: #ffffff">    integer,                            intent(in)    :: index</a>
+   428) <a name="l428" style="background-color: #ffffff"></a>
+   429) <a name="l429" style="background-color: #ffffff">    integer,                   pointer                :: dimsizes(:)</a>
+   430) <a name="l430" style="background-color: #ffffff">    integer                                           :: c, i</a>
+   431) <a name="l431" style="background-color: #ffffff">    logical                                           :: is_copy</a>
+   432) <a name="l432" style="background-color: #ffffff"></a>
+   433) <a name="l433" style="background-color: #ffffff">    do i = 1, ngrid_types</a>
+   434) <a name="l434" style="background-color: #ffffff">       ! Note - dimsizes(:)=0 is special case to indicate &quot;do not allocate&quot; and is not fatal</a>
+   435) <a name="l435" style="background-color: #ffffff">       ! Since this is called by a single thread, setting the dimsizes pointer to first chunk is okay</a>
+   436) <a name="l436" style="background-color: #ffffff">       dimsizes =&gt; pbuf2d(index,begchunk)%hdr%dimsizes(:,i)</a>
+   437) <a name="l437" style="background-color: #ffffff">       ! Note - We may have dimsizes /= 0 but still don't allocate if copy</a>
+   438) <a name="l438" style="background-color: #ffffff">       is_copy = pbuf2d(index,begchunk)%hdr%is_copy(i)</a>
+   439) <a name="l439" style="background-color: #ffffff"></a>
+   440) <a name="l440" style="background-color: #ffffff">       if (any(dimsizes(:) </a><a style="background-color: #fafad2">&lt; 0)) &amp;</a>
+   441) <a name="l441" style="background-color: #ffff99">          call endrun('pbuf_allocate_field: dimsizes must be greater than 0 for pbuf field '&amp;</a>
+   442) <a name="l442" style="background-color: #ffff99">                       //trim(pbuf2d(index,begchunk)%hdr%name))</a>
+   443) <a name="l443" style="background-color: #ffff99"></a>
+   444) <a name="l444" style="background-color: #ffff99">       if (</a><a style="background-color: #ffffff">all(dimsizes(:) /= 0) .and. (.not. is_copy)) then</a>
+   445) <a name="l445" style="background-color: #ffffff">          do c = begchunk, endchunk</a>
+   446) <a name="l446" style="background-color: #ffffff">             call buffer_field_allocate(pbuf2d(index,c)%bfg(i), dimsizes, dtype)</a>
+   447) <a name="l447" style="background-color: #ffffff">          end do</a>
+   448) <a name="l448" style="background-color: #ffffff">       end if</a>
+   449) <a name="l449" style="background-color: #ffffff">    end do</a>
+   450) <a name="l450" style="background-color: #ffffff">    </a>
+   451) <a name="l451" style="background-color: #ffffff">  end subroutine pbuf_allocate_field_{TYPE}</a>
+   452) <a name="l452" style="background-color: #ffffff"></a>
+   453) <a name="l453" style="background-color: #ffffff">  pure logical function pbuf_do_deallocate(hdr, persistence, col_type) result(rval)</a>
+   454) <a name="l454" style="background-color: #ffffff">    type(physics_buffer_hdr), pointer            :: hdr</a>
+   455) <a name="l455" style="background-color: #ffffff">    character(len=*),                 intent(in) :: persistence</a>
+   456) <a name="l456" style="background-color: #ffffff">    integer,                          intent(in) :: col_type</a>
+   457) <a name="l457" style="background-color: #ffffff"></a>
+   458) <a name="l458" style="background-color: #ffffff">    if (persistence .eq. 'physpkg') then</a>
+   459) <a name="l459" style="background-color: #ffffff">      if (hdr%is_copy(col_type)) then</a>
+   460) <a name="l460" style="background-color: #ffffff">        ! If this is a copied field, it is always deallocated</a>
+   461) <a name="l461" style="background-color: #ffff99">        rval = .true.</a>
+   462) <a name="l462" style="background-color: #ffffff">      else if (global_allocate_all) then</a>
+   463) <a name="l463" style="background-color: #ffffff">        ! This is an all-global run so no deallocation</a>
+   464) <a name="l464" style="background-color: #ffffff">        rval = .false.</a>
+   465) <a name="l465" style="background-color: #ffff99">      else if(hdr%persistence == persistence_physpkg) then</a>
+   466) <a name="l466" style="background-color: #ffff99">        ! This pbuf is a physpkg type, deallocate</a>
+   467) <a name="l467" style="background-color: #ffff99">        rval = .true.</a>
+   468) <a name="l468" style="background-color: #ffff99">      else</a>
+   469) <a name="l469" style="background-color: #ffff99">        ! This pbuf is global, do not deallocate</a>
+   470) <a name="l470" style="background-color: #ffff99">        rval = .false.</a>
+   471) <a name="l471" style="background-color: #ffff99">      end if</a>
+   472) <a name="l472" style="background-color: #ffff99">    else</a>
+   473) <a name="l473" style="background-color: #ffff99">      ! We are doing a global deallocate, everything must go!</a>
+   474) <a name="l474" style="background-color: #ffffff">      rval = .true.</a>
+   475) <a name="l475" style="background-color: #ffffff">    end if</a>
+   476) <a name="l476" style="background-color: #ffffff">  end function pbuf_do_deallocate</a>
+   477) <a name="l477" style="background-color: #ffffff"></a>
+   478) <a name="l478" style="background-color: #ffffff">  subroutine pbuf_deallocate(pbuf2d, persistence)</a>
+   479) <a name="l479" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+   480) <a name="l480" style="background-color: #ffffff">    character(len=*) :: persistence</a>
+   481) <a name="l481" style="background-color: #ffffff"></a>
+   482) <a name="l482" style="background-color: #ffffff">    integer :: i, j, c</a>
+   483) <a name="l483" style="background-color: #ffffff"></a>
+   484) <a name="l484" style="background-color: #ffffff">    do i = 1, currentpbufflds</a>
+   485) <a name="l485" style="background-color: #ffffff">      do j = 1, ngrid_types</a>
+   486) <a name="l486" style="background-color: #ffffff">        if (pbuf_do_deallocate(pbuf2d(i,begchunk)%hdr, persistence, j)) then</a>
+   487) <a name="l487" style="background-color: #ffffff">          if (buffer_field_is_alloc(pbuf2d(i,begchunk)%bfg(j))) then</a>
+   488) <a name="l488" style="background-color: #ffffff">             select case(pbuf2d(i,begchunk)%hdr%dtype)</a>
+   489) <a name="l489" style="background-color: #ffffff">             case(TYPEDOUBLE)</a>
+   490) <a name="l490" style="background-color: #ffffff">                do c = begchunk,endchunk</a>
+   491) <a name="l491" style="background-color: #ffffff">                  call buffer_field_deallocate(pbuf2d(i,c)%bfg(j), dtype_r8)</a>
+   492) <a name="l492" style="background-color: #ffffff">                end do</a>
+   493) <a name="l493" style="background-color: #ffffff">             case(TYPEREAL)</a>
+   494) <a name="l494" style="background-color: #ffff99">                do c = begchunk,endchunk</a>
+   495) <a name="l495" style="background-color: #ffff99">                  call buffer_field_deallocate(pbuf2d(i,c)%bfg(j), dtype_r4)</a>
+   496) <a name="l496" style="background-color: #ffff99">                end do</a>
+   497) <a name="l497" style="background-color: #ffff99">             case(TYPEINT)</a>
+   498) <a name="l498" style="background-color: #ffffff">                do c = begchunk,endchunk</a>
+   499) <a name="l499" style="background-color: #ffffff">                  call buffer_field_deallocate(pbuf2d(i,c)%bfg(j), dtype_i4)</a>
+   500) <a name="l500" style="background-color: #ffffff">                end do</a>
+   501) <a name="l501" style="background-color: #ffffff">             end select</a>
+   502) <a name="l502" style="background-color: #ffffff">           end if</a>
+   503) <a name="l503" style="background-color: #ffffff">        end if</a>
+   504) <a name="l504" style="background-color: #ffffff">      end do    ! ngrid_types</a>
+   505) <a name="l505" style="background-color: #ffffff">    end do      ! currentpbufflds</a>
+   506) <a name="l506" style="background-color: #ffffff">  end subroutine pbuf_deallocate</a>
+   507) <a name="l507" style="background-color: #ffffff"></a>
+   508) <a name="l508" style="background-color: #ffffff">  ! Find a pbuf header pointer based on the name input</a>
+   509) <a name="l509" style="background-color: #ffffff">  ! Automatically tacks on an extra header if &lt;name&gt; is not found.</a>
+   510) <a name="l510" style="background-color: #ffffff">  subroutine find_pbuf_header(name, index, bufptr)</a>
+   511) <a name="l511" style="background-color: #ffffff">    character(len=*),                 intent(in)  :: name</a>
+   512) <a name="l512" style="background-color: #ffffff">    type(physics_buffer_hdr), pointer             :: bufptr</a>
+   513) <a name="l513" style="background-color: #ffffff">    integer,                          intent(out) :: index</a>
+   514) <a name="l514" style="background-color: #ffffff"></a>
+   515) <a name="l515" style="background-color: #ffffff">    ! Local Variables</a>
+   516) <a name="l516" style="background-color: #ffffff">    logical                                       :: buf_found</a>
+   517) <a name="l517" style="background-color: #ffffff"></a>
+   518) <a name="l518" style="background-color: #ffffff">    if(.not. associated(hdrbuffertop)) then</a>
+   519) <a name="l519" style="background-color: #ffffff">      ! This is the very first pbuf, allocate and set</a>
+   520) <a name="l520" style="background-color: #ffffff">      allocate(hdrbuffertop)</a>
+   521) <a name="l521" style="background-color: #ffffff">      currentpbufflds = 1</a>
+   522) <a name="l522" style="background-color: #ffffff">      hdrbuffertop%name = name</a>
+   523) <a name="l523" style="background-color: #ffffff">    end if</a>
+   524) <a name="l524" style="background-color: #ffffff"></a>
+   525) <a name="l525" style="background-color: #ffffff">    bufptr=&gt;hdrbuffertop</a>
+   526) <a name="l526" style="background-color: #ffffff">    buf_found = .false.</a>
+   527) <a name="l527" style="background-color: #ffffff">    index = 1</a>
+   528) <a name="l528" style="background-color: #ffffff">    do while(.not. buf_found)</a>
+   529) <a name="l529" style="background-color: #ffffff">      if(trim(bufptr%name) == trim(name)) then</a>
+   530) <a name="l530" style="background-color: #ffffff">        buf_found = .true.</a>
+   531) <a name="l531" style="background-color: #ffffff">      else</a>
+   532) <a name="l532" style="background-color: #ffffff">        if (associated(bufptr%nexthdr)) then</a>
+   533) <a name="l533" style="background-color: #ffffff">          bufptr=&gt;bufptr%nexthdr</a>
+   534) <a name="l534" style="background-color: #ffffff">          index = index + 1</a>
+   535) <a name="l535" style="background-color: #ffffff">        else</a>
+   536) <a name="l536" style="background-color: #ffffff">          ! We ran off the end of the buffers, make a new one for &lt;name&gt;</a>
+   537) <a name="l537" style="background-color: #ffffff">          ! Sanity check, we should have checked exactly currentpbufflds</a>
+   538) <a name="l538" style="background-color: #ffffff">          if (index /= currentpbufflds) then</a>
+   539) <a name="l539" style="background-color: #ffffff">            call </a><a style="background-color: #ffff99">endrun(&quot;find_pbuf_header: currentpbufflds indexing off&quot;)</a>
+   540) <a name="l540" style="background-color: #ffff99">          end if</a>
+   541) <a name="l541" style="background-color: #ffffff">          currentpbufflds = currentpbufflds + 1</a>
+   542) <a name="l542" style="background-color: #ffffff">          index = currentpbufflds</a>
+   543) <a name="l543" style="background-color: #ffffff">          allocate(bufptr%nexthdr)</a>
+   544) <a name="l544" style="background-color: #ffffff">          bufptr=&gt;bufptr%nexthdr</a>
+   545) <a name="l545" style="background-color: #ffffff">          bufptr%name = trim(name)</a>
+   546) <a name="l546" style="background-color: #ffffff">          buf_found = .true.</a>
+   547) <a name="l547" style="background-color: #ffffff">        end if</a>
+   548) <a name="l548" style="background-color: #ffffff">      end if</a>
+   549) <a name="l549" style="background-color: #ffffff">    end do</a>
+   550) <a name="l550" style="background-color: #ffffff">  end subroutine find_pbuf_header</a>
+   551) <a name="l551" style="background-color: #ffffff">  !</a>
+   552) <a name="l552" style="background-color: #ffffff">  !  Register a field in the pbuf</a>
+   553) <a name="l553" style="background-color: #ffffff">  !  This should be called from physics register routines.</a>
+   554) <a name="l554" style="background-color: #ffffff">  !  persistence must be 'global' or 'physpkg' </a>
+   555) <a name="l555" style="background-color: #ffffff">  !  dtype can be any of r8, r4, i4 as defined in shr_kinds_mod.F90</a>
+   556) <a name="l556" style="background-color: #ffffff">  !  col_type is either col_type_grid or col_type_subcol.</a>
+   557) <a name="l557" style="background-color: #ffffff">  !  If no col_type, then grid field is defined (i.e., dimsizes set)</a>
+   558) <a name="l558" style="background-color: #ffffff"></a>
+   559) <a name="l559" style="background-color: #ffffff">  subroutine pbuf_register_field_int(name, pname, index, persistence,         &amp;</a>
+   560) <a name="l560" style="background-color: #ffffff">       dtype, dimsizes, col_type, pbuf_add)</a>
+   561) <a name="l561" style="background-color: #ffffff"></a>
+   562) <a name="l562" style="background-color: #ffffff">    ! Dummy Arguments</a>
+   563) <a name="l563" style="background-color: #ffffff">    character(len=*),           intent(in)  :: name</a>
+   564) <a name="l564" style="background-color: #ffffff">    character(len=*),           intent(in)  :: pname ! name of calling parameterization</a>
+   565) <a name="l565" style="background-color: #ffffff">    integer,                    intent(out) :: index</a>
+   566) <a name="l566" style="background-color: #ffffff">    character(len=*), optional, intent(in)  :: persistence</a>
+   567) <a name="l567" style="background-color: #ffffff">    integer,          optional, intent(in)  :: dtype ! used to differentiate specific calls</a>
+   568) <a name="l568" style="background-color: #ffffff">    integer,          optional, intent(in)  :: dimsizes(:) ! dimension sizes of grid field</a>
+   569) <a name="l569" style="background-color: #ffffff">    integer,          optional, intent(in)  :: col_type</a>
+   570) <a name="l570" style="background-color: #ffffff">    logical,          optional, intent(in)  :: pbuf_add</a>
+   571) <a name="l571" style="background-color: #ffffff"></a>
+   572) <a name="l572" style="background-color: #ffffff"></a>
+   573) <a name="l573" style="background-color: #ffffff">    ! Local Variables</a>
+   574) <a name="l574" style="background-color: #ffffff">    type(physics_buffer_hdr), pointer :: bufptr</a>
+   575) <a name="l575" style="background-color: #ffffff">    integer                           :: dimcnt, col_type_use</a>
+   576) <a name="l576" style="background-color: #ffffff">    character(len=128)                :: errmsg</a>
+   577) <a name="l577" style="background-color: #ffffff"></a>
+   578) <a name="l578" style="background-color: #ffffff">    if(buffer_initialized) then</a>
+   579) <a name="l579" style="background-color: #ffffff">      call </a><a style="background-color: #ffff99">endrun('Attempt to register pbuf field after buffer initialized')</a>
+   580) <a name="l580" style="background-color: #ffff99">    end if</a>
+   581) <a name="l581" style="background-color: #ffff99"></a>
+   582) <a name="l582" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">find_pbuf_header(name, index, bufptr)</a>
+   583) <a name="l583" style="background-color: #ffffff"></a>
+   584) <a name="l584" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(persistence)) then</a>
+   585) <a name="l585" style="background-color: #ffffff">      if(persistence .eq. &quot;global&quot;) then</a>
+   586) <a name="l586" style="background-color: #ffffff">        bufptr%persistence = persistence_global</a>
+   587) <a name="l587" style="background-color: #ffffff">      else</a>
+   588) <a name="l588" style="background-color: #ffffff">        bufptr%persistence = persistence_physpkg</a>
+   589) <a name="l589" style="background-color: #ffffff">      end if</a>
+   590) <a name="l590" style="background-color: #ffffff">    end if</a>
+   591) <a name="l591" style="background-color: #ffffff"></a>
+   592) <a name="l592" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(dtype)) then</a>
+   593) <a name="l593" style="background-color: #ffffff">      bufptr%dtype = dtype</a>
+   594) <a name="l594" style="background-color: #ffffff">    end if</a>
+   595) <a name="l595" style="background-color: #ffffff"></a>
+   596) <a name="l596" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(dimsizes)) then</a>
+   597) <a name="l597" style="background-color: #fafad2">      ! Normally, we only set buffer dimsizes if dimsizes is passed</a>
+   598) <a name="l598" style="background-color: #ffffff">      dimcnt = size(dimsizes)</a>
+   599) <a name="l599" style="background-color: #ffffff"></a>
+   600) <a name="l600" style="background-color: #ffffff">      if (</a><a style="background-color: #fafad2">present(col_type)) then</a>
+   601) <a name="l601" style="background-color: #ffffff">        col_type_use = col_type</a>
+   602) <a name="l602" style="background-color: #ffffff">      else</a>
+   603) <a name="l603" style="background-color: #ffff99">        col_type_use = col_type_grid</a>
+   604) <a name="l604" style="background-color: #ffff99">      end if</a>
+   605) <a name="l605" style="background-color: #ffff99"></a>
+   606) <a name="l606" style="background-color: #ffff99">      ! Only allow up to 5 dimensions. #6 is reserved for subcolumn umpacking</a>
+   607) <a name="l607" style="background-color: #ffff99">      ! and #7 is for the physics chunk index.</a>
+   608) <a name="l608" style="background-color: #ffffff">      if (dimcnt &gt; 5) then</a>
+   609) <a name="l609" style="background-color: #ffffff">        call </a><a style="background-color: #ffff99">endrun('pbuf_register_field: Attempt to exceed maximum of 5 dimensions for '//trim(name))</a>
+   610) <a name="l610" style="background-color: #ffff99">      end if</a>
+   611) <a name="l611" style="background-color: #ffff99"></a>
+   612) <a name="l612" style="background-color: #ffff99">      ! Assign dimensions dependent on col_types input</a>
+   613) <a name="l613" style="background-color: #ffff99">      ! Note that dimensions are initialized to zero and set if being used</a>
+   614) <a name="l614" style="background-color: #ffffff">      if (col_type_use == col_type_grid) then</a>
+   615) <a name="l615" style="background-color: #ffffff">        ! grid is requested</a>
+   616) <a name="l616" style="background-color: #ffffff">        bufptr%dimsizes(:,col_type_grid) = 1</a>
+   617) <a name="l617" style="background-color: #ffffff">        bufptr%dimsizes(1:dimcnt,col_type_grid) = dimsizes</a>
+   618) <a name="l618" style="background-color: #ffffff">        ! If someone previously registered the subcol, reset those dims</a>
+   619) <a name="l619" style="background-color: #ffffff">        if (bufptr%dimsizes(1,col_type_subcol) == pcols*psubcols) then</a>
+   620) <a name="l620" style="background-color: #ffff99">          bufptr%dimsizes(2:dimcnt,col_type_subcol) = dimsizes(2:dimcnt)</a>
+   621) <a name="l621" style="background-color: #ffff99">        end if</a>
+   622) <a name="l622" style="background-color: #ffff99">      else if (col_type_use == col_type_subcol) then</a>
+   623) <a name="l623" style="background-color: #ffff99">        bufptr%dimsizes(:,col_type_subcol) = 1</a>
+   624) <a name="l624" style="background-color: #ffff99">        bufptr%dimsizes(1,col_type_subcol) = pcols*psubcols</a>
+   625) <a name="l625" style="background-color: #ffff99">        ! This case should only be used for a pbuf_add_field call adding a subcolumn-only field</a>
+   626) <a name="l626" style="background-color: #ffff99">        if (dimcnt &gt; 1) then</a>
+   627) <a name="l627" style="background-color: #ffff99">          bufptr%dimsizes(2:dimcnt,col_type_subcol) = dimsizes(2:dimcnt)</a>
+   628) <a name="l628" style="background-color: #ffff99">        else if (bufptr%dimsizes(1,col_type_grid) &gt; 0) then</a>
+   629) <a name="l629" style="background-color: #ffff99">          ! If grid field previously registered or added, update dims</a>
+   630) <a name="l630" style="background-color: #ffff99">          bufptr%dimsizes(2:,col_type_subcol) = bufptr%dimsizes(2:,col_type_grid)</a>
+   631) <a name="l631" style="background-color: #ffff99">        end if</a>
+   632) <a name="l632" style="background-color: #ffff99">      end if</a>
+   633) <a name="l633" style="background-color: #ffff99">    end if</a>
+   634) <a name="l634" style="background-color: #ffff99"></a>
+   635) <a name="l635" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(pbuf_add)) then</a>
+   636) <a name="l636" style="background-color: #ffffff">      if (pbuf_add) then</a>
+   637) <a name="l637" style="background-color: #ffffff">        ! An add request has been made but we have to make sure we have all info</a>
+   638) <a name="l638" style="background-color: #ffffff">        if (all(bufptr%dimsizes(:,:) == 0)) then</a>
+   639) <a name="l639" style="background-color: #ffff99">          write(errmsg, *) 'pbuf_add_field: trying to add field with no dimensions'</a>
+   640) <a name="l640" style="background-color: #ffff99">          call endrun(errmsg)</a>
+   641) <a name="l641" style="background-color: #ffff99">        end if</a>
+   642) <a name="l642" style="background-color: #ffffff">        if (bufptr%dtype &lt; 0) then</a>
+   643) <a name="l643" style="background-color: #ffff99">          write(errmsg, *) 'pbuf_add_field: trying to add field with no type'</a>
+   644) <a name="l644" style="background-color: #ffff99">          call endrun(errmsg)</a>
+   645) <a name="l645" style="background-color: #ffff99">        end if</a>
+   646) <a name="l646" style="background-color: #ffffff">        if (bufptr%persistence &lt; 0) then</a>
+   647) <a name="l647" style="background-color: #ffff99">          write(errmsg, *) 'pbuf_add_field: trying to add field with bad persistence'</a>
+   648) <a name="l648" style="background-color: #ffff99">          call endrun(errmsg)</a>
+   649) <a name="l649" style="background-color: #ffff99">        end if</a>
+   650) <a name="l650" style="background-color: #ffffff">        bufptr%added = .true.</a>
+   651) <a name="l651" style="background-color: #ffffff">      end if</a>
+   652) <a name="l652" style="background-color: #ffffff">    end if</a>
+   653) <a name="l653" style="background-color: #ffffff"></a>
+   654) <a name="l654" style="background-color: #ffffff">  end subroutine pbuf_register_field_int</a>
+   655) <a name="l655" style="background-color: #ffffff"></a>
+   656) <a name="l656" style="background-color: #ffffff">  !</a>
+   657) <a name="l657" style="background-color: #ffffff">  !  Add a field to the pbuf, this should be called from physics register routines</a>
+   658) <a name="l658" style="background-color: #ffffff">  !  name is required to be unique, </a>
+   659) <a name="l659" style="background-color: #ffffff">  !  persistence must be 'global' or 'physpkg' </a>
+   660) <a name="l660" style="background-color: #ffffff">  !  dtype can be any of r8, r4, i4 as defined in shr_kinds_mod.F90</a>
+   661) <a name="l661" style="background-color: #ffffff">  !  If present, col_type must be either col_type_grid or col_type_subcol</a>
+   662) <a name="l662" style="background-color: #ffffff"></a>
+   663) <a name="l663" style="background-color: #ffffff">  ! TYPE int,double,real </a>
+   664) <a name="l664" style="background-color: #ffffff">  subroutine pbuf_add_field_{TYPE}(name, persistence, dtype, dimsizes, index, col_type)</a>
+   665) <a name="l665" style="background-color: #ffffff"></a>
+   666) <a name="l666" style="background-color: #ffffff">    character(len=*), intent(in)  :: name, persistence</a>
+   667) <a name="l667" style="background-color: #ffffff">    {VTYPE}, intent(in)           :: dtype ! used only to differentiate specific calls</a>
+   668) <a name="l668" style="background-color: #ffffff">    integer, intent(in)           :: dimsizes(:) ! dimension sizes of grid field</a>
+   669) <a name="l669" style="background-color: #ffffff">    integer, intent(in), optional :: col_type</a>
+   670) <a name="l670" style="background-color: #ffffff">    integer, intent(out)          :: index</a>
+   671) <a name="l671" style="background-color: #ffffff"></a>
+   672) <a name="l672" style="background-color: #ffffff">    ! Local Variables</a>
+   673) <a name="l673" style="background-color: #ffffff">    type(physics_buffer_hdr), pointer :: bufptr</a>
+   674) <a name="l674" style="background-color: #ffffff">    integer                           :: col_type_use</a>
+   675) <a name="l675" style="background-color: #ffffff"></a>
+   676) <a name="l676" style="background-color: #ffffff">    if(buffer_initialized) then</a>
+   677) <a name="l677" style="background-color: #ffffff">      call </a><a style="background-color: #ffff99">endrun('Attempt to add pbuf field after buffer initialized')</a>
+   678) <a name="l678" style="background-color: #ffff99">    end if</a>
+   679) <a name="l679" style="background-color: #ffff99"></a>
+   680) <a name="l680" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(col_type)) then</a>
+   681) <a name="l681" style="background-color: #ffff99">      col_type_use = col_type</a>
+   682) <a name="l682" style="background-color: #ffff99">    else</a>
+   683) <a name="l683" style="background-color: #ffffff">      col_type_use = col_type_grid</a>
+   684) <a name="l684" style="background-color: #ffffff">    end if</a>
+   685) <a name="l685" style="background-color: #ffffff"></a>
+   686) <a name="l686" style="background-color: #ffffff">    call pbuf_register_field_int(trim(name), '', index,                       &amp;</a>
+   687) <a name="l687" style="background-color: #ffffff">         persistence=persistence, dtype={ITYPE},                              &amp;</a>
+   688) <a name="l688" style="background-color: #ffffff">         dimsizes=dimsizes, col_type=col_type_use, pbuf_add=.true.)</a>
+   689) <a name="l689" style="background-color: #ffffff"></a>
+   690) <a name="l690" style="background-color: #ffffff">  end subroutine pbuf_add_field_{TYPE}</a>
+   691) <a name="l691" style="background-color: #ffffff"></a>
+   692) <a name="l692" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">pbuf_register_subcol(name, pname, index)</a>
+   693) <a name="l693" style="background-color: #ffcccc">    use subcol_utils, only: is_subcol_on</a>
+   694) <a name="l694" style="background-color: #ffcccc"></a>
+   695) <a name="l695" style="background-color: #ffcccc">    ! Dummy Arguments</a>
+   696) <a name="l696" style="background-color: #ffcccc">    character(len=*),           intent(in)  :: name</a>
+   697) <a name="l697" style="background-color: #ffcccc">    character(len=*),           intent(in)  :: pname ! name of calling parameterization</a>
+   698) <a name="l698" style="background-color: #ffcccc">    integer,                    intent(out) :: index</a>
+   699) <a name="l699" style="background-color: #ffcccc"></a>
+   700) <a name="l700" style="background-color: #ffcccc">    ! Local variables</a>
+   701) <a name="l701" style="background-color: #ffcccc">    integer                                 :: dimsizes(1)</a>
+   702) <a name="l702" style="background-color: #ffcccc"></a>
+   703) <a name="l703" style="background-color: #ffcccc">    ! You really should not call this routine if subcolumns are not on</a>
+   704) <a name="l704" style="background-color: #ffcccc">    if (.not. is_subcol_on()) then</a>
+   705) <a name="l705" style="background-color: #ffcccc">      call endrun('pbuf_register_subcol: subcolumns are not active')</a>
+   706) <a name="l706" style="background-color: #ffcccc">    end if</a>
+   707) <a name="l707" style="background-color: #ffcccc">    ! Create and pass dimsizes so that subcolums are registered</a>
+   708) <a name="l708" style="background-color: #ffcccc">    dimsizes(1) = pcols * psubcols</a>
+   709) <a name="l709" style="background-color: #ffcccc">    call pbuf_register_field_int(trim(name), trim(pname), index,              &amp;</a>
+   710) <a name="l710" style="background-color: #ffcccc">         dimsizes=dimsizes, col_type=col_type_subcol)</a>
+   711) <a name="l711" style="background-color: #ffcccc"></a>
+   712) <a name="l712" style="background-color: #ffcccc">  end subroutine pbuf_register_subcol</a>
+   713) <a name="l713" style="background-color: #ffffff"></a>
+   714) <a name="l714" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">pbuf2d_print(pbuf2d)</a>
+   715) <a name="l715" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+   716) <a name="l716" style="background-color: #ffcccc"></a>
+   717) <a name="l717" style="background-color: #ffcccc">    call pbuf1d_print(pbuf_get_chunk(pbuf2d,begchunk))</a>
+   718) <a name="l718" style="background-color: #ffcccc"></a>
+   719) <a name="l719" style="background-color: #ffcccc"></a>
+   720) <a name="l720" style="background-color: #ffcccc">  end subroutine pbuf2d_print</a>
+   721) <a name="l721" style="background-color: #ffffff"></a>
+   722) <a name="l722" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">pbuf1d_print(pbuf)</a>
+   723) <a name="l723" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer :: pbuf(:)</a>
+   724) <a name="l724" style="background-color: #ffcccc">    integer :: i</a>
+   725) <a name="l725" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer :: pbufPtr</a>
+   726) <a name="l726" style="background-color: #ffcccc"></a>
+   727) <a name="l727" style="background-color: #ffcccc">    print *,__FILE__,__LINE__,currentpbufflds,size(pbuf)</a>
+   728) <a name="l728" style="background-color: #ffcccc">    do i=1,currentpbufflds</a>
+   729) <a name="l729" style="background-color: #ffcccc">       pbufPtr =&gt; pbuf(i)</a>
+   730) <a name="l730" style="background-color: #ffcccc">       print *,__FILE__,__LINE__,i,trim(pbufPtr%hdr%name),pbufPtr%hdr%dtype,pbufPtr%hdr%persistence,pbufPtr%hdr%dimsizes</a>
+   731) <a name="l731" style="background-color: #ffcccc">    end do</a>
+   732) <a name="l732" style="background-color: #ffcccc"></a>
+   733) <a name="l733" style="background-color: #ffcccc">  end subroutine pbuf1d_print</a>
+   734) <a name="l734" style="background-color: #ffcccc"></a><a style="background-color: #ffffff">  !</a>
+   735) <a name="l735" style="background-color: #ffffff">  ! Given a pbuf field name return an integer index to the field.  </a>
+   736) <a name="l736" style="background-color: #ffffff">  ! This index can be used to retrieve the field and is much faster</a>
+   737) <a name="l737" style="background-color: #ffffff">  ! than using the name in most cases  </a>
+   738) <a name="l738" style="background-color: #ffffff">  ! </a>
+   739) <a name="l739" style="background-color: #ffffff"></a>
+   740) <a name="l740" style="background-color: #ffffff">  function pbuf_get_index(name, errcode) result(index)</a>
+   741) <a name="l741" style="background-color: #ffffff">    character(len=*), intent(in)     :: name</a>
+   742) <a name="l742" style="background-color: #ffffff">    integer, intent(inout), optional :: errcode</a>
+   743) <a name="l743" style="background-color: #ffffff">    integer :: index</a>
+   744) <a name="l744" style="background-color: #ffffff">    integer :: i</a>
+   745) <a name="l745" style="background-color: #ffffff">    type(physics_buffer_hdr), pointer :: bufptr</a>
+   746) <a name="l746" style="background-color: #ffffff"></a>
+   747) <a name="l747" style="background-color: #ffffff"></a>
+   748) <a name="l748" style="background-color: #ffffff">    bufptr=&gt;hdrbuffertop</a>
+   749) <a name="l749" style="background-color: #ffffff">    index = -1</a>
+   750) <a name="l750" style="background-color: #ffffff">    do i=1,currentpbufflds</a>
+   751) <a name="l751" style="background-color: #ffffff">       if(bufptr%name .eq. name) then</a>
+   752) <a name="l752" style="background-color: #ffffff">          index=i</a>
+   753) <a name="l753" style="background-color: #ffffff">          exit</a>
+   754) <a name="l754" style="background-color: #ffffff">       end if</a>
+   755) <a name="l755" style="background-color: #ffffff">       bufptr=&gt;bufptr%nexthdr</a>
+   756) <a name="l756" style="background-color: #ffffff">    end do</a>
+   757) <a name="l757" style="background-color: #ffffff"></a>
+   758) <a name="l758" style="background-color: #ffffff">    if (present(errcode)) then</a>
+   759) <a name="l759" style="background-color: #ffffff">        errcode = index </a>
+   760) <a name="l760" style="background-color: #ffffff">    else if(index&lt;0) then</a>
+   761) <a name="l761" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">endrun('Attempt to find undefined name in pbuf '//trim(name))</a>
+   762) <a name="l762" style="background-color: #ffff99">    end if</a>
+   763) <a name="l763" style="background-color: #ffff99"></a>
+   764) <a name="l764" style="background-color: #ffff99"></a>
+   765) <a name="l765" style="background-color: #ffffff">  end function pbuf_get_index</a>
+   766) <a name="l766" style="background-color: #ffffff"></a>
+   767) <a name="l767" style="background-color: #ffffff">  !=========================================================================================</a>
+   768) <a name="l768" style="background-color: #ffffff"></a>
+   769) <a name="l769" style="background-color: #ffffff">  ! </a>
+   770) <a name="l770" style="background-color: #ffffff">  ! Given a pbuf2d chunk and an index return a pointer to a field chunk </a>
+   771) <a name="l771" style="background-color: #ffffff">  ! </a>
+   772) <a name="l772" style="background-color: #ffffff">  !</a>
+   773) <a name="l773" style="background-color: #ffffff"></a>
+   774) <a name="l774" style="background-color: #ffffff"></a>
+   775) <a name="l775" style="background-color: #ffffff">  ! TYPE int,double,real </a>
+   776) <a name="l776" style="background-color: #ffffff">  ! DIMS 1,2,3,4,5</a>
+   777) <a name="l777" style="background-color: #ffffff">  subroutine get_pbuf1d_field_by_index_{DIMS}d_{TYPE}(pbuf, index, field, start,kount, col_type, copy_if_needed, errcode)</a>
+   778) <a name="l778" style="background-color: #ffffff"></a>
+   779) <a name="l779" style="background-color: #ffffff">    ! Get the data based on the col_type which is specified.  If no col_type, then grid field is returned</a>
+   780) <a name="l780" style="background-color: #ffffff">    use subcol_utils,    only: subcol_field_copy</a>
+   781) <a name="l781" style="background-color: #ffffff"></a>
+   782) <a name="l782" style="background-color: #ffffff">    type(physics_buffer_desc), pointer:: pbuf(:)</a>
+   783) <a name="l783" style="background-color: #ffffff">    integer,             intent(in)               :: index</a>
+   784) <a name="l784" style="background-color: #ffffff">    {VTYPE},    pointer                           :: field{DIMSTR}</a>
+   785) <a name="l785" style="background-color: #ffffff">    integer,             intent(in),  optional    :: start(:),kount(:)</a>
+   786) <a name="l786" style="background-color: #ffffff">    integer,             intent(in),  optional    :: col_type</a>
+   787) <a name="l787" style="background-color: #ffffff">    logical,             intent(in),  optional    :: copy_if_needed</a>
+   788) <a name="l788" style="background-color: #ffffff">    integer,             intent(out), optional    :: errcode</a>
+   789) <a name="l789" style="background-color: #ffffff"></a>
+   790) <a name="l790" style="background-color: #ffffff">    integer,    pointer               :: dimsizes(:)</a>
+   791) <a name="l791" style="background-color: #ffffff">    {VTYPE},    pointer               :: gfield{DIMSTR}</a>
+   792) <a name="l792" style="background-color: #ffffff">    {VTYPE},    pointer               :: sfield{DIMSTR}</a>
+   793) <a name="l793" style="background-color: #ffffff">    integer                           :: col_type_use</a>
+   794) <a name="l794" style="background-color: #ffffff">    integer, allocatable              :: kount_grid(:) ! For use in copy_if_needed</a>
+   795) <a name="l795" style="background-color: #ffffff">    logical                           :: subset</a>
+   796) <a name="l796" style="background-color: #ffffff"></a>
+   797) <a name="l797" style="background-color: #ffffff">    ! Copy the generic type to one compatable with the request</a>
+   798) <a name="l798" style="background-color: #ffffff">    if(index&lt;1 .or. index&gt;size(pbuf)) then</a>
+   799) <a name="l799" style="background-color: #ffff99">      print *,__FILE__,__LINE__,index</a>
+   800) <a name="l800" style="background-color: #ffff99">      call endrun('index out of range')</a>
+   801) <a name="l801" style="background-color: #ffff99">    end if</a>
+   802) <a name="l802" style="background-color: #ffff99"></a>
+   803) <a name="l803" style="background-color: #ffff99">    ! Default col_type is grid columns</a>
+   804) <a name="l804" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(col_type)) then</a>
+   805) <a name="l805" style="background-color: #fafad2">      col_type_use = col_type</a>
+   806) <a name="l806" style="background-color: #fafad2">    else</a>
+   807) <a name="l807" style="background-color: #ffffff">      col_type_use = col_type_grid</a>
+   808) <a name="l808" style="background-color: #ffffff">    end if</a>
+   809) <a name="l809" style="background-color: #ffffff"></a>
+   810) <a name="l810" style="background-color: #ffffff">    ! If there is an errcode, start with an OK status (zero)</a>
+   811) <a name="l811" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(errcode)) then</a>
+   812) <a name="l812" style="background-color: #ffff99">      errcode = 0</a>
+   813) <a name="l813" style="background-color: #ffff99">    end if</a>
+   814) <a name="l814" style="background-color: #ffff99"></a>
+   815) <a name="l815" style="background-color: #ffff99">    ! Check whether subset of data requested (default is false)</a>
+   816) <a name="l816" style="background-color: #ffffff">    subset = .false.</a>
+   817) <a name="l817" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(start) .and. present(kount)) subset = .true.</a>
+   818) <a name="l818" style="background-color: #fafad2"></a>
+   819) <a name="l819" style="background-color: #fafad2">    ! Check for ill-formed request</a>
+   820) <a name="l820" style="background-color: #ffffff">    if ( (</a><a style="background-color: #fafad2">present(start) </a><a style="background-color: #ffffff">.and. .not. </a><a style="background-color: #fafad2">present(kount)) .or.        &amp;</a>
+   821) <a name="l821" style="background-color: #fafad2">         (</a><a style="background-color: #ffffff">.not. </a><a style="background-color: #fafad2">present(start) .and. present(kount)) ) then</a>
+   822) <a name="l822" style="background-color: #fafad2">      call </a><a style="background-color: #ffff99">endrun('pbuf_get_field: Both start and kount must be present for '//trim(pbuf(index)%hdr%name))</a>
+   823) <a name="l823" style="background-color: #ffff99">    end if</a>
+   824) <a name="l824" style="background-color: #ffff99"></a>
+   825) <a name="l825" style="background-color: #ffff99">    ! See if we need to copy the grid field to subcolumns</a>
+   826) <a name="l826" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(copy_if_needed)) then</a>
+   827) <a name="l827" style="background-color: #fafad2">      if (copy_if_needed) then</a>
+   828) <a name="l828" style="background-color: #ffff99">        if (col_type_use == col_type_subcol) then</a>
+   829) <a name="l829" style="background-color: #ffff99">          ! If a subcolumn field buffer does not exist, allocate one.</a>
+   830) <a name="l830" style="background-color: #ffff99">          ! Even if start and kount are being passed, allocate and copy the</a>
+   831) <a name="l831" style="background-color: #ffff99">          ! full grid field buffer so that a future access will succeed.</a>
+   832) <a name="l832" style="background-color: #ffff99">          if (.not. buffer_field_is_alloc(pbuf(index)%bfg(col_type_use))) then</a>
+   833) <a name="l833" style="background-color: #ffff99">            dimsizes =&gt; pbuf(index)%hdr%dimsizes(:,col_type_use)</a>
+   834) <a name="l834" style="background-color: #ffff99">            dimsizes(2:) = pbuf(index)%hdr%dimsizes(2:,col_type_grid)</a>
+   835) <a name="l835" style="background-color: #ffff99">            dimsizes(1) = pcols * psubcols</a>
+   836) <a name="l836" style="background-color: #ffff99">            select case(pbuf(index)%hdr%dtype)</a>
+   837) <a name="l837" style="background-color: #ffff99">            case(TYPEDOUBLE)</a>
+   838) <a name="l838" style="background-color: #ffff99">              call buffer_field_allocate(pbuf(index)%bfg(col_type_subcol),       &amp;</a>
+   839) <a name="l839" style="background-color: #ffff99">                   dimsizes, dtype_r8)</a>
+   840) <a name="l840" style="background-color: #ffff99">            case(TYPEREAL)</a>
+   841) <a name="l841" style="background-color: #ffff99">              call buffer_field_allocate(pbuf(index)%bfg(col_type_subcol),       &amp;</a>
+   842) <a name="l842" style="background-color: #ffff99">                   dimsizes, dtype_r4)</a>
+   843) <a name="l843" style="background-color: #ffff99">            case(TYPEINT)</a>
+   844) <a name="l844" style="background-color: #ffff99">              call buffer_field_allocate(pbuf(index)%bfg(col_type_subcol),       &amp;</a>
+   845) <a name="l845" style="background-color: #ffff99">                   dimsizes, dtype_i4)</a>
+   846) <a name="l846" style="background-color: #ffff99">            end select</a>
+   847) <a name="l847" style="background-color: #ffff99">            ! Set copy only if we did the allocation after init time</a>
+   848) <a name="l848" style="background-color: #ffff99">            pbuf(index)%hdr%is_copy(col_type_subcol) = .true.</a>
+   849) <a name="l849" style="background-color: #ffff99">          end if</a>
+   850) <a name="l850" style="background-color: #ffff99">        else</a>
+   851) <a name="l851" style="background-color: #ffff99">          call endrun('pbuf_get_field: copy_if_needed only supported for subcolumns')</a>
+   852) <a name="l852" style="background-color: #ffff99">        end if</a>
+   853) <a name="l853" style="background-color: #ffff99">        if (pbuf(index)%hdr%is_copy(col_type_subcol)) then</a>
+   854) <a name="l854" style="background-color: #ffff99">          ! Only do the copy if we did the alloc (i.e., set the is_copy flag)</a>
+   855) <a name="l855" style="background-color: #ffff99">          ! Only copy the portion we are going to hand back (i.e., start, kount)</a>
+   856) <a name="l856" style="background-color: #ffff99">          ! Chances are that kount(1) = pcols*psubcols because we are looking</a>
+   857) <a name="l857" style="background-color: #ffff99">          ! for a subcolumn field (or we wouldn't be here). Now, </a>
+   858) <a name="l858" style="background-color: #ffff99">          ! subcol_field_copy requires kount(1) = pcols for the input and</a>
+   859) <a name="l859" style="background-color: #ffff99">          ! therefore, kount(1) = pcols*psubcols for the output. Check and</a>
+   860) <a name="l860" style="background-color: #ffff99">          ! make it work</a>
+   861) <a name="l861" style="background-color: #ffff99"></a>
+   862) <a name="l862" style="background-color: #ffff99">          if (subset) then</a>
+   863) <a name="l863" style="background-color: #ffff99"></a>
+   864) <a name="l864" style="background-color: #ffff99">            ! Create kount array for grid field</a>
+   865) <a name="l865" style="background-color: #ffff99">            ! Use input subcol kount array, replacing the first dimension with pcols</a>
+   866) <a name="l866" style="background-color: #ffff99">            if (size(kount) &gt; size(pbuf(index)%hdr%dimsizes(:,col_type_subcol))) then</a>
+   867) <a name="l867" style="background-color: #ffff99">              call endrun('pbuf_get_field: kount input has too many dimensions')</a>
+   868) <a name="l868" style="background-color: #ffff99">            end if</a>
+   869) <a name="l869" style="background-color: #ffff99">            if (kount(1) /= pcols * psubcols) then</a>
+   870) <a name="l870" style="background-color: #ffff99">              call endrun('pbuf_get_field: kount(1) must be pcols*psubcols when using copy_if_needed=.true.')</a>
+   871) <a name="l871" style="background-color: #ffff99">            endif</a>
+   872) <a name="l872" style="background-color: #ffff99"></a>
+   873) <a name="l873" style="background-color: #ffff99">            allocate(kount_grid(size(kount)))</a>
+   874) <a name="l874" style="background-color: #ffff99">            kount_grid(2:) = kount(2:)</a>
+   875) <a name="l875" style="background-color: #ffff99">            kount_grid(1) = pcols</a>
+   876) <a name="l876" style="background-color: #ffff99"></a>
+   877) <a name="l877" style="background-color: #ffff99">            ! Don't need to create start array for grid field as start array for subcolumn field is identical</a>
+   878) <a name="l878" style="background-color: #ffff99">            if (size(start) &gt; size(pbuf(index)%hdr%dimsizes(:,col_type_subcol))) then</a>
+   879) <a name="l879" style="background-color: #ffff99">              call endrun('pbuf_get_field: start input has too many dimensions')</a>
+   880) <a name="l880" style="background-color: #ffff99">            end if</a>
+   881) <a name="l881" style="background-color: #ffff99">            if (start(1) /= 1) then</a>
+   882) <a name="l882" style="background-color: #ffff99">              call endrun('pbuf_get_field: start(1) must be 1 when using copy_if_needed=.true.')</a>
+   883) <a name="l883" style="background-color: #ffff99">            end if</a>
+   884) <a name="l884" style="background-color: #ffff99"></a>
+   885) <a name="l885" style="background-color: #ffff99">            ! Get the grid field</a>
+   886) <a name="l886" style="background-color: #ffff99">            call buffer_get_field_ptr(pbuf(index)%bfg(col_type_grid),           &amp;</a>
+   887) <a name="l887" style="background-color: #ffff99">                 gfield, start, kount_grid)</a>
+   888) <a name="l888" style="background-color: #ffff99"></a>
+   889) <a name="l889" style="background-color: #ffff99">            deallocate(kount_grid)</a>
+   890) <a name="l890" style="background-color: #ffff99"></a>
+   891) <a name="l891" style="background-color: #ffff99">          else</a>
+   892) <a name="l892" style="background-color: #ffff99">            ! Get the grid field</a>
+   893) <a name="l893" style="background-color: #ffff99">            call buffer_get_field_ptr(pbuf(index)%bfg(col_type_grid),           &amp;</a>
+   894) <a name="l894" style="background-color: #ffff99">                 gfield)</a>
+   895) <a name="l895" style="background-color: #ffff99">          end if</a>
+   896) <a name="l896" style="background-color: #ffff99"></a>
+   897) <a name="l897" style="background-color: #ffff99">          ! Get the subcol field pointer (note optional start/kount retain their status in this call)</a>
+   898) <a name="l898" style="background-color: #ffff99">          call buffer_get_field_ptr(pbuf(index)%bfg(col_type_subcol),            &amp;</a>
+   899) <a name="l899" style="background-color: #ffff99">               sfield, start, kount)</a>
+   900) <a name="l900" style="background-color: #ffff99"></a>
+   901) <a name="l901" style="background-color: #ffff99">          call subcol_field_copy(gfield, pbuf(index)%lchnk, sfield)</a>
+   902) <a name="l902" style="background-color: #ffff99"></a>
+   903) <a name="l903" style="background-color: #ffff99">        end if</a>
+   904) <a name="l904" style="background-color: #ffff99">      end if</a>
+   905) <a name="l905" style="background-color: #ffff99">    end if</a>
+   906) <a name="l906" style="background-color: #ffff99"></a>
+   907) <a name="l907" style="background-color: #ffff99">    ! Copy or not, retrieve the requested field pointer</a>
+   908) <a name="l908" style="background-color: #ffff99">    if (.not. </a><a style="background-color: #ffffff">buffer_field_is_alloc(pbuf(index)%bfg(col_type_use))) then</a>
+   909) <a name="l909" style="background-color: #ffff99">       if (present(errcode)) then</a>
+   910) <a name="l910" style="background-color: #ffff99">         errcode = -1</a>
+   911) <a name="l911" style="background-color: #ffff99">       else</a>
+   912) <a name="l912" style="background-color: #ffff99">         call endrun('pbuf_get_field: field not allocated for '//trim(pbuf(index)%hdr%name))</a>
+   913) <a name="l913" style="background-color: #ffff99">       end if</a>
+   914) <a name="l914" style="background-color: #ffff99">    else</a>
+   915) <a name="l915" style="background-color: #ffff99">        ! Get the field pointer (note optional start/kount retain their status in this call)</a>
+   916) <a name="l916" style="background-color: #ffff99">        call </a><a style="background-color: #ffffff">buffer_get_field_ptr(pbuf(index)%bfg(col_type_use),field,start,kount )</a>
+   917) <a name="l917" style="background-color: #ffffff">    end if</a>
+   918) <a name="l918" style="background-color: #ffffff"></a>
+   919) <a name="l919" style="background-color: #fafad2">  end subroutine get_pbuf1d_field_by_index_{DIMS}d_{TYPE}</a>
+   920) <a name="l920" style="background-color: #ffffff"></a>
+   921) <a name="l921" style="background-color: #ffffff">  ! TYPE int,double,real </a>
+   922) <a name="l922" style="background-color: #ffffff">  ! DIMS 1,2,3,4,5</a>
+   923) <a name="l923" style="background-color: #ffffff">  subroutine get_pbuf2d_field_by_index_{DIMS}d_{TYPE}(pbuf2d, lchnk, index, field, start, kount, col_type, errcode)</a>
+   924) <a name="l924" style="background-color: #ffffff"></a>
+   925) <a name="l925" style="background-color: #ffffff">    ! Get the data based on the col_type which is specified.  If no col_type, then grid field is returned</a>
+   926) <a name="l926" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+   927) <a name="l927" style="background-color: #ffffff">    integer, intent(in) :: lchnk</a>
+   928) <a name="l928" style="background-color: #ffffff">    integer, intent(in) :: index</a>
+   929) <a name="l929" style="background-color: #ffffff">    integer, intent(in),  optional :: start(:),kount(:)</a>
+   930) <a name="l930" style="background-color: #ffffff">    integer, intent(in),  optional :: col_type</a>
+   931) <a name="l931" style="background-color: #ffffff">    integer, intent(out), optional :: errcode</a>
+   932) <a name="l932" style="background-color: #ffffff"></a>
+   933) <a name="l933" style="background-color: #ffffff">    {VTYPE}, pointer :: field{DIMSTR}</a>
+   934) <a name="l934" style="background-color: #ffffff"></a>
+   935) <a name="l935" style="background-color: #ffffff">    ! Check for ill-formed request</a>
+   936) <a name="l936" style="background-color: #ffffff">    if ( (</a><a style="background-color: #fafad2">present(start) </a><a style="background-color: #ffffff">.and. .not. </a><a style="background-color: #ffff99">present(kount)) .or.&amp;</a>
+   937) <a name="l937" style="background-color: #ffff99">         (</a><a style="background-color: #ffffff">.not. </a><a style="background-color: #fafad2">present(start) .and. present(kount)) ) then</a>
+   938) <a name="l938" style="background-color: #fafad2">      call </a><a style="background-color: #ffff99">endrun('pbuf_get_field: Both start and kount must be present for '//trim(pbuf2d(index,begchunk)%hdr%name))</a>
+   939) <a name="l939" style="background-color: #ffff99">    end if</a>
+   940) <a name="l940" style="background-color: #ffff99"></a>
+   941) <a name="l941" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">pbuf_get_field(pbuf_get_chunk(pbuf2d,lchnk), index, field,           &amp;</a>
+   942) <a name="l942" style="background-color: #ffffff">         start=start, kount=kount, col_type=col_type, errcode=errcode)</a>
+   943) <a name="l943" style="background-color: #ffffff">  end subroutine get_pbuf2d_field_by_index_{DIMS}d_{TYPE}</a>
+   944) <a name="l944" style="background-color: #ffffff"></a>
+   945) <a name="l945" style="background-color: #ffffff">  ! TYPE int,double,real </a>
+   946) <a name="l946" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">get_pbuf2d_field_restart_{TYPE}(pbuf2d, lchnk, index, field, mdimsize, col_type)</a>
+   947) <a name="l947" style="background-color: #ffcccc">    use subcol_utils,    only: subcol_unpack</a>
+   948) <a name="l948" style="background-color: #ffcccc"></a>
+   949) <a name="l949" style="background-color: #ffcccc">    ! NB: This routine is really only useful for write_restart_field</a>
+   950) <a name="l950" style="background-color: #ffcccc">    ! Get the data based on the col_type which is specified.</a>
+   951) <a name="l951" style="background-color: #ffcccc">    ! If no col_type, then grid field is assumed</a>
+   952) <a name="l952" style="background-color: #ffcccc">    ! For grid field, reference buffer and copy into chunk (field)</a>
+   953) <a name="l953" style="background-color: #ffcccc">    ! If col_type is a subcol, unpack subcolumn data</a>
+   954) <a name="l954" style="background-color: #ffcccc">    ! Field is then reshaped into (/pcols, psubcols*mdims/).</a>
+   955) <a name="l955" style="background-color: #ffcccc"></a>
+   956) <a name="l956" style="background-color: #ffcccc">    ! Dummy variables</a>
+   957) <a name="l957" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+   958) <a name="l958" style="background-color: #ffcccc">    integer, intent(in)                :: lchnk</a>
+   959) <a name="l959" style="background-color: #ffcccc">    integer, intent(in)                :: index</a>
+   960) <a name="l960" style="background-color: #ffcccc">    integer, intent(in)                :: mdimsize</a>
+   961) <a name="l961" style="background-color: #ffcccc">    integer, intent(in)                :: col_type</a>
+   962) <a name="l962" style="background-color: #ffcccc">    {VTYPE}, intent(inout)             :: field(:,:)</a>
+   963) <a name="l963" style="background-color: #ffcccc"></a>
+   964) <a name="l964" style="background-color: #ffcccc">    ! Local variables</a>
+   965) <a name="l965" style="background-color: #ffcccc">    {VTYPE},      allocatable          :: exp_fld(:,:,:,:,:,:)</a>
+   966) <a name="l966" style="background-color: #ffcccc">    {VTYPE},                   pointer :: buf(:,:,:,:,:)</a>
+   967) <a name="l967" style="background-color: #ffcccc">    {VTYPE}                            :: fillvalue</a>
+   968) <a name="l968" style="background-color: #ffcccc">    character(len=128)                 :: errmsg</a>
+   969) <a name="l969" style="background-color: #ffcccc">    integer,                   pointer :: dimsizes(:)</a>
+   970) <a name="l970" style="background-color: #ffcccc"></a>
+   971) <a name="l971" style="background-color: #ffcccc">#if ({ITYPE}==TYPEREAL)</a>
+   972) <a name="l972" style="background-color: #ffcccc">    fillvalue = 0._r4</a>
+   973) <a name="l973" style="background-color: #ffcccc">#elif ({ITYPE}==TYPEDOUBLE)</a>
+   974) <a name="l974" style="background-color: #ffcccc">    fillvalue = 0._r8</a>
+   975) <a name="l975" style="background-color: #ffcccc">#else</a>
+   976) <a name="l976" style="background-color: #ffcccc">    fillvalue = 0</a>
+   977) <a name="l977" style="background-color: #ffcccc">#endif</a>
+   978) <a name="l978" style="background-color: #ffcccc"></a>
+   979) <a name="l979" style="background-color: #ffcccc">    if (col_type == col_type_grid) then</a>
+   980) <a name="l980" style="background-color: #ffcccc">      call pbuf_get_field(pbuf2d, lchnk, index, buf, col_type=col_type)</a>
+   981) <a name="l981" style="background-color: #ffcccc">      field(:,:) = reshape(buf, (/pcols, mdimsize/))</a>
+   982) <a name="l982" style="background-color: #ffcccc">    else if (col_type == col_type_subcol) then</a>
+   983) <a name="l983" style="background-color: #ffcccc">      ! Don't initialize field, unpack will fill in unused slots</a>
+   984) <a name="l984" style="background-color: #ffcccc">      call pbuf_get_field(pbuf2d, lchnk, index, buf, col_type=col_type)</a>
+   985) <a name="l985" style="background-color: #ffcccc">      dimsizes =&gt; pbuf2d(index, lchnk)%hdr%dimsizes(:,col_type_subcol)</a>
+   986) <a name="l986" style="background-color: #ffcccc">      allocate(exp_fld(pcols, psubcols, dimsizes(2), dimsizes(3), dimsizes(4), dimsizes(5)))</a>
+   987) <a name="l987" style="background-color: #ffcccc">      ! unpack the subcolumns into their own dimension</a>
+   988) <a name="l988" style="background-color: #ffcccc">      call subcol_unpack(lchnk, buf, exp_fld, fillvalue)</a>
+   989) <a name="l989" style="background-color: #ffcccc">      ! Reshape back to pcols for outputting</a>
+   990) <a name="l990" style="background-color: #ffcccc">      field(:,:) = reshape(exp_fld, (/pcols, mdimsize/))</a>
+   991) <a name="l991" style="background-color: #ffcccc">      deallocate(exp_fld)</a>
+   992) <a name="l992" style="background-color: #ffcccc">    else</a>
+   993) <a name="l993" style="background-color: #ffcccc">      write(errmsg, *) &quot;get_pbuf2d_field_restart_{TYPE}: Bad col_type:&quot;,col_type</a>
+   994) <a name="l994" style="background-color: #ffcccc">      call endrun(errmsg)</a>
+   995) <a name="l995" style="background-color: #ffcccc">    end if</a>
+   996) <a name="l996" style="background-color: #ffcccc">  end subroutine get_pbuf2d_field_restart_{TYPE}</a>
+   997) <a name="l997" style="background-color: #ffffff"></a>
+   998) <a name="l998" style="background-color: #ffffff">  ! TYPE int,double,real </a>
+   999) <a name="l999" style="background-color: #ffffff">  ! DIMS 1,2,3,4,5</a>
+  1000) <a name="l1000" style="background-color: #ffffff">  subroutine set_pbuf2d_field_const_by_index_{TYPE}(pbuf2d,index,const, col_type)</a>
+  1001) <a name="l1001" style="background-color: #ffffff"></a>
+  1002) <a name="l1002" style="background-color: #ffffff">    ! Set the field specified by the col_type</a>
+  1003) <a name="l1003" style="background-color: #ffffff"></a>
+  1004) <a name="l1004" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+  1005) <a name="l1005" style="background-color: #ffffff">    integer, intent(in)                :: index</a>
+  1006) <a name="l1006" style="background-color: #ffffff">    {VTYPE},intent(in)                 :: const</a>
+  1007) <a name="l1007" style="background-color: #ffffff">    integer,intent(in)  ,optional      :: col_type</a>
+  1008) <a name="l1008" style="background-color: #ffffff"></a>
+  1009) <a name="l1009" style="background-color: #ffffff">    integer :: c</a>
+  1010) <a name="l1010" style="background-color: #ffffff">    </a>
+  1011) <a name="l1011" style="background-color: #ffffff">    do c=begchunk,endchunk</a>
+  1012) <a name="l1012" style="background-color: #ffffff">       if(</a><a style="background-color: #fafad2">present(col_type)) then</a>
+  1013) <a name="l1013" style="background-color: #fafad2">          call </a><a style="background-color: #ffff99">set_pbuf1d_field_const_by_index_{TYPE}(pbuf_get_chunk(pbuf2d,c),index,const, col_type=col_type)</a>
+  1014) <a name="l1014" style="background-color: #ffff99">       else</a>
+  1015) <a name="l1015" style="background-color: #ffff99">          call </a><a style="background-color: #ffffff">set_pbuf1d_field_const_by_index_{TYPE}(pbuf_get_chunk(pbuf2d,c),index,const)</a>
+  1016) <a name="l1016" style="background-color: #ffffff">       end if</a>
+  1017) <a name="l1017" style="background-color: #ffffff">    end do</a>
+  1018) <a name="l1018" style="background-color: #ffffff"></a>
+  1019) <a name="l1019" style="background-color: #ffffff">  end subroutine set_pbuf2d_field_const_by_index_{TYPE}</a>
+  1020) <a name="l1020" style="background-color: #ffffff"></a>
+  1021) <a name="l1021" style="background-color: #ffffff">  ! TYPE int,double,real </a>
+  1022) <a name="l1022" style="background-color: #ffffff">  ! DIMS 1,2,3,4,5</a>
+  1023) <a name="l1023" style="background-color: #ffffff">  subroutine set_pbuf1d_field_const_by_index_{TYPE}(pbuf,index,const,start,kount, col_type)</a>
+  1024) <a name="l1024" style="background-color: #ffffff"></a>
+  1025) <a name="l1025" style="background-color: #ffffff">    ! Set the field(s) specified by the col_type</a>
+  1026) <a name="l1026" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf(:)</a>
+  1027) <a name="l1027" style="background-color: #ffffff">    integer, intent(in) :: index</a>
+  1028) <a name="l1028" style="background-color: #ffffff">    {VTYPE},intent(in) :: const</a>
+  1029) <a name="l1029" style="background-color: #ffffff">    integer, intent(in), optional :: start(:),kount(:)</a>
+  1030) <a name="l1030" style="background-color: #ffffff">    integer, intent(in), optional :: col_type</a>
+  1031) <a name="l1031" style="background-color: #ffffff">   </a>
+  1032) <a name="l1032" style="background-color: #ffffff">    integer :: col_type_use</a>
+  1033) <a name="l1033" style="background-color: #ffffff">    logical :: subset</a>
+  1034) <a name="l1034" style="background-color: #ffffff"></a>
+  1035) <a name="l1035" style="background-color: #ffffff">    ! Default col_type is grid</a>
+  1036) <a name="l1036" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(col_type)) then</a>
+  1037) <a name="l1037" style="background-color: #ffff99">      col_type_use = col_type</a>
+  1038) <a name="l1038" style="background-color: #ffff99">    else</a>
+  1039) <a name="l1039" style="background-color: #ffffff">      col_type_use = col_type_grid</a>
+  1040) <a name="l1040" style="background-color: #ffffff">    end if</a>
+  1041) <a name="l1041" style="background-color: #ffffff"></a>
+  1042) <a name="l1042" style="background-color: #ffffff">    ! Check whether subset of data requested (default is false)</a>
+  1043) <a name="l1043" style="background-color: #ffffff">    subset = .false.</a>
+  1044) <a name="l1044" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(start) .and. </a><a style="background-color: #ffff99">present(kount)) subset = .true.</a>
+  1045) <a name="l1045" style="background-color: #ffff99"></a>
+  1046) <a name="l1046" style="background-color: #ffff99">    ! Check for ill-formed request</a>
+  1047) <a name="l1047" style="background-color: #ffffff">    if ( (</a><a style="background-color: #fafad2">present(start) </a><a style="background-color: #ffffff">.and. .not. </a><a style="background-color: #ffff99">present(kount)) .or.&amp;</a>
+  1048) <a name="l1048" style="background-color: #ffff99">         (</a><a style="background-color: #ffffff">.not. </a><a style="background-color: #fafad2">present(start) .and. present(kount)) ) then</a>
+  1049) <a name="l1049" style="background-color: #fafad2">       call </a><a style="background-color: #ffff99">endrun('pbuf_set_field: Both start and kount must be present for '//trim(pbuf(index)%hdr%name))</a>
+  1050) <a name="l1050" style="background-color: #ffff99">    end if</a>
+  1051) <a name="l1051" style="background-color: #ffff99">    </a>
+  1052) <a name="l1052" style="background-color: #ffff99">    ! Set the appropriate grid or sub-column field.  Check that the fields have been allocated.</a>
+  1053) <a name="l1053" style="background-color: #ffffff">    if(subset) then </a>
+  1054) <a name="l1054" style="background-color: #ffffff"></a>
+  1055) <a name="l1055" style="background-color: #ffff99">       if (col_type_use == col_type_subcol) then</a>
+  1056) <a name="l1056" style="background-color: #ffff99">         ! Set sub-column field</a>
+  1057) <a name="l1057" style="background-color: #ffff99">         if (.not. buffer_field_is_alloc(pbuf(index)%bfg(col_type_subcol))) &amp;</a>
+  1058) <a name="l1058" style="background-color: #ffff99">              call endrun('pbuf_set_field: sub-column field not allocated for '//trim(pbuf(index)%hdr%name))</a>
+  1059) <a name="l1059" style="background-color: #ffff99">         call buffer_set_field(pbuf(index)%bfg(col_type_subcol),const,start,kount)</a>
+  1060) <a name="l1060" style="background-color: #ffff99">       </a>
+  1061) <a name="l1061" style="background-color: #ffff99">       else if (col_type_use == col_type_grid) then</a>
+  1062) <a name="l1062" style="background-color: #ffff99">         ! Set grid field</a>
+  1063) <a name="l1063" style="background-color: #ffff99">         if (.not. buffer_field_is_alloc(pbuf(index)%bfg(col_type_grid))) &amp;</a>
+  1064) <a name="l1064" style="background-color: #ffff99">              call endrun('pbuf_set_field: grid field not allocated for '//trim(pbuf(index)%hdr%name))</a>
+  1065) <a name="l1065" style="background-color: #ffff99">         call buffer_set_field(pbuf(index)%bfg(col_type_grid),const,start,kount)</a>
+  1066) <a name="l1066" style="background-color: #ffff99">       else</a>
+  1067) <a name="l1067" style="background-color: #ffff99">         call endrun('pbuf_set_field: Trying to set '//trim(pbuf(index)%hdr%name)//&amp;</a>
+  1068) <a name="l1068" style="background-color: #ffff99">              ' but col_type is neither col_type_grid nor col_type_subcol')</a>
+  1069) <a name="l1069" style="background-color: #ffff99">       end if</a>
+  1070) <a name="l1070" style="background-color: #ffff99"></a>
+  1071) <a name="l1071" style="background-color: #ffff99">     else </a>
+  1072) <a name="l1072" style="background-color: #ffff99"></a>
+  1073) <a name="l1073" style="background-color: #ffffff">       if (col_type_use == col_type_subcol) then</a>
+  1074) <a name="l1074" style="background-color: #ffffff">         ! Set sub-column field</a>
+  1075) <a name="l1075" style="background-color: #ffffff">         if (.not. </a><a style="background-color: #ffff99">buffer_field_is_alloc(pbuf(index)%bfg(col_type_subcol))) &amp;</a>
+  1076) <a name="l1076" style="background-color: #ffff99">              call endrun('pbuf_set_field: sub-column field not allocated for '//trim(pbuf(index)%hdr%name))</a>
+  1077) <a name="l1077" style="background-color: #ffff99">         call buffer_set_field(pbuf(index)%bfg(col_type_subcol),const)</a>
+  1078) <a name="l1078" style="background-color: #ffff99"></a>
+  1079) <a name="l1079" style="background-color: #ffff99">       else if (col_type_use == col_type_grid) then</a>
+  1080) <a name="l1080" style="background-color: #ffff99">         ! Set grid field</a>
+  1081) <a name="l1081" style="background-color: #ffff99">         if (.not. </a><a style="background-color: #ffffff">buffer_field_is_alloc(pbuf(index)%bfg(col_type_grid))) &amp;</a>
+  1082) <a name="l1082" style="background-color: #ffff99">              call endrun('pbuf_set_field: grid field not allocated for '//trim(pbuf(index)%hdr%name))</a>
+  1083) <a name="l1083" style="background-color: #ffff99">         call </a><a style="background-color: #ffffff">buffer_set_field(pbuf(index)%bfg(col_type_grid),const)</a>
+  1084) <a name="l1084" style="background-color: #ffffff">       else</a>
+  1085) <a name="l1085" style="background-color: #ffffff">         call </a><a style="background-color: #ffff99">endrun('pbuf_set_field: Trying to set '//trim(pbuf(index)%hdr%name)//&amp;</a>
+  1086) <a name="l1086" style="background-color: #ffff99">              ' but col_type is neither col_type_grid nor col_type_subcol')</a>
+  1087) <a name="l1087" style="background-color: #ffff99">       end if</a>
+  1088) <a name="l1088" style="background-color: #ffff99"></a>
+  1089) <a name="l1089" style="background-color: #ffff99">     end if</a>
+  1090) <a name="l1090" style="background-color: #ffff99"></a>
+  1091) <a name="l1091" style="background-color: #ffffff">   end subroutine set_pbuf1d_field_const_by_index_{TYPE}</a>
+  1092) <a name="l1092" style="background-color: #ffffff"></a>
+  1093) <a name="l1093" style="background-color: #ffffff">  ! TYPE int,double,real </a>
+  1094) <a name="l1094" style="background-color: #ffffff">  ! DIMS 1,2,3,4,5</a>
+  1095) <a name="l1095" style="background-color: #ffffff">  subroutine set_pbuf2d_field_by_index_{DIMS}d_{TYPE}(pbuf2d,index,field, start, kount, col_type)</a>
+  1096) <a name="l1096" style="background-color: #ffffff"></a>
+  1097) <a name="l1097" style="background-color: #ffffff">    ! Set the field(s) specified by the col_type</a>
+  1098) <a name="l1098" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+  1099) <a name="l1099" style="background-color: #ffffff">    integer, intent(in) :: index</a>
+  1100) <a name="l1100" style="background-color: #ffffff">    integer,intent(in),optional :: start(:), kount(:)</a>
+  1101) <a name="l1101" style="background-color: #ffffff">    integer,intent(in),optional :: col_type</a>
+  1102) <a name="l1102" style="background-color: #ffffff"></a>
+  1103) <a name="l1103" style="background-color: #ffffff">    logical :: subset</a>
+  1104) <a name="l1104" style="background-color: #ffffff"></a>
+  1105) <a name="l1105" style="background-color: #ffffff">    integer :: c</a>
+  1106) <a name="l1106" style="background-color: #ffffff">    {VTYPE}, pointer :: fld{DIMSTR}</a>
+  1107) <a name="l1107" style="background-color: #ffffff"></a>
+  1108) <a name="l1108" style="background-color: #ffffff"></a>
+  1109) <a name="l1109" style="background-color: #ffffff">#if ({DIMS}==1)</a>
+  1110) <a name="l1110" style="background-color: #ffffff">    {VTYPE},pointer :: field(:,:)</a>
+  1111) <a name="l1111" style="background-color: #ffffff">#elif ({DIMS}==2)</a>
+  1112) <a name="l1112" style="background-color: #ffffff">    {VTYPE},pointer :: field(:,:,:)</a>
+  1113) <a name="l1113" style="background-color: #ffffff">#elif ({DIMS}==3)</a>
+  1114) <a name="l1114" style="background-color: #ffffff">    {VTYPE},pointer :: field(:,:,:,:)</a>
+  1115) <a name="l1115" style="background-color: #ffffff">#elif ({DIMS}==4)</a>
+  1116) <a name="l1116" style="background-color: #ffffff">    {VTYPE},pointer :: field(:,:,:,:,:)</a>
+  1117) <a name="l1117" style="background-color: #ffffff">#elif ({DIMS}==5)</a>
+  1118) <a name="l1118" style="background-color: #ffffff">    {VTYPE},pointer :: field(:,:,:,:,:,:)</a>
+  1119) <a name="l1119" style="background-color: #ffffff">#endif</a>
+  1120) <a name="l1120" style="background-color: #ffffff"></a>
+  1121) <a name="l1121" style="background-color: #ffffff">    ! Check whether subset of data requested (default is false)</a>
+  1122) <a name="l1122" style="background-color: #ffffff">    subset = .false.</a>
+  1123) <a name="l1123" style="background-color: #ffffff">    if (present(start) .and. </a><a style="background-color: #fafad2">present(kount)) </a><a style="background-color: #ffffff">subset = .true.</a>
+  1124) <a name="l1124" style="background-color: #ffffff"></a>
+  1125) <a name="l1125" style="background-color: #ffffff">    ! Check for ill-formed request</a>
+  1126) <a name="l1126" style="background-color: #ffffff">    if ( (present(start) .and. .not. </a><a style="background-color: #fafad2">present(kount)) .or.&amp;</a>
+  1127) <a name="l1127" style="background-color: #fafad2">         (</a><a style="background-color: #ffffff">.not. present(start) .and. </a><a style="background-color: #fafad2">present(kount)) ) then</a>
+  1128) <a name="l1128" style="background-color: #fafad2">      call </a><a style="background-color: #ffff99">endrun('pbuf_set_field: Both start and kount must be present for '//trim(pbuf2d(index,begchunk)%hdr%name))</a>
+  1129) <a name="l1129" style="background-color: #ffff99">    end if</a>
+  1130) <a name="l1130" style="background-color: #ffff99"></a>
+  1131) <a name="l1131" style="background-color: #ffffff">    do c=begchunk,endchunk</a>
+  1132) <a name="l1132" style="background-color: #ffffff">      fld =&gt; get_field_chunk_{DIMS}d_{TYPE}(field,c)</a>
+  1133) <a name="l1133" style="background-color: #ffffff">      if(subset .and. </a><a style="background-color: #fafad2">present(col_type)) then</a>
+  1134) <a name="l1134" style="background-color: #fafad2">        call </a><a style="background-color: #ffff99">pbuf_set_field(pbuf_get_chunk(pbuf2d,c),index,fld,start,kount, col_type)</a>
+  1135) <a name="l1135" style="background-color: #ffffff">      else if(subset) then</a>
+  1136) <a name="l1136" style="background-color: #ffffff">        call pbuf_set_field(pbuf_get_chunk(pbuf2d,c),index,fld,start,kount)</a>
+  1137) <a name="l1137" style="background-color: #ffffff">      else if(</a><a style="background-color: #fafad2">present(col_type)) then</a>
+  1138) <a name="l1138" style="background-color: #fafad2">        call </a><a style="background-color: #ffff99">pbuf_set_field(pbuf_get_chunk(pbuf2d,c),index,fld,col_type=col_type)</a>
+  1139) <a name="l1139" style="background-color: #ffff99">      else</a>
+  1140) <a name="l1140" style="background-color: #ffff99">        call </a><a style="background-color: #ffffff">pbuf_set_field(pbuf_get_chunk(pbuf2d,c),index,fld)</a>
+  1141) <a name="l1141" style="background-color: #ffffff">      end if</a>
+  1142) <a name="l1142" style="background-color: #ffffff">    end do</a>
+  1143) <a name="l1143" style="background-color: #ffffff">  end subroutine set_pbuf2d_field_by_index_{DIMS}d_{TYPE}</a>
+  1144) <a name="l1144" style="background-color: #ffffff"></a>
+  1145) <a name="l1145" style="background-color: #ffffff">  ! TYPE int,double,real </a>
+  1146) <a name="l1146" style="background-color: #ffffff">  ! DIMS 1,2,3,4,5</a>
+  1147) <a name="l1147" style="background-color: #ffffff">  function get_field_chunk_{DIMS}d_{TYPE}(field, c) result(fld) </a>
+  1148) <a name="l1148" style="background-color: #ffffff">    ! module private helper function</a>
+  1149) <a name="l1149" style="background-color: #ffffff">    {VTYPE}, pointer :: fld{DIMSTR}</a>
+  1150) <a name="l1150" style="background-color: #ffffff">    integer, intent(in) :: c</a>
+  1151) <a name="l1151" style="background-color: #ffffff"></a>
+  1152) <a name="l1152" style="background-color: #ffffff">#if ({DIMS}==1)</a>
+  1153) <a name="l1153" style="background-color: #ffffff">    {VTYPE},pointer :: field(:,:)</a>
+  1154) <a name="l1154" style="background-color: #ffffff">    fld =&gt; field(:,c)</a>
+  1155) <a name="l1155" style="background-color: #ffffff">#elif ({DIMS}==2)</a>
+  1156) <a name="l1156" style="background-color: #ffffff">    {VTYPE},pointer :: field(:,:,:)</a>
+  1157) <a name="l1157" style="background-color: #ffffff">    fld =&gt; field(:,:,c)</a>
+  1158) <a name="l1158" style="background-color: #ffffff">#elif ({DIMS}==3)</a>
+  1159) <a name="l1159" style="background-color: #ffffff">    {VTYPE},pointer :: field(:,:,:,:)</a>
+  1160) <a name="l1160" style="background-color: #ffffff">    fld =&gt; field(:,:,:,c)</a>
+  1161) <a name="l1161" style="background-color: #ffffff">#elif ({DIMS}==4)</a>
+  1162) <a name="l1162" style="background-color: #ffffff">    {VTYPE},pointer :: field(:,:,:,:,:)</a>
+  1163) <a name="l1163" style="background-color: #ffffff">    fld =&gt; field(:,:,:,:,c)</a>
+  1164) <a name="l1164" style="background-color: #ffffff">#elif ({DIMS}==5)</a>
+  1165) <a name="l1165" style="background-color: #ffffff">    {VTYPE},pointer :: field(:,:,:,:,:,:)</a>
+  1166) <a name="l1166" style="background-color: #ffffff">    fld =&gt; field(:,:,:,:,:,c)</a>
+  1167) <a name="l1167" style="background-color: #ffffff">#endif    </a>
+  1168) <a name="l1168" style="background-color: #ffffff"></a>
+  1169) <a name="l1169" style="background-color: #ffffff">  end function get_field_chunk_{DIMS}d_{TYPE}</a>
+  1170) <a name="l1170" style="background-color: #ffffff"></a>
+  1171) <a name="l1171" style="background-color: #ffffff"></a>
+  1172) <a name="l1172" style="background-color: #ffffff"></a>
+  1173) <a name="l1173" style="background-color: #ffffff">  ! TYPE int,double,real </a>
+  1174) <a name="l1174" style="background-color: #ffffff">  ! DIMS 1,2,3,4,5</a>
+  1175) <a name="l1175" style="background-color: #ffffff">  subroutine set_pbuf1d_field_by_index_{DIMS}d_{TYPE}(pbuf,index,field, start, kount, col_type)</a>
+  1176) <a name="l1176" style="background-color: #ffffff"></a>
+  1177) <a name="l1177" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf(:)</a>
+  1178) <a name="l1178" style="background-color: #ffffff">    integer, intent(in) :: index</a>
+  1179) <a name="l1179" style="background-color: #ffffff">    {VTYPE}, intent(in) :: field{DIMSTR}</a>
+  1180) <a name="l1180" style="background-color: #ffffff">    integer,intent(in),optional :: start(:), kount(:)</a>
+  1181) <a name="l1181" style="background-color: #ffffff">    integer,intent(in),optional :: col_type</a>
+  1182) <a name="l1182" style="background-color: #ffffff"></a>
+  1183) <a name="l1183" style="background-color: #ffffff">    integer :: col_type_use</a>
+  1184) <a name="l1184" style="background-color: #ffffff">    logical :: subset</a>
+  1185) <a name="l1185" style="background-color: #ffffff"></a>
+  1186) <a name="l1186" style="background-color: #ffffff">    ! Default col_type is grid only</a>
+  1187) <a name="l1187" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(col_type)) then</a>
+  1188) <a name="l1188" style="background-color: #ffff99">      col_type_use = col_type</a>
+  1189) <a name="l1189" style="background-color: #ffff99">    else</a>
+  1190) <a name="l1190" style="background-color: #ffffff">      col_type_use = col_type_grid</a>
+  1191) <a name="l1191" style="background-color: #ffffff">    end if</a>
+  1192) <a name="l1192" style="background-color: #ffffff"></a>
+  1193) <a name="l1193" style="background-color: #ffffff">    ! Check whether subset of data requested (default is false)</a>
+  1194) <a name="l1194" style="background-color: #ffffff">    subset = .false.</a>
+  1195) <a name="l1195" style="background-color: #ffffff">    if (present(start) .and. </a><a style="background-color: #fafad2">present(kount)) </a><a style="background-color: #ffffff">subset = .true.</a>
+  1196) <a name="l1196" style="background-color: #ffffff"></a>
+  1197) <a name="l1197" style="background-color: #ffffff">    ! Check for ill-formed request</a>
+  1198) <a name="l1198" style="background-color: #ffffff">    if ( (present(start) .and. .not. </a><a style="background-color: #fafad2">present(kount)) .or.&amp;</a>
+  1199) <a name="l1199" style="background-color: #fafad2">         (</a><a style="background-color: #ffffff">.not. present(start) .and. </a><a style="background-color: #fafad2">present(kount)) ) then</a>
+  1200) <a name="l1200" style="background-color: #fafad2">       call </a><a style="background-color: #ffff99">endrun('pbuf_set_field: Both start and kount must be present for '//trim(pbuf(index)%hdr%name))</a>
+  1201) <a name="l1201" style="background-color: #ffff99">    end if</a>
+  1202) <a name="l1202" style="background-color: #ffff99"></a>
+  1203) <a name="l1203" style="background-color: #ffffff">    if(subset) then</a>
+  1204) <a name="l1204" style="background-color: #ffffff"></a>
+  1205) <a name="l1205" style="background-color: #ffffff">       ! Set sub-column field</a>
+  1206) <a name="l1206" style="background-color: #ffffff">       if (col_type_use == col_type_subcol) then</a>
+  1207) <a name="l1207" style="background-color: #ffffff">          if (.not. </a><a style="background-color: #ffff99">buffer_field_is_alloc(pbuf(index)%bfg(col_type_subcol))) &amp;</a>
+  1208) <a name="l1208" style="background-color: #ffff99">              call endrun('pbuf_set_field: sub-column field not allocated for '//trim(pbuf(index)%hdr%name))</a>
+  1209) <a name="l1209" style="background-color: #ffff99">          call buffer_set_field(pbuf(index)%bfg(col_type_subcol),field,start,kount)      </a>
+  1210) <a name="l1210" style="background-color: #ffff99"></a>
+  1211) <a name="l1211" style="background-color: #ffff99">       ! Set grid field</a>
+  1212) <a name="l1212" style="background-color: #ffff99">       else if (col_type_use == col_type_grid) then</a>
+  1213) <a name="l1213" style="background-color: #ffff99">          if (.not. </a><a style="background-color: #ffffff">buffer_field_is_alloc(pbuf(index)%bfg(col_type_grid))) &amp;</a>
+  1214) <a name="l1214" style="background-color: #ffff99">                 call endrun('pbuf_set_field: grid field not allocated for '//trim(pbuf(index)%hdr%name))</a>
+  1215) <a name="l1215" style="background-color: #ffff99">          call </a><a style="background-color: #ffffff">buffer_set_field(pbuf(index)%bfg(col_type_grid),field,start,kount)</a>
+  1216) <a name="l1216" style="background-color: #ffffff">       else</a>
+  1217) <a name="l1217" style="background-color: #ffffff">         call </a><a style="background-color: #ffff99">endrun('pbuf_set_field: Trying to set '//trim(pbuf(index)%hdr%name)//&amp;</a>
+  1218) <a name="l1218" style="background-color: #ffff99">                    ' but col_type is neigher col_type_grid nor col_type_subcol ')</a>
+  1219) <a name="l1219" style="background-color: #ffff99">       end if</a>
+  1220) <a name="l1220" style="background-color: #ffff99">    else </a>
+  1221) <a name="l1221" style="background-color: #ffff99"></a>
+  1222) <a name="l1222" style="background-color: #ffff99">       ! Set sub-column field</a>
+  1223) <a name="l1223" style="background-color: #ffffff">       if (col_type_use == col_type_subcol) then</a>
+  1224) <a name="l1224" style="background-color: #ffffff">          if (.not. </a><a style="background-color: #ffff99">buffer_field_is_alloc(pbuf(index)%bfg(col_type_subcol))) &amp;</a>
+  1225) <a name="l1225" style="background-color: #ffff99">              call endrun('pbuf_set_field: sub-column field not allocated for '//trim(pbuf(index)%hdr%name))</a>
+  1226) <a name="l1226" style="background-color: #ffff99">          call buffer_set_field(pbuf(index)%bfg(col_type_subcol),field)</a>
+  1227) <a name="l1227" style="background-color: #ffff99"></a>
+  1228) <a name="l1228" style="background-color: #ffff99">       ! Set grid field</a>
+  1229) <a name="l1229" style="background-color: #ffff99">       else if (col_type_use == col_type_grid) then</a>
+  1230) <a name="l1230" style="background-color: #ffff99">          if (.not. </a><a style="background-color: #ffffff">buffer_field_is_alloc(pbuf(index)%bfg(col_type_grid))) &amp;</a>
+  1231) <a name="l1231" style="background-color: #ffff99">                 call endrun('pbuf_set_field: grid field not allocated for '//trim(pbuf(index)%hdr%name))</a>
+  1232) <a name="l1232" style="background-color: #ffff99">          call </a><a style="background-color: #ffffff">buffer_set_field(pbuf(index)%bfg(col_type_grid),field)</a>
+  1233) <a name="l1233" style="background-color: #ffffff">       else</a>
+  1234) <a name="l1234" style="background-color: #ffffff">         call </a><a style="background-color: #ffff99">endrun('pbuf_set_field: Trying to set '//trim(pbuf(index)%hdr%name)//&amp;</a>
+  1235) <a name="l1235" style="background-color: #ffff99">                    ' but col_type is neither col_type_grid nor col_type_subcol ')</a>
+  1236) <a name="l1236" style="background-color: #ffff99">       end if</a>
+  1237) <a name="l1237" style="background-color: #ffff99">    endif</a>
+  1238) <a name="l1238" style="background-color: #ffff99"></a>
+  1239) <a name="l1239" style="background-color: #ffffff">  end subroutine set_pbuf1d_field_by_index_{DIMS}d_{TYPE}</a>
+  1240) <a name="l1240" style="background-color: #ffffff"></a>
+  1241) <a name="l1241" style="background-color: #ffffff"></a>
+  1242) <a name="l1242" style="background-color: #ffffff">  function </a><a style="background-color: #ffcccc">pbuftype2piotype(pbuftype) result(piotype)</a>
+  1243) <a name="l1243" style="background-color: #ffcccc">    use pio, only : pio_double, pio_int, pio_real</a>
+  1244) <a name="l1244" style="background-color: #ffcccc"></a>
+  1245) <a name="l1245" style="background-color: #ffcccc">    integer, intent(in) :: pbuftype</a>
+  1246) <a name="l1246" style="background-color: #ffcccc">    integer :: piotype</a>
+  1247) <a name="l1247" style="background-color: #ffcccc"></a>
+  1248) <a name="l1248" style="background-color: #ffcccc">    select case(pbuftype)</a>
+  1249) <a name="l1249" style="background-color: #ffcccc">    case (TYPEDOUBLE)</a>
+  1250) <a name="l1250" style="background-color: #ffcccc">       piotype = pio_double</a>
+  1251) <a name="l1251" style="background-color: #ffcccc">    case(TYPEINT)</a>
+  1252) <a name="l1252" style="background-color: #ffcccc">       piotype = pio_int</a>
+  1253) <a name="l1253" style="background-color: #ffcccc">    case(TYPEREAL)</a>
+  1254) <a name="l1254" style="background-color: #ffcccc">       piotype = pio_real</a>
+  1255) <a name="l1255" style="background-color: #ffcccc">!    case(TYPELONG)</a>
+  1256) <a name="l1256" style="background-color: #ffcccc">!       piotype = pio_int</a>
+  1257) <a name="l1257" style="background-color: #ffcccc">    case default</a>
+  1258) <a name="l1258" style="background-color: #ffcccc">       write(iulog, *) 'Dtype = ', pbuftype</a>
+  1259) <a name="l1259" style="background-color: #ffcccc">       call endrun('No restart support for dtype')</a>
+  1260) <a name="l1260" style="background-color: #ffcccc">    end select</a>
+  1261) <a name="l1261" style="background-color: #ffcccc">  end function pbuftype2piotype</a>
+  1262) <a name="l1262" style="background-color: #ffffff"></a>
+  1263) <a name="l1263" style="background-color: #ffffff"></a>
+  1264) <a name="l1264" style="background-color: #ffffff">!</a>
+  1265) <a name="l1265" style="background-color: #ffffff">! Initialize a restart file to write - all additional dims in a field are</a>
+  1266) <a name="l1266" style="background-color: #ffffff">! bundled into a single dimension for output and a dim pbuf_xxxxx is declared</a>
+  1267) <a name="l1267" style="background-color: #ffffff">! in the file if it does not already exist.   </a>
+  1268) <a name="l1268" style="background-color: #ffffff">!</a>
+  1269) <a name="l1269" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">pbuf_init_restart(File, pbuf2d)</a>
+  1270) <a name="l1270" style="background-color: #ffcccc">    use pio,             only: file_desc_t, pio_seterrorhandling, pio_noerr,  &amp;</a>
+  1271) <a name="l1271" style="background-color: #ffcccc">         pio_bcast_error, pio_internal_error, pio_inq_dimid, pio_def_dim,     &amp;</a>
+  1272) <a name="l1272" style="background-color: #ffcccc">         pio_def_var, pio_int</a>
+  1273) <a name="l1273" style="background-color: #ffcccc"></a>
+  1274) <a name="l1274" style="background-color: #ffcccc">    ! Dummy Variables</a>
+  1275) <a name="l1275" style="background-color: #ffcccc">    type(file_desc_t),                 intent(inout) :: file</a>
+  1276) <a name="l1276" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer               :: pbuf2d(:,:)</a>
+  1277) <a name="l1277" style="background-color: #ffcccc"></a>
+  1278) <a name="l1278" style="background-color: #ffcccc">    ! Local Variables</a>
+  1279) <a name="l1279" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer               :: pbuf</a>
+  1280) <a name="l1280" style="background-color: #ffcccc">    integer                                          :: ierr, i, grid_select</a>
+  1281) <a name="l1281" style="background-color: #ffcccc">    integer                                          :: adimid(3), hdimcnt, dimcnt</a>
+  1282) <a name="l1282" style="background-color: #ffcccc">    integer                                          :: mdimsize, piodtype</a>
+  1283) <a name="l1283" style="background-color: #ffcccc"></a>
+  1284) <a name="l1284" style="background-color: #ffcccc">    character(len=10)                                :: dimname</a>
+  1285) <a name="l1285" style="background-color: #ffcccc">    character(len=24)                                :: varname</a>
+  1286) <a name="l1286" style="background-color: #ffcccc"></a>
+  1287) <a name="l1287" style="background-color: #ffcccc">    call pio_seterrorhandling(File, pio_bcast_error)</a>
+  1288) <a name="l1288" style="background-color: #ffcccc">    ierr = pio_inq_dimid(File, 'lon', adimid(1))</a>
+  1289) <a name="l1289" style="background-color: #ffcccc">    if(ierr==PIO_NOERR) then</a>
+  1290) <a name="l1290" style="background-color: #ffcccc">      ierr = pio_inq_dimid(File, 'lat', adimid(2))</a>
+  1291) <a name="l1291" style="background-color: #ffcccc">      hdimcnt = 2</a>
+  1292) <a name="l1292" style="background-color: #ffcccc">    else</a>
+  1293) <a name="l1293" style="background-color: #ffcccc">      ierr = pio_inq_dimid(File, 'ncol', adimid(1))</a>
+  1294) <a name="l1294" style="background-color: #ffcccc">      hdimcnt = 1</a>
+  1295) <a name="l1295" style="background-color: #ffcccc">    end if</a>
+  1296) <a name="l1296" style="background-color: #ffcccc">    call pio_seterrorhandling(File, pio_internal_error)</a>
+  1297) <a name="l1297" style="background-color: #ffcccc"></a>
+  1298) <a name="l1298" style="background-color: #ffcccc">    do i = 1, currentpbufflds</a>
+  1299) <a name="l1299" style="background-color: #ffcccc">      pbuf =&gt; pbuf2d(i,begchunk)</a>
+  1300) <a name="l1300" style="background-color: #ffcccc"></a>
+  1301) <a name="l1301" style="background-color: #ffcccc">      ! Only save global pbufs for restart</a>
+  1302) <a name="l1302" style="background-color: #ffcccc">      if(pbuf%hdr%persistence /= persistence_global) cycle</a>
+  1303) <a name="l1303" style="background-color: #ffcccc"></a>
+  1304) <a name="l1304" style="background-color: #ffcccc">      piodtype = pbuftype2piotype(pbuf%hdr%dtype)</a>
+  1305) <a name="l1305" style="background-color: #ffcccc"></a>
+  1306) <a name="l1306" style="background-color: #ffcccc">      do grid_select = 1, ngrid_types</a>
+  1307) <a name="l1307" style="background-color: #ffcccc">        ! For subcol fields, mdimsize includes psubcols in size</a>
+  1308) <a name="l1308" style="background-color: #ffcccc">        mdimsize  = product(pbuf%hdr%dimsizes(:,grid_select))/pcols</a>
+  1309) <a name="l1309" style="background-color: #ffcccc">        if(mdimsize &gt; 1) then</a>
+  1310) <a name="l1310" style="background-color: #ffcccc">          call pio_seterrorhandling(File, pio_bcast_error)</a>
+  1311) <a name="l1311" style="background-color: #ffcccc">          write(dimname,'(a,i5.5)') 'pbuf_',mdimsize</a>
+  1312) <a name="l1312" style="background-color: #ffcccc">          ierr = pio_inq_dimid(File,dimname, adimid(hdimcnt+1))</a>
+  1313) <a name="l1313" style="background-color: #ffcccc">          call pio_seterrorhandling(File, pio_internal_error)</a>
+  1314) <a name="l1314" style="background-color: #ffcccc">          if(ierr /= PIO_NOERR) then</a>
+  1315) <a name="l1315" style="background-color: #ffcccc">            ierr = pio_def_dim(File, dimname, mdimsize, adimid(hdimcnt+1))</a>
+  1316) <a name="l1316" style="background-color: #ffcccc">          end if</a>
+  1317) <a name="l1317" style="background-color: #ffcccc">          dimcnt = hdimcnt + 1</a>
+  1318) <a name="l1318" style="background-color: #ffcccc">        else</a>
+  1319) <a name="l1319" style="background-color: #ffcccc">          dimcnt = hdimcnt</a>
+  1320) <a name="l1320" style="background-color: #ffcccc">        end if</a>
+  1321) <a name="l1321" style="background-color: #ffcccc">        if (mdimsize &gt; 0) then</a>
+  1322) <a name="l1322" style="background-color: #ffcccc">          varname = trim(pbuf%hdr%name)//trim(field_grid_suff(grid_select))</a>
+  1323) <a name="l1323" style="background-color: #ffcccc">          ierr = pio_def_var(File, varname, piodtype, adimid(1:dimcnt),       &amp;</a>
+  1324) <a name="l1324" style="background-color: #ffcccc">               pbuf%hdr%vardesc(grid_select))</a>
+  1325) <a name="l1325" style="background-color: #ffcccc">        end if</a>
+  1326) <a name="l1326" style="background-color: #ffcccc">      end do</a>
+  1327) <a name="l1327" style="background-color: #ffcccc"></a>
+  1328) <a name="l1328" style="background-color: #ffcccc">    end do</a>
+  1329) <a name="l1329" style="background-color: #ffcccc"></a>
+  1330) <a name="l1330" style="background-color: #ffcccc">    ierr = pio_def_var(File, 'pbuf_time_idx', pio_int, timeidx_desc)</a>
+  1331) <a name="l1331" style="background-color: #ffcccc"></a>
+  1332) <a name="l1332" style="background-color: #ffcccc">  end subroutine pbuf_init_restart</a>
+  1333) <a name="l1333" style="background-color: #ffffff"></a>
+  1334) <a name="l1334" style="background-color: #ffffff"></a>
+  1335) <a name="l1335" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">pbuf_write_restart(File, pbuf2d)</a>
+  1336) <a name="l1336" style="background-color: #ffcccc">    use pio,             only: file_desc_t, pio_put_var</a>
+  1337) <a name="l1337" style="background-color: #ffcccc"></a>
+  1338) <a name="l1338" style="background-color: #ffcccc">    ! Dummy Variables</a>
+  1339) <a name="l1339" style="background-color: #ffcccc">    type(file_desc_t),                 intent(inout) :: file</a>
+  1340) <a name="l1340" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer               :: pbuf2d(:,:)</a>
+  1341) <a name="l1341" style="background-color: #ffcccc"></a>
+  1342) <a name="l1342" style="background-color: #ffcccc">    ! Local Variables</a>
+  1343) <a name="l1343" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer                :: pbufhdr(:)</a>
+  1344) <a name="l1344" style="background-color: #ffcccc"></a>
+  1345) <a name="l1345" style="background-color: #ffcccc">    integer                                           :: index, dtype, ierr</a>
+  1346) <a name="l1346" style="background-color: #ffcccc"></a>
+  1347) <a name="l1347" style="background-color: #ffcccc">    pbufhdr =&gt; pbuf_get_chunk(pbuf2d, begchunk)</a>
+  1348) <a name="l1348" style="background-color: #ffcccc"></a>
+  1349) <a name="l1349" style="background-color: #ffcccc">    do index = 1, currentpbufflds</a>
+  1350) <a name="l1350" style="background-color: #ffcccc">      if(pbufhdr(index)%hdr%persistence == persistence_global) then</a>
+  1351) <a name="l1351" style="background-color: #ffcccc">        dtype = pbufhdr(index)%hdr%dtype</a>
+  1352) <a name="l1352" style="background-color: #ffcccc">        select case(dtype)</a>
+  1353) <a name="l1353" style="background-color: #ffcccc">        case (TYPEDOUBLE)</a>
+  1354) <a name="l1354" style="background-color: #ffcccc">          call write_restart_field_double(File, pbuf2d, index)</a>
+  1355) <a name="l1355" style="background-color: #ffcccc">        case (TYPEREAL)</a>
+  1356) <a name="l1356" style="background-color: #ffcccc">          call write_restart_field_real(File, pbuf2d, index)</a>
+  1357) <a name="l1357" style="background-color: #ffcccc">        case (TYPEINT)</a>
+  1358) <a name="l1358" style="background-color: #ffcccc">          call write_restart_field_int(File, pbuf2d, index)</a>
+  1359) <a name="l1359" style="background-color: #ffcccc">        end select</a>
+  1360) <a name="l1360" style="background-color: #ffcccc">      end if</a>
+  1361) <a name="l1361" style="background-color: #ffcccc">    end do</a>
+  1362) <a name="l1362" style="background-color: #ffcccc">    ierr = pio_put_var(File, timeidx_desc, (/old_time_idx/))</a>
+  1363) <a name="l1363" style="background-color: #ffcccc"></a>
+  1364) <a name="l1364" style="background-color: #ffcccc">  end subroutine pbuf_write_restart</a>
+  1365) <a name="l1365" style="background-color: #ffffff"></a>
+  1366) <a name="l1366" style="background-color: #ffffff"></a>
+  1367) <a name="l1367" style="background-color: #ffffff">  ! TYPE int,double,real </a>
+  1368) <a name="l1368" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">write_restart_field_{TYPE}(File, pbuf2d, index)</a>
+  1369) <a name="l1369" style="background-color: #ffcccc">    use pio,             only: file_desc_t, io_desc_t, pio_write_darray</a>
+  1370) <a name="l1370" style="background-color: #ffcccc">    use cam_pio_utils,   only: get_phys_decomp</a>
+  1371) <a name="l1371" style="background-color: #ffcccc"></a>
+  1372) <a name="l1372" style="background-color: #ffcccc">    ! Dummy Variables</a>
+  1373) <a name="l1373" style="background-color: #ffcccc">    type(file_desc_t),                 intent(inout) :: File</a>
+  1374) <a name="l1374" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer               :: pbuf2d(:,:)</a>
+  1375) <a name="l1375" style="background-color: #ffcccc">    integer,                           intent(in)    :: index</a>
+  1376) <a name="l1376" style="background-color: #ffcccc"></a>
+  1377) <a name="l1377" style="background-color: #ffcccc">    ! Local Variables</a>
+  1378) <a name="l1378" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer               :: pbuf</a>
+  1379) <a name="l1379" style="background-color: #ffcccc">    type(io_desc_t),           pointer               :: iodesc =&gt; null()</a>
+  1380) <a name="l1380" style="background-color: #ffcccc">    {VTYPE},      allocatable                        :: field(:,:,:)</a>
+  1381) <a name="l1381" style="background-color: #ffcccc"></a>
+  1382) <a name="l1382" style="background-color: #ffcccc">    integer                            :: grid_select ! 1=grid, 2=subcol</a>
+  1383) <a name="l1383" style="background-color: #ffcccc">    integer                            :: piodtype, c, ierr</a>
+  1384) <a name="l1384" style="background-color: #ffcccc">    integer                            :: mdimsize</a>
+  1385) <a name="l1385" style="background-color: #ffcccc"></a>
+  1386) <a name="l1386" style="background-color: #ffcccc">    pbuf =&gt; pbuf2d(index, begchunk)</a>
+  1387) <a name="l1387" style="background-color: #ffcccc">    piodtype = pbuftype2piotype(pbuf%hdr%dtype)</a>
+  1388) <a name="l1388" style="background-color: #ffcccc"></a>
+  1389) <a name="l1389" style="background-color: #ffcccc">    do grid_select = 1, ngrid_types</a>
+  1390) <a name="l1390" style="background-color: #ffcccc">      mdimsize = product(pbuf%hdr%dimsizes(:,grid_select))/pcols</a>
+  1391) <a name="l1391" style="background-color: #ffcccc">      if ((mdimsize &gt; 0) .and. (.not. pbuf%hdr%is_copy(grid_select))) then</a>
+  1392) <a name="l1392" style="background-color: #ffcccc">        allocate(field(pcols, mdimsize, begchunk:endchunk))</a>
+  1393) <a name="l1393" style="background-color: #ffcccc">        do c = begchunk, endchunk</a>
+  1394) <a name="l1394" style="background-color: #ffcccc">          call pbuf_get_field_restart(pbuf2d, c, index, field(:,:,c),         &amp;</a>
+  1395) <a name="l1395" style="background-color: #ffcccc">               mdimsize, grid_select)</a>
+  1396) <a name="l1396" style="background-color: #ffcccc">        end do</a>
+  1397) <a name="l1397" style="background-color: #ffcccc">        call get_phys_decomp(iodesc, 1, mdimsize, 1, piodtype)</a>
+  1398) <a name="l1398" style="background-color: #ffcccc">        call pio_write_darray(File, pbuf%hdr%vardesc(grid_select), iodesc, field, ierr)</a>
+  1399) <a name="l1399" style="background-color: #ffcccc">        deallocate(field)</a>
+  1400) <a name="l1400" style="background-color: #ffcccc">      end if</a>
+  1401) <a name="l1401" style="background-color: #ffcccc">    end do</a>
+  1402) <a name="l1402" style="background-color: #ffcccc"></a>
+  1403) <a name="l1403" style="background-color: #ffcccc">  end subroutine write_restart_field_{TYPE}</a>
+  1404) <a name="l1404" style="background-color: #ffffff"></a>
+  1405) <a name="l1405" style="background-color: #ffffff"></a>
+  1406) <a name="l1406" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">pbuf_read_restart(File, pbuf2d)</a>
+  1407) <a name="l1407" style="background-color: #ffcccc">    use pio,             only: file_desc_t, pio_inq_varid, pio_get_var</a>
+  1408) <a name="l1408" style="background-color: #ffcccc"></a>
+  1409) <a name="l1409" style="background-color: #ffcccc">    ! Dummy Variables</a>
+  1410) <a name="l1410" style="background-color: #ffcccc">    type(File_desc_t),                 intent(inout) :: File</a>
+  1411) <a name="l1411" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer               :: pbuf2d(:,:)</a>
+  1412) <a name="l1412" style="background-color: #ffcccc"></a>
+  1413) <a name="l1413" style="background-color: #ffcccc">    ! Local Variables</a>
+  1414) <a name="l1414" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer               :: pbufhdr(:)</a>
+  1415) <a name="l1415" style="background-color: #ffcccc"></a>
+  1416) <a name="l1416" style="background-color: #ffcccc">    integer                                          :: index, dtype, ierr</a>
+  1417) <a name="l1417" style="background-color: #ffcccc"></a>
+  1418) <a name="l1418" style="background-color: #ffcccc">    call pbuf_initialize(pbuf2d)</a>
+  1419) <a name="l1419" style="background-color: #ffcccc">    </a>
+  1420) <a name="l1420" style="background-color: #ffcccc">    pbufhdr =&gt; pbuf_get_chunk(pbuf2d, begchunk)</a>
+  1421) <a name="l1421" style="background-color: #ffcccc"></a>
+  1422) <a name="l1422" style="background-color: #ffcccc">    ierr = pio_inq_varid(File, 'pbuf_time_idx', timeidx_desc)</a>
+  1423) <a name="l1423" style="background-color: #ffcccc">    ierr = pio_get_var(File, timeidx_desc, old_time_idx)</a>
+  1424) <a name="l1424" style="background-color: #ffcccc"></a>
+  1425) <a name="l1425" style="background-color: #ffcccc">    do index = 1, currentpbufflds</a>
+  1426) <a name="l1426" style="background-color: #ffcccc">      if(pbufhdr(index)%hdr%persistence == persistence_global) then</a>
+  1427) <a name="l1427" style="background-color: #ffcccc">        dtype = pbufhdr(index)%hdr%dtype</a>
+  1428) <a name="l1428" style="background-color: #ffcccc">        select case(dtype)</a>
+  1429) <a name="l1429" style="background-color: #ffcccc">        case (TYPEDOUBLE)</a>
+  1430) <a name="l1430" style="background-color: #ffcccc">          call read_restart_field_double(File, pbuf2d, index)</a>
+  1431) <a name="l1431" style="background-color: #ffcccc">        case (TYPEREAL)</a>
+  1432) <a name="l1432" style="background-color: #ffcccc">          call read_restart_field_real(File, pbuf2d, index)</a>
+  1433) <a name="l1433" style="background-color: #ffcccc">        case (TYPEINT)</a>
+  1434) <a name="l1434" style="background-color: #ffcccc">          call read_restart_field_int(File, pbuf2d, index)</a>
+  1435) <a name="l1435" style="background-color: #ffcccc">        end select</a>
+  1436) <a name="l1436" style="background-color: #ffcccc">      end if</a>
+  1437) <a name="l1437" style="background-color: #ffcccc">    end do</a>
+  1438) <a name="l1438" style="background-color: #ffcccc"></a>
+  1439) <a name="l1439" style="background-color: #ffcccc">  end subroutine pbuf_read_restart</a>
+  1440) <a name="l1440" style="background-color: #ffffff"></a>
+  1441) <a name="l1441" style="background-color: #ffffff">  ! TYPE int,double,real </a>
+  1442) <a name="l1442" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">read_restart_field_{TYPE} (File, pbuf2d, index)</a>
+  1443) <a name="l1443" style="background-color: #ffcccc">    use pio,             only: file_desc_t, io_desc_t, pio_read_darray</a>
+  1444) <a name="l1444" style="background-color: #ffcccc">    use pio,             only: pio_inq_varid</a>
+  1445) <a name="l1445" style="background-color: #ffcccc">    use cam_pio_utils,   only: get_phys_decomp</a>
+  1446) <a name="l1446" style="background-color: #ffcccc">    use subcol_utils,    only: subcol_pack</a>
+  1447) <a name="l1447" style="background-color: #ffcccc"></a>
+  1448) <a name="l1448" style="background-color: #ffcccc">    ! Dummy Variables</a>
+  1449) <a name="l1449" style="background-color: #ffcccc">    type(file_desc_t),                 intent(inout) :: File</a>
+  1450) <a name="l1450" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer               :: pbuf2d(:,:)</a>
+  1451) <a name="l1451" style="background-color: #ffcccc">    integer,                           intent(in)    :: index</a>
+  1452) <a name="l1452" style="background-color: #ffcccc"></a>
+  1453) <a name="l1453" style="background-color: #ffcccc">    ! Local Variables</a>
+  1454) <a name="l1454" style="background-color: #ffcccc">    type(physics_buffer_desc), pointer               :: pbuf</a>
+  1455) <a name="l1455" style="background-color: #ffcccc">    type(io_desc_t),           pointer               :: iodesc =&gt; null()</a>
+  1456) <a name="l1456" style="background-color: #ffcccc">    {VTYPE}, allocatable                             :: fld7(:,:,:,:,:,:,:)</a>
+  1457) <a name="l1457" style="background-color: #ffcccc">    {VTYPE}, allocatable                             :: fld5_pack(:,:,:,:,:)</a>
+  1458) <a name="l1458" style="background-color: #ffcccc"></a>
+  1459) <a name="l1459" style="background-color: #ffcccc">    integer                                          :: grid_select ! (1=grid, 2=subcol)</a>
+  1460) <a name="l1460" style="background-color: #ffcccc">    integer                                          :: piodtype, ierr, c</a>
+  1461) <a name="l1461" style="background-color: #ffcccc">    integer                                          :: dimsizes(6)</a>
+  1462) <a name="l1462" style="background-color: #ffcccc">    integer                                          :: mdimsize</a>
+  1463) <a name="l1463" style="background-color: #ffcccc"></a>
+  1464) <a name="l1464" style="background-color: #ffcccc">    character(len=24)                                :: varname</a>
+  1465) <a name="l1465" style="background-color: #ffcccc"></a>
+  1466) <a name="l1466" style="background-color: #ffcccc">    pbuf =&gt; pbuf2d(index, begchunk)</a>
+  1467) <a name="l1467" style="background-color: #ffcccc">    piodtype = pbuftype2piotype(pbuf%hdr%dtype)</a>
+  1468) <a name="l1468" style="background-color: #ffcccc"></a>
+  1469) <a name="l1469" style="background-color: #ffcccc">    do grid_select = 1, ngrid_types</a>
+  1470) <a name="l1470" style="background-color: #ffcccc"></a>
+  1471) <a name="l1471" style="background-color: #ffcccc">      dimsizes(:) = pbuf%hdr%dimsizes(:, grid_select)</a>
+  1472) <a name="l1472" style="background-color: #ffcccc">      if(all(dimsizes(:) == 0)) then</a>
+  1473) <a name="l1473" style="background-color: #ffcccc">        ! None of this grid type for this variable</a>
+  1474) <a name="l1474" style="background-color: #ffcccc">        cycle</a>
+  1475) <a name="l1475" style="background-color: #ffcccc">      end if</a>
+  1476) <a name="l1476" style="background-color: #ffcccc"></a>
+  1477) <a name="l1477" style="background-color: #ffcccc">      ! Fix up dimensions for subcolumn field</a>
+  1478) <a name="l1478" style="background-color: #ffcccc">      if (grid_select == col_type_subcol) then</a>
+  1479) <a name="l1479" style="background-color: #ffcccc">        ! Field stored as  (pcols, psubcols*restDims, chunks)</a>
+  1480) <a name="l1480" style="background-color: #ffcccc">        ! Read then pack to (pcols*psubcols,restDims, chunks)</a>
+  1481) <a name="l1481" style="background-color: #ffcccc">        allocate(fld5_pack(dimsizes(1),dimsizes(2),dimsizes(3),dimsizes(4),dimsizes(5)))</a>
+  1482) <a name="l1482" style="background-color: #ffcccc">        do c = 5, 2, -1</a>
+  1483) <a name="l1483" style="background-color: #ffcccc">          dimsizes(c + 1) = dimsizes(c)</a>
+  1484) <a name="l1484" style="background-color: #ffcccc">        end do</a>
+  1485) <a name="l1485" style="background-color: #ffcccc">        dimsizes(1) = pcols</a>
+  1486) <a name="l1486" style="background-color: #ffcccc">        dimsizes(2) = psubcols</a>
+  1487) <a name="l1487" style="background-color: #ffcccc">      end if</a>
+  1488) <a name="l1488" style="background-color: #ffcccc"></a>
+  1489) <a name="l1489" style="background-color: #ffcccc">      varname = trim(pbuf%hdr%name)//trim(field_grid_suff(grid_select))</a>
+  1490) <a name="l1490" style="background-color: #ffcccc">      ierr = pio_inq_varid(File, varname, pbuf%hdr%vardesc(grid_select))</a>
+  1491) <a name="l1491" style="background-color: #ffcccc"></a>
+  1492) <a name="l1492" style="background-color: #ffcccc">      allocate(fld7(dimsizes(1), dimsizes(2), dimsizes(3), dimsizes(4),       &amp;</a>
+  1493) <a name="l1493" style="background-color: #ffcccc">           dimsizes(5), dimsizes(6), begchunk:endchunk))</a>
+  1494) <a name="l1494" style="background-color: #ffcccc"></a>
+  1495) <a name="l1495" style="background-color: #ffcccc">      mdimsize = product(dimsizes(2:))</a>
+  1496) <a name="l1496" style="background-color: #ffcccc">      call get_phys_decomp(iodesc, 1, mdimsize, 1, piodtype)</a>
+  1497) <a name="l1497" style="background-color: #ffcccc">      call pio_read_darray(File, pbuf%hdr%vardesc(grid_select), iodesc, fld7, ierr)</a>
+  1498) <a name="l1498" style="background-color: #ffcccc"></a>
+  1499) <a name="l1499" style="background-color: #ffcccc">      do c = begchunk, endchunk</a>
+  1500) <a name="l1500" style="background-color: #ffcccc">        if (grid_select == col_type_grid) then</a>
+  1501) <a name="l1501" style="background-color: #ffcccc">          call buffer_set_field(pbuf2d(index,c)%bfg(grid_select), fld7(:,:,:,:,:,:,c))</a>
+  1502) <a name="l1502" style="background-color: #ffcccc">        else if (grid_select == col_type_subcol) then</a>
+  1503) <a name="l1503" style="background-color: #ffcccc">          call subcol_pack(c, fld7(:,:,:,:,:,:,c), fld5_pack)</a>
+  1504) <a name="l1504" style="background-color: #ffcccc">          call buffer_set_field(pbuf2d(index,c)%bfg(grid_select), fld5_pack)</a>
+  1505) <a name="l1505" style="background-color: #ffcccc">        else</a>
+  1506) <a name="l1506" style="background-color: #ffcccc">          call endrun('read_restart_field_{TYPE}: invalid grid selector - must be either 1 or 2')</a>
+  1507) <a name="l1507" style="background-color: #ffcccc">        end if</a>
+  1508) <a name="l1508" style="background-color: #ffcccc">      end do</a>
+  1509) <a name="l1509" style="background-color: #ffcccc">      deallocate(fld7)</a>
+  1510) <a name="l1510" style="background-color: #ffcccc">      if (allocated(fld5_pack)) then</a>
+  1511) <a name="l1511" style="background-color: #ffcccc">        deallocate(fld5_pack)</a>
+  1512) <a name="l1512" style="background-color: #ffcccc">      end if</a>
+  1513) <a name="l1513" style="background-color: #ffcccc">    end do</a>
+  1514) <a name="l1514" style="background-color: #ffcccc"></a>
+  1515) <a name="l1515" style="background-color: #ffcccc">  end subroutine read_restart_field_{TYPE}</a>
+  1516) <a name="l1516" style="background-color: #ffffff"></a>
+  1517) <a name="l1517" style="background-color: #ffffff">end module physics_buffer</a>
+  1518) <a name="l1518" style="background-color: #ffffff"></a>
+  1519) <a name="l1519" style="background-color: #ffffff"></a>
+  1520) <a name="l1520" style="background-color: #ffffff"></a>
+  1521) <a name="l1521" style="background-color: #ffffff"></a>
+  1522) <a name="l1522" style="background-color: #ffffff"></a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

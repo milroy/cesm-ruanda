@@ -1,0 +1,379 @@
+<html>
+<head>
+<title>Listing of ice_fileunits.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;ice_fileunits.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 100.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!=======================================================================</a>
+     2) <a name="l2" style="background-color: #ffffff">!BOP</a>
+     3) <a name="l3" style="background-color: #ffffff">!</a>
+     4) <a name="l4" style="background-color: #ffffff">! !MODULE: ice_fileunits</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     7) <a name="l7" style="background-color: #ffffff"></a>
+     8) <a name="l8" style="background-color: #ffffff">!  This module contains an I/O unit manager for tracking, assigning</a>
+     9) <a name="l9" style="background-color: #ffffff">!  and reserving I/O unit numbers.</a>
+    10) <a name="l10" style="background-color: #ffffff">!</a>
+    11) <a name="l11" style="background-color: #ffffff">!  There are three reserved I/O units set as parameters in this</a>
+    12) <a name="l12" style="background-color: #ffffff">!  module.  The default units for standard input (stdin), standard</a>
+    13) <a name="l13" style="background-color: #ffffff">!  output (stdout) and standard error (stderr).  These are currently</a>
+    14) <a name="l14" style="background-color: #ffffff">!  set as units 5,6,6, respectively as that is the most commonly</a>
+    15) <a name="l15" style="background-color: #ffffff">!  used among vendors. However, the user may change these if those</a>
+    16) <a name="l16" style="background-color: #ffffff">!  default units are conflicting with other models or if the</a>
+    17) <a name="l17" style="background-color: #ffffff">!  vendor is using different values.</a>
+    18) <a name="l18" style="background-color: #ffffff">!</a>
+    19) <a name="l19" style="background-color: #ffffff">!  The maximum number of I/O units per node is currently set by</a>
+    20) <a name="l20" style="background-color: #ffffff">!  the parameter ice\_IOMaxUnits.</a>
+    21) <a name="l21" style="background-color: #ffffff">!</a>
+    22) <a name="l22" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    23) <a name="l23" style="background-color: #ffffff">!  SVN:$Id: ice_fileunits.F90 58 2007-03-29 15:56:53Z eclare $</a>
+    24) <a name="l24" style="background-color: #ffffff">!</a>
+    25) <a name="l25" style="background-color: #ffffff">! author: Elizabeth C. Hunke, LANL</a>
+    26) <a name="l26" style="background-color: #ffffff">! 2006: ECH converted to free source form (F90)</a>
+    27) <a name="l27" style="background-color: #ffffff">! 2007: ECH added dynamic file units, modified from POP_IOUnitsMod.F90</a>
+    28) <a name="l28" style="background-color: #ffffff">!</a>
+    29) <a name="l29" style="background-color: #ffffff">! !INTERFACE:</a>
+    30) <a name="l30" style="background-color: #ffffff">!</a>
+    31) <a name="l31" style="background-color: #ffffff">      module ice_fileunits</a>
+    32) <a name="l32" style="background-color: #ffffff">!</a>
+    33) <a name="l33" style="background-color: #ffffff">! !USES:</a>
+    34) <a name="l34" style="background-color: #ffffff">      use ice_kinds_mod</a>
+    35) <a name="l35" style="background-color: #ffffff">#ifdef CCSMCOUPLED</a>
+    36) <a name="l36" style="background-color: #ffffff">      use shr_file_mod</a>
+    37) <a name="l37" style="background-color: #ffffff">#endif</a>
+    38) <a name="l38" style="background-color: #ffffff">!</a>
+    39) <a name="l39" style="background-color: #ffffff">!EOP</a>
+    40) <a name="l40" style="background-color: #ffffff">!=======================================================================</a>
+    41) <a name="l41" style="background-color: #ffffff"></a>
+    42) <a name="l42" style="background-color: #ffffff">      implicit none</a>
+    43) <a name="l43" style="background-color: #ffffff">      save</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">      character (len=char_len) :: &amp;</a>
+    46) <a name="l46" style="background-color: #ffffff">         diag_type               ! 'stdout' or 'file'</a>
+    47) <a name="l47" style="background-color: #ffffff"></a>
+    48) <a name="l48" style="background-color: #ffffff">      integer (kind=int_kind) :: &amp;</a>
+    49) <a name="l49" style="background-color: #ffffff">         nu_grid       , &amp;  ! grid file</a>
+    50) <a name="l50" style="background-color: #ffffff">         nu_kmt        , &amp;  ! land mask file</a>
+    51) <a name="l51" style="background-color: #ffffff">         nu_nml        , &amp;  ! namelist input file</a>
+    52) <a name="l52" style="background-color: #ffffff">         nu_forcing    , &amp;  ! forcing data file</a>
+    53) <a name="l53" style="background-color: #ffffff">         nu_dump       , &amp;  ! dump file for restarting</a>
+    54) <a name="l54" style="background-color: #ffffff">         nu_restart    , &amp;  ! restart input file</a>
+    55) <a name="l55" style="background-color: #ffffff">         nu_dump_aero  , &amp;  ! dump file for restarting ice aerosol tracer MH</a>
+    56) <a name="l56" style="background-color: #ffffff">         nu_restart_aero,&amp;  ! restart input file for ice aerosol tracer MH</a>
+    57) <a name="l57" style="background-color: #ffffff">         nu_dump_age   , &amp;  ! dump file for restarting ice age tracer</a>
+    58) <a name="l58" style="background-color: #ffffff">         nu_restart_age, &amp;  ! restart input file for ice age tracer</a>
+    59) <a name="l59" style="background-color: #ffffff">         nu_dump_FY    , &amp;  ! dump file for restarting FY ice tracer</a>
+    60) <a name="l60" style="background-color: #ffffff">         nu_restart_FY , &amp;  ! restart input file for FY ice tracer</a>
+    61) <a name="l61" style="background-color: #ffffff">         nu_dump_lvl   , &amp;  ! dump file for restarting level ice tracer</a>
+    62) <a name="l62" style="background-color: #ffffff">         nu_restart_lvl, &amp;  ! restart input file for level ice tracer</a>
+    63) <a name="l63" style="background-color: #ffffff">         nu_dump_pond  , &amp;  ! dump file for restarting melt pond tracer</a>
+    64) <a name="l64" style="background-color: #ffffff">         nu_restart_pond,&amp;  ! restart input file for melt pond tracer</a>
+    65) <a name="l65" style="background-color: #ffffff">         nu_rst_pointer, &amp;  ! pointer to latest restart file</a>
+    66) <a name="l66" style="background-color: #ffffff">         nu_history    , &amp;  ! binary history output file</a>
+    67) <a name="l67" style="background-color: #ffffff">         nu_hdr        , &amp;  ! header file for binary history output</a>
+    68) <a name="l68" style="background-color: #ffffff">         nu_diag       , &amp;  ! diagnostics output file</a>
+    69) <a name="l69" style="background-color: #ffffff">         nu_timing          ! timing output file</a>
+    70) <a name="l70" style="background-color: #ffffff"></a>
+    71) <a name="l71" style="background-color: #ffffff">      integer (kind=int_kind) :: &amp;</a>
+    72) <a name="l72" style="background-color: #ffffff">         diag_level         ! per-processor diagnostics level</a>
+    73) <a name="l73" style="background-color: #ffffff"></a>
+    74) <a name="l74" style="background-color: #ffffff">      character (11) :: &amp;</a>
+    75) <a name="l75" style="background-color: #ffffff">         nml_filename = 'ice_in' ! namelist input file name</a>
+    76) <a name="l76" style="background-color: #ffffff"></a>
+    77) <a name="l77" style="background-color: #ffffff">      integer (kind=int_kind), parameter :: &amp;</a>
+    78) <a name="l78" style="background-color: #ffffff">         ice_stdin  =  5, &amp; ! reserved unit for standard input</a>
+    79) <a name="l79" style="background-color: #ffffff">         ice_stdout =  6, &amp; ! reserved unit for standard output</a>
+    80) <a name="l80" style="background-color: #ffffff">         ice_stderr =  6    ! reserved unit for standard error</a>
+    81) <a name="l81" style="background-color: #ffffff"></a>
+    82) <a name="l82" style="background-color: #ffffff"></a>
+    83) <a name="l83" style="background-color: #ffffff">!EOP</a>
+    84) <a name="l84" style="background-color: #ffffff">!BOC</a>
+    85) <a name="l85" style="background-color: #ffffff">      integer (kind=int_kind), parameter :: &amp;</a>
+    86) <a name="l86" style="background-color: #ffffff">         ice_IOUnitsMinUnits = 11,   &amp; ! do not use unit numbers below this</a>
+    87) <a name="l87" style="background-color: #ffffff">         ice_IOUnitsMaxUnits = 99      ! maximum number of open units</a>
+    88) <a name="l88" style="background-color: #ffffff"></a>
+    89) <a name="l89" style="background-color: #ffffff">      logical (kind=log_kind), dimension(ice_IOUnitsMaxUnits) :: &amp;</a>
+    90) <a name="l90" style="background-color: #ffffff">         ice_IOUnitsInUse   ! flag=.true. if unit currently open</a>
+    91) <a name="l91" style="background-color: #ffffff"></a>
+    92) <a name="l92" style="background-color: #ffffff">#ifdef CCSMCOUPLED</a>
+    93) <a name="l93" style="background-color: #ffffff">      ! instance control</a>
+    94) <a name="l94" style="background-color: #ffffff">      integer (kind=int_kind), public :: inst_index</a>
+    95) <a name="l95" style="background-color: #ffffff">      character(len=16)      , public :: inst_name</a>
+    96) <a name="l96" style="background-color: #ffffff">      character(len=16)      , public :: inst_suffix</a>
+    97) <a name="l97" style="background-color: #ffffff">#endif</a>
+    98) <a name="l98" style="background-color: #ffffff"></a>
+    99) <a name="l99" style="background-color: #ffffff">!EOC</a>
+   100) <a name="l100" style="background-color: #ffffff">!=======================================================================</a>
+   101) <a name="l101" style="background-color: #ffffff"></a>
+   102) <a name="l102" style="background-color: #ffffff">contains</a>
+   103) <a name="l103" style="background-color: #ffffff"></a>
+   104) <a name="l104" style="background-color: #ffffff">!=======================================================================</a>
+   105) <a name="l105" style="background-color: #ffffff">!BOP</a>
+   106) <a name="l106" style="background-color: #ffffff">! !IROUTINE: init_fileunits</a>
+   107) <a name="l107" style="background-color: #ffffff">! !INTERFACE:</a>
+   108) <a name="l108" style="background-color: #ffffff"></a>
+   109) <a name="l109" style="background-color: #ffffff"> subroutine init_fileunits</a>
+   110) <a name="l110" style="background-color: #ffffff"></a>
+   111) <a name="l111" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   112) <a name="l112" style="background-color: #ffffff">!  This routine grabs needed unit numbers. </a>
+   113) <a name="l113" style="background-color: #ffffff">!  nu_diag is set to 6 (stdout) but may be reset later by the namelist. </a>
+   114) <a name="l114" style="background-color: #ffffff">!  nu_nml is obtained separately.</a>
+   115) <a name="l115" style="background-color: #ffffff"></a>
+   116) <a name="l116" style="background-color: #ffffff">         nu_diag = ice_stdout  ! default</a>
+   117) <a name="l117" style="background-color: #ffffff"></a>
+   118) <a name="l118" style="background-color: #ffffff">#ifdef CCSMCOUPLED</a>
+   119) <a name="l119" style="background-color: #ffffff">         ice_IOUnitsInUse = .false.</a>
+   120) <a name="l120" style="background-color: #ffffff">         ice_IOUnitsInUse(ice_stdin)  = .true. ! reserve unit 5</a>
+   121) <a name="l121" style="background-color: #ffffff">         ice_IOUnitsInUse(ice_stdout) = .true. ! reserve unit 6</a>
+   122) <a name="l122" style="background-color: #ffffff">         ice_IOUnitsInUse(ice_stderr) = .true.</a>
+   123) <a name="l123" style="background-color: #ffffff"></a>
+   124) <a name="l124" style="background-color: #ffffff">         nu_grid        = shr_file_getUnit()</a>
+   125) <a name="l125" style="background-color: #ffffff">         nu_kmt         = shr_file_getUnit()</a>
+   126) <a name="l126" style="background-color: #ffffff">         nu_forcing     = shr_file_getUnit()</a>
+   127) <a name="l127" style="background-color: #ffffff">         nu_dump        = shr_file_getUnit()</a>
+   128) <a name="l128" style="background-color: #ffffff">         nu_restart     = shr_file_getUnit()</a>
+   129) <a name="l129" style="background-color: #ffffff">         nu_dump_aero   = shr_file_getUnit() </a>
+   130) <a name="l130" style="background-color: #ffffff">         nu_restart_aero= shr_file_getUnit()</a>
+   131) <a name="l131" style="background-color: #ffffff">         nu_dump_age    = shr_file_getUnit()</a>
+   132) <a name="l132" style="background-color: #ffffff">         nu_restart_age = shr_file_getUnit()</a>
+   133) <a name="l133" style="background-color: #ffffff">         nu_dump_FY     = shr_file_getUnit()</a>
+   134) <a name="l134" style="background-color: #ffffff">         nu_restart_FY  = shr_file_getUnit()</a>
+   135) <a name="l135" style="background-color: #ffffff">         nu_dump_lvl    = shr_file_getUnit()</a>
+   136) <a name="l136" style="background-color: #ffffff">         nu_restart_lvl = shr_file_getUnit()</a>
+   137) <a name="l137" style="background-color: #ffffff">         nu_dump_pond   = shr_file_getUnit()</a>
+   138) <a name="l138" style="background-color: #ffffff">         nu_restart_pond = shr_file_getUnit()</a>
+   139) <a name="l139" style="background-color: #ffffff">         nu_rst_pointer = shr_file_getUnit()</a>
+   140) <a name="l140" style="background-color: #ffffff">         nu_history     = shr_file_getUnit()</a>
+   141) <a name="l141" style="background-color: #ffffff">         nu_hdr         = shr_file_getUnit()</a>
+   142) <a name="l142" style="background-color: #ffffff">         nu_timing         = shr_file_getUnit()</a>
+   143) <a name="l143" style="background-color: #ffffff">#else</a>
+   144) <a name="l144" style="background-color: #ffffff">         call get_fileunit(nu_grid)</a>
+   145) <a name="l145" style="background-color: #ffffff">         call get_fileunit(nu_kmt)</a>
+   146) <a name="l146" style="background-color: #ffffff">         call get_fileunit(nu_forcing)</a>
+   147) <a name="l147" style="background-color: #ffffff">         call get_fileunit(nu_dump)</a>
+   148) <a name="l148" style="background-color: #ffffff">         call get_fileunit(nu_restart)</a>
+   149) <a name="l149" style="background-color: #ffffff">         call get_fileunit(nu_dump_aero)</a>
+   150) <a name="l150" style="background-color: #ffffff">         call get_fileunit(nu_restart_aero)</a>
+   151) <a name="l151" style="background-color: #ffffff">         call get_fileunit(nu_dump_age)</a>
+   152) <a name="l152" style="background-color: #ffffff">         call get_fileunit(nu_restart_age)</a>
+   153) <a name="l153" style="background-color: #ffffff">         call get_fileunit(nu_dump_FY)</a>
+   154) <a name="l154" style="background-color: #ffffff">         call get_fileunit(nu_restart_FY)</a>
+   155) <a name="l155" style="background-color: #ffffff">         call get_fileunit(nu_dump_lvl)</a>
+   156) <a name="l156" style="background-color: #ffffff">         call get_fileunit(nu_restart_lvl)</a>
+   157) <a name="l157" style="background-color: #ffffff">         call get_fileunit(nu_dump_pond)</a>
+   158) <a name="l158" style="background-color: #ffffff">         call get_fileunit(nu_restart_pond)</a>
+   159) <a name="l159" style="background-color: #ffffff">         call get_fileunit(nu_rst_pointer)</a>
+   160) <a name="l160" style="background-color: #ffffff">         call get_fileunit(nu_history)</a>
+   161) <a name="l161" style="background-color: #ffffff">         call get_fileunit(nu_hdr)</a>
+   162) <a name="l162" style="background-color: #ffffff">         call get_fileunit(nu_timing)</a>
+   163) <a name="l163" style="background-color: #ffffff">#endif</a>
+   164) <a name="l164" style="background-color: #ffffff"></a>
+   165) <a name="l165" style="background-color: #ffffff"> end subroutine init_fileunits</a>
+   166) <a name="l166" style="background-color: #ffffff"></a>
+   167) <a name="l167" style="background-color: #ffffff">!=======================================================================</a>
+   168) <a name="l168" style="background-color: #ffffff">!BOP</a>
+   169) <a name="l169" style="background-color: #ffffff">! !IROUTINE: get_fileunit</a>
+   170) <a name="l170" style="background-color: #ffffff">! !INTERFACE:</a>
+   171) <a name="l171" style="background-color: #ffffff"></a>
+   172) <a name="l172" style="background-color: #ffffff"> subroutine get_fileunit(iunit)</a>
+   173) <a name="l173" style="background-color: #ffffff"></a>
+   174) <a name="l174" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   175) <a name="l175" style="background-color: #ffffff">!  This routine returns the next available I/O unit and marks it as</a>
+   176) <a name="l176" style="background-color: #ffffff">!  in use to prevent any later use.</a>
+   177) <a name="l177" style="background-color: #ffffff">!  Note that {\em all} processors must call this routine even if only</a>
+   178) <a name="l178" style="background-color: #ffffff">!  the master task is doing the I/O.  This is necessary insure that</a>
+   179) <a name="l179" style="background-color: #ffffff">!  the units remain synchronized for other parallel I/O functions.</a>
+   180) <a name="l180" style="background-color: #ffffff">!</a>
+   181) <a name="l181" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   182) <a name="l182" style="background-color: #ffffff">!  same as module</a>
+   183) <a name="l183" style="background-color: #ffffff"></a>
+   184) <a name="l184" style="background-color: #ffffff">! !OUTPUT PARAMETERS:</a>
+   185) <a name="l185" style="background-color: #ffffff"></a>
+   186) <a name="l186" style="background-color: #ffffff">   integer (kind=int_kind), intent(out) :: &amp;</a>
+   187) <a name="l187" style="background-color: #ffffff">      iunit                     ! next free I/O unit</a>
+   188) <a name="l188" style="background-color: #ffffff">!EOP</a>
+   189) <a name="l189" style="background-color: #ffffff">!BOC</a>
+   190) <a name="l190" style="background-color: #ffffff"></a>
+   191) <a name="l191" style="background-color: #ffffff">   integer (kind=int_kind) :: n  ! dummy loop index</a>
+   192) <a name="l192" style="background-color: #ffffff"></a>
+   193) <a name="l193" style="background-color: #ffffff">   logical (kind=log_kind) :: alreadyInUse</a>
+   194) <a name="l194" style="background-color: #ffffff"></a>
+   195) <a name="l195" style="background-color: #ffffff">#ifdef CCSMCOUPLED</a>
+   196) <a name="l196" style="background-color: #ffffff">   iunit = shr_file_getUnit()</a>
+   197) <a name="l197" style="background-color: #ffffff">#else</a>
+   198) <a name="l198" style="background-color: #ffffff">   srch_units: do n=ice_IOUnitsMinUnits, ice_IOUnitsMaxUnits</a>
+   199) <a name="l199" style="background-color: #ffffff">      if (.not. ice_IOUnitsInUse(n)) then   ! I found one, I found one</a>
+   200) <a name="l200" style="background-color: #ffffff"></a>
+   201) <a name="l201" style="background-color: #ffffff">         !*** make sure not in use by library or calling routines</a>
+   202) <a name="l202" style="background-color: #ffffff">         INQUIRE (unit=n,OPENED=alreadyInUse)</a>
+   203) <a name="l203" style="background-color: #ffffff"></a>
+   204) <a name="l204" style="background-color: #ffffff">         if (.not. alreadyInUse) then</a>
+   205) <a name="l205" style="background-color: #ffffff">            iunit = n        ! return the free unit number</a>
+   206) <a name="l206" style="background-color: #ffffff">            ice_IOUnitsInUse(n) = .true.  ! mark iunit as being in use</a>
+   207) <a name="l207" style="background-color: #ffffff">            exit srch_units</a>
+   208) <a name="l208" style="background-color: #ffffff">         else</a>
+   209) <a name="l209" style="background-color: #ffffff">            !*** if inquire shows this unit in use, mark it as</a>
+   210) <a name="l210" style="background-color: #ffffff">            !***    in use to prevent further queries</a>
+   211) <a name="l211" style="background-color: #ffffff">            ice_IOUnitsInUse(iunit) = .true.</a>
+   212) <a name="l212" style="background-color: #ffffff">         endif</a>
+   213) <a name="l213" style="background-color: #ffffff">      endif</a>
+   214) <a name="l214" style="background-color: #ffffff">   end do srch_units</a>
+   215) <a name="l215" style="background-color: #ffffff"></a>
+   216) <a name="l216" style="background-color: #ffffff">   if (iunit &gt; ice_IOUnitsMaxUnits) stop 'ice_IOUnitsGet: No free units'</a>
+   217) <a name="l217" style="background-color: #ffffff">#endif</a>
+   218) <a name="l218" style="background-color: #ffffff"></a>
+   219) <a name="l219" style="background-color: #ffffff">!EOC</a>
+   220) <a name="l220" style="background-color: #ffffff"> end subroutine get_fileunit</a>
+   221) <a name="l221" style="background-color: #ffffff"></a>
+   222) <a name="l222" style="background-color: #ffffff">!=======================================================================</a>
+   223) <a name="l223" style="background-color: #ffffff">!BOP</a>
+   224) <a name="l224" style="background-color: #ffffff">! !IROUTINE: release_all_fileunits</a>
+   225) <a name="l225" style="background-color: #ffffff">! !INTERFACE:</a>
+   226) <a name="l226" style="background-color: #ffffff"></a>
+   227) <a name="l227" style="background-color: #ffffff"> subroutine release_all_fileunits</a>
+   228) <a name="l228" style="background-color: #ffffff"></a>
+   229) <a name="l229" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   230) <a name="l230" style="background-color: #ffffff">!  This routine releases unit numbers at the end of a run. </a>
+   231) <a name="l231" style="background-color: #ffffff"></a>
+   232) <a name="l232" style="background-color: #ffffff">      call release_fileunit(nu_grid)</a>
+   233) <a name="l233" style="background-color: #ffffff">      call release_fileunit(nu_kmt)</a>
+   234) <a name="l234" style="background-color: #ffffff">      call release_fileunit(nu_forcing)</a>
+   235) <a name="l235" style="background-color: #ffffff">      call release_fileunit(nu_dump)</a>
+   236) <a name="l236" style="background-color: #ffffff">      call release_fileunit(nu_restart)</a>
+   237) <a name="l237" style="background-color: #ffffff">      call release_fileunit(nu_dump_aero)</a>
+   238) <a name="l238" style="background-color: #ffffff">      call release_fileunit(nu_restart_aero)</a>
+   239) <a name="l239" style="background-color: #ffffff">      call release_fileunit(nu_dump_age)</a>
+   240) <a name="l240" style="background-color: #ffffff">      call release_fileunit(nu_restart_age)</a>
+   241) <a name="l241" style="background-color: #ffffff">      call release_fileunit(nu_dump_FY)</a>
+   242) <a name="l242" style="background-color: #ffffff">      call release_fileunit(nu_restart_FY)</a>
+   243) <a name="l243" style="background-color: #ffffff">      call release_fileunit(nu_dump_lvl)</a>
+   244) <a name="l244" style="background-color: #ffffff">      call release_fileunit(nu_restart_lvl)</a>
+   245) <a name="l245" style="background-color: #ffffff">      call release_fileunit(nu_dump_pond)</a>
+   246) <a name="l246" style="background-color: #ffffff">      call release_fileunit(nu_restart_pond)</a>
+   247) <a name="l247" style="background-color: #ffffff">      call release_fileunit(nu_rst_pointer)</a>
+   248) <a name="l248" style="background-color: #ffffff">      call release_fileunit(nu_history)</a>
+   249) <a name="l249" style="background-color: #ffffff">      call release_fileunit(nu_hdr)</a>
+   250) <a name="l250" style="background-color: #ffffff">      call release_fileunit(nu_timing)</a>
+   251) <a name="l251" style="background-color: #ffffff">      if (nu_diag /= ice_stdout) call release_fileunit(nu_diag)</a>
+   252) <a name="l252" style="background-color: #ffffff"></a>
+   253) <a name="l253" style="background-color: #ffffff"> end subroutine release_all_fileunits</a>
+   254) <a name="l254" style="background-color: #ffffff"></a>
+   255) <a name="l255" style="background-color: #ffffff">!=======================================================================</a>
+   256) <a name="l256" style="background-color: #ffffff">!BOP</a>
+   257) <a name="l257" style="background-color: #ffffff">! !IROUTINE: release_fileunit</a>
+   258) <a name="l258" style="background-color: #ffffff">! !INTERFACE:</a>
+   259) <a name="l259" style="background-color: #ffffff"></a>
+   260) <a name="l260" style="background-color: #ffffff"> subroutine release_fileunit(iunit)</a>
+   261) <a name="l261" style="background-color: #ffffff"></a>
+   262) <a name="l262" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   263) <a name="l263" style="background-color: #ffffff">!  This routine releases an I/O unit (marks it as available).</a>
+   264) <a name="l264" style="background-color: #ffffff">!  Note that {\em all} processors must call this routine even if only</a>
+   265) <a name="l265" style="background-color: #ffffff">!  the master task is doing the I/O.  This is necessary insure that</a>
+   266) <a name="l266" style="background-color: #ffffff">!  the units remain synchronized for other parallel I/O functions.</a>
+   267) <a name="l267" style="background-color: #ffffff">!</a>
+   268) <a name="l268" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   269) <a name="l269" style="background-color: #ffffff">!  same as module</a>
+   270) <a name="l270" style="background-color: #ffffff"></a>
+   271) <a name="l271" style="background-color: #ffffff">! !INPUT PARAMETER:</a>
+   272) <a name="l272" style="background-color: #ffffff"></a>
+   273) <a name="l273" style="background-color: #ffffff">   integer (kind=int_kind), intent(in) :: &amp;</a>
+   274) <a name="l274" style="background-color: #ffffff">      iunit                    ! I/O unit to be released</a>
+   275) <a name="l275" style="background-color: #ffffff">!EOP</a>
+   276) <a name="l276" style="background-color: #ffffff">!BOC</a>
+   277) <a name="l277" style="background-color: #ffffff"></a>
+   278) <a name="l278" style="background-color: #ffffff">#ifdef CCSMCOUPLED</a>
+   279) <a name="l279" style="background-color: #ffffff">   call shr_file_freeUnit(iunit)</a>
+   280) <a name="l280" style="background-color: #ffffff">#else</a>
+   281) <a name="l281" style="background-color: #ffffff">!  check for proper unit number</a>
+   282) <a name="l282" style="background-color: #ffffff">   if (iunit &lt; 1 .or. iunit &gt; ice_IOUnitsMaxUnits) then</a>
+   283) <a name="l283" style="background-color: #ffffff">      stop 'release_fileunit: bad unit'</a>
+   284) <a name="l284" style="background-color: #ffffff">   endif</a>
+   285) <a name="l285" style="background-color: #ffffff"></a>
+   286) <a name="l286" style="background-color: #ffffff">!  mark the unit as not in use</a>
+   287) <a name="l287" style="background-color: #ffffff">   ice_IOUnitsInUse(iunit) = .false.  !  that was easy...</a>
+   288) <a name="l288" style="background-color: #ffffff">#endif</a>
+   289) <a name="l289" style="background-color: #ffffff"></a>
+   290) <a name="l290" style="background-color: #ffffff">!EOC</a>
+   291) <a name="l291" style="background-color: #ffffff"> end subroutine release_fileunit</a>
+   292) <a name="l292" style="background-color: #ffffff"></a>
+   293) <a name="l293" style="background-color: #ffffff">!=======================================================================</a>
+   294) <a name="l294" style="background-color: #ffffff">!BOP</a>
+   295) <a name="l295" style="background-color: #ffffff">! !IROUTINE: flush_fileunit</a>
+   296) <a name="l296" style="background-color: #ffffff">! !INTERFACE:</a>
+   297) <a name="l297" style="background-color: #ffffff"></a>
+   298) <a name="l298" style="background-color: #ffffff"> subroutine flush_fileunit(iunit)</a>
+   299) <a name="l299" style="background-color: #ffffff"></a>
+   300) <a name="l300" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   301) <a name="l301" style="background-color: #ffffff">!  This routine enables a user to flush the output from an IO unit</a>
+   302) <a name="l302" style="background-color: #ffffff">!  (typically stdout) to force output when the system is buffering</a>
+   303) <a name="l303" style="background-color: #ffffff">!  such output.  Because this system function is system dependent,</a>
+   304) <a name="l304" style="background-color: #ffffff">!  we only support this wrapper and users are welcome to insert the</a>
+   305) <a name="l305" style="background-color: #ffffff">!  code relevant to their local machine.  In the case where the CCSM</a>
+   306) <a name="l306" style="background-color: #ffffff">!  libraries are available, the shared routine for sys flush can be</a>
+   307) <a name="l307" style="background-color: #ffffff">!  used (and is provided here under a preprocessor option).</a>
+   308) <a name="l308" style="background-color: #ffffff">!</a>
+   309) <a name="l309" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   310) <a name="l310" style="background-color: #ffffff">!  same as module</a>
+   311) <a name="l311" style="background-color: #ffffff">!</a>
+   312) <a name="l312" style="background-color: #ffffff">! !USES:</a>
+   313) <a name="l313" style="background-color: #ffffff"></a>
+   314) <a name="l314" style="background-color: #ffffff">#ifdef CCSMCOUPLED</a>
+   315) <a name="l315" style="background-color: #ffffff">      use shr_sys_mod, only : shr_sys_flush</a>
+   316) <a name="l316" style="background-color: #ffffff">#endif</a>
+   317) <a name="l317" style="background-color: #ffffff"></a>
+   318) <a name="l318" style="background-color: #ffffff">! !INPUT PARAMETER:</a>
+   319) <a name="l319" style="background-color: #ffffff"></a>
+   320) <a name="l320" style="background-color: #ffffff">   integer (kind=int_kind), intent(in) :: &amp;</a>
+   321) <a name="l321" style="background-color: #ffffff">      iunit                    ! I/O unit to be flushed</a>
+   322) <a name="l322" style="background-color: #ffffff">!EOP</a>
+   323) <a name="l323" style="background-color: #ffffff">!BOC</a>
+   324) <a name="l324" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   325) <a name="l325" style="background-color: #ffffff">!</a>
+   326) <a name="l326" style="background-color: #ffffff">!  insert your system code here</a>
+   327) <a name="l327" style="background-color: #ffffff">!</a>
+   328) <a name="l328" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   329) <a name="l329" style="background-color: #ffffff"></a>
+   330) <a name="l330" style="background-color: #ffffff">#ifdef CCSMCOUPLED</a>
+   331) <a name="l331" style="background-color: #ffffff">   call shr_sys_flush(iunit)</a>
+   332) <a name="l332" style="background-color: #ffffff">#else</a>
+   333) <a name="l333" style="background-color: #ffffff">#if (defined IRIX64 || defined CRAY || defined OSF1 || defined SUNOS || defined LINUX || defined NEC_SX | defined UNICOSMP)</a>
+   334) <a name="l334" style="background-color: #ffffff">   call flush(iunit)</a>
+   335) <a name="l335" style="background-color: #ffffff">#endif</a>
+   336) <a name="l336" style="background-color: #ffffff">#if (defined AIX)</a>
+   337) <a name="l337" style="background-color: #ffffff">   call flush_(iunit)</a>
+   338) <a name="l338" style="background-color: #ffffff">#endif</a>
+   339) <a name="l339" style="background-color: #ffffff">#endif</a>
+   340) <a name="l340" style="background-color: #ffffff"></a>
+   341) <a name="l341" style="background-color: #ffffff">!EOC</a>
+   342) <a name="l342" style="background-color: #ffffff"> end subroutine flush_fileunit</a>
+   343) <a name="l343" style="background-color: #ffffff"></a>
+   344) <a name="l344" style="background-color: #ffffff">!=======================================================================</a>
+   345) <a name="l345" style="background-color: #ffffff"></a>
+   346) <a name="l346" style="background-color: #ffffff">      end module ice_fileunits</a>
+   347) <a name="l347" style="background-color: #ffffff"></a>
+   348) <a name="l348" style="background-color: #ffffff">!=======================================================================</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

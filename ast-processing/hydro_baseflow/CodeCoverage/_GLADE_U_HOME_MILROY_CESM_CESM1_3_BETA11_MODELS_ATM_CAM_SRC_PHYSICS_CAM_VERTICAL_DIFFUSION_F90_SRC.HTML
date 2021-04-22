@@ -1,0 +1,1465 @@
+<html>
+<head>
+<title>Listing of vertical_diffusion.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;vertical_diffusion.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 83.33&#160;%func&#160;&#160;&#160;&#160; 66.55&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module vertical_diffusion</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">  !----------------------------------------------------------------------------------------------------- !</a>
+     4) <a name="l4" style="background-color: #ffffff">  ! Module to compute vertical diffusion of momentum,  moisture, trace constituents                      !</a>
+     5) <a name="l5" style="background-color: #ffffff">  ! and static energy. Separate modules compute                                                          !</a>
+     6) <a name="l6" style="background-color: #ffffff">  !   1. stresses associated with turbulent flow over orography                                          !</a>
+     7) <a name="l7" style="background-color: #ffffff">  !      ( turbulent mountain stress )                                                                   !</a>
+     8) <a name="l8" style="background-color: #ffffff">  !   2. eddy diffusivities, including nonlocal tranport terms                                           !</a>
+     9) <a name="l9" style="background-color: #ffffff">  !   3. molecular diffusivities                                                                         !</a>
+    10) <a name="l10" style="background-color: #ffffff">  ! Lastly, a implicit diffusion solver is called, and tendencies retrieved by                           !</a>
+    11) <a name="l11" style="background-color: #ffffff">  ! differencing the diffused and initial states.                                                        !</a>
+    12) <a name="l12" style="background-color: #ffffff">  !                                                                                                      !</a>
+    13) <a name="l13" style="background-color: #ffffff">  ! Calling sequence:                                                                                    !</a>
+    14) <a name="l14" style="background-color: #ffffff">  !                                                                                                      !</a>
+    15) <a name="l15" style="background-color: #ffffff">  !  vertical_diffusion_init      Initializes vertical diffustion constants and modules                  !</a>
+    16) <a name="l16" style="background-color: #ffffff">  !        init_molec_diff        Initializes molecular diffusivity module                               !</a>
+    17) <a name="l17" style="background-color: #ffffff">  !        init_eddy_diff         Initializes eddy diffusivity module (includes PBL)                     !</a>
+    18) <a name="l18" style="background-color: #ffffff">  !        init_tms               Initializes turbulent mountain stress module                           !</a>
+    19) <a name="l19" style="background-color: #ffffff">  !        init_vdiff             Initializes diffusion solver module                                    !</a>
+    20) <a name="l20" style="background-color: #ffffff">  !  vertical_diffusion_ts_init   Time step initialization (only used for upper boundary condition)      !</a>
+    21) <a name="l21" style="background-color: #ffffff">  !  vertical_diffusion_tend      Computes vertical diffusion tendencies                                 !</a>
+    22) <a name="l22" style="background-color: #ffffff">  !        compute_tms            Computes turbulent mountain stresses                                   !</a>
+    23) <a name="l23" style="background-color: #ffffff">  !        compute_eddy_diff      Computes eddy diffusivities and countergradient terms                  !</a>
+    24) <a name="l24" style="background-color: #ffffff">  !        compute_vdiff          Solves vertical diffusion equations, including molecular diffusivities !</a>
+    25) <a name="l25" style="background-color: #ffffff">  !                                                                                                      !</a>
+    26) <a name="l26" style="background-color: #ffffff">  !---------------------------Code history-------------------------------------------------------------- !</a>
+    27) <a name="l27" style="background-color: #ffffff">  ! J. Rosinski : Jun. 1992                                                                              !</a>
+    28) <a name="l28" style="background-color: #ffffff">  ! J. McCaa    : Sep. 2004                                                                              !</a>
+    29) <a name="l29" style="background-color: #ffffff">  ! S. Park     : Aug. 2006, Dec. 2008. Jan. 2010                                                        ! </a>
+    30) <a name="l30" style="background-color: #ffffff">  !----------------------------------------------------------------------------------------------------- !</a>
+    31) <a name="l31" style="background-color: #ffffff"></a>
+    32) <a name="l32" style="background-color: #ffffff">  use shr_kind_mod,     only : r8 =&gt; shr_kind_r8, i4=&gt; shr_kind_i4</a>
+    33) <a name="l33" style="background-color: #ffffff">  use ppgrid,           only : pcols, pver, pverp</a>
+    34) <a name="l34" style="background-color: #ffffff">  use constituents,     only : pcnst, qmin, cnst_get_ind</a>
+    35) <a name="l35" style="background-color: #ffffff">  use diffusion_solver, only : vdiff_selector</a>
+    36) <a name="l36" style="background-color: #ffffff">  use abortutils,       only : endrun</a>
+    37) <a name="l37" style="background-color: #ffffff">  use error_messages,   only : handle_errmsg</a>
+    38) <a name="l38" style="background-color: #ffffff">  use physconst,        only :          &amp;</a>
+    39) <a name="l39" style="background-color: #ffffff">                               cpair  , &amp;     ! Specific heat of dry air</a>
+    40) <a name="l40" style="background-color: #ffffff">                               gravit , &amp;     ! Acceleration due to gravity</a>
+    41) <a name="l41" style="background-color: #ffffff">                               rair   , &amp;     ! Gas constant for dry air</a>
+    42) <a name="l42" style="background-color: #ffffff">                               zvir   , &amp;     ! rh2o/rair - 1</a>
+    43) <a name="l43" style="background-color: #ffffff">                               latvap , &amp;     ! Latent heat of vaporization</a>
+    44) <a name="l44" style="background-color: #ffffff">                               latice , &amp;     ! Latent heat of fusion</a>
+    45) <a name="l45" style="background-color: #ffffff">                               karman , &amp;     ! von Karman constant</a>
+    46) <a name="l46" style="background-color: #ffffff">                               mwdry  , &amp;     ! Molecular weight of dry air</a>
+    47) <a name="l47" style="background-color: #ffffff">                               avogad , &amp;     ! Avogadro's number</a>
+    48) <a name="l48" style="background-color: #ffffff">                               boltz  , &amp;     ! Boltzman's constant</a>
+    49) <a name="l49" style="background-color: #ffffff">                               tms_orocnst,&amp;  ! turbulent mountain stress parameter</a>
+    50) <a name="l50" style="background-color: #ffffff">                               tms_z0fac      ! Factor determining z_0 from orographic standard deviation [no unit]</a>
+    51) <a name="l51" style="background-color: #ffffff">  use cam_history,      only : fieldname_len</a>
+    52) <a name="l52" style="background-color: #ffffff">  use perf_mod</a>
+    53) <a name="l53" style="background-color: #ffffff">  use cam_logfile,      only : iulog</a>
+    54) <a name="l54" style="background-color: #ffffff">  use ref_pres,         only : do_molec_diff</a>
+    55) <a name="l55" style="background-color: #ffffff">  use phys_control,     only : phys_getopts, waccmx_is</a>
+    56) <a name="l56" style="background-color: #ffffff">  use time_manager,     only : is_first_step</a>
+    57) <a name="l57" style="background-color: #ffffff"></a>
+    58) <a name="l58" style="background-color: #ffffff">  implicit none</a>
+    59) <a name="l59" style="background-color: #ffffff">  private      </a>
+    60) <a name="l60" style="background-color: #ffffff">  save</a>
+    61) <a name="l61" style="background-color: #ffffff">  </a>
+    62) <a name="l62" style="background-color: #ffffff">  ! ----------------- !</a>
+    63) <a name="l63" style="background-color: #ffffff">  ! Public interfaces !</a>
+    64) <a name="l64" style="background-color: #ffffff">  ! ----------------- !</a>
+    65) <a name="l65" style="background-color: #ffffff"></a>
+    66) <a name="l66" style="background-color: #ffffff">  public vd_readnl</a>
+    67) <a name="l67" style="background-color: #ffffff">  public vd_register                                   ! Register multi-time-level variables with physics buffer</a>
+    68) <a name="l68" style="background-color: #ffffff">  public vertical_diffusion_init                       ! Initialization</a>
+    69) <a name="l69" style="background-color: #ffffff">  public vertical_diffusion_ts_init                    ! Time step initialization (only used for upper boundary condition)</a>
+    70) <a name="l70" style="background-color: #ffffff">  public vertical_diffusion_tend                       ! Full vertical diffusion routine</a>
+    71) <a name="l71" style="background-color: #ffffff"></a>
+    72) <a name="l72" style="background-color: #ffffff">  ! ------------ !</a>
+    73) <a name="l73" style="background-color: #ffffff">  ! Private data !</a>
+    74) <a name="l74" style="background-color: #ffffff">  ! ------------ !</a>
+    75) <a name="l75" style="background-color: #ffffff"></a>
+    76) <a name="l76" style="background-color: #ffffff">  character(len=16)    :: eddy_scheme                  ! Default set in phys_control.F90, use namelist to change</a>
+    77) <a name="l77" style="background-color: #ffffff">                                                       !     'HB'       = Holtslag and Boville (default)</a>
+    78) <a name="l78" style="background-color: #ffffff">                                                       !     'HBR'      = Holtslag and Boville and Rash </a>
+    79) <a name="l79" style="background-color: #ffffff">                                                       !     'diag_TKE' = Bretherton and Park ( UW Moist Turbulence Scheme )</a>
+    80) <a name="l80" style="background-color: #ffffff">  integer, parameter   :: nturb = 5                    ! Number of iterations for solution ( when 'diag_TKE' scheme is selected )</a>
+    81) <a name="l81" style="background-color: #ffffff">  logical, parameter   :: wstarent = .true.            ! Use wstar (.true.) or TKE (.false.) entrainment closure</a>
+    82) <a name="l82" style="background-color: #ffffff">                                                       ! ( when 'diag_TKE' scheme is selected )</a>
+    83) <a name="l83" style="background-color: #ffffff">  logical              :: do_pseudocon_diff = .false.  ! If .true., do pseudo-conservative variables diffusion</a>
+    84) <a name="l84" style="background-color: #ffffff"></a>
+    85) <a name="l85" style="background-color: #ffffff">  character(len=16)    :: shallow_scheme               ! Shallow convection scheme</a>
+    86) <a name="l86" style="background-color: #ffffff">  character(len=16)    :: microp_scheme                ! Microphysics scheme</a>
+    87) <a name="l87" style="background-color: #ffffff"></a>
+    88) <a name="l88" style="background-color: #ffffff">  type(vdiff_selector) :: fieldlist_wet                ! Logical switches for moist mixing ratio diffusion</a>
+    89) <a name="l89" style="background-color: #ffffff">  type(vdiff_selector) :: fieldlist_dry                ! Logical switches for dry mixing ratio diffusion</a>
+    90) <a name="l90" style="background-color: #ffffff">  type(vdiff_selector) :: fieldlist_molec              ! Logical switches for molecular diffusion</a>
+    91) <a name="l91" style="background-color: #ffffff">  integer              :: ntop                         ! Top interface level to which vertical diffusion is applied ( = 1 ).</a>
+    92) <a name="l92" style="background-color: #ffffff">  integer              :: nbot                         ! Bottom interface level to which vertical diffusion is applied ( = pver ).</a>
+    93) <a name="l93" style="background-color: #ffffff">  integer              :: tke_idx, kvh_idx, kvm_idx    ! TKE and eddy diffusivity indices for fields in the physics buffer</a>
+    94) <a name="l94" style="background-color: #ffffff">  integer              :: kvt_idx                      ! Index for kinematic molecular conductivity</a>
+    95) <a name="l95" style="background-color: #ffffff">  integer              :: turbtype_idx, smaw_idx       ! Turbulence type and instability functions</a>
+    96) <a name="l96" style="background-color: #ffffff">  integer              :: tauresx_idx, tauresy_idx     ! Redisual stress for implicit surface stress</a>
+    97) <a name="l97" style="background-color: #ffffff"></a>
+    98) <a name="l98" style="background-color: #ffffff">  character(len=fieldname_len) :: vdiffnam(pcnst)      ! Names of vertical diffusion tendencies</a>
+    99) <a name="l99" style="background-color: #ffffff">  integer              :: ixcldice, ixcldliq           ! Constituent indices for cloud liquid and ice water</a>
+   100) <a name="l100" style="background-color: #ffffff">  integer              :: ixnumice, ixnumliq</a>
+   101) <a name="l101" style="background-color: #ffffff"></a>
+   102) <a name="l102" style="background-color: #ffffff"></a>
+   103) <a name="l103" style="background-color: #ffffff">  logical              :: history_amwg                 ! output the variables used by the AMWG diag package</a>
+   104) <a name="l104" style="background-color: #ffffff">  logical              :: history_eddy                 ! output the eddy variables</a>
+   105) <a name="l105" style="background-color: #ffffff">  logical              :: history_budget               ! Output tendencies and state variables for CAM4 T, qv, ql, qi</a>
+   106) <a name="l106" style="background-color: #ffffff">  integer              :: history_budget_histfile_num  ! output history file number for budget fields</a>
+   107) <a name="l107" style="background-color: #ffffff">  logical              :: history_waccm                ! output variables of interest for WACCM runs</a>
+   108) <a name="l108" style="background-color: #ffffff"></a>
+   109) <a name="l109" style="background-color: #ffffff">  integer              :: qrl_idx    = 0               ! pbuf index </a>
+   110) <a name="l110" style="background-color: #ffffff">  integer              :: wsedl_idx  = 0               ! pbuf index</a>
+   111) <a name="l111" style="background-color: #ffffff"></a>
+   112) <a name="l112" style="background-color: #ffffff">  integer              :: pblh_idx, tpert_idx, qpert_idx</a>
+   113) <a name="l113" style="background-color: #ffffff"></a>
+   114) <a name="l114" style="background-color: #ffffff">  ! pbuf fields for unicon</a>
+   115) <a name="l115" style="background-color: #ffffff">  integer              :: bprod_idx    = -1</a>
+   116) <a name="l116" style="background-color: #ffffff">  integer              :: ipbl_idx     = -1</a>
+   117) <a name="l117" style="background-color: #ffffff">  integer              :: kpblh_idx    = -1</a>
+   118) <a name="l118" style="background-color: #ffffff">  integer              :: wstarPBL_idx = -1</a>
+   119) <a name="l119" style="background-color: #ffffff">  integer              :: tkes_idx     = -1</a>
+   120) <a name="l120" style="background-color: #ffffff">  integer              :: went_idx     = -1</a>
+   121) <a name="l121" style="background-color: #ffffff"></a>
+   122) <a name="l122" style="background-color: #ffffff">  real(r8), parameter  :: unset_r8 = huge(1._r8)</a>
+   123) <a name="l123" style="background-color: #ffffff">  real(r8)             :: kv_top_pressure              ! Pressure defining the bottom of the upper atmosphere for kvh scaling (Pa)</a>
+   124) <a name="l124" style="background-color: #ffffff">  real(r8)             :: kv_top_scale                 ! Eddy diffusivity scale factor for upper atmosphere</a>
+   125) <a name="l125" style="background-color: #ffffff">  real(r8)             :: kv_freetrop_scale            ! Eddy diffusivity scale factor for the free troposphere</a>
+   126) <a name="l126" style="background-color: #ffffff">  real(r8)             :: eddy_lbulk_max               ! Maximum master length for diag_TKE</a>
+   127) <a name="l127" style="background-color: #ffffff">  real(r8)             :: eddy_leng_max                ! Maximum dissipation length for diag_TKE</a>
+   128) <a name="l128" style="background-color: #ffffff">  real(r8)             :: eddy_max_bot_pressure        ! Bottom pressure level (hPa) for eddy_leng_max</a>
+   129) <a name="l129" style="background-color: #ffffff">  real(r8)             :: eddy_moist_entrain_a2l = unset_r8 ! Moist entrainment enhancement param</a>
+   130) <a name="l130" style="background-color: #ffffff">  logical              :: diff_cnsrv_mass_check        ! do mass conservation check</a>
+   131) <a name="l131" style="background-color: #ffffff">  logical              :: do_tms                       ! switch for turbulent mountain stress</a>
+   132) <a name="l132" style="background-color: #ffffff">  logical              :: do_iss                       ! switch for implicit turbulent surface stress</a>
+   133) <a name="l133" style="background-color: #ffffff">  logical              :: prog_modal_aero = .false.    ! set true if prognostic modal aerosols are present</a>
+   134) <a name="l134" style="background-color: #ffffff">  integer              :: pmam_ncnst = 0               ! number of prognostic modal aerosol constituents</a>
+   135) <a name="l135" style="background-color: #ffffff">  integer, allocatable :: pmam_cnst_idx(:)             ! constituent indices of prognostic modal aerosols</a>
+   136) <a name="l136" style="background-color: #ffffff"></a>
+   137) <a name="l137" style="background-color: #ffffff">contains</a>
+   138) <a name="l138" style="background-color: #ffffff"></a>
+   139) <a name="l139" style="background-color: #ffffff">  ! =============================================================================== !</a>
+   140) <a name="l140" style="background-color: #ffffff">  !                                                                                 !</a>
+   141) <a name="l141" style="background-color: #ffffff">  ! =============================================================================== !</a>
+   142) <a name="l142" style="background-color: #ffffff">  subroutine vd_readnl(nlfile)</a>
+   143) <a name="l143" style="background-color: #ffffff"></a>
+   144) <a name="l144" style="background-color: #ffffff">    use namelist_utils,  only: find_group_name</a>
+   145) <a name="l145" style="background-color: #ffffff">    use units,           only: getunit, freeunit</a>
+   146) <a name="l146" style="background-color: #ffffff">    use mpishorthand</a>
+   147) <a name="l147" style="background-color: #ffffff">    use spmd_utils,      only: masterproc</a>
+   148) <a name="l148" style="background-color: #ffffff">  </a>
+   149) <a name="l149" style="background-color: #ffffff">    character(len=*), intent(in) :: nlfile  ! filepath for file containing namelist input</a>
+   150) <a name="l150" style="background-color: #ffffff">  </a>
+   151) <a name="l151" style="background-color: #ffffff">    ! Local variables</a>
+   152) <a name="l152" style="background-color: #ffffff">    integer :: unitn, ierr</a>
+   153) <a name="l153" style="background-color: #ffffff">    character(len=*), parameter :: subname = 'vd_readnl'</a>
+   154) <a name="l154" style="background-color: #ffffff">  </a>
+   155) <a name="l155" style="background-color: #ffffff">    namelist /vert_diff_nl/ kv_top_pressure, kv_top_scale, kv_freetrop_scale, eddy_lbulk_max, eddy_leng_max, &amp;</a>
+   156) <a name="l156" style="background-color: #ffffff">         eddy_max_bot_pressure, eddy_moist_entrain_a2l, diff_cnsrv_mass_check, do_iss</a>
+   157) <a name="l157" style="background-color: #ffffff">    !-----------------------------------------------------------------------------</a>
+   158) <a name="l158" style="background-color: #ffffff">  </a>
+   159) <a name="l159" style="background-color: #ffffff">    if (masterproc) then</a>
+   160) <a name="l160" style="background-color: #ffffff">      unitn = getunit()</a>
+   161) <a name="l161" style="background-color: #ffffff">      open( unitn, file=trim(nlfile), status='old' )</a>
+   162) <a name="l162" style="background-color: #ffffff">      call find_group_name(unitn, 'vert_diff_nl', status=ierr)</a>
+   163) <a name="l163" style="background-color: #ffffff">      if (ierr == 0) then</a>
+   164) <a name="l164" style="background-color: #ffffff">        read(unitn, vert_diff_nl, iostat=ierr)</a>
+   165) <a name="l165" style="background-color: #ffffff">        if (ierr /= 0) then</a>
+   166) <a name="l166" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">endrun(subname // ':: ERROR reading namelist')</a>
+   167) <a name="l167" style="background-color: #ffff99">        end if</a>
+   168) <a name="l168" style="background-color: #ffff99">      end if</a>
+   169) <a name="l169" style="background-color: #ffff99">      close(</a><a style="background-color: #ffffff">unitn)</a>
+   170) <a name="l170" style="background-color: #ffffff">      call freeunit(unitn)</a>
+   171) <a name="l171" style="background-color: #ffffff">    end if</a>
+   172) <a name="l172" style="background-color: #ffffff">  </a>
+   173) <a name="l173" style="background-color: #ffffff">#ifdef SPMD</a>
+   174) <a name="l174" style="background-color: #ffffff">    ! Broadcast namelist variables</a>
+   175) <a name="l175" style="background-color: #ffffff">    call mpibcast(kv_top_pressure,                 1 , mpir8,   0, mpicom)</a>
+   176) <a name="l176" style="background-color: #ffffff">    call mpibcast(kv_top_scale,                    1 , mpir8,   0, mpicom)</a>
+   177) <a name="l177" style="background-color: #ffffff">    call mpibcast(kv_freetrop_scale,               1 , mpir8,   0, mpicom)</a>
+   178) <a name="l178" style="background-color: #ffffff">    call mpibcast(eddy_lbulk_max,                  1 , mpir8,   0, mpicom)</a>
+   179) <a name="l179" style="background-color: #ffffff">    call mpibcast(eddy_leng_max,                   1 , mpir8,   0, mpicom)</a>
+   180) <a name="l180" style="background-color: #ffffff">    call mpibcast(eddy_max_bot_pressure,           1 , mpir8,   0, mpicom)</a>
+   181) <a name="l181" style="background-color: #ffffff">    call mpibcast(eddy_moist_entrain_a2l,          1 , mpir8,   0, mpicom)</a>
+   182) <a name="l182" style="background-color: #ffffff">    call mpibcast(diff_cnsrv_mass_check,           1 , mpilog,  0, mpicom)</a>
+   183) <a name="l183" style="background-color: #ffffff">    call mpibcast(do_iss,                          1 , mpilog,  0, mpicom)</a>
+   184) <a name="l184" style="background-color: #ffffff">#endif</a>
+   185) <a name="l185" style="background-color: #ffffff"></a>
+   186) <a name="l186" style="background-color: #ffffff">  end subroutine vd_readnl</a>
+   187) <a name="l187" style="background-color: #ffffff"></a>
+   188) <a name="l188" style="background-color: #ffffff">  ! =============================================================================== !</a>
+   189) <a name="l189" style="background-color: #ffffff">  !                                                                                 !</a>
+   190) <a name="l190" style="background-color: #ffffff">  ! =============================================================================== !</a>
+   191) <a name="l191" style="background-color: #ffffff"></a>
+   192) <a name="l192" style="background-color: #ffffff">  subroutine vd_register()</a>
+   193) <a name="l193" style="background-color: #ffffff"></a>
+   194) <a name="l194" style="background-color: #ffffff">    !------------------------------------------------ !</a>
+   195) <a name="l195" style="background-color: #ffffff">    ! Register physics buffer fields and constituents !</a>
+   196) <a name="l196" style="background-color: #ffffff">    !------------------------------------------------ !</a>
+   197) <a name="l197" style="background-color: #ffffff"></a>
+   198) <a name="l198" style="background-color: #ffffff">    use physics_buffer,      only : pbuf_add_field, dtype_r8, dtype_i4</a>
+   199) <a name="l199" style="background-color: #ffffff"></a>
+   200) <a name="l200" style="background-color: #ffffff">    ! Get eddy_scheme setting from phys_control.F90</a>
+   201) <a name="l201" style="background-color: #ffffff"></a>
+   202) <a name="l202" style="background-color: #ffffff">    call phys_getopts( eddy_scheme_out          =          eddy_scheme, &amp; </a>
+   203) <a name="l203" style="background-color: #ffffff">                       shallow_scheme_out       =       shallow_scheme, &amp;</a>
+   204) <a name="l204" style="background-color: #ffffff">                       microp_scheme_out        =        microp_scheme, &amp;</a>
+   205) <a name="l205" style="background-color: #ffffff">                       do_tms_out               =               do_tms)</a>
+   206) <a name="l206" style="background-color: #ffffff"></a>
+   207) <a name="l207" style="background-color: #ffffff">    ! Add fields to physics buffer</a>
+   208) <a name="l208" style="background-color: #ffffff"></a>
+   209) <a name="l209" style="background-color: #ffffff">    ! kvt is used by gw_drag.  only needs physpkg scope.</a>
+   210) <a name="l210" style="background-color: #ffffff">    call pbuf_add_field('kvt', 'physpkg', dtype_r8, (/pcols,pverp/), kvt_idx) </a>
+   211) <a name="l211" style="background-color: #ffffff"></a>
+   212) <a name="l212" style="background-color: #ffffff"></a>
+   213) <a name="l213" style="background-color: #ffffff">    call pbuf_add_field('pblh',     'global', dtype_r8, (/pcols/),        pblh_idx)</a>
+   214) <a name="l214" style="background-color: #ffffff">    call pbuf_add_field('tke',      'global', dtype_r8, (/pcols, pverp/), tke_idx) </a>
+   215) <a name="l215" style="background-color: #ffffff">    call pbuf_add_field('kvh',      'global', dtype_r8, (/pcols, pverp/), kvh_idx) </a>
+   216) <a name="l216" style="background-color: #ffffff">    call pbuf_add_field('kvm',      'global', dtype_r8, (/pcols, pverp/), kvm_idx ) </a>
+   217) <a name="l217" style="background-color: #ffffff">    call pbuf_add_field('turbtype', 'global', dtype_i4, (/pcols, pverp/), turbtype_idx)</a>
+   218) <a name="l218" style="background-color: #ffffff">    call pbuf_add_field('smaw',     'global', dtype_r8, (/pcols, pverp/), smaw_idx) </a>
+   219) <a name="l219" style="background-color: #ffffff"></a>
+   220) <a name="l220" style="background-color: #ffffff">    call pbuf_add_field('tauresx',  'global', dtype_r8, (/pcols/),        tauresx_idx)</a>
+   221) <a name="l221" style="background-color: #ffffff">    call pbuf_add_field('tauresy',  'global', dtype_r8, (/pcols/),        tauresy_idx)</a>
+   222) <a name="l222" style="background-color: #ffffff"></a>
+   223) <a name="l223" style="background-color: #ffffff">    call pbuf_add_field('tpert', 'global', dtype_r8, (/pcols/),                       tpert_idx)</a>
+   224) <a name="l224" style="background-color: #ffffff">    call pbuf_add_field('qpert', 'global', dtype_r8, (/pcols,pcnst/),                 qpert_idx)</a>
+   225) <a name="l225" style="background-color: #ffffff"></a>
+   226) <a name="l226" style="background-color: #ffffff">    if (trim(shallow_scheme) == 'UNICON') then</a>
+   227) <a name="l227" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">pbuf_add_field('bprod',    'global', dtype_r8, (/pcols,pverp/), bprod_idx)</a>
+   228) <a name="l228" style="background-color: #ffff99">       call pbuf_add_field('ipbl',     'global', dtype_i4, (/pcols/),       ipbl_idx)</a>
+   229) <a name="l229" style="background-color: #ffff99">       call pbuf_add_field('kpblh',    'global', dtype_i4, (/pcols/),       kpblh_idx)</a>
+   230) <a name="l230" style="background-color: #ffff99">       call pbuf_add_field('wstarPBL', 'global', dtype_r8, (/pcols/),       wstarPBL_idx)</a>
+   231) <a name="l231" style="background-color: #ffff99">       call pbuf_add_field('tkes',     'global', dtype_r8, (/pcols/),       tkes_idx)</a>
+   232) <a name="l232" style="background-color: #ffff99">       call pbuf_add_field('went',     'global', dtype_r8, (/pcols/),       went_idx)</a>
+   233) <a name="l233" style="background-color: #ffff99">    end if</a>
+   234) <a name="l234" style="background-color: #ffff99"></a>
+   235) <a name="l235" style="background-color: #ffffff">  end subroutine vd_register</a>
+   236) <a name="l236" style="background-color: #ffffff"></a>
+   237) <a name="l237" style="background-color: #ffffff">  ! =============================================================================== !</a>
+   238) <a name="l238" style="background-color: #ffffff">  !                                                                                 !</a>
+   239) <a name="l239" style="background-color: #ffffff">  ! =============================================================================== !</a>
+   240) <a name="l240" style="background-color: #ffffff"></a>
+   241) <a name="l241" style="background-color: #ffffff">  subroutine vertical_diffusion_init(pbuf2d)</a>
+   242) <a name="l242" style="background-color: #ffffff"></a>
+   243) <a name="l243" style="background-color: #ffffff">    !------------------------------------------------------------------!</a>
+   244) <a name="l244" style="background-color: #ffffff">    ! Initialization of time independent fields for vertical diffusion !</a>
+   245) <a name="l245" style="background-color: #ffffff">    ! Calls initialization routines for subsidiary modules             !</a>
+   246) <a name="l246" style="background-color: #ffffff">    !----------------------------------------------------------------- !</a>
+   247) <a name="l247" style="background-color: #ffffff"></a>
+   248) <a name="l248" style="background-color: #ffffff">    use cam_history,       only : addfld, add_default, phys_decomp</a>
+   249) <a name="l249" style="background-color: #ffffff">    use eddy_diff,         only : init_eddy_diff</a>
+   250) <a name="l250" style="background-color: #ffffff">    use hb_diff,           only : init_hb_diff</a>
+   251) <a name="l251" style="background-color: #ffffff">    use molec_diff,        only : init_molec_diff</a>
+   252) <a name="l252" style="background-color: #ffffff">    use trb_mtn_stress,    only : init_tms</a>
+   253) <a name="l253" style="background-color: #ffffff">    use diffusion_solver,  only : init_vdiff, new_fieldlist_vdiff, vdiff_select</a>
+   254) <a name="l254" style="background-color: #ffffff">    use constituents,      only : cnst_get_ind, cnst_get_type_byind, cnst_name, cnst_get_molec_byind</a>
+   255) <a name="l255" style="background-color: #ffffff">    use spmd_utils,        only : masterproc</a>
+   256) <a name="l256" style="background-color: #ffffff">    use ref_pres,          only : ntop_molec, nbot_molec, press_lim_idx, pref_mid</a>
+   257) <a name="l257" style="background-color: #ffffff">    use physics_buffer,    only : pbuf_set_field, pbuf_get_index, physics_buffer_desc</a>
+   258) <a name="l258" style="background-color: #ffffff">    use rad_constituents,  only : rad_cnst_get_info, rad_cnst_get_mode_num_idx, &amp;</a>
+   259) <a name="l259" style="background-color: #ffffff">                                  rad_cnst_get_mam_mmr_idx</a>
+   260) <a name="l260" style="background-color: #ffffff"></a>
+   261) <a name="l261" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+   262) <a name="l262" style="background-color: #ffffff">    character(128) :: errstring   ! Error status for init_vdiff</a>
+   263) <a name="l263" style="background-color: #ffffff">    integer        :: ntop_eddy   ! Top    interface level to which eddy vertical diffusion is applied ( = 1 )</a>
+   264) <a name="l264" style="background-color: #ffffff">    integer        :: nbot_eddy   ! Bottom interface level to which eddy vertical diffusion is applied ( = pver )</a>
+   265) <a name="l265" style="background-color: #ffffff">    integer        :: k           ! Vertical loop index</a>
+   266) <a name="l266" style="background-color: #ffffff"></a>
+   267) <a name="l267" style="background-color: #ffffff">    real(r8), parameter :: ntop_eddy_pres = 1.e-5_r8 ! Pressure below which eddy diffusion is not done in WACCM-X. (Pa)</a>
+   268) <a name="l268" style="background-color: #ffffff"></a>
+   269) <a name="l269" style="background-color: #ffffff">    integer :: im, l, m, nmodes, nspec</a>
+   270) <a name="l270" style="background-color: #ffffff"></a>
+   271) <a name="l271" style="background-color: #ffffff">    ! ----------------------------------------------------------------- !</a>
+   272) <a name="l272" style="background-color: #ffffff"></a>
+   273) <a name="l273" style="background-color: #ffffff">    if (masterproc) then</a>
+   274) <a name="l274" style="background-color: #ffffff">       write(iulog,*)'Initializing vertical diffusion (vertical_diffusion_init)'</a>
+   275) <a name="l275" style="background-color: #ffffff">    end if</a>
+   276) <a name="l276" style="background-color: #ffffff"></a>
+   277) <a name="l277" style="background-color: #ffffff">    ! ----------------------------------------------------------------- !</a>
+   278) <a name="l278" style="background-color: #ffffff">    ! Get indices of cloud liquid and ice within the constituents array !</a>
+   279) <a name="l279" style="background-color: #ffffff">    ! ----------------------------------------------------------------- !</a>
+   280) <a name="l280" style="background-color: #ffffff"></a>
+   281) <a name="l281" style="background-color: #ffffff">    call cnst_get_ind( 'CLDLIQ', ixcldliq )</a>
+   282) <a name="l282" style="background-color: #ffffff">    call cnst_get_ind( 'CLDICE', ixcldice )</a>
+   283) <a name="l283" style="background-color: #ffffff">    if( microp_scheme == 'MG' ) then</a>
+   284) <a name="l284" style="background-color: #ffffff">        call cnst_get_ind( 'NUMLIQ', ixnumliq )</a>
+   285) <a name="l285" style="background-color: #ffffff">        call cnst_get_ind( 'NUMICE', ixnumice )</a>
+   286) <a name="l286" style="background-color: #ffffff">    endif</a>
+   287) <a name="l287" style="background-color: #ffffff"></a>
+   288) <a name="l288" style="background-color: #ffffff">    ! prog_modal_aero determines whether prognostic modal aerosols are present in the run.</a>
+   289) <a name="l289" style="background-color: #ffffff">    call phys_getopts(prog_modal_aero_out=prog_modal_aero)</a>
+   290) <a name="l290" style="background-color: #ffffff">    if (prog_modal_aero) then</a>
+   291) <a name="l291" style="background-color: #ffffff"></a>
+   292) <a name="l292" style="background-color: #ffffff">       ! Get the constituent indices of the number and mass mixing ratios of the modal </a>
+   293) <a name="l293" style="background-color: #ffffff">       ! aerosols.</a>
+   294) <a name="l294" style="background-color: #ffffff">       !</a>
+   295) <a name="l295" style="background-color: #ffffff">       ! N.B. - This implementation assumes that the prognostic modal aerosols are </a>
+   296) <a name="l296" style="background-color: #ffffff">       !        impacting the climate calculation (i.e., can get info from list 0).</a>
+   297) <a name="l297" style="background-color: #ffffff">       ! </a>
+   298) <a name="l298" style="background-color: #ffffff"></a>
+   299) <a name="l299" style="background-color: #ffffff">       ! First need total number of mam constituents</a>
+   300) <a name="l300" style="background-color: #ffffff">       call rad_cnst_get_info(0, nmodes=nmodes)</a>
+   301) <a name="l301" style="background-color: #ffffff">       do m = 1, nmodes</a>
+   302) <a name="l302" style="background-color: #ffffff">          call rad_cnst_get_info(0, m, nspec=nspec)</a>
+   303) <a name="l303" style="background-color: #ffffff">          pmam_ncnst = pmam_ncnst + 1 + nspec</a>
+   304) <a name="l304" style="background-color: #ffffff">       end do</a>
+   305) <a name="l305" style="background-color: #ffffff"></a>
+   306) <a name="l306" style="background-color: #fafad2">       allocate(pmam_cnst_idx(pmam_ncnst))</a>
+   307) <a name="l307" style="background-color: #fafad2"></a>
+   308) <a name="l308" style="background-color: #fafad2">       ! Get the constituent indicies</a>
+   309) <a name="l309" style="background-color: #ffffff">       im = 1</a>
+   310) <a name="l310" style="background-color: #ffffff">       do m = 1, nmodes</a>
+   311) <a name="l311" style="background-color: #ffffff">          call rad_cnst_get_mode_num_idx(m, pmam_cnst_idx(im))</a>
+   312) <a name="l312" style="background-color: #ffffff">          im = im + 1</a>
+   313) <a name="l313" style="background-color: #ffffff">          call rad_cnst_get_info(0, m, nspec=nspec)</a>
+   314) <a name="l314" style="background-color: #ffffff">          do l = 1, nspec</a>
+   315) <a name="l315" style="background-color: #ffffff">             call rad_cnst_get_mam_mmr_idx(m, l, pmam_cnst_idx(im))</a>
+   316) <a name="l316" style="background-color: #ffffff">             im = im + 1</a>
+   317) <a name="l317" style="background-color: #ffffff">          end do</a>
+   318) <a name="l318" style="background-color: #ffffff">       end do</a>
+   319) <a name="l319" style="background-color: #ffffff">    end if</a>
+   320) <a name="l320" style="background-color: #ffffff"></a>
+   321) <a name="l321" style="background-color: #ffffff">    ! ---------------------------------------------------------------------------------------- !</a>
+   322) <a name="l322" style="background-color: #ffffff">    ! Initialize molecular diffusivity module                                                  !</a>
+   323) <a name="l323" style="background-color: #ffffff">    ! Note that computing molecular diffusivities is a trivial expense, but constituent        !</a>
+   324) <a name="l324" style="background-color: #ffffff">    ! diffusivities depend on their molecular weights. Decomposing the diffusion matric        !</a>
+   325) <a name="l325" style="background-color: #ffffff">    ! for each constituent is a needless expense unless the diffusivity is significant.        !</a>
+   326) <a name="l326" style="background-color: #ffffff">    ! ---------------------------------------------------------------------------------------- !</a>
+   327) <a name="l327" style="background-color: #ffffff"></a>
+   328) <a name="l328" style="background-color: #ffffff">    !----------------------------------------------------------------------------------------</a>
+   329) <a name="l329" style="background-color: #ffffff">    ! Initialize molecular diffusion and get top and bottom molecular diffusion limits</a>
+   330) <a name="l330" style="background-color: #ffffff">    !----------------------------------------------------------------------------------------</a>
+   331) <a name="l331" style="background-color: #ffffff"></a>
+   332) <a name="l332" style="background-color: #ffffff">    if( do_molec_diff ) then</a>
+   333) <a name="l333" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">init_molec_diff( r8, pcnst, rair, mwdry, avogad, gravit, &amp;</a>
+   334) <a name="l334" style="background-color: #ffff99">            cpair, boltz, errstring)</a>
+   335) <a name="l335" style="background-color: #ffff99"></a>
+   336) <a name="l336" style="background-color: #ffff99">       call handle_errmsg(errstring, subname=&quot;init_molec_diff&quot;)</a>
+   337) <a name="l337" style="background-color: #ffff99"></a>
+   338) <a name="l338" style="background-color: #ffff99">       call addfld( 'TTPXMLC', 'K/S', 1, 'A', 'Top interf. temp. flux: molec. viscosity', phys_decomp )</a>
+   339) <a name="l339" style="background-color: #ffff99">       if( masterproc ) write(iulog,fmt='(a,i3,5x,a,i3)') 'NTOP_MOLEC =', ntop_molec, 'NBOT_MOLEC =', nbot_molec</a>
+   340) <a name="l340" style="background-color: #ffff99">    end if</a>
+   341) <a name="l341" style="background-color: #ffff99"></a>
+   342) <a name="l342" style="background-color: #ffff99">    ! ---------------------------------- !    </a>
+   343) <a name="l343" style="background-color: #ffff99">    ! Initialize eddy diffusivity module !</a>
+   344) <a name="l344" style="background-color: #ffff99">    ! ---------------------------------- !</a>
+   345) <a name="l345" style="background-color: #ffff99"> </a>
+   346) <a name="l346" style="background-color: #ffff99">    ! ntop_eddy must be 1 or &lt;= nbot_molec</a>
+   347) <a name="l347" style="background-color: #ffff99">    ! Currently, it is always 1 except for WACCM-X.</a>
+   348) <a name="l348" style="background-color: #ffff99">    if ( </a><a style="background-color: #ffffff">waccmx_is('ionosphere') .or. waccmx_is('neutral') ) then</a>
+   349) <a name="l349" style="background-color: #ffff99">       ntop_eddy  = press_lim_idx(ntop_eddy_pres, top=.true.)</a>
+   350) <a name="l350" style="background-color: #ffff99">    else</a>
+   351) <a name="l351" style="background-color: #ffffff">       ntop_eddy = 1</a>
+   352) <a name="l352" style="background-color: #ffffff">    end if</a>
+   353) <a name="l353" style="background-color: #ffffff">    nbot_eddy  = pver</a>
+   354) <a name="l354" style="background-color: #ffffff"></a>
+   355) <a name="l355" style="background-color: #ffffff">    if (masterproc) write(iulog, fmt='(a,i3,5x,a,i3)') 'NTOP_EDDY  =', ntop_eddy, 'NBOT_EDDY  =', nbot_eddy</a>
+   356) <a name="l356" style="background-color: #ffffff"></a>
+   357) <a name="l357" style="background-color: #fafad2">    select case ( </a><a style="background-color: #ffffff">eddy_scheme )</a>
+   358) <a name="l358" style="background-color: #ffffff">    case ( 'diag_TKE' ) </a>
+   359) <a name="l359" style="background-color: #ffffff">        if( masterproc ) write(iulog,*) &amp;</a>
+   360) <a name="l360" style="background-color: #ffffff">             'vertical_diffusion_init: eddy_diffusivity scheme: UW Moist Turbulence Scheme by Bretherton and Park'</a>
+   361) <a name="l361" style="background-color: #ffffff">        call init_eddy_diff( r8, pver, gravit, cpair, rair, zvir, latvap, latice, &amp;</a>
+   362) <a name="l362" style="background-color: #ffffff">                             ntop_eddy, nbot_eddy, karman, eddy_lbulk_max, eddy_leng_max, &amp;</a>
+   363) <a name="l363" style="background-color: #ffffff">                             eddy_max_bot_pressure, eddy_moist_entrain_a2l)</a>
+   364) <a name="l364" style="background-color: #ffffff">        if( masterproc ) write(iulog,*) 'vertical_diffusion: nturb, ntop_eddy, nbot_eddy ', nturb, ntop_eddy, nbot_eddy</a>
+   365) <a name="l365" style="background-color: #ffffff">    case ( 'HB', </a><a style="background-color: #ffff99">'HBR')</a>
+   366) <a name="l366" style="background-color: #ffff99">        if( masterproc ) write(iulog,*) 'vertical_diffusion_init: eddy_diffusivity scheme:  Holtslag and Boville'</a>
+   367) <a name="l367" style="background-color: #ffff99">        call init_hb_diff(gravit, cpair, ntop_eddy, nbot_eddy, pref_mid, &amp;</a>
+   368) <a name="l368" style="background-color: #ffff99">                          karman, eddy_scheme)</a>
+   369) <a name="l369" style="background-color: #ffff99">        call addfld('HB_ri', 'no',      pver,  'A',  'Richardson Number (HB Scheme), I',  phys_decomp )</a>
+   370) <a name="l370" style="background-color: #ffff99">    end select</a>
+   371) <a name="l371" style="background-color: #ffff99">    </a>
+   372) <a name="l372" style="background-color: #ffff99">    ! The vertical diffusion solver must operate </a>
+   373) <a name="l373" style="background-color: #ffff99">    ! over the full range of molecular and eddy diffusion</a>
+   374) <a name="l374" style="background-color: #ffff99"></a>
+   375) <a name="l375" style="background-color: #ffffff">    ntop = min(ntop_molec,ntop_eddy)</a>
+   376) <a name="l376" style="background-color: #ffffff">    nbot = max(nbot_molec,nbot_eddy)</a>
+   377) <a name="l377" style="background-color: #ffffff">    </a>
+   378) <a name="l378" style="background-color: #ffffff">    ! ------------------------------------------- !</a>
+   379) <a name="l379" style="background-color: #ffffff">    ! Initialize turbulent mountain stress module !</a>
+   380) <a name="l380" style="background-color: #ffffff">    ! ------------------------------------------- !</a>
+   381) <a name="l381" style="background-color: #ffffff"></a>
+   382) <a name="l382" style="background-color: #ffffff">    if( do_tms ) then</a>
+   383) <a name="l383" style="background-color: #ffffff">       call init_tms( r8, tms_orocnst, tms_z0fac, karman, gravit, rair, errstring )</a>
+   384) <a name="l384" style="background-color: #ffffff"></a>
+   385) <a name="l385" style="background-color: #ffffff">       call handle_errmsg(errstring, subname=&quot;init_tms&quot;)</a>
+   386) <a name="l386" style="background-color: #ffffff"></a>
+   387) <a name="l387" style="background-color: #ffffff">       call addfld( 'TAUTMSX' ,'N/m2  ',  1,  'A',  'Zonal      turbulent mountain surface stress',  phys_decomp )</a>
+   388) <a name="l388" style="background-color: #ffffff">       call addfld( 'TAUTMSY' ,'N/m2  ',  1,  'A',  'Meridional turbulent mountain surface stress',  phys_decomp )</a>
+   389) <a name="l389" style="background-color: #ffffff"></a>
+   390) <a name="l390" style="background-color: #ffffff">       if (history_amwg) then</a>
+   391) <a name="l391" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">add_default('TAUTMSX ', 1, ' ')</a>
+   392) <a name="l392" style="background-color: #ffff99">          call add_default('TAUTMSY ', 1, ' ')</a>
+   393) <a name="l393" style="background-color: #ffff99">       end if</a>
+   394) <a name="l394" style="background-color: #ffff99"></a>
+   395) <a name="l395" style="background-color: #ffffff">       if (masterproc) then</a>
+   396) <a name="l396" style="background-color: #ffffff">          write(iulog,*)'Using turbulent mountain stress module'</a>
+   397) <a name="l397" style="background-color: #ffffff">          write(iulog,*)'  tms_orocnst = ',tms_orocnst</a>
+   398) <a name="l398" style="background-color: #ffffff">          write(iulog,*)'  tms_z0fac = ',tms_z0fac</a>
+   399) <a name="l399" style="background-color: #ffffff">       end if</a>
+   400) <a name="l400" style="background-color: #ffffff">    endif</a>
+   401) <a name="l401" style="background-color: #ffffff">    </a>
+   402) <a name="l402" style="background-color: #ffffff">    ! ---------------------------------- !</a>
+   403) <a name="l403" style="background-color: #ffffff">    ! Initialize diffusion solver module !</a>
+   404) <a name="l404" style="background-color: #ffffff">    ! ---------------------------------- !</a>
+   405) <a name="l405" style="background-color: #ffffff"></a>
+   406) <a name="l406" style="background-color: #ffffff">    call init_vdiff( r8, iulog, rair, gravit, do_iss, errstring )</a>
+   407) <a name="l407" style="background-color: #ffffff">    call handle_errmsg(errstring, subname=&quot;init_vdiff&quot;)</a>
+   408) <a name="l408" style="background-color: #ffffff"></a>
+   409) <a name="l409" style="background-color: #ffffff">    ! Use fieldlist_wet to select the fields which will be diffused using moist mixing ratios ( all by default )</a>
+   410) <a name="l410" style="background-color: #ffffff">    ! Use fieldlist_dry to select the fields which will be diffused using dry   mixing ratios.</a>
+   411) <a name="l411" style="background-color: #ffffff"></a>
+   412) <a name="l412" style="background-color: #fafad2">    fieldlist_wet = </a><a style="background-color: #ffffff">new_fieldlist_vdiff( pcnst)</a>
+   413) <a name="l413" style="background-color: #fafad2">    fieldlist_dry = </a><a style="background-color: #ffffff">new_fieldlist_vdiff( pcnst)</a>
+   414) <a name="l414" style="background-color: #fafad2">    fieldlist_molec = </a><a style="background-color: #ffffff">new_fieldlist_vdiff( pcnst)</a>
+   415) <a name="l415" style="background-color: #ffffff"></a>
+   416) <a name="l416" style="background-color: #ffffff">    if( vdiff_select( fieldlist_wet, 'u' ) .ne. '' ) </a><a style="background-color: #ffff99">call endrun( vdiff_select( fieldlist_wet, 'u' ) )</a>
+   417) <a name="l417" style="background-color: #ffff99">    if( </a><a style="background-color: #ffffff">vdiff_select( fieldlist_wet, 'v' ) .ne. '' ) </a><a style="background-color: #ffff99">call endrun( vdiff_select( fieldlist_wet, 'v' ) )</a>
+   418) <a name="l418" style="background-color: #ffff99">    if( </a><a style="background-color: #ffffff">vdiff_select( fieldlist_wet, 's' ) .ne. '' ) </a><a style="background-color: #ffff99">call endrun( vdiff_select( fieldlist_wet, 's' ) )</a>
+   419) <a name="l419" style="background-color: #ffff99"></a>
+   420) <a name="l420" style="background-color: #ffffff">    constit_loop: do k = 1, pcnst</a>
+   421) <a name="l421" style="background-color: #ffffff"></a>
+   422) <a name="l422" style="background-color: #ffffff">       if (prog_modal_aero) then</a>
+   423) <a name="l423" style="background-color: #ffffff">     ! Do not diffuse droplet number - treated in dropmixnuc</a>
+   424) <a name="l424" style="background-color: #ffffff">          if (k == ixnumliq) cycle constit_loop</a>
+   425) <a name="l425" style="background-color: #ffffff">          ! Don't diffuse modal aerosol - treated in dropmixnuc</a>
+   426) <a name="l426" style="background-color: #ffffff">          do m = 1, pmam_ncnst</a>
+   427) <a name="l427" style="background-color: #ffffff">             if (k == pmam_cnst_idx(m)) cycle constit_loop</a>
+   428) <a name="l428" style="background-color: #ffffff">       enddo</a>
+   429) <a name="l429" style="background-color: #ffffff">       end if</a>
+   430) <a name="l430" style="background-color: #ffffff"></a>
+   431) <a name="l431" style="background-color: #ffffff">       if( cnst_get_type_byind(k) .eq. 'wet' ) then</a>
+   432) <a name="l432" style="background-color: #ffffff">          if( vdiff_select( fieldlist_wet, 'q', k ) .ne. '' ) </a><a style="background-color: #ffff99">call endrun( vdiff_select( fieldlist_wet, 'q', k ) )</a>
+   433) <a name="l433" style="background-color: #ffff99">       else</a>
+   434) <a name="l434" style="background-color: #ffff99">          if( </a><a style="background-color: #ffffff">vdiff_select( fieldlist_dry, 'q', k ) .ne. '' ) </a><a style="background-color: #ffff99">call endrun( vdiff_select( fieldlist_dry, 'q', k ) )</a>
+   435) <a name="l435" style="background-color: #ffff99">       endif</a>
+   436) <a name="l436" style="background-color: #ffff99">    </a>
+   437) <a name="l437" style="background-color: #ffff99">       ! ----------------------------------------------- !</a>
+   438) <a name="l438" style="background-color: #ffff99">       ! Select constituents for molecular diffusion     !</a>
+   439) <a name="l439" style="background-color: #ffff99">       ! ----------------------------------------------- !</a>
+   440) <a name="l440" style="background-color: #ffff99">       if ( </a><a style="background-color: #ffffff">cnst_get_molec_byind(k) .eq. 'minor' ) then</a>
+   441) <a name="l441" style="background-color: #ffffff">         if( vdiff_select(fieldlist_molec,'q',k) .ne. '' ) </a><a style="background-color: #ffff99">call endrun( vdiff_select( fieldlist_molec,'q',k ) )</a>
+   442) <a name="l442" style="background-color: #ffff99">       endif</a>
+   443) <a name="l443" style="background-color: #ffff99"></a>
+   444) <a name="l444" style="background-color: #ffff99">    end do constit_loop</a>
+   445) <a name="l445" style="background-color: #ffff99">    </a>
+   446) <a name="l446" style="background-color: #ffff99">    ! ------------------------ !</a>
+   447) <a name="l447" style="background-color: #ffff99">    ! Diagnostic output fields !</a>
+   448) <a name="l448" style="background-color: #ffff99">    ! ------------------------ !</a>
+   449) <a name="l449" style="background-color: #ffff99"></a>
+   450) <a name="l450" style="background-color: #ffffff">    do k = 1, pcnst</a>
+   451) <a name="l451" style="background-color: #ffffff">       vdiffnam(k) = 'VD'//cnst_name(k)</a>
+   452) <a name="l452" style="background-color: #ffffff">       if( k == 1 ) vdiffnam(k) = 'VD01'    !**** compatibility with old code ****</a>
+   453) <a name="l453" style="background-color: #ffffff">       call addfld( vdiffnam(k), 'kg/kg/s ', pver, 'A', 'Vertical diffusion of '//cnst_name(k), phys_decomp )</a>
+   454) <a name="l454" style="background-color: #ffffff">    end do</a>
+   455) <a name="l455" style="background-color: #ffffff"></a>
+   456) <a name="l456" style="background-color: #ffffff">    call addfld( 'TKE'         , 'm2/s2'  , pverp  , 'A', 'Turbulent Kinetic Energy'                          , phys_decomp )</a>
+   457) <a name="l457" style="background-color: #ffffff">    call addfld( 'PBLH'        , 'm'      , 1      , 'A', 'PBL height'                                        , phys_decomp )</a>
+   458) <a name="l458" style="background-color: #ffffff">    call addfld( 'TPERT'       , 'K'      , 1      , 'A', 'Perturbation temperature (eddies in PBL)'          , phys_decomp )</a>
+   459) <a name="l459" style="background-color: #ffffff">    call addfld( 'QPERT'       , 'kg/kg'  , 1      , 'A', 'Perturbation specific humidity (eddies in PBL)'    , phys_decomp )</a>
+   460) <a name="l460" style="background-color: #ffffff">    call addfld( 'USTAR'       , 'm/s'    , 1      , 'A', 'Surface friction velocity'                         , phys_decomp )</a>
+   461) <a name="l461" style="background-color: #ffffff">    call addfld( 'KVH'         , 'm2/s'   , pverp  , 'A', 'Vertical diffusion diffusivities (heat/moisture)'  , phys_decomp )</a>
+   462) <a name="l462" style="background-color: #ffffff">    call addfld( 'KVM'         , 'm2/s'   , pverp  , 'A', 'Vertical diffusion diffusivities (momentum)'       , phys_decomp )</a>
+   463) <a name="l463" style="background-color: #ffffff">    call addfld( 'KVT'         , 'm2/s'   , pverp  , 'A', 'Vertical diffusion kinematic molecular conductivity', phys_decomp )</a>
+   464) <a name="l464" style="background-color: #ffffff">    call addfld( 'CGS'         , 's/m2'   , pverp  , 'A', 'Counter-gradient coeff on surface kinematic fluxes', phys_decomp )</a>
+   465) <a name="l465" style="background-color: #ffffff">    call addfld( 'DTVKE'       , 'K/s'    , pver   , 'A', 'dT/dt vertical diffusion KE dissipation'           , phys_decomp )</a>
+   466) <a name="l466" style="background-color: #ffffff">    call addfld( 'DTV'         , 'K/s'    , pver   , 'A', 'T vertical diffusion'                              , phys_decomp )</a>
+   467) <a name="l467" style="background-color: #ffffff">    call addfld( 'DUV'         , 'm/s2'   , pver   , 'A', 'U vertical diffusion'                              , phys_decomp )</a>
+   468) <a name="l468" style="background-color: #ffffff">    call addfld( 'DVV'         , 'm/s2'   , pver   , 'A', 'V vertical diffusion'                              , phys_decomp )</a>
+   469) <a name="l469" style="background-color: #ffffff">    call addfld( 'QT'          , 'kg/kg'  , pver   , 'A', 'Total water mixing ratio'                          , phys_decomp )</a>
+   470) <a name="l470" style="background-color: #ffffff">    call addfld( 'SL'          , 'J/kg'   , pver   , 'A', 'Liquid water static energy'                        , phys_decomp )</a>
+   471) <a name="l471" style="background-color: #ffffff">    call addfld( 'SLV'         , 'J/kg'   , pver   , 'A', 'Liq wat virtual static energy'                     , phys_decomp )</a>
+   472) <a name="l472" style="background-color: #ffffff">    call addfld( 'SLFLX'       , 'W/m2'   , pverp  , 'A', 'Liquid static energy flux'                         , phys_decomp ) </a>
+   473) <a name="l473" style="background-color: #ffffff">    call addfld( 'QTFLX'       , 'W/m2'   , pverp  , 'A', 'Total water flux'                                  , phys_decomp ) </a>
+   474) <a name="l474" style="background-color: #ffffff">    call addfld( 'UFLX'        , 'W/m2'   , pverp  , 'A', 'Zonal momentum flux'                               , phys_decomp ) </a>
+   475) <a name="l475" style="background-color: #ffffff">    call addfld( 'VFLX'        , 'W/m2'   , pverp  , 'A', 'Meridional momentm flux'                           , phys_decomp ) </a>
+   476) <a name="l476" style="background-color: #ffffff">    call addfld( 'WGUSTD'      , 'm/s'    , 1      , 'A', 'wind gusts from turbulence'                        , phys_decomp )</a>
+   477) <a name="l477" style="background-color: #ffffff"></a>
+   478) <a name="l478" style="background-color: #ffffff">    ! ---------------------------------------------------------------------------- !</a>
+   479) <a name="l479" style="background-color: #ffffff">    ! Below ( with '_PBL') are for detailed analysis of UW Moist Turbulence Scheme !</a>
+   480) <a name="l480" style="background-color: #ffffff">    ! ---------------------------------------------------------------------------- !</a>
+   481) <a name="l481" style="background-color: #ffffff"></a>
+   482) <a name="l482" style="background-color: #ffffff">    call addfld( 'qt_pre_PBL  ', 'kg/kg'  , pver   , 'A', 'qt_prePBL'                                         , phys_decomp )</a>
+   483) <a name="l483" style="background-color: #ffffff">    call addfld( 'sl_pre_PBL  ', 'J/kg'   , pver   , 'A', 'sl_prePBL'                                         , phys_decomp )</a>
+   484) <a name="l484" style="background-color: #ffffff">    call addfld( 'slv_pre_PBL ', 'J/kg'   , pver   , 'A', 'slv_prePBL'                                        , phys_decomp )</a>
+   485) <a name="l485" style="background-color: #ffffff">    call addfld( 'u_pre_PBL   ', 'm/s'    , pver   , 'A', 'u_prePBL'                                          , phys_decomp )</a>
+   486) <a name="l486" style="background-color: #ffffff">    call addfld( 'v_pre_PBL   ', 'm/s'    , pver   , 'A', 'v_prePBL'                                          , phys_decomp )</a>
+   487) <a name="l487" style="background-color: #ffffff">    call addfld( 'qv_pre_PBL  ', 'kg/kg'  , pver   , 'A', 'qv_prePBL'                                         , phys_decomp )</a>
+   488) <a name="l488" style="background-color: #ffffff">    call addfld( 'ql_pre_PBL  ', 'kg/kg'  , pver   , 'A', 'ql_prePBL'                                         , phys_decomp )</a>
+   489) <a name="l489" style="background-color: #ffffff">    call addfld( 'qi_pre_PBL  ', 'kg/kg'  , pver   , 'A', 'qi_prePBL'                                         , phys_decomp )</a>
+   490) <a name="l490" style="background-color: #ffffff">    call addfld( 't_pre_PBL   ', 'K'      , pver   , 'A', 't_prePBL'                                          , phys_decomp )</a>
+   491) <a name="l491" style="background-color: #ffffff">    call addfld( 'rh_pre_PBL  ', '%'      , pver   , 'A', 'rh_prePBL'                                         , phys_decomp )</a>
+   492) <a name="l492" style="background-color: #ffffff"></a>
+   493) <a name="l493" style="background-color: #ffffff">    call addfld( 'qt_aft_PBL  ', 'kg/kg'  , pver   , 'A', 'qt_afterPBL'                                       , phys_decomp )</a>
+   494) <a name="l494" style="background-color: #ffffff">    call addfld( 'sl_aft_PBL  ', 'J/kg'   , pver   , 'A', 'sl_afterPBL'                                       , phys_decomp )</a>
+   495) <a name="l495" style="background-color: #ffffff">    call addfld( 'slv_aft_PBL ', 'J/kg'   , pver   , 'A', 'slv_afterPBL'                                      , phys_decomp )</a>
+   496) <a name="l496" style="background-color: #ffffff">    call addfld( 'u_aft_PBL   ', 'm/s'    , pver   , 'A', 'u_afterPBL'                                        , phys_decomp )</a>
+   497) <a name="l497" style="background-color: #ffffff">    call addfld( 'v_aft_PBL   ', 'm/s'    , pver   , 'A', 'v_afterPBL'                                        , phys_decomp )</a>
+   498) <a name="l498" style="background-color: #ffffff">    call addfld( 'qv_aft_PBL  ', 'kg/kg'  , pver   , 'A', 'qv_afterPBL'                                       , phys_decomp )</a>
+   499) <a name="l499" style="background-color: #ffffff">    call addfld( 'ql_aft_PBL  ', 'kg/kg'  , pver   , 'A', 'ql_afterPBL'                                       , phys_decomp )</a>
+   500) <a name="l500" style="background-color: #ffffff">    call addfld( 'qi_aft_PBL  ', 'kg/kg'  , pver   , 'A', 'qi_afterPBL'                                       , phys_decomp )</a>
+   501) <a name="l501" style="background-color: #ffffff">    call addfld( 't_aft_PBL   ', 'K'      , pver   , 'A', 't_afterPBL'                                        , phys_decomp )</a>
+   502) <a name="l502" style="background-color: #ffffff">    call addfld( 'rh_aft_PBL  ', '%'      , pver   , 'A', 'rh_afterPBL'                                       , phys_decomp )</a>
+   503) <a name="l503" style="background-color: #ffffff"></a>
+   504) <a name="l504" style="background-color: #ffffff">    call addfld( 'slflx_PBL   ', 'J/m2/s' , pverp  , 'A', 'sl flux by PBL'                                    , phys_decomp ) </a>
+   505) <a name="l505" style="background-color: #ffffff">    call addfld( 'qtflx_PBL   ', 'kg/m2/s', pverp  , 'A', 'qt flux by PBL'                                    , phys_decomp ) </a>
+   506) <a name="l506" style="background-color: #ffffff">    call addfld( 'uflx_PBL    ', 'kg/m/s2', pverp  , 'A', 'u flux by PBL'                                     , phys_decomp ) </a>
+   507) <a name="l507" style="background-color: #ffffff">    call addfld( 'vflx_PBL    ', 'kg/m/s2', pverp  , 'A', 'v flux by PBL'                                     , phys_decomp ) </a>
+   508) <a name="l508" style="background-color: #ffffff"></a>
+   509) <a name="l509" style="background-color: #ffffff">    call addfld( 'slflx_cg_PBL', 'J/m2/s' , pverp  , 'A', 'sl_cg flux by PBL'                                 , phys_decomp ) </a>
+   510) <a name="l510" style="background-color: #ffffff">    call addfld( 'qtflx_cg_PBL', 'kg/m2/s', pverp  , 'A', 'qt_cg flux by PBL'                                 , phys_decomp ) </a>
+   511) <a name="l511" style="background-color: #ffffff">    call addfld( 'uflx_cg_PBL ', 'kg/m/s2', pverp  , 'A', 'u_cg flux by PBL'                                  , phys_decomp ) </a>
+   512) <a name="l512" style="background-color: #ffffff">    call addfld( 'vflx_cg_PBL ', 'kg/m/s2', pverp  , 'A', 'v_cg flux by PBL'                                  , phys_decomp ) </a>
+   513) <a name="l513" style="background-color: #ffffff"></a>
+   514) <a name="l514" style="background-color: #ffffff">    call addfld( 'qtten_PBL   ', 'kg/kg/s', pver   , 'A', 'qt tendency by PBL'                                , phys_decomp )</a>
+   515) <a name="l515" style="background-color: #ffffff">    call addfld( 'slten_PBL   ', 'J/kg/s' , pver   , 'A', 'sl tendency by PBL'                                , phys_decomp )</a>
+   516) <a name="l516" style="background-color: #ffffff">    call addfld( 'uten_PBL    ', 'm/s2'   , pver   , 'A', 'u tendency by PBL'                                 , phys_decomp )</a>
+   517) <a name="l517" style="background-color: #ffffff">    call addfld( 'vten_PBL    ', 'm/s2'   , pver   , 'A', 'v tendency by PBL'                                 , phys_decomp )</a>
+   518) <a name="l518" style="background-color: #ffffff">    call addfld( 'qvten_PBL   ', 'kg/kg/s', pver   , 'A', 'qv tendency by PBL'                                , phys_decomp )</a>
+   519) <a name="l519" style="background-color: #ffffff">    call addfld( 'qlten_PBL   ', 'kg/kg/s', pver   , 'A', 'ql tendency by PBL'                                , phys_decomp )</a>
+   520) <a name="l520" style="background-color: #ffffff">    call addfld( 'qiten_PBL   ', 'kg/kg/s', pver   , 'A', 'qi tendency by PBL'                                , phys_decomp )</a>
+   521) <a name="l521" style="background-color: #ffffff">    call addfld( 'tten_PBL    ', 'K/s'    , pver   , 'A', 'T tendency by PBL'                                 , phys_decomp )</a>
+   522) <a name="l522" style="background-color: #ffffff">    call addfld( 'rhten_PBL   ', '%/s'    , pver   , 'A', 'RH tendency by PBL'                                , phys_decomp )</a>
+   523) <a name="l523" style="background-color: #ffffff"></a>
+   524) <a name="l524" style="background-color: #ffffff">    call addfld ('ustar',     ' ',1, 'A',' ',phys_decomp)</a>
+   525) <a name="l525" style="background-color: #ffffff">    call addfld ('obklen',    ' ',1, 'A',' ',phys_decomp)</a>
+   526) <a name="l526" style="background-color: #ffffff"></a>
+   527) <a name="l527" style="background-color: #ffffff">    if( eddy_scheme .eq. 'diag_TKE' ) then    </a>
+   528) <a name="l528" style="background-color: #ffffff">       call addfld( 'BPROD   ',  'M2/S3   ',pverp,   'A', 'Buoyancy Production'                               ,phys_decomp)</a>
+   529) <a name="l529" style="background-color: #ffffff">       call addfld( 'SFI     ',  'FRACTION',pverp,   'A', 'Interface-layer sat frac'                          ,phys_decomp)    </a>
+   530) <a name="l530" style="background-color: #ffffff">       call addfld( 'SPROD   ',  'M2/S3   ',pverp,   'A', 'Shear Production'                                  ,phys_decomp)   </a>
+   531) <a name="l531" style="background-color: #ffffff">    endif</a>
+   532) <a name="l532" style="background-color: #ffffff"> </a>
+   533) <a name="l533" style="background-color: #ffffff">    ! ----------------------------</a>
+   534) <a name="l534" style="background-color: #ffffff">    ! determine default variables</a>
+   535) <a name="l535" style="background-color: #ffffff">    ! ----------------------------</a>
+   536) <a name="l536" style="background-color: #ffffff"> </a>
+   537) <a name="l537" style="background-color: #ffffff">    call phys_getopts( history_amwg_out = history_amwg, &amp;</a>
+   538) <a name="l538" style="background-color: #ffffff">                       history_eddy_out = history_eddy, &amp;</a>
+   539) <a name="l539" style="background-color: #ffffff">                       history_budget_out = history_budget, &amp;</a>
+   540) <a name="l540" style="background-color: #ffffff">                       history_budget_histfile_num_out = history_budget_histfile_num, &amp;</a>
+   541) <a name="l541" style="background-color: #ffffff">                       history_waccm_out = history_waccm)</a>
+   542) <a name="l542" style="background-color: #ffffff"></a>
+   543) <a name="l543" style="background-color: #ffffff">    if (history_amwg) then</a>
+   544) <a name="l544" style="background-color: #ffffff">       call add_default(  vdiffnam(1), 1, ' ' )</a>
+   545) <a name="l545" style="background-color: #ffffff">       call add_default( 'DTV'       , 1, ' ' )  </a>
+   546) <a name="l546" style="background-color: #ffffff">       call add_default( 'PBLH'      , 1, ' ' )</a>
+   547) <a name="l547" style="background-color: #ffffff">       if( eddy_scheme .eq. 'diag_TKE' ) then    </a>
+   548) <a name="l548" style="background-color: #ffffff">          call add_default( 'WGUSTD  ', 1, ' ' )</a>
+   549) <a name="l549" style="background-color: #ffffff">       endif</a>
+   550) <a name="l550" style="background-color: #ffffff">    endif</a>
+   551) <a name="l551" style="background-color: #ffffff"> </a>
+   552) <a name="l552" style="background-color: #ffffff">    if (history_eddy) then</a>
+   553) <a name="l553" style="background-color: #ffff99">       if( eddy_scheme .eq. 'diag_TKE' ) then    </a>
+   554) <a name="l554" style="background-color: #ffff99">          call add_default( 'UFLX    ', 1, ' ' )</a>
+   555) <a name="l555" style="background-color: #ffff99">          call add_default( 'VFLX    ', 1, ' ' )</a>
+   556) <a name="l556" style="background-color: #ffff99">       endif</a>
+   557) <a name="l557" style="background-color: #ffff99">    endif</a>
+   558) <a name="l558" style="background-color: #ffff99"></a>
+   559) <a name="l559" style="background-color: #ffffff">    if( history_budget ) then</a>
+   560) <a name="l560" style="background-color: #ffffff">        call </a><a style="background-color: #ffff99">add_default( vdiffnam(ixcldliq), history_budget_histfile_num, ' ' )</a>
+   561) <a name="l561" style="background-color: #ffff99">        call add_default( vdiffnam(ixcldice), history_budget_histfile_num, ' ' )</a>
+   562) <a name="l562" style="background-color: #ffff99">        if( history_budget_histfile_num &gt; 1 ) then</a>
+   563) <a name="l563" style="background-color: #ffff99">           call add_default(  vdiffnam(1), history_budget_histfile_num, ' ' )</a>
+   564) <a name="l564" style="background-color: #ffff99">           call add_default( 'DTV'       , history_budget_histfile_num, ' ' )</a>
+   565) <a name="l565" style="background-color: #ffff99">        end if</a>
+   566) <a name="l566" style="background-color: #ffff99">    end if</a>
+   567) <a name="l567" style="background-color: #ffff99"></a>
+   568) <a name="l568" style="background-color: #ffffff">    if ( history_waccm ) then</a>
+   569) <a name="l569" style="background-color: #ffff99">       if (do_molec_diff) then</a>
+   570) <a name="l570" style="background-color: #ffff99">          call add_default ( 'TTPXMLC', 1, ' ' )</a>
+   571) <a name="l571" style="background-color: #ffff99">       end if</a>
+   572) <a name="l572" style="background-color: #ffff99">       call add_default( 'DUV'     , 1, ' ' )</a>
+   573) <a name="l573" style="background-color: #ffff99">       call add_default( 'DVV'     , 1, ' ' )</a>
+   574) <a name="l574" style="background-color: #ffff99">    end if</a>
+   575) <a name="l575" style="background-color: #ffff99">     ! ----------------------------</a>
+   576) <a name="l576" style="background-color: #ffff99">   </a>
+   577) <a name="l577" style="background-color: #ffff99"></a>
+   578) <a name="l578" style="background-color: #ffffff">     qrl_idx   = pbuf_get_index('QRL')</a>
+   579) <a name="l579" style="background-color: #ffffff">     wsedl_idx = pbuf_get_index('WSEDL')</a>
+   580) <a name="l580" style="background-color: #ffffff"></a>
+   581) <a name="l581" style="background-color: #ffffff"></a>
+   582) <a name="l582" style="background-color: #ffffff">     ! Initialization of some pbuf fields</a>
+   583) <a name="l583" style="background-color: #ffffff">     if (is_first_step()) then</a>
+   584) <a name="l584" style="background-color: #ffffff">        ! Initialization of pbuf fields tke, kvh, kvm are done in phys_inidat</a>
+   585) <a name="l585" style="background-color: #ffffff">        call pbuf_set_field(pbuf2d, turbtype_idx, 0    )</a>
+   586) <a name="l586" style="background-color: #ffffff">        call pbuf_set_field(pbuf2d, smaw_idx,     0.0_r8)</a>
+   587) <a name="l587" style="background-color: #ffffff">        call pbuf_set_field(pbuf2d, tauresx_idx,  0.0_r8)</a>
+   588) <a name="l588" style="background-color: #ffffff">        call pbuf_set_field(pbuf2d, tauresy_idx,  0.0_r8)</a>
+   589) <a name="l589" style="background-color: #ffffff">        if (trim(shallow_scheme) == 'UNICON') then</a>
+   590) <a name="l590" style="background-color: #ffffff">           call </a><a style="background-color: #ffff99">pbuf_set_field(pbuf2d, bprod_idx,    1.0e-5_r8)</a>
+   591) <a name="l591" style="background-color: #ffff99">           call pbuf_set_field(pbuf2d, ipbl_idx,     0    )</a>
+   592) <a name="l592" style="background-color: #ffff99">           call pbuf_set_field(pbuf2d, kpblh_idx,    1    )</a>
+   593) <a name="l593" style="background-color: #ffff99">           call pbuf_set_field(pbuf2d, wstarPBL_idx, 0.0_r8)</a>
+   594) <a name="l594" style="background-color: #ffff99">           call pbuf_set_field(pbuf2d, tkes_idx,     0.0_r8)</a>
+   595) <a name="l595" style="background-color: #ffff99">           call pbuf_set_field(pbuf2d, went_idx,     0.0_r8)</a>
+   596) <a name="l596" style="background-color: #ffff99">        end if</a>
+   597) <a name="l597" style="background-color: #ffff99">     end if</a>
+   598) <a name="l598" style="background-color: #ffff99"></a>
+   599) <a name="l599" style="background-color: #ffffff">  end subroutine vertical_diffusion_init</a>
+   600) <a name="l600" style="background-color: #ffffff"></a>
+   601) <a name="l601" style="background-color: #ffffff">  ! =============================================================================== !</a>
+   602) <a name="l602" style="background-color: #ffffff">  !                                                                                 !</a>
+   603) <a name="l603" style="background-color: #ffffff">  ! =============================================================================== !</a>
+   604) <a name="l604" style="background-color: #ffffff"></a>
+   605) <a name="l605" style="background-color: #ffffff">  subroutine vertical_diffusion_ts_init( pbuf2d, state )</a>
+   606) <a name="l606" style="background-color: #ffffff"></a>
+   607) <a name="l607" style="background-color: #ffffff">    !-------------------------------------------------------------- !</a>
+   608) <a name="l608" style="background-color: #ffffff">    ! Timestep dependent setting,                                   !</a>
+   609) <a name="l609" style="background-color: #ffffff">    ! At present only invokes upper bc code for molecular diffusion !</a>
+   610) <a name="l610" style="background-color: #ffffff">    !-------------------------------------------------------------- !</a>
+   611) <a name="l611" style="background-color: #ffffff">    use molec_diff    , only : init_timestep_molec_diff</a>
+   612) <a name="l612" style="background-color: #ffffff">    use physics_types , only : physics_state</a>
+   613) <a name="l613" style="background-color: #ffffff">    use ppgrid        , only : begchunk, endchunk</a>
+   614) <a name="l614" style="background-color: #ffffff">    </a>
+   615) <a name="l615" style="background-color: #ffffff">    use physics_buffer, only : physics_buffer_desc</a>
+   616) <a name="l616" style="background-color: #ffffff"></a>
+   617) <a name="l617" style="background-color: #ffffff">    type(physics_state), intent(in) :: state(begchunk:endchunk)                 </a>
+   618) <a name="l618" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+   619) <a name="l619" style="background-color: #ffffff"></a>
+   620) <a name="l620" style="background-color: #ffffff"> </a>
+   621) <a name="l621" style="background-color: #ffffff">    if (do_molec_diff) </a><a style="background-color: #ffff99">call init_timestep_molec_diff(pbuf2d, state )</a>
+   622) <a name="l622" style="background-color: #ffff99"></a>
+   623) <a name="l623" style="background-color: #ffffff">  end subroutine vertical_diffusion_ts_init</a>
+   624) <a name="l624" style="background-color: #ffffff"></a>
+   625) <a name="l625" style="background-color: #ffffff">  ! =============================================================================== !</a>
+   626) <a name="l626" style="background-color: #ffffff">  !                                                                                 !</a>
+   627) <a name="l627" style="background-color: #ffffff">  ! =============================================================================== !</a>
+   628) <a name="l628" style="background-color: #ffffff"></a>
+   629) <a name="l629" style="background-color: #ffffff">  subroutine vertical_diffusion_tend( &amp;</a>
+   630) <a name="l630" style="background-color: #ffffff">                                      ztodt    , state    ,                  &amp;</a>
+   631) <a name="l631" style="background-color: #ffffff">                                      taux     , tauy     , shflx    , cflx, &amp;</a>
+   632) <a name="l632" style="background-color: #ffffff">                                      ustar    , obklen   , </a><a style="background-color: #fafad2">ptend    , &amp;</a>
+   633) <a name="l633" style="background-color: #fafad2">                                      cldn     , ocnfrac  , landfrac , sgh      , pbuf) </a>
+   634) <a name="l634" style="background-color: #fafad2">    !---------------------------------------------------- !</a>
+   635) <a name="l635" style="background-color: #fafad2">    ! This is an interface routine for vertical diffusion !</a>
+   636) <a name="l636" style="background-color: #fafad2">    !---------------------------------------------------- !</a>
+   637) <a name="l637" style="background-color: #fafad2">    use physics_buffer,     only : physics_buffer_desc, pbuf_get_field, pbuf_set_field</a>
+   638) <a name="l638" style="background-color: #fafad2">    use physics_types,      only : physics_state, physics_ptend, physics_ptend_init</a>
+   639) <a name="l639" style="background-color: #fafad2">    use cam_history,        only : outfld</a>
+   640) <a name="l640" style="background-color: #fafad2">    </a>
+   641) <a name="l641" style="background-color: #fafad2">    use trb_mtn_stress,     only : compute_tms</a>
+   642) <a name="l642" style="background-color: #fafad2">    use eddy_diff,          only : compute_eddy_diff</a>
+   643) <a name="l643" style="background-color: #fafad2">    use hb_diff,            only : compute_hb_diff</a>
+   644) <a name="l644" style="background-color: #fafad2">    use wv_saturation,      only : qsat</a>
+   645) <a name="l645" style="background-color: #fafad2">    use molec_diff,         only : compute_molec_diff, vd_lu_qdecomp</a>
+   646) <a name="l646" style="background-color: #fafad2">    use constituents,       only : qmincg, qmin</a>
+   647) <a name="l647" style="background-color: #fafad2">    use diffusion_solver,   only : compute_vdiff, any, operator(.not.)</a>
+   648) <a name="l648" style="background-color: #fafad2">    use physconst,          only : cpairv, rairv !Needed for calculation of upward H flux</a>
+   649) <a name="l649" style="background-color: #fafad2">    use time_manager,       only : get_nstep</a>
+   650) <a name="l650" style="background-color: #fafad2">    use constituents,       only : cnst_get_type_byind, cnst_name, cnst_fixed_ubc, cnst_fixed_ubflx</a>
+   651) <a name="l651" style="background-color: #fafad2">    use physconst,          only : pi</a>
+   652) <a name="l652" style="background-color: #fafad2">    use pbl_utils,          only : virtem, calc_obklen</a>
+   653) <a name="l653" style="background-color: #fafad2"></a>
+   654) <a name="l654" style="background-color: #fafad2">    ! --------------- !</a>
+   655) <a name="l655" style="background-color: #fafad2">    ! Input Arguments !</a>
+   656) <a name="l656" style="background-color: #fafad2">    ! --------------- !</a>
+   657) <a name="l657" style="background-color: #fafad2"></a>
+   658) <a name="l658" style="background-color: #fafad2">    type(physics_state), intent(in)    :: state                     ! Physics state variables</a>
+   659) <a name="l659" style="background-color: #fafad2"></a>
+   660) <a name="l660" style="background-color: #fafad2">    real(r8),            intent(in)    :: taux(pcols)               ! x surface stress  [ N/m2 ]</a>
+   661) <a name="l661" style="background-color: #fafad2">    real(r8),            intent(in)    :: tauy(pcols)               ! y surface stress  [ N/m2 ]</a>
+   662) <a name="l662" style="background-color: #fafad2">    real(r8),            intent(in)    :: shflx(pcols)              ! Surface sensible heat flux  [ w/m2 ]</a>
+   663) <a name="l663" style="background-color: #fafad2">    real(r8),            intent(in)    :: cflx(pcols,pcnst)         ! Surface constituent flux [ kg/m2/s ]</a>
+   664) <a name="l664" style="background-color: #fafad2">    real(r8),            intent(in)    :: ztodt                     ! 2 delta-t [ s ]</a>
+   665) <a name="l665" style="background-color: #fafad2">    real(r8),            intent(in)    :: cldn(pcols,pver)          ! New stratus fraction [ fraction ]</a>
+   666) <a name="l666" style="background-color: #fafad2">    real(r8),            intent(in)    :: ocnfrac(pcols)            ! Ocean fraction</a>
+   667) <a name="l667" style="background-color: #fafad2">    real(r8),            intent(in)    :: landfrac(pcols)           ! Land fraction</a>
+   668) <a name="l668" style="background-color: #fafad2">    real(r8),            intent(in)    :: sgh(pcols)                ! Standard deviation of orography [ unit ? ]</a>
+   669) <a name="l669" style="background-color: #fafad2"></a>
+   670) <a name="l670" style="background-color: #fafad2">    ! ---------------------- !</a>
+   671) <a name="l671" style="background-color: #fafad2">    ! Input-Output Arguments !</a>
+   672) <a name="l672" style="background-color: #fafad2">    ! ---------------------- !</a>
+   673) <a name="l673" style="background-color: #fafad2">    </a>
+   674) <a name="l674" style="background-color: #fafad2">    type(physics_ptend), intent(out) :: ptend                       ! Individual parameterization tendencies</a>
+   675) <a name="l675" style="background-color: #fafad2">    type(physics_buffer_desc), pointer :: pbuf(:)</a>
+   676) <a name="l676" style="background-color: #fafad2"></a>
+   677) <a name="l677" style="background-color: #fafad2">    ! ---------------- !</a>
+   678) <a name="l678" style="background-color: #fafad2">    ! Output Arguments !</a>
+   679) <a name="l679" style="background-color: #fafad2">    ! ---------------- !</a>
+   680) <a name="l680" style="background-color: #fafad2"></a>
+   681) <a name="l681" style="background-color: #fafad2">    real(r8),            intent(out)   :: ustar(pcols)              ! Surface friction velocity [ m/s ]</a>
+   682) <a name="l682" style="background-color: #fafad2">    real(r8),            intent(out)   :: obklen(pcols)             ! Obukhov length [ m ]</a>
+   683) <a name="l683" style="background-color: #fafad2"></a>
+   684) <a name="l684" style="background-color: #fafad2">    ! --------------- !</a>
+   685) <a name="l685" style="background-color: #fafad2">    ! Local Variables !</a>
+   686) <a name="l686" style="background-color: #fafad2">    ! --------------- !</a>
+   687) <a name="l687" style="background-color: #fafad2"></a>
+   688) <a name="l688" style="background-color: #fafad2">    logical  :: kvinit                                              ! Tell compute_eddy_diff/ caleddy</a>
+   689) <a name="l689" style="background-color: #fafad2">                                                                    ! to initialize kvh, kvm (uses kvf)</a>
+   690) <a name="l690" style="background-color: #fafad2">    character(128) :: errstring                                     ! Error status for compute_vdiff</a>
+   691) <a name="l691" style="background-color: #fafad2">    real(r8), pointer, dimension(:,:) :: qrl                        ! LW radiative cooling rate</a>
+   692) <a name="l692" style="background-color: #fafad2">    real(r8), pointer, dimension(:,:) :: wsedl                      ! Sedimentation velocity</a>
+   693) <a name="l693" style="background-color: #fafad2">                                                                    ! of stratiform liquid cloud droplet [ m/s ]</a>
+   694) <a name="l694" style="background-color: #fafad2"></a>
+   695) <a name="l695" style="background-color: #fafad2">    integer  :: lchnk                                               ! Chunk identifier</a>
+   696) <a name="l696" style="background-color: #fafad2">    integer  :: ncol                                                ! Number of atmospheric columns</a>
+   697) <a name="l697" style="background-color: #fafad2">    integer  :: i, k, l, m                                          ! column, level, constituent indices</a>
+   698) <a name="l698" style="background-color: #fafad2">    integer  :: ierr                                                ! status for allocate/deallocate</a>
+   699) <a name="l699" style="background-color: #fafad2"></a>
+   700) <a name="l700" style="background-color: #fafad2">    real(r8) :: dtk(pcols,pver)                                     ! T tendency from KE dissipation</a>
+   701) <a name="l701" style="background-color: #fafad2">    real(r8), pointer   :: tke(:,:)                                 ! Turbulent kinetic energy [ m2/s2 ]</a>
+   702) <a name="l702" style="background-color: #fafad2">    integer(i4),pointer :: turbtype(:,:)                            ! Turbulent interface types [ no unit ]</a>
+   703) <a name="l703" style="background-color: #fafad2">    real(r8), pointer   :: smaw(:,:)                                ! Normalized Galperin instability function</a>
+   704) <a name="l704" style="background-color: #fafad2">                                                                    ! ( 0&lt;= &lt;=4.964 and 1 at neutral )</a>
+   705) <a name="l705" style="background-color: #fafad2">    real(r8) :: cgs(pcols,pverp)                                    ! Counter-gradient star  [ cg/flux ]</a>
+   706) <a name="l706" style="background-color: #fafad2">    real(r8) :: cgh(pcols,pverp)                                    ! Counter-gradient term for heat</a>
+   707) <a name="l707" style="background-color: #fafad2">    real(r8) :: rztodt                                              ! 1./ztodt [ 1/s ]</a>
+   708) <a name="l708" style="background-color: #fafad2">    real(r8) :: ksrftms(pcols)                                      ! Turbulent mountain stress surface drag coefficient [ kg/s/m2 ]</a>
+   709) <a name="l709" style="background-color: #fafad2">    real(r8) :: tautmsx(pcols)                                      ! U component of turbulent mountain stress [ N/m2 ]</a>
+   710) <a name="l710" style="background-color: #fafad2">    real(r8) :: tautmsy(pcols)                                      ! V component of turbulent mountain stress [ N/m2 ]</a>
+   711) <a name="l711" style="background-color: #fafad2">    real(r8) :: tautotx(pcols)                                      ! U component of total surface stress [ N/m2 ]</a>
+   712) <a name="l712" style="background-color: #fafad2">    real(r8) :: tautoty(pcols)                                      ! V component of total surface stress [ N/m2 ]</a>
+   713) <a name="l713" style="background-color: #fafad2"></a>
+   714) <a name="l714" style="background-color: #fafad2">    real(r8), pointer :: kvh_in(:,:)                                ! kvh from previous timestep [ m2/s ]</a>
+   715) <a name="l715" style="background-color: #fafad2">    real(r8), pointer :: kvm_in(:,:)                                ! kvm from previous timestep [ m2/s ]</a>
+   716) <a name="l716" style="background-color: #fafad2">    real(r8), pointer :: kvt(:,:)                                   ! Molecular kinematic conductivity for temperature [  ]</a>
+   717) <a name="l717" style="background-color: #fafad2">    real(r8) :: kvq(pcols,pverp)                                    ! Eddy diffusivity for constituents [ m2/s ]</a>
+   718) <a name="l718" style="background-color: #fafad2">    real(r8) :: kvh(pcols,pverp)                                    ! Eddy diffusivity for heat [ m2/s ]</a>
+   719) <a name="l719" style="background-color: #fafad2">    real(r8) :: kvm(pcols,pverp)                                    ! Eddy diffusivity for momentum [ m2/s ]</a>
+   720) <a name="l720" style="background-color: #fafad2">    real(r8), pointer :: bprod(:,:)                                 ! Buoyancy production of tke [ m2/s3 ]</a>
+   721) <a name="l721" style="background-color: #fafad2">    real(r8) :: sprod(pcols,pverp)                                  ! Shear production of tke [ m2/s3 ]</a>
+   722) <a name="l722" style="background-color: #fafad2">    real(r8) :: sfi(pcols,pverp)                                    ! Saturation fraction at interfaces [ fraction ]</a>
+   723) <a name="l723" style="background-color: #fafad2">    real(r8) :: sl(pcols,pver)</a>
+   724) <a name="l724" style="background-color: #fafad2">    real(r8) :: qt(pcols,pver)</a>
+   725) <a name="l725" style="background-color: #fafad2">    real(r8) :: slv(pcols,pver)</a>
+   726) <a name="l726" style="background-color: #fafad2">    real(r8) :: sl_prePBL(pcols,pver)</a>
+   727) <a name="l727" style="background-color: #fafad2">    real(r8) :: qt_prePBL(pcols,pver)</a>
+   728) <a name="l728" style="background-color: #fafad2">    real(r8) :: slv_prePBL(pcols,pver)</a>
+   729) <a name="l729" style="background-color: #fafad2">    real(r8) :: slten(pcols,pver)</a>
+   730) <a name="l730" style="background-color: #fafad2">    real(r8) :: qtten(pcols,pver)</a>
+   731) <a name="l731" style="background-color: #fafad2">    real(r8) :: slvten(pcols,pver)</a>
+   732) <a name="l732" style="background-color: #fafad2">    real(r8) :: slflx(pcols,pverp)</a>
+   733) <a name="l733" style="background-color: #fafad2">    real(r8) :: qtflx(pcols,pverp)</a>
+   734) <a name="l734" style="background-color: #fafad2">    real(r8) :: uflx(pcols,pverp)</a>
+   735) <a name="l735" style="background-color: #fafad2">    real(r8) :: vflx(pcols,pverp)</a>
+   736) <a name="l736" style="background-color: #fafad2">    real(r8) :: slflx_cg(pcols,pverp)</a>
+   737) <a name="l737" style="background-color: #fafad2">    real(r8) :: qtflx_cg(pcols,pverp)</a>
+   738) <a name="l738" style="background-color: #fafad2">    real(r8) :: uflx_cg(pcols,pverp)</a>
+   739) <a name="l739" style="background-color: #fafad2">    real(r8) :: vflx_cg(pcols,pverp)</a>
+   740) <a name="l740" style="background-color: #fafad2">    real(r8) :: th(pcols,pver)                                      ! Potential temperature</a>
+   741) <a name="l741" style="background-color: #fafad2">    real(r8) :: topflx(pcols)                                       ! Molecular heat flux at top interface</a>
+   742) <a name="l742" style="background-color: #fafad2">    real(r8) :: wpert(pcols)                                        ! Turbulent wind gusts</a>
+   743) <a name="l743" style="background-color: #fafad2">    real(r8) :: rhoair</a>
+   744) <a name="l744" style="background-color: #fafad2"></a>
+   745) <a name="l745" style="background-color: #fafad2">    real(r8) :: ri(pcols,pver)                                      ! richardson number (HB output)</a>
+   746) <a name="l746" style="background-color: #fafad2">    </a>
+   747) <a name="l747" style="background-color: #fafad2">    ! for obklen calculation outside HB</a>
+   748) <a name="l748" style="background-color: #fafad2">    real(r8) :: thvs(pcols)                                         ! Virtual potential temperature at surface</a>
+   749) <a name="l749" style="background-color: #fafad2">    real(r8) :: rrho(pcols)                                         ! Reciprocal of density at surface</a>
+   750) <a name="l750" style="background-color: #fafad2">    real(r8) :: khfs(pcols)                                         ! sfc kinematic heat flux [mK/s]</a>
+   751) <a name="l751" style="background-color: #fafad2">    real(r8) :: kqfs(pcols)                                         ! sfc kinematic water vapor flux [m/s]</a>
+   752) <a name="l752" style="background-color: #fafad2">    real(r8) :: kbfs(pcols)                                         ! sfc kinematic buoyancy flux [m^2/s^3]</a>
+   753) <a name="l753" style="background-color: #fafad2"></a>
+   754) <a name="l754" style="background-color: #fafad2">    real(r8) :: ftem(pcols,pver)                                    ! Saturation vapor pressure before PBL</a>
+   755) <a name="l755" style="background-color: #fafad2">    real(r8) :: ftem_prePBL(pcols,pver)                             ! Saturation vapor pressure before PBL</a>
+   756) <a name="l756" style="background-color: #fafad2">    real(r8) :: ftem_aftPBL(pcols,pver)                             ! Saturation vapor pressure after PBL</a>
+   757) <a name="l757" style="background-color: #fafad2">    real(r8) :: tem2(pcols,pver)                                    ! Saturation specific humidity and RH</a>
+   758) <a name="l758" style="background-color: #fafad2">    real(r8) :: t_aftPBL(pcols,pver)                                ! Temperature after PBL diffusion</a>
+   759) <a name="l759" style="background-color: #fafad2">    real(r8) :: tten(pcols,pver)                                    ! Temperature tendency by PBL diffusion</a>
+   760) <a name="l760" style="background-color: #fafad2">    real(r8) :: rhten(pcols,pver)                                   ! RH tendency by PBL diffusion</a>
+   761) <a name="l761" style="background-color: #fafad2">    real(r8) :: qv_aft_PBL(pcols,pver)                              ! qv after PBL diffusion</a>
+   762) <a name="l762" style="background-color: #fafad2">    real(r8) :: ql_aft_PBL(pcols,pver)                              ! ql after PBL diffusion</a>
+   763) <a name="l763" style="background-color: #fafad2">    real(r8) :: qi_aft_PBL(pcols,pver)                              ! qi after PBL diffusion</a>
+   764) <a name="l764" style="background-color: #fafad2">    real(r8) :: s_aft_PBL(pcols,pver)                               ! s after PBL diffusion</a>
+   765) <a name="l765" style="background-color: #fafad2">    real(r8) :: u_aft_PBL(pcols,pver)                               ! u after PBL diffusion</a>
+   766) <a name="l766" style="background-color: #fafad2">    real(r8) :: v_aft_PBL(pcols,pver)                               ! v after PBL diffusion</a>
+   767) <a name="l767" style="background-color: #fafad2">    real(r8) :: qv_pro(pcols,pver) </a>
+   768) <a name="l768" style="background-color: #fafad2">    real(r8) :: ql_pro(pcols,pver)</a>
+   769) <a name="l769" style="background-color: #fafad2">    real(r8) :: qi_pro(pcols,pver)</a>
+   770) <a name="l770" style="background-color: #fafad2">    real(r8) :: s_pro(pcols,pver)</a>
+   771) <a name="l771" style="background-color: #fafad2">    real(r8) :: t_pro(pcols,pver)</a>
+   772) <a name="l772" style="background-color: #fafad2">    real(r8), pointer :: tauresx(:)                                      ! Residual stress to be added in vdiff to correct</a>
+   773) <a name="l773" style="background-color: #fafad2">    real(r8), pointer :: tauresy(:)                                      ! for turb stress mismatch between sfc and atm accumulated.</a>
+   774) <a name="l774" style="background-color: #fafad2">    integer(i4), pointer :: ipbl(:)</a>
+   775) <a name="l775" style="background-color: #fafad2">    integer(i4), pointer :: kpblh(:)</a>
+   776) <a name="l776" style="background-color: #fafad2">    real(r8), pointer :: wstarPBL(:)</a>
+   777) <a name="l777" style="background-color: #fafad2">    real(r8), pointer :: tkes(:)</a>
+   778) <a name="l778" style="background-color: #fafad2">    real(r8), pointer :: went(:)</a>
+   779) <a name="l779" style="background-color: #fafad2">    real(r8) :: tpertPBL(pcols)</a>
+   780) <a name="l780" style="background-color: #fafad2">    real(r8) :: qpertPBL(pcols)</a>
+   781) <a name="l781" style="background-color: #fafad2">    real(r8) :: rairi(pcols,pver+1)                                 ! interface gas constant needed for compute_vdiff</a>
+   782) <a name="l782" style="background-color: #fafad2"></a>
+   783) <a name="l783" style="background-color: #fafad2">    real(r8), pointer :: tpert(:)</a>
+   784) <a name="l784" style="background-color: #fafad2">    real(r8), pointer :: qpert(:)</a>
+   785) <a name="l785" style="background-color: #fafad2">    real(r8), pointer :: pblh(:)</a>
+   786) <a name="l786" style="background-color: #fafad2"></a>
+   787) <a name="l787" style="background-color: #fafad2">    real(r8) :: tmp1(pcols)                                         ! Temporary storage</a>
+   788) <a name="l788" style="background-color: #fafad2"></a>
+   789) <a name="l789" style="background-color: #fafad2">    integer  :: nstep</a>
+   790) <a name="l790" style="background-color: #fafad2">    real(r8) :: sum1, sum2, sum3, pdelx </a>
+   791) <a name="l791" style="background-color: #fafad2">    real(r8) :: sflx</a>
+   792) <a name="l792" style="background-color: #fafad2"></a>
+   793) <a name="l793" style="background-color: #fafad2">    ! Copy state so we can pass to intent(inout) routines that return</a>
+   794) <a name="l794" style="background-color: #fafad2">    ! new state instead of a tendency.</a>
+   795) <a name="l795" style="background-color: #fafad2">    real(r8) :: s_tmp(pcols,pver)</a>
+   796) <a name="l796" style="background-color: #fafad2">    real(r8) :: u_tmp(pcols,pver)</a>
+   797) <a name="l797" style="background-color: #fafad2">    real(r8) :: v_tmp(pcols,pver)</a>
+   798) <a name="l798" style="background-color: #fafad2">    real(r8) :: q_tmp(pcols,pver,pcnst)</a>
+   799) <a name="l799" style="background-color: #fafad2"></a>
+   800) <a name="l800" style="background-color: #fafad2">    logical  :: lq(pcnst)</a>
+   801) <a name="l801" style="background-color: #fafad2"></a>
+   802) <a name="l802" style="background-color: #fafad2">    ! ----------------------- !</a>
+   803) <a name="l803" style="background-color: #fafad2">    ! Main Computation Begins !</a>
+   804) <a name="l804" style="background-color: #fafad2">    ! ----------------------- !</a>
+   805) <a name="l805" style="background-color: #fafad2"></a>
+   806) <a name="l806" style="background-color: #fafad2">    rztodt = 1._r8 / ztodt</a>
+   807) <a name="l807" style="background-color: #fafad2">    lchnk  = state%lchnk</a>
+   808) <a name="l808" style="background-color: #fafad2">    ncol   = state%ncol</a>
+   809) <a name="l809" style="background-color: #fafad2"></a>
+   810) <a name="l810" style="background-color: #fafad2">    call </a><a style="background-color: #ffffff">pbuf_get_field(pbuf, tauresx_idx,  tauresx)</a>
+   811) <a name="l811" style="background-color: #ffffff">    call pbuf_get_field(pbuf, tauresy_idx,  tauresy)</a>
+   812) <a name="l812" style="background-color: #ffffff">    call pbuf_get_field(pbuf, tpert_idx,    tpert)</a>
+   813) <a name="l813" style="background-color: #ffffff">    call pbuf_get_field(pbuf, qpert_idx,    qpert)</a>
+   814) <a name="l814" style="background-color: #ffffff">    call pbuf_get_field(pbuf, pblh_idx,     pblh)</a>
+   815) <a name="l815" style="background-color: #ffffff">    call pbuf_get_field(pbuf, turbtype_idx, turbtype)</a>
+   816) <a name="l816" style="background-color: #ffffff"></a>
+   817) <a name="l817" style="background-color: #ffffff">    ! ---------------------------------------- !</a>
+   818) <a name="l818" style="background-color: #ffffff">    ! Computation of turbulent mountain stress !</a>
+   819) <a name="l819" style="background-color: #ffffff">    ! ---------------------------------------- !</a>
+   820) <a name="l820" style="background-color: #ffffff">   </a>
+   821) <a name="l821" style="background-color: #ffffff">    ! Consistent with the computation of 'normal' drag coefficient, we are using </a>
+   822) <a name="l822" style="background-color: #ffffff">    ! the raw input (u,v) to compute 'ksrftms', not the provisionally-marched 'u,v' </a>
+   823) <a name="l823" style="background-color: #ffffff">    ! within the iteration loop of the PBL scheme. </a>
+   824) <a name="l824" style="background-color: #ffffff"></a>
+   825) <a name="l825" style="background-color: #ffffff">    if( do_tms ) then</a>
+   826) <a name="l826" style="background-color: #ffffff">        call compute_tms( pcols      , pver     , ncol    ,              &amp;</a>
+   827) <a name="l827" style="background-color: #ffffff">                          state%u    , state%v  , state%t , state%pmid , &amp; </a>
+   828) <a name="l828" style="background-color: #ffffff">                          state%exner, state%zm , sgh     , ksrftms    , &amp; </a>
+   829) <a name="l829" style="background-color: #ffffff">                          tautmsx    , tautmsy  , landfrac )</a>
+   830) <a name="l830" style="background-color: #ffffff">      ! Here, both 'taux, tautmsx' are explicit surface stresses.        </a>
+   831) <a name="l831" style="background-color: #ffffff">      ! Note that this 'tautotx, tautoty' are different from the total stress</a>
+   832) <a name="l832" style="background-color: #ffffff">      ! that has been actually added into the atmosphere. This is because both</a>
+   833) <a name="l833" style="background-color: #ffffff">      ! taux and tautmsx are fully implicitly treated within compute_vdiff.</a>
+   834) <a name="l834" style="background-color: #ffffff">      ! However, 'tautotx, tautoty' are not used in the actual numerical</a>
+   835) <a name="l835" style="background-color: #ffffff">      ! computation in this module.   </a>
+   836) <a name="l836" style="background-color: #ffffff">        tautotx(:ncol) = taux(:ncol) + tautmsx(:ncol)</a>
+   837) <a name="l837" style="background-color: #ffffff">        tautoty(:ncol) = tauy(:ncol) + tautmsy(:ncol)</a>
+   838) <a name="l838" style="background-color: #ffffff">    else</a>
+   839) <a name="l839" style="background-color: #ffff99">        ksrftms(:ncol) = 0._r8</a>
+   840) <a name="l840" style="background-color: #ffff99">        tautotx(:ncol) = taux(:ncol)</a>
+   841) <a name="l841" style="background-color: #ffff99">        tautoty(:ncol) = tauy(:ncol)</a>
+   842) <a name="l842" style="background-color: #ffff99">    endif</a>
+   843) <a name="l843" style="background-color: #ffff99"></a>
+   844) <a name="l844" style="background-color: #ffff99">    !----------------------------------------------------------------------- !</a>
+   845) <a name="l845" style="background-color: #ffff99">    !   Computation of eddy diffusivities - Select appropriate PBL scheme    !</a>
+   846) <a name="l846" style="background-color: #ffff99">    !----------------------------------------------------------------------- !</a>
+   847) <a name="l847" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">pbuf_get_field(pbuf, kvm_idx,  kvm_in)</a>
+   848) <a name="l848" style="background-color: #ffffff">    call pbuf_get_field(pbuf, kvh_idx,  kvh_in)</a>
+   849) <a name="l849" style="background-color: #ffffff">    call pbuf_get_field(pbuf, smaw_idx, smaw)</a>
+   850) <a name="l850" style="background-color: #ffffff">    call pbuf_get_field(pbuf, tke_idx,  tke)</a>
+   851) <a name="l851" style="background-color: #ffffff"></a>
+   852) <a name="l852" style="background-color: #ffffff"></a>
+   853) <a name="l853" style="background-color: #fafad2">    select case (</a><a style="background-color: #ffffff">eddy_scheme)</a>
+   854) <a name="l854" style="background-color: #ffffff">    case ( 'diag_TKE' ) </a>
+   855) <a name="l855" style="background-color: #ffffff"></a>
+   856) <a name="l856" style="background-color: #ffffff">       ! ---------------------------------------------------------------- !</a>
+   857) <a name="l857" style="background-color: #ffffff">       ! At first time step, have eddy_diff.F90:caleddy() use kvh=kvm=kvf !</a>
+   858) <a name="l858" style="background-color: #ffffff">       ! This has to be done in compute_eddy_diff after kvf is calculated !</a>
+   859) <a name="l859" style="background-color: #ffffff">       ! ---------------------------------------------------------------- !</a>
+   860) <a name="l860" style="background-color: #ffffff"></a>
+   861) <a name="l861" style="background-color: #ffffff">       if( is_first_step() ) then</a>
+   862) <a name="l862" style="background-color: #ffffff">           kvinit = .true.</a>
+   863) <a name="l863" style="background-color: #ffffff">       else</a>
+   864) <a name="l864" style="background-color: #ffffff">           kvinit = .false.</a>
+   865) <a name="l865" style="background-color: #ffffff">       endif</a>
+   866) <a name="l866" style="background-color: #ffffff"></a>
+   867) <a name="l867" style="background-color: #ffffff">       ! ---------------------------------------------- !</a>
+   868) <a name="l868" style="background-color: #ffffff">       ! Get LW radiative heating out of physics buffer !</a>
+   869) <a name="l869" style="background-color: #ffffff">       ! ---------------------------------------------- !</a>
+   870) <a name="l870" style="background-color: #ffffff">       call pbuf_get_field(pbuf, qrl_idx,   qrl)</a>
+   871) <a name="l871" style="background-color: #ffffff"></a>
+   872) <a name="l872" style="background-color: #ffffff">       call pbuf_get_field(pbuf, wsedl_idx, wsedl)</a>
+   873) <a name="l873" style="background-color: #ffffff"></a>
+   874) <a name="l874" style="background-color: #ffffff">       ! These fields are put into the pbuf for UNICON only.</a>
+   875) <a name="l875" style="background-color: #ffffff">       if (trim(shallow_scheme) == 'UNICON') then</a>
+   876) <a name="l876" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">pbuf_get_field(pbuf, bprod_idx,    bprod)</a>
+   877) <a name="l877" style="background-color: #ffff99">          call pbuf_get_field(pbuf, ipbl_idx,     ipbl)</a>
+   878) <a name="l878" style="background-color: #ffff99">          call pbuf_get_field(pbuf, kpblh_idx,    kpblh)</a>
+   879) <a name="l879" style="background-color: #ffff99">          call pbuf_get_field(pbuf, wstarPBL_idx, wstarPBL)</a>
+   880) <a name="l880" style="background-color: #ffff99">          call pbuf_get_field(pbuf, tkes_idx,     tkes)</a>
+   881) <a name="l881" style="background-color: #ffff99">          call pbuf_get_field(pbuf, went_idx,     went)</a>
+   882) <a name="l882" style="background-color: #ffff99">       else</a>
+   883) <a name="l883" style="background-color: #ffffff">          allocate(bprod(pcols,pverp), ipbl(pcols), kpblh(pcols), wstarPBL(pcols), tkes(pcols), went(pcols))</a>
+   884) <a name="l884" style="background-color: #ffffff">       end if</a>
+   885) <a name="l885" style="background-color: #ffffff"></a>
+   886) <a name="l886" style="background-color: #ffffff">       call </a><a style="background-color: #fafad2">compute_eddy_diff( lchnk    ,                                                                    &amp;</a>
+   887) <a name="l887" style="background-color: #fafad2">                               pcols    , pver        , ncol       , state%t    , state%q(:,:,1) , ztodt   , &amp;</a>
+   888) <a name="l888" style="background-color: #fafad2">                               state%q(:,:,ixcldliq)  , state%q(:,:,ixcldice)   ,                            &amp;</a>
+   889) <a name="l889" style="background-color: #fafad2">                               state%s  , state%rpdel , cldn       , qrl        , wsedl          ,           &amp;</a>
+   890) <a name="l890" style="background-color: #fafad2">                               state%zm , state%zi    , state%pmid , state%pint , state%u        , state%v , &amp;</a>
+   891) <a name="l891" style="background-color: #fafad2">                               taux     , tauy        , shflx      , cflx(:,1)  , wstarent       , nturb   , &amp;</a>
+   892) <a name="l892" style="background-color: #fafad2">                               rrho     , ustar       , pblh       , kvm_in     , kvh_in         , kvm     , &amp;</a>
+   893) <a name="l893" style="background-color: #fafad2">                               kvh      , kvq         , cgh        ,                                         &amp;</a>
+   894) <a name="l894" style="background-color: #fafad2">                               cgs      , tpert       , qpert      , wpert      , tke            , bprod   , &amp;</a>
+   895) <a name="l895" style="background-color: #fafad2">                               sprod    , sfi         , kvinit     ,                                         &amp;</a>
+   896) <a name="l896" style="background-color: #fafad2">                               tauresx  , tauresy     , ksrftms    ,                                         &amp;</a>
+   897) <a name="l897" style="background-color: #fafad2">                               ipbl     , kpblh       , wstarPBL   , tkes       , went           , turbtype, &amp;</a>
+   898) <a name="l898" style="background-color: #fafad2">                               smaw )</a>
+   899) <a name="l899" style="background-color: #fafad2"></a>
+   900) <a name="l900" style="background-color: #fafad2">       ! The diag_TKE scheme does not calculate the Monin-Obukhov length, which is used in dry deposition calculations.</a>
+   901) <a name="l901" style="background-color: #fafad2">       ! Use the routines from pbl_utils to accomplish this. Assumes ustar and rrho have been set.</a>
+   902) <a name="l902" style="background-color: #ffffff">       th(:ncol,pver) = state%t(:ncol,pver) * state%exner(:ncol,pver)</a>
+   903) <a name="l903" style="background-color: #ffffff">       thvs(:ncol) = virtem(th(:ncol,pver),state%q(:ncol,pver,1))</a>
+   904) <a name="l904" style="background-color: #ffffff">       call calc_obklen(th(:ncol,pver), thvs(:ncol), cflx(:ncol,1), shflx(:ncol), rrho(:ncol), ustar(:ncol), &amp;</a>
+   905) <a name="l905" style="background-color: #ffffff">                        khfs(:ncol),    kqfs(:ncol), kbfs(:ncol),   obklen(:ncol))</a>
+   906) <a name="l906" style="background-color: #ffffff"></a>
+   907) <a name="l907" style="background-color: #ffffff">       ! ----------------------------------------------- !       </a>
+   908) <a name="l908" style="background-color: #ffffff">       ! Store TKE in pbuf for use by shallow convection !</a>
+   909) <a name="l909" style="background-color: #ffffff">       ! ----------------------------------------------- !   </a>
+   910) <a name="l910" style="background-color: #ffffff"></a>
+   911) <a name="l911" style="background-color: #ffffff">       tpertPBL(:ncol) = tpert(:ncol)</a>
+   912) <a name="l912" style="background-color: #ffffff">       qpertPBL(:ncol) = qpert(:ncol)</a>
+   913) <a name="l913" style="background-color: #ffffff"></a>
+   914) <a name="l914" style="background-color: #ffffff"></a>
+   915) <a name="l915" style="background-color: #ffffff">       ! The diffusivities from diag_TKE can be much larger than from HB in the free</a>
+   916) <a name="l916" style="background-color: #ffffff">       ! troposphere and upper atmosphere. These seem to be larger than observations,</a>
+   917) <a name="l917" style="background-color: #ffffff">       ! and in WACCM the gw_drag code is already applying an eddy diffusivity in the</a>
+   918) <a name="l918" style="background-color: #ffffff">       ! upper atmosphere. Optionally, adjust the diffusivities in the free troposphere</a>
+   919) <a name="l919" style="background-color: #ffffff">       ! or the upper atmosphere.</a>
+   920) <a name="l920" style="background-color: #ffffff">       !</a>
+   921) <a name="l921" style="background-color: #ffffff">       ! NOTE: Further investigation should be done as to why the diffusivities are</a>
+   922) <a name="l922" style="background-color: #ffffff">       ! larger in diag_TKE.</a>
+   923) <a name="l923" style="background-color: #ffffff">       if ((kv_freetrop_scale /= 1._r8) .or. ((kv_top_scale </a><a style="background-color: #ffff99">/= 1._r8) .and. (kv_top_pressure &gt; 0._r8))) then</a>
+   924) <a name="l924" style="background-color: #ffff99">         do i = 1, ncol</a>
+   925) <a name="l925" style="background-color: #ffff99">           do k = 1, pverp</a>
+   926) <a name="l926" style="background-color: #ffff99">           </a>
+   927) <a name="l927" style="background-color: #ffff99">             ! Outside of the boundary layer?</a>
+   928) <a name="l928" style="background-color: #ffff99">             if (state%zi(i,k) &gt; pblh(i)) then</a>
+   929) <a name="l929" style="background-color: #ffff99"></a>
+   930) <a name="l930" style="background-color: #ffff99">               ! In the upper atmosphere?</a>
+   931) <a name="l931" style="background-color: #ffff99">               if (state%pint(i,k) &lt;= kv_top_pressure) then</a>
+   932) <a name="l932" style="background-color: #ffff99">                 kvh(i,k) = kvh(i,k) * kv_top_scale</a>
+   933) <a name="l933" style="background-color: #ffff99">                 kvm(i,k) = kvm(i,k) * kv_top_scale</a>
+   934) <a name="l934" style="background-color: #ffff99">                 kvq(i,k) = kvq(i,k) * kv_top_scale</a>
+   935) <a name="l935" style="background-color: #ffff99">               else</a>
+   936) <a name="l936" style="background-color: #ffff99">                 kvh(i,k) = kvh(i,k) * kv_freetrop_scale</a>
+   937) <a name="l937" style="background-color: #ffff99">                 kvm(i,k) = kvm(i,k) * kv_freetrop_scale</a>
+   938) <a name="l938" style="background-color: #ffff99">                 kvq(i,k) = kvq(i,k) * kv_freetrop_scale</a>
+   939) <a name="l939" style="background-color: #ffff99">               end if</a>
+   940) <a name="l940" style="background-color: #ffff99">             else</a>
+   941) <a name="l941" style="background-color: #ffff99">               exit</a>
+   942) <a name="l942" style="background-color: #ffff99">             end if</a>
+   943) <a name="l943" style="background-color: #ffff99">           end do</a>
+   944) <a name="l944" style="background-color: #ffff99">         end do</a>
+   945) <a name="l945" style="background-color: #ffff99">       end if</a>
+   946) <a name="l946" style="background-color: #ffff99"></a>
+   947) <a name="l947" style="background-color: #ffff99">       ! Write out fields that are only used by this scheme</a>
+   948) <a name="l948" style="background-color: #ffff99"></a>
+   949) <a name="l949" style="background-color: #ffff99">       call </a><a style="background-color: #fafad2">outfld( 'BPROD   ', bprod, pcols, lchnk )</a>
+   950) <a name="l950" style="background-color: #fafad2">       call </a><a style="background-color: #ffffff">outfld( 'SPROD   ', sprod, pcols, lchnk )</a>
+   951) <a name="l951" style="background-color: #ffffff">       call outfld( 'SFI     ', sfi,   pcols, lchnk )</a>
+   952) <a name="l952" style="background-color: #ffffff"></a>
+   953) <a name="l953" style="background-color: #ffffff">       if (trim(shallow_scheme) /= 'UNICON') then</a>
+   954) <a name="l954" style="background-color: #ffffff">          deallocate(bprod, ipbl, kpblh, wstarPBL, tkes, went)</a>
+   955) <a name="l955" style="background-color: #ffffff">       end if</a>
+   956) <a name="l956" style="background-color: #ffffff"></a>
+   957) <a name="l957" style="background-color: #ffffff">    case ( 'HB', </a><a style="background-color: #ffff99">'HBR' )</a>
+   958) <a name="l958" style="background-color: #ffff99"></a>
+   959) <a name="l959" style="background-color: #ffff99">       ! Modification : We may need to use 'taux' instead of 'tautotx' here, for</a>
+   960) <a name="l960" style="background-color: #ffff99">       !                consistency with the previous HB scheme.</a>
+   961) <a name="l961" style="background-color: #ffff99"></a>
+   962) <a name="l962" style="background-color: #ffff99">       th(:ncol,:pver) = state%t(:ncol,:pver) * state%exner(:ncol,:pver)</a>
+   963) <a name="l963" style="background-color: #ffff99"></a>
+   964) <a name="l964" style="background-color: #ffff99">       call compute_hb_diff( lchnk     , ncol     ,                                &amp;</a>
+   965) <a name="l965" style="background-color: #ffff99">                             th        , state%t  , state%q , state%zm , state%zi, &amp;</a>
+   966) <a name="l966" style="background-color: #ffff99">                             state%pmid, state%u  , state%v , tautotx  , tautoty , &amp;</a>
+   967) <a name="l967" style="background-color: #ffff99">                             shflx     , cflx(:,1), obklen  , ustar    , pblh    , &amp;</a>
+   968) <a name="l968" style="background-color: #ffff99">                             kvm       , kvh      , kvq     , cgh      , cgs     , &amp;</a>
+   969) <a name="l969" style="background-color: #ffff99">                             tpert     , qpert    , cldn    , ocnfrac  , tke     , &amp;</a>
+   970) <a name="l970" style="background-color: #ffff99">                             ri        , &amp;</a>
+   971) <a name="l971" style="background-color: #ffff99">                             eddy_scheme )</a>
+   972) <a name="l972" style="background-color: #ffff99">    </a>
+   973) <a name="l973" style="background-color: #ffff99">       call outfld( 'HB_ri',          ri,         pcols,   lchnk )</a>
+   974) <a name="l974" style="background-color: #ffff99"></a>
+   975) <a name="l975" style="background-color: #ffff99">       wpert = 0._r8  </a>
+   976) <a name="l976" style="background-color: #ffff99"></a>
+   977) <a name="l977" style="background-color: #ffff99">    end select</a>
+   978) <a name="l978" style="background-color: #ffff99"></a>
+   979) <a name="l979" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">outfld( 'ustar',   ustar(:), pcols, lchnk )</a>
+   980) <a name="l980" style="background-color: #ffffff">    call outfld( 'obklen', obklen(:), pcols, lchnk )</a>
+   981) <a name="l981" style="background-color: #ffffff"></a>
+   982) <a name="l982" style="background-color: #ffffff">    ! kvh (in pbuf) is used by other physics parameterizations, and as an initial guess in compute_eddy_diff</a>
+   983) <a name="l983" style="background-color: #ffffff">    ! on the next timestep.  It is not updated by the compute_vdiff call below.</a>
+   984) <a name="l984" style="background-color: #ffffff">    call pbuf_set_field(pbuf, kvh_idx, kvh)</a>
+   985) <a name="l985" style="background-color: #ffffff"></a>
+   986) <a name="l986" style="background-color: #ffffff">    ! kvm (in pbuf) is only used as an initial guess in compute_eddy_diff on the next timestep.</a>
+   987) <a name="l987" style="background-color: #ffffff">    ! The contributions for molecular diffusion made to kvm by the call to compute_vdiff below </a>
+   988) <a name="l988" style="background-color: #ffffff">    ! are not included in the pbuf as these are not needed in the initial guess by compute_eddy_diff.</a>
+   989) <a name="l989" style="background-color: #ffffff">    call pbuf_set_field(pbuf, kvm_idx, kvm)</a>
+   990) <a name="l990" style="background-color: #ffffff"></a>
+   991) <a name="l991" style="background-color: #ffffff">    call outfld( 'WGUSTD' , wpert, pcols, lchnk )</a>
+   992) <a name="l992" style="background-color: #ffffff"></a>
+   993) <a name="l993" style="background-color: #ffffff">    !------------------------------------ ! </a>
+   994) <a name="l994" style="background-color: #ffffff">    !    Application of diffusivities     !</a>
+   995) <a name="l995" style="background-color: #ffffff">    !------------------------------------ !</a>
+   996) <a name="l996" style="background-color: #ffffff"></a>
+   997) <a name="l997" style="background-color: #ffffff">    ! Set arrays from input state.</a>
+   998) <a name="l998" style="background-color: #ffffff">    q_tmp(:ncol,:,:) = state%q(:ncol,:,:)</a>
+   999) <a name="l999" style="background-color: #ffffff">    s_tmp(:ncol,:) = state%s(:ncol,:)</a>
+  1000) <a name="l1000" style="background-color: #ffffff">    u_tmp(:ncol,:) = state%u(:ncol,:)</a>
+  1001) <a name="l1001" style="background-color: #ffffff">    v_tmp(:ncol,:) = state%v(:ncol,:)</a>
+  1002) <a name="l1002" style="background-color: #ffffff"></a>
+  1003) <a name="l1003" style="background-color: #ffffff">    !------------------------------------------------------ !</a>
+  1004) <a name="l1004" style="background-color: #ffffff">    ! Write profile output before applying diffusion scheme !</a>
+  1005) <a name="l1005" style="background-color: #ffffff">    !------------------------------------------------------ !</a>
+  1006) <a name="l1006" style="background-color: #ffffff"></a>
+  1007) <a name="l1007" style="background-color: #ffffff">    sl_prePBL(:ncol,:pver)  = s_tmp(:ncol,:) -   latvap * q_tmp(:ncol,:,ixcldliq) &amp;</a>
+  1008) <a name="l1008" style="background-color: #ffffff">                                             - ( latvap + latice) * q_tmp(:ncol,:,ixcldice)</a>
+  1009) <a name="l1009" style="background-color: #ffffff">    qt_prePBL(:ncol,:pver)  = q_tmp(:ncol,:,1) + q_tmp(:ncol,:,ixcldliq) &amp;</a>
+  1010) <a name="l1010" style="background-color: #ffffff">                                               + q_tmp(:ncol,:,ixcldice)</a>
+  1011) <a name="l1011" style="background-color: #ffffff">    slv_prePBL(:ncol,:pver) = sl_prePBL(:ncol,:pver) * ( 1._r8 + zvir*qt_prePBL(:ncol,:pver) ) </a>
+  1012) <a name="l1012" style="background-color: #ffffff"></a>
+  1013) <a name="l1013" style="background-color: #ffffff">    call qsat(state%t(:ncol,:), state%pmid(:ncol,:), &amp;</a>
+  1014) <a name="l1014" style="background-color: #ffffff">         tem2(:ncol,:), ftem(:ncol,:))</a>
+  1015) <a name="l1015" style="background-color: #ffffff">    ftem_prePBL(:ncol,:) = state%q(:ncol,:,1)/ftem(:ncol,:)*100._r8</a>
+  1016) <a name="l1016" style="background-color: #ffffff"></a>
+  1017) <a name="l1017" style="background-color: #ffffff">    call outfld( 'qt_pre_PBL   ', qt_prePBL,                 pcols, lchnk )</a>
+  1018) <a name="l1018" style="background-color: #ffffff">    call outfld( 'sl_pre_PBL   ', sl_prePBL,                 pcols, lchnk )</a>
+  1019) <a name="l1019" style="background-color: #ffffff">    call outfld( 'slv_pre_PBL  ', slv_prePBL,                pcols, lchnk )</a>
+  1020) <a name="l1020" style="background-color: #ffffff">    call outfld( 'u_pre_PBL    ', state%u,                   pcols, lchnk )</a>
+  1021) <a name="l1021" style="background-color: #ffffff">    call outfld( 'v_pre_PBL    ', state%v,                   pcols, lchnk )</a>
+  1022) <a name="l1022" style="background-color: #ffffff">    call outfld( 'qv_pre_PBL   ', state%q(:ncol,:,1),        pcols, lchnk )</a>
+  1023) <a name="l1023" style="background-color: #ffffff">    call outfld( 'ql_pre_PBL   ', state%q(:ncol,:,ixcldliq), pcols, lchnk )</a>
+  1024) <a name="l1024" style="background-color: #ffffff">    call outfld( 'qi_pre_PBL   ', state%q(:ncol,:,ixcldice), pcols, lchnk )</a>
+  1025) <a name="l1025" style="background-color: #ffffff">    call outfld( 't_pre_PBL    ', state%t,                   pcols, lchnk )</a>
+  1026) <a name="l1026" style="background-color: #ffffff">    call outfld( 'rh_pre_PBL   ', ftem_prePBL,               pcols, lchnk )</a>
+  1027) <a name="l1027" style="background-color: #ffffff"></a>
+  1028) <a name="l1028" style="background-color: #ffffff">    ! --------------------------------------------------------------------------------- !</a>
+  1029) <a name="l1029" style="background-color: #ffffff">    ! Call the diffusivity solver and solve diffusion equation                          !</a>
+  1030) <a name="l1030" style="background-color: #ffffff">    ! The final two arguments are optional function references to                       !</a>
+  1031) <a name="l1031" style="background-color: #ffffff">    ! constituent-independent and constituent-dependent moleculuar diffusivity routines !</a>
+  1032) <a name="l1032" style="background-color: #ffffff">    ! --------------------------------------------------------------------------------- !</a>
+  1033) <a name="l1033" style="background-color: #ffffff"></a>
+  1034) <a name="l1034" style="background-color: #ffffff">    !------------------------------------------------------------------------ </a>
+  1035) <a name="l1035" style="background-color: #ffffff">    !  Check to see if constituent dependent gas constant needed (WACCM-X) </a>
+  1036) <a name="l1036" style="background-color: #ffffff">    !------------------------------------------------------------------------</a>
+  1037) <a name="l1037" style="background-color: #ffffff">    if ( waccmx_is('ionosphere') .or. waccmx_is('neutral') ) then </a>
+  1038) <a name="l1038" style="background-color: #ffff99">      rairi(:ncol,1) = rairv(:ncol,1,lchnk)</a>
+  1039) <a name="l1039" style="background-color: #ffff99">      do k = 2, pver</a>
+  1040) <a name="l1040" style="background-color: #ffff99">        do i = 1, ncol</a>
+  1041) <a name="l1041" style="background-color: #ffff99">          rairi(i,k) = 0.5_r8 * (rairv(i,k,lchnk)+rairv(i,k-1,lchnk))</a>
+  1042) <a name="l1042" style="background-color: #ffff99">        end do</a>
+  1043) <a name="l1043" style="background-color: #ffff99">      end do</a>
+  1044) <a name="l1044" style="background-color: #ffff99">    else</a>
+  1045) <a name="l1045" style="background-color: #ffffff">      rairi(:ncol,:pver+1) = rair </a>
+  1046) <a name="l1046" style="background-color: #ffffff">    endif</a>
+  1047) <a name="l1047" style="background-color: #ffffff"></a>
+  1048) <a name="l1048" style="background-color: #ffffff">    ! Modification : We may need to output 'tautotx_im,tautoty_im' from below 'compute_vdiff' and</a>
+  1049) <a name="l1049" style="background-color: #ffffff">    !                separately print out as diagnostic output, because these are different from</a>
+  1050) <a name="l1050" style="background-color: #ffffff">    !                the explicit 'tautotx, tautoty' computed above. </a>
+  1051) <a name="l1051" style="background-color: #ffffff">    ! Note that the output 'tauresx,tauresy' from below subroutines are fully implicit ones.</a>
+  1052) <a name="l1052" style="background-color: #ffffff"></a>
+  1053) <a name="l1053" style="background-color: #ffffff">    call pbuf_get_field(pbuf, kvt_idx, kvt)</a>
+  1054) <a name="l1054" style="background-color: #ffffff"></a>
+  1055) <a name="l1055" style="background-color: #ffffff">    if( any(fieldlist_wet) ) then</a>
+  1056) <a name="l1056" style="background-color: #ffffff"></a>
+  1057) <a name="l1057" style="background-color: #ffffff">        call </a><a style="background-color: #fafad2">compute_vdiff( state%lchnk   ,                                                                     &amp;</a>
+  1058) <a name="l1058" style="background-color: #fafad2">                            pcols         , pver               , pcnst        , ncol          , state%pmid    , &amp;</a>
+  1059) <a name="l1059" style="background-color: #fafad2">                            state%pint    , state%rpdel        , state%t      , ztodt         , taux          , &amp;</a>
+  1060) <a name="l1060" style="background-color: #fafad2">                            tauy          , shflx              , cflx         , ntop          , nbot          , &amp;</a>
+  1061) <a name="l1061" style="background-color: #fafad2">                            kvh           , kvm                , kvq          , cgs           , cgh           , &amp;</a>
+  1062) <a name="l1062" style="background-color: #fafad2">                            state%zi      , ksrftms            , qmincg       , fieldlist_wet , fieldlist_molec,&amp;</a>
+  1063) <a name="l1063" style="background-color: #fafad2">                            u_tmp         , v_tmp              , q_tmp        , s_tmp         ,                 &amp;</a>
+  1064) <a name="l1064" style="background-color: #fafad2">                            tautmsx       , tautmsy            , dtk          , topflx        , errstring     , &amp;</a>
+  1065) <a name="l1065" style="background-color: #fafad2">                            tauresx       , tauresy            , 1            , cpairv(:,:,state%lchnk), rairi, &amp;</a>
+  1066) <a name="l1066" style="background-color: #fafad2">                            do_molec_diff , compute_molec_diff , vd_lu_qdecomp, kvt )</a>
+  1067) <a name="l1067" style="background-color: #fafad2"></a>
+  1068) <a name="l1068" style="background-color: #fafad2">        call </a><a style="background-color: #ffffff">handle_errmsg(errstring, subname=&quot;compute_vdiff&quot;, &amp;</a>
+  1069) <a name="l1069" style="background-color: #ffffff">             extra_msg=&quot;Error in fieldlist_wet call from vertical_diffusion.&quot;)</a>
+  1070) <a name="l1070" style="background-color: #ffffff"></a>
+  1071) <a name="l1071" style="background-color: #ffffff">    end if</a>
+  1072) <a name="l1072" style="background-color: #ffffff"> </a>
+  1073) <a name="l1073" style="background-color: #ffffff">    if( any( fieldlist_dry ) ) then</a>
+  1074) <a name="l1074" style="background-color: #ffffff"></a>
+  1075) <a name="l1075" style="background-color: #ffffff">        if( do_molec_diff ) then</a>
+  1076) <a name="l1076" style="background-color: #ffff99">            errstring = &quot;Design flaw: dry vdiff not currently supported with molecular diffusion&quot;</a>
+  1077) <a name="l1077" style="background-color: #ffff99">            call endrun(errstring)</a>
+  1078) <a name="l1078" style="background-color: #ffff99">        end if</a>
+  1079) <a name="l1079" style="background-color: #ffff99"></a>
+  1080) <a name="l1080" style="background-color: #ffff99">        call </a><a style="background-color: #fafad2">compute_vdiff( state%lchnk   ,                                                                     &amp;</a>
+  1081) <a name="l1081" style="background-color: #fafad2">                            pcols         , pver               , pcnst        , ncol          , state%pmiddry , &amp;</a>
+  1082) <a name="l1082" style="background-color: #fafad2">                            state%pintdry , state%rpdeldry     , state%t      , ztodt         , taux          , &amp;       </a>
+  1083) <a name="l1083" style="background-color: #fafad2">                            tauy          , shflx              , cflx         , ntop          , nbot          , &amp;       </a>
+  1084) <a name="l1084" style="background-color: #fafad2">                            kvh           , kvm                , kvq          , cgs           , cgh           , &amp;   </a>
+  1085) <a name="l1085" style="background-color: #fafad2">                            state%zi      , ksrftms            , qmincg       , fieldlist_dry , fieldlist_molec,&amp;</a>
+  1086) <a name="l1086" style="background-color: #fafad2">                            u_tmp         , v_tmp              , q_tmp        , s_tmp         ,                 &amp;</a>
+  1087) <a name="l1087" style="background-color: #fafad2">                            tautmsx       , tautmsy            , dtk          , topflx        , errstring     , &amp;</a>
+  1088) <a name="l1088" style="background-color: #fafad2">                            tauresx       , tauresy            , 1            , cpairv(:,:,state%lchnk), rairi, &amp;</a>
+  1089) <a name="l1089" style="background-color: #fafad2">                            do_molec_diff , compute_molec_diff , vd_lu_qdecomp )</a>
+  1090) <a name="l1090" style="background-color: #fafad2"></a>
+  1091) <a name="l1091" style="background-color: #fafad2">        call </a><a style="background-color: #ffffff">handle_errmsg(errstring, subname=&quot;compute_vdiff&quot;, &amp;</a>
+  1092) <a name="l1092" style="background-color: #ffffff">             extra_msg=&quot;Error in fieldlist_dry call from vertical_diffusion.&quot;)</a>
+  1093) <a name="l1093" style="background-color: #ffffff"></a>
+  1094) <a name="l1094" style="background-color: #ffffff">    end if</a>
+  1095) <a name="l1095" style="background-color: #ffffff"></a>
+  1096) <a name="l1096" style="background-color: #ffffff">    if (prog_modal_aero) then</a>
+  1097) <a name="l1097" style="background-color: #ffffff"></a>
+  1098) <a name="l1098" style="background-color: #ffffff">       ! Modal aerosol species not diffused, so just add the explicit surface fluxes to the</a>
+  1099) <a name="l1099" style="background-color: #ffffff">       ! lowest layer</a>
+  1100) <a name="l1100" style="background-color: #ffffff"></a>
+  1101) <a name="l1101" style="background-color: #ffffff">    tmp1(:ncol) = ztodt * gravit * state%rpdel(:ncol,pver)</a>
+  1102) <a name="l1102" style="background-color: #ffffff">       do m = 1, pmam_ncnst</a>
+  1103) <a name="l1103" style="background-color: #ffffff">          l = pmam_cnst_idx(m)</a>
+  1104) <a name="l1104" style="background-color: #ffffff">          q_tmp(:ncol,pver,l) = q_tmp(:ncol,pver,l) + tmp1(:ncol) * cflx(:ncol,l)</a>
+  1105) <a name="l1105" style="background-color: #ffffff">       enddo</a>
+  1106) <a name="l1106" style="background-color: #ffffff">    end if</a>
+  1107) <a name="l1107" style="background-color: #ffffff"></a>
+  1108) <a name="l1108" style="background-color: #ffffff">    ! -------------------------------------------------------- !</a>
+  1109) <a name="l1109" style="background-color: #ffffff">    ! Diagnostics and output writing after applying PBL scheme !</a>
+  1110) <a name="l1110" style="background-color: #ffffff">    ! -------------------------------------------------------- !</a>
+  1111) <a name="l1111" style="background-color: #ffffff"></a>
+  1112) <a name="l1112" style="background-color: #ffffff">    sl(:ncol,:pver)  = s_tmp(:ncol,:) -   latvap           * q_tmp(:ncol,:,ixcldliq) &amp;</a>
+  1113) <a name="l1113" style="background-color: #ffffff">                                      - ( latvap + latice) * q_tmp(:ncol,:,ixcldice)</a>
+  1114) <a name="l1114" style="background-color: #ffffff">    qt(:ncol,:pver)  = q_tmp(:ncol,:,1) + q_tmp(:ncol,:,ixcldliq) &amp;</a>
+  1115) <a name="l1115" style="background-color: #ffffff">                                    + q_tmp(:ncol,:,ixcldice)</a>
+  1116) <a name="l1116" style="background-color: #ffffff">    slv(:ncol,:pver) = sl(:ncol,:pver) * ( 1._r8 + zvir*qt(:ncol,:pver) ) </a>
+  1117) <a name="l1117" style="background-color: #ffffff"></a>
+  1118) <a name="l1118" style="background-color: #ffffff">    slflx(:ncol,1) = 0._r8</a>
+  1119) <a name="l1119" style="background-color: #ffffff">    qtflx(:ncol,1) = 0._r8</a>
+  1120) <a name="l1120" style="background-color: #ffffff">    uflx(:ncol,1)  = 0._r8</a>
+  1121) <a name="l1121" style="background-color: #ffffff">    vflx(:ncol,1)  = 0._r8</a>
+  1122) <a name="l1122" style="background-color: #ffffff"></a>
+  1123) <a name="l1123" style="background-color: #ffffff">    slflx_cg(:ncol,1) = 0._r8</a>
+  1124) <a name="l1124" style="background-color: #ffffff">    qtflx_cg(:ncol,1) = 0._r8</a>
+  1125) <a name="l1125" style="background-color: #ffffff">    uflx_cg(:ncol,1)  = 0._r8</a>
+  1126) <a name="l1126" style="background-color: #ffffff">    vflx_cg(:ncol,1)  = 0._r8</a>
+  1127) <a name="l1127" style="background-color: #ffffff"></a>
+  1128) <a name="l1128" style="background-color: #ffffff">    do k = 2, pver</a>
+  1129) <a name="l1129" style="background-color: #ffffff">       do i = 1, ncol</a>
+  1130) <a name="l1130" style="background-color: #ffffff">          rhoair     = state%pint(i,k) / ( rair * ( ( 0.5_r8*(slv(i,k)+slv(i,k-1)) - gravit*state%zi(i,k))/cpair ) )</a>
+  1131) <a name="l1131" style="background-color: #ffffff">          slflx(i,k) = kvh(i,k) * &amp;</a>
+  1132) <a name="l1132" style="background-color: #ffffff">                          ( - rhoair*(sl(i,k-1)-sl(i,k))/(state%zm(i,k-1)-state%zm(i,k)) &amp;</a>
+  1133) <a name="l1133" style="background-color: #ffffff">                            + cgh(i,k) ) </a>
+  1134) <a name="l1134" style="background-color: #ffffff">          qtflx(i,k) = kvh(i,k) * &amp;</a>
+  1135) <a name="l1135" style="background-color: #ffffff">                          ( - rhoair*(qt(i,k-1)-qt(i,k))/(state%zm(i,k-1)-state%zm(i,k)) &amp;</a>
+  1136) <a name="l1136" style="background-color: #ffffff">                            + rhoair*(cflx(i,1)+cflx(i,ixcldliq)+cflx(i,ixcldice))*cgs(i,k) )</a>
+  1137) <a name="l1137" style="background-color: #ffffff">          uflx(i,k)  = kvm(i,k) * &amp;</a>
+  1138) <a name="l1138" style="background-color: #ffffff">                          ( - rhoair*(u_tmp(i,k-1)-u_tmp(i,k))/(state%zm(i,k-1)-state%zm(i,k)))</a>
+  1139) <a name="l1139" style="background-color: #ffffff">          vflx(i,k)  = kvm(i,k) * &amp;</a>
+  1140) <a name="l1140" style="background-color: #ffffff">                          ( - rhoair*(v_tmp(i,k-1)-v_tmp(i,k))/(state%zm(i,k-1)-state%zm(i,k)))</a>
+  1141) <a name="l1141" style="background-color: #ffffff">          slflx_cg(i,k) = kvh(i,k) * cgh(i,k)</a>
+  1142) <a name="l1142" style="background-color: #ffffff">          qtflx_cg(i,k) = kvh(i,k) * rhoair * ( cflx(i,1) + cflx(i,ixcldliq) + cflx(i,ixcldice) ) * cgs(i,k)</a>
+  1143) <a name="l1143" style="background-color: #ffffff">          uflx_cg(i,k)  = 0._r8</a>
+  1144) <a name="l1144" style="background-color: #ffffff">          vflx_cg(i,k)  = 0._r8</a>
+  1145) <a name="l1145" style="background-color: #ffffff">       end do</a>
+  1146) <a name="l1146" style="background-color: #ffffff">    end do</a>
+  1147) <a name="l1147" style="background-color: #ffffff"></a>
+  1148) <a name="l1148" style="background-color: #ffffff">  ! Modification : I should check whether slflx(:ncol,pverp) is correctly computed.</a>
+  1149) <a name="l1149" style="background-color: #ffffff">  !                Note also that 'tautotx' is explicit total stress, different from</a>
+  1150) <a name="l1150" style="background-color: #ffffff">  !                the ones that have been actually added into the atmosphere.</a>
+  1151) <a name="l1151" style="background-color: #ffffff"></a>
+  1152) <a name="l1152" style="background-color: #ffffff">    slflx(:ncol,pverp) = shflx(:ncol)</a>
+  1153) <a name="l1153" style="background-color: #ffffff">    qtflx(:ncol,pverp) = cflx(:ncol,1)</a>
+  1154) <a name="l1154" style="background-color: #ffffff">    uflx(:ncol,pverp)  = tautotx(:ncol)</a>
+  1155) <a name="l1155" style="background-color: #ffffff">    vflx(:ncol,pverp)  = tautoty(:ncol)</a>
+  1156) <a name="l1156" style="background-color: #ffffff"></a>
+  1157) <a name="l1157" style="background-color: #ffffff">    slflx_cg(:ncol,pverp) = 0._r8</a>
+  1158) <a name="l1158" style="background-color: #ffffff">    qtflx_cg(:ncol,pverp) = 0._r8</a>
+  1159) <a name="l1159" style="background-color: #ffffff">    uflx_cg(:ncol,pverp)  = 0._r8</a>
+  1160) <a name="l1160" style="background-color: #ffffff">    vflx_cg(:ncol,pverp)  = 0._r8</a>
+  1161) <a name="l1161" style="background-color: #ffffff"></a>
+  1162) <a name="l1162" style="background-color: #ffffff">    ! --------------------------------------------------------------- !</a>
+  1163) <a name="l1163" style="background-color: #ffffff">    ! Convert the new profiles into vertical diffusion tendencies.    !</a>
+  1164) <a name="l1164" style="background-color: #ffffff">    ! Convert KE dissipative heat change into &quot;temperature&quot; tendency. !</a>
+  1165) <a name="l1165" style="background-color: #ffffff">    ! --------------------------------------------------------------- !</a>
+  1166) <a name="l1166" style="background-color: #ffffff"></a>
+  1167) <a name="l1167" style="background-color: #ffffff">    ! All variables are modified by vertical diffusion</a>
+  1168) <a name="l1168" style="background-color: #ffffff"></a>
+  1169) <a name="l1169" style="background-color: #ffffff">    lq(:) = .TRUE.</a>
+  1170) <a name="l1170" style="background-color: #ffffff">    call physics_ptend_init(ptend,state%psetcols, &quot;vertical diffusion&quot;, &amp;</a>
+  1171) <a name="l1171" style="background-color: #ffffff">         ls=.true., lu=.true., lv=.true., lq=lq)</a>
+  1172) <a name="l1172" style="background-color: #ffffff"></a>
+  1173) <a name="l1173" style="background-color: #ffffff">    ptend%s(:ncol,:)       = ( s_tmp(:ncol,:) - state%s(:ncol,:) ) * rztodt</a>
+  1174) <a name="l1174" style="background-color: #ffffff">    ptend%u(:ncol,:)       = ( u_tmp(:ncol,:) - state%u(:ncol,:) ) * rztodt</a>
+  1175) <a name="l1175" style="background-color: #ffffff">    ptend%v(:ncol,:)       = ( v_tmp(:ncol,:) - state%v(:ncol,:) ) * rztodt</a>
+  1176) <a name="l1176" style="background-color: #ffffff">    ptend%q(:ncol,:pver,:) = ( q_tmp(:ncol,:pver,:) - state%q(:ncol,:pver,:) ) * rztodt</a>
+  1177) <a name="l1177" style="background-color: #ffffff">    slten(:ncol,:)         = ( sl(:ncol,:) - sl_prePBL(:ncol,:) ) * rztodt</a>
+  1178) <a name="l1178" style="background-color: #ffffff">    qtten(:ncol,:)         = ( qt(:ncol,:) - qt_prePBL(:ncol,:) ) * rztodt</a>
+  1179) <a name="l1179" style="background-color: #ffffff"></a>
+  1180) <a name="l1180" style="background-color: #ffffff">    ! ----------------------------------------------------------- !</a>
+  1181) <a name="l1181" style="background-color: #ffffff">    ! In order to perform 'pseudo-conservative varible diffusion' !</a>
+  1182) <a name="l1182" style="background-color: #ffffff">    ! perform the following two stages:                           !</a>
+  1183) <a name="l1183" style="background-color: #ffffff">    !                                                             !</a>
+  1184) <a name="l1184" style="background-color: #ffffff">    ! I.  Re-set (1) 'qvten' by 'qtten', and 'qlten = qiten = 0'  !</a>
+  1185) <a name="l1185" style="background-color: #ffffff">    !            (2) 'sten'  by 'slten', and                      !</a>
+  1186) <a name="l1186" style="background-color: #ffffff">    !            (3) 'qlten = qiten = 0'                          !</a>
+  1187) <a name="l1187" style="background-color: #ffffff">    !                                                             !</a>
+  1188) <a name="l1188" style="background-color: #ffffff">    ! II. Apply 'positive_moisture'                               !</a>
+  1189) <a name="l1189" style="background-color: #ffffff">    !                                                             !</a>
+  1190) <a name="l1190" style="background-color: #ffffff">    ! ----------------------------------------------------------- !</a>
+  1191) <a name="l1191" style="background-color: #ffffff"></a>
+  1192) <a name="l1192" style="background-color: #ffffff">    if( eddy_scheme .eq. 'diag_TKE' .and. do_pseudocon_diff ) then</a>
+  1193) <a name="l1193" style="background-color: #ffffff"></a>
+  1194) <a name="l1194" style="background-color: #ffff99">         ptend%q(:ncol,:pver,1) = qtten(:ncol,:pver)</a>
+  1195) <a name="l1195" style="background-color: #ffff99">         ptend%s(:ncol,:pver)   = slten(:ncol,:pver)</a>
+  1196) <a name="l1196" style="background-color: #ffff99">         ptend%q(:ncol,:pver,ixcldliq) = 0._r8         </a>
+  1197) <a name="l1197" style="background-color: #ffff99">         ptend%q(:ncol,:pver,ixcldice) = 0._r8         </a>
+  1198) <a name="l1198" style="background-color: #ffff99">         ptend%q(:ncol,:pver,ixnumliq) = 0._r8         </a>
+  1199) <a name="l1199" style="background-color: #ffff99">         ptend%q(:ncol,:pver,ixnumice) = 0._r8         </a>
+  1200) <a name="l1200" style="background-color: #ffff99"></a>
+  1201) <a name="l1201" style="background-color: #ffff99">         do i = 1, ncol</a>
+  1202) <a name="l1202" style="background-color: #ffff99">            do k = 1, pver</a>
+  1203) <a name="l1203" style="background-color: #ffff99">               qv_pro(i,k) = state%q(i,k,1)        + ptend%q(i,k,1)             * ztodt       </a>
+  1204) <a name="l1204" style="background-color: #ffff99">               ql_pro(i,k) = state%q(i,k,ixcldliq) + ptend%q(i,k,ixcldliq)      * ztodt</a>
+  1205) <a name="l1205" style="background-color: #ffff99">               qi_pro(i,k) = state%q(i,k,ixcldice) + ptend%q(i,k,ixcldice)      * ztodt              </a>
+  1206) <a name="l1206" style="background-color: #ffff99">               s_pro(i,k)  = state%s(i,k)          + ptend%s(i,k)               * ztodt</a>
+  1207) <a name="l1207" style="background-color: #ffff99">               t_pro(i,k)  = state%t(i,k)          + (1._r8/cpair)*ptend%s(i,k) * ztodt</a>
+  1208) <a name="l1208" style="background-color: #ffff99">            end do </a>
+  1209) <a name="l1209" style="background-color: #ffff99">         end do </a>
+  1210) <a name="l1210" style="background-color: #ffff99"></a>
+  1211) <a name="l1211" style="background-color: #ffff99">         call positive_moisture( cpair, latvap, latvap+latice, ncol, pver, ztodt, qmin(1), qmin(ixcldliq), qmin(ixcldice),    &amp;</a>
+  1212) <a name="l1212" style="background-color: #ffff99">                                 state%pdel(:ncol,pver:1:-1), qv_pro(:ncol,pver:1:-1), ql_pro(:ncol,pver:1:-1), &amp;</a>
+  1213) <a name="l1213" style="background-color: #ffff99">                                 qi_pro(:ncol,pver:1:-1), t_pro(:ncol,pver:1:-1), s_pro(:ncol,pver:1:-1),       &amp;</a>
+  1214) <a name="l1214" style="background-color: #ffff99">                                 ptend%q(:ncol,pver:1:-1,1), ptend%q(:ncol,pver:1:-1,ixcldliq),                 &amp;</a>
+  1215) <a name="l1215" style="background-color: #ffff99">                                 ptend%q(:ncol,pver:1:-1,ixcldice), ptend%s(:ncol,pver:1:-1) )</a>
+  1216) <a name="l1216" style="background-color: #ffff99"></a>
+  1217) <a name="l1217" style="background-color: #ffff99">    end if</a>
+  1218) <a name="l1218" style="background-color: #ffff99"></a>
+  1219) <a name="l1219" style="background-color: #ffff99">    ! ----------------------------------------------------------------- !</a>
+  1220) <a name="l1220" style="background-color: #ffff99">    ! Re-calculate diagnostic output variables after vertical diffusion !</a>
+  1221) <a name="l1221" style="background-color: #ffff99">    ! ----------------------------------------------------------------- !</a>
+  1222) <a name="l1222" style="background-color: #ffff99"> </a>
+  1223) <a name="l1223" style="background-color: #ffffff">    qv_aft_PBL(:ncol,:pver)  =   state%q(:ncol,:pver,1)         + ptend%q(:ncol,:pver,1)        * ztodt</a>
+  1224) <a name="l1224" style="background-color: #ffffff">    ql_aft_PBL(:ncol,:pver)  =   state%q(:ncol,:pver,ixcldliq)  + ptend%q(:ncol,:pver,ixcldliq) * ztodt</a>
+  1225) <a name="l1225" style="background-color: #ffffff">    qi_aft_PBL(:ncol,:pver)  =   state%q(:ncol,:pver,ixcldice)  + ptend%q(:ncol,:pver,ixcldice) * ztodt</a>
+  1226) <a name="l1226" style="background-color: #ffffff">    s_aft_PBL(:ncol,:pver)   =   state%s(:ncol,:pver)           + ptend%s(:ncol,:pver)          * ztodt</a>
+  1227) <a name="l1227" style="background-color: #ffffff">    t_aftPBL(:ncol,:pver)    = ( s_aft_PBL(:ncol,:pver) - gravit*state%zm(:ncol,:pver) ) / cpair </a>
+  1228) <a name="l1228" style="background-color: #ffffff"></a>
+  1229) <a name="l1229" style="background-color: #ffffff">    u_aft_PBL(:ncol,:pver)   =  state%u(:ncol,:pver)          + ptend%u(:ncol,:pver)            * ztodt</a>
+  1230) <a name="l1230" style="background-color: #ffffff">    v_aft_PBL(:ncol,:pver)   =  state%v(:ncol,:pver)          + ptend%v(:ncol,:pver)            * ztodt</a>
+  1231) <a name="l1231" style="background-color: #ffffff"></a>
+  1232) <a name="l1232" style="background-color: #ffffff">    call qsat(t_aftPBL(:ncol,:pver), state%pmid(:ncol,:pver), &amp;</a>
+  1233) <a name="l1233" style="background-color: #ffffff">         tem2(:ncol,:pver), ftem(:ncol,:pver))</a>
+  1234) <a name="l1234" style="background-color: #ffffff">    ftem_aftPBL(:ncol,:pver) = qv_aft_PBL(:ncol,:pver) / ftem(:ncol,:pver) * 100._r8</a>
+  1235) <a name="l1235" style="background-color: #ffffff"></a>
+  1236) <a name="l1236" style="background-color: #ffffff">    tten(:ncol,:pver)        = ( t_aftPBL(:ncol,:pver)    - state%t(:ncol,:pver) )              * rztodt     </a>
+  1237) <a name="l1237" style="background-color: #ffffff">    rhten(:ncol,:pver)       = ( ftem_aftPBL(:ncol,:pver) - ftem_prePBL(:ncol,:pver) )          * rztodt </a>
+  1238) <a name="l1238" style="background-color: #ffffff"></a>
+  1239) <a name="l1239" style="background-color: #ffffff">    ! -------------------------------------------------------------- !</a>
+  1240) <a name="l1240" style="background-color: #ffffff">    ! mass conservation check.........</a>
+  1241) <a name="l1241" style="background-color: #ffffff">    ! -------------------------------------------------------------- !</a>
+  1242) <a name="l1242" style="background-color: #ffffff">    if (diff_cnsrv_mass_check) then</a>
+  1243) <a name="l1243" style="background-color: #ffffff"></a>
+  1244) <a name="l1244" style="background-color: #ffffff">       ! Conservation check</a>
+  1245) <a name="l1245" style="background-color: #ffff99">       nstep = get_nstep()</a>
+  1246) <a name="l1246" style="background-color: #ffff99">       </a>
+  1247) <a name="l1247" style="background-color: #ffff99">       do m = 1, pcnst</a>
+  1248) <a name="l1248" style="background-color: #ffff99">          fixed_ubc: if ((.not.cnst_fixed_ubc(m)).and.(.not.cnst_fixed_ubflx(m))) then</a>
+  1249) <a name="l1249" style="background-color: #ffff99">             col_loop: do i = 1, ncol</a>
+  1250) <a name="l1250" style="background-color: #ffff99">                sum1 = 0._r8</a>
+  1251) <a name="l1251" style="background-color: #ffff99">                sum2 = 0._r8</a>
+  1252) <a name="l1252" style="background-color: #ffff99">                sum3 = 0._r8</a>
+  1253) <a name="l1253" style="background-color: #ffff99">                do k = 1, pver</a>
+  1254) <a name="l1254" style="background-color: #ffff99">                   if(cnst_get_type_byind(m).eq.'wet') then</a>
+  1255) <a name="l1255" style="background-color: #ffff99">                      pdelx = state%pdel(i,k)</a>
+  1256) <a name="l1256" style="background-color: #ffff99">                   else</a>
+  1257) <a name="l1257" style="background-color: #ffff99">                      pdelx = state%pdeldry(i,k)</a>
+  1258) <a name="l1258" style="background-color: #ffff99">                   endif</a>
+  1259) <a name="l1259" style="background-color: #ffff99">                   sum1 = sum1 + state%q(i,k,m)*pdelx/gravit                          ! total column</a>
+  1260) <a name="l1260" style="background-color: #ffff99">                   sum2 = sum2 +(state%q(i,k,m)+ptend%q(i,k,m)*ztodt)*pdelx/ gravit   ! total column after tendancy is applied</a>
+  1261) <a name="l1261" style="background-color: #ffff99">                   sum3 = sum3 +(               ptend%q(i,k,m)*ztodt)*pdelx/ gravit   ! rate of change in column</a>
+  1262) <a name="l1262" style="background-color: #ffff99">                enddo</a>
+  1263) <a name="l1263" style="background-color: #ffff99">                sum1 = sum1 + (cflx(i,m) * ztodt) ! add in surface flux (kg/m2)</a>
+  1264) <a name="l1264" style="background-color: #ffff99">                sflx = (cflx(i,m) * ztodt) </a>
+  1265) <a name="l1265" style="background-color: #ffff99">                if (sum1&gt;1.e-36_r8) then</a>
+  1266) <a name="l1266" style="background-color: #ffff99">                   if( abs((sum2-sum1)/sum1) .gt. 1.e-12_r8  ) then</a>
+  1267) <a name="l1267" style="background-color: #ffff99">                      write(iulog,'(a,a8,a,I4,2f8.3,5e25.16)') &amp;</a>
+  1268) <a name="l1268" style="background-color: #ffff99">                           'MASSCHECK vert diff : nstep,lon,lat,mass1,mass2,sum3,sflx,rel-diff : ', &amp;</a>
+  1269) <a name="l1269" style="background-color: #ffff99">                           trim(cnst_name(m)), ' : ', nstep, state%lon(i)*180._r8/pi, state%lat(i)*180._r8/pi, &amp;</a>
+  1270) <a name="l1270" style="background-color: #ffff99">                           sum1, sum2, sum3, sflx, abs(sum2-sum1)/sum1</a>
+  1271) <a name="l1271" style="background-color: #ffff99">                      call endrun('vertical_diffusion_tend : mass not conserved' )</a>
+  1272) <a name="l1272" style="background-color: #ffff99">                   endif</a>
+  1273) <a name="l1273" style="background-color: #ffff99">                endif</a>
+  1274) <a name="l1274" style="background-color: #ffff99">             enddo col_loop</a>
+  1275) <a name="l1275" style="background-color: #ffff99">          endif fixed_ubc</a>
+  1276) <a name="l1276" style="background-color: #ffff99">       enddo</a>
+  1277) <a name="l1277" style="background-color: #ffff99">    endif</a>
+  1278) <a name="l1278" style="background-color: #ffff99"></a>
+  1279) <a name="l1279" style="background-color: #ffff99">    ! -------------------------------------------------------------- !</a>
+  1280) <a name="l1280" style="background-color: #ffff99">    ! Writing state variables after PBL scheme for detailed analysis !</a>
+  1281) <a name="l1281" style="background-color: #ffff99">    ! -------------------------------------------------------------- !</a>
+  1282) <a name="l1282" style="background-color: #ffff99"></a>
+  1283) <a name="l1283" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">outfld( 'sl_aft_PBL'   , sl,                        pcols, lchnk )</a>
+  1284) <a name="l1284" style="background-color: #ffffff">    call outfld( 'qt_aft_PBL'   , qt,                        pcols, lchnk )</a>
+  1285) <a name="l1285" style="background-color: #ffffff">    call outfld( 'slv_aft_PBL'  , slv,                       pcols, lchnk )</a>
+  1286) <a name="l1286" style="background-color: #ffffff">    call outfld( 'u_aft_PBL'    , u_aft_PBL,                 pcols, lchnk )</a>
+  1287) <a name="l1287" style="background-color: #ffffff">    call outfld( 'v_aft_PBL'    , v_aft_PBL,                 pcols, lchnk )</a>
+  1288) <a name="l1288" style="background-color: #ffffff">    call outfld( 'qv_aft_PBL'   , qv_aft_PBL,                pcols, lchnk )</a>
+  1289) <a name="l1289" style="background-color: #ffffff">    call outfld( 'ql_aft_PBL'   , ql_aft_PBL,                pcols, lchnk )</a>
+  1290) <a name="l1290" style="background-color: #ffffff">    call outfld( 'qi_aft_PBL'   , qi_aft_PBL,                pcols, lchnk )</a>
+  1291) <a name="l1291" style="background-color: #ffffff">    call outfld( 't_aft_PBL '   , t_aftPBL,                  pcols, lchnk )</a>
+  1292) <a name="l1292" style="background-color: #ffffff">    call outfld( 'rh_aft_PBL'   , ftem_aftPBL,               pcols, lchnk )</a>
+  1293) <a name="l1293" style="background-color: #ffffff">    call outfld( 'slflx_PBL'    , slflx,                     pcols, lchnk )</a>
+  1294) <a name="l1294" style="background-color: #ffffff">    call outfld( 'qtflx_PBL'    , qtflx,                     pcols, lchnk )</a>
+  1295) <a name="l1295" style="background-color: #ffffff">    call outfld( 'uflx_PBL'     , uflx,                      pcols, lchnk )</a>
+  1296) <a name="l1296" style="background-color: #ffffff">    call outfld( 'vflx_PBL'     , vflx,                      pcols, lchnk )</a>
+  1297) <a name="l1297" style="background-color: #ffffff">    call outfld( 'slflx_cg_PBL' , slflx_cg,                  pcols, lchnk )</a>
+  1298) <a name="l1298" style="background-color: #ffffff">    call outfld( 'qtflx_cg_PBL' , qtflx_cg,                  pcols, lchnk )</a>
+  1299) <a name="l1299" style="background-color: #ffffff">    call outfld( 'uflx_cg_PBL'  , uflx_cg,                   pcols, lchnk )</a>
+  1300) <a name="l1300" style="background-color: #ffffff">    call outfld( 'vflx_cg_PBL'  , vflx_cg,                   pcols, lchnk )</a>
+  1301) <a name="l1301" style="background-color: #ffffff">    call outfld( 'slten_PBL'    , slten,                     pcols, lchnk )</a>
+  1302) <a name="l1302" style="background-color: #ffffff">    call outfld( 'qtten_PBL'    , qtten,                     pcols, lchnk )</a>
+  1303) <a name="l1303" style="background-color: #ffffff">    call outfld( 'uten_PBL'     , ptend%u(:ncol,:),          pcols, lchnk )</a>
+  1304) <a name="l1304" style="background-color: #ffffff">    call outfld( 'vten_PBL'     , ptend%v(:ncol,:),          pcols, lchnk )</a>
+  1305) <a name="l1305" style="background-color: #ffffff">    call outfld( 'qvten_PBL'    , ptend%q(:ncol,:,1),        pcols, lchnk )</a>
+  1306) <a name="l1306" style="background-color: #ffffff">    call outfld( 'qlten_PBL'    , ptend%q(:ncol,:,ixcldliq), pcols, lchnk )</a>
+  1307) <a name="l1307" style="background-color: #ffffff">    call outfld( 'qiten_PBL'    , ptend%q(:ncol,:,ixcldice), pcols, lchnk )</a>
+  1308) <a name="l1308" style="background-color: #ffffff">    call outfld( 'tten_PBL'     , tten,                      pcols, lchnk )</a>
+  1309) <a name="l1309" style="background-color: #ffffff">    call outfld( 'rhten_PBL'    , rhten,                     pcols, lchnk )</a>
+  1310) <a name="l1310" style="background-color: #ffffff"></a>
+  1311) <a name="l1311" style="background-color: #ffffff">    ! ------------------------------------------- !</a>
+  1312) <a name="l1312" style="background-color: #ffffff">    ! Writing the other standard output variables !</a>
+  1313) <a name="l1313" style="background-color: #ffffff">    ! ------------------------------------------- !</a>
+  1314) <a name="l1314" style="background-color: #ffffff"></a>
+  1315) <a name="l1315" style="background-color: #ffffff">    call outfld( 'QT'           , qt,                        pcols, lchnk )</a>
+  1316) <a name="l1316" style="background-color: #ffffff">    call outfld( 'SL'           , sl,                        pcols, lchnk )</a>
+  1317) <a name="l1317" style="background-color: #ffffff">    call outfld( 'SLV'          , slv,                       pcols, lchnk )</a>
+  1318) <a name="l1318" style="background-color: #ffffff">    call outfld( 'SLFLX'        , slflx,                     pcols, lchnk )</a>
+  1319) <a name="l1319" style="background-color: #ffffff">    call outfld( 'QTFLX'        , qtflx,                     pcols, lchnk )</a>
+  1320) <a name="l1320" style="background-color: #ffffff">    call outfld( 'UFLX'         , uflx,                      pcols, lchnk )</a>
+  1321) <a name="l1321" style="background-color: #ffffff">    call outfld( 'VFLX'         , vflx,                      pcols, lchnk )</a>
+  1322) <a name="l1322" style="background-color: #ffffff">    call </a><a style="background-color: #fafad2">outfld( 'TKE'          , tke,                       pcols, lchnk )</a>
+  1323) <a name="l1323" style="background-color: #fafad2"></a>
+  1324) <a name="l1324" style="background-color: #fafad2">    call outfld( 'PBLH'         , pblh,                      pcols, lchnk )</a>
+  1325) <a name="l1325" style="background-color: #fafad2">    call outfld( 'TPERT'        , tpert,                     pcols, lchnk )</a>
+  1326) <a name="l1326" style="background-color: #fafad2">    call outfld( 'QPERT'        , qpert,                     pcols, lchnk )</a>
+  1327) <a name="l1327" style="background-color: #fafad2">    call </a><a style="background-color: #ffffff">outfld( 'USTAR'        , ustar,                     pcols, lchnk )</a>
+  1328) <a name="l1328" style="background-color: #ffffff">    call outfld( 'KVH'          , kvh,                       pcols, lchnk )</a>
+  1329) <a name="l1329" style="background-color: #ffffff">    call </a><a style="background-color: #fafad2">outfld( 'KVT'          , kvt,                       pcols, lchnk )</a>
+  1330) <a name="l1330" style="background-color: #fafad2">    call </a><a style="background-color: #ffffff">outfld( 'KVM'          , kvm,                       pcols, lchnk )</a>
+  1331) <a name="l1331" style="background-color: #ffffff">    call outfld( 'CGS'          , cgs,                       pcols, lchnk )</a>
+  1332) <a name="l1332" style="background-color: #ffffff">    dtk(:ncol,:) = dtk(:ncol,:) / cpair              ! Normalize heating for history</a>
+  1333) <a name="l1333" style="background-color: #ffffff">    call outfld( 'DTVKE'        , dtk,                       pcols, lchnk )</a>
+  1334) <a name="l1334" style="background-color: #ffffff">    dtk(:ncol,:) = ptend%s(:ncol,:) / cpair          ! Normalize heating for history using dtk</a>
+  1335) <a name="l1335" style="background-color: #ffffff">    call outfld( 'DTV'          , dtk,                       pcols, lchnk ) </a>
+  1336) <a name="l1336" style="background-color: #ffffff">    call outfld( 'DUV'          , ptend%u,                   pcols, lchnk )</a>
+  1337) <a name="l1337" style="background-color: #ffffff">    call outfld( 'DVV'          , ptend%v,                   pcols, lchnk )</a>
+  1338) <a name="l1338" style="background-color: #ffffff">    do m = 1, pcnst</a>
+  1339) <a name="l1339" style="background-color: #ffffff">       call outfld( vdiffnam(m) , ptend%q(1,1,m),            pcols, lchnk )</a>
+  1340) <a name="l1340" style="background-color: #ffffff">    end do</a>
+  1341) <a name="l1341" style="background-color: #ffffff">    if( do_tms ) then</a>
+  1342) <a name="l1342" style="background-color: #ffffff">      ! Here, 'tautmsx,tautmsy' are implicit 'tms' that have been actually</a>
+  1343) <a name="l1343" style="background-color: #ffffff">      ! added into the atmosphere.</a>
+  1344) <a name="l1344" style="background-color: #ffffff">        call outfld( 'TAUTMSX'  , tautmsx,                   pcols, lchnk )</a>
+  1345) <a name="l1345" style="background-color: #ffffff">        call outfld( 'TAUTMSY'  , tautmsy,                   pcols, lchnk )</a>
+  1346) <a name="l1346" style="background-color: #ffffff">    end if</a>
+  1347) <a name="l1347" style="background-color: #ffffff">    if( do_molec_diff ) then</a>
+  1348) <a name="l1348" style="background-color: #ffffff">        call </a><a style="background-color: #ffff99">outfld( 'TTPXMLC'  , topflx,                    pcols, lchnk )</a>
+  1349) <a name="l1349" style="background-color: #ffff99">    end if</a>
+  1350) <a name="l1350" style="background-color: #ffff99"></a>
+  1351) <a name="l1351" style="background-color: #ffff99">    return</a>
+  1352) <a name="l1352" style="background-color: #ffffff">  end subroutine vertical_diffusion_tend</a>
+  1353) <a name="l1353" style="background-color: #ffffff"></a>
+  1354) <a name="l1354" style="background-color: #ffffff">  ! =============================================================================== !</a>
+  1355) <a name="l1355" style="background-color: #ffffff">  !                                                                                 !</a>
+  1356) <a name="l1356" style="background-color: #ffffff">  ! =============================================================================== !</a>
+  1357) <a name="l1357" style="background-color: #ffffff"></a>
+  1358) <a name="l1358" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">positive_moisture( cp, xlv, xls, ncol, mkx, dt, qvmin, qlmin, qimin, &amp; </a>
+  1359) <a name="l1359" style="background-color: #ffcccc">                                dp, qv, ql, qi, t, s, qvten, qlten, qiten, sten )</a>
+  1360) <a name="l1360" style="background-color: #ffcccc">  ! ------------------------------------------------------------------------------- !</a>
+  1361) <a name="l1361" style="background-color: #ffcccc">  ! If any 'ql &lt; qlmin, qi &lt; qimin, qv &lt; qvmin' are developed in any layer,         !</a>
+  1362) <a name="l1362" style="background-color: #ffcccc">  ! force them to be larger than minimum value by (1) condensating water vapor      !</a>
+  1363) <a name="l1363" style="background-color: #ffcccc">  ! into liquid or ice, and (2) by transporting water vapor from the very lower     !</a>
+  1364) <a name="l1364" style="background-color: #ffcccc">  ! layer. '2._r8' is multiplied to the minimum values for safety.                  !</a>
+  1365) <a name="l1365" style="background-color: #ffcccc">  ! Update final state variables and tendencies associated with this correction.    !</a>
+  1366) <a name="l1366" style="background-color: #ffcccc">  ! If any condensation happens, update (s,t) too.                                  !</a>
+  1367) <a name="l1367" style="background-color: #ffcccc">  ! Note that (qv,ql,qi,t,s) are final state variables after applying corresponding !</a>
+  1368) <a name="l1368" style="background-color: #ffcccc">  ! input tendencies.                                                               !</a>
+  1369) <a name="l1369" style="background-color: #ffcccc">  ! Be careful the order of k : '1': near-surface layer, 'mkx' : top layer          ! </a>
+  1370) <a name="l1370" style="background-color: #ffcccc">  ! ------------------------------------------------------------------------------- !</a>
+  1371) <a name="l1371" style="background-color: #ffcccc">    implicit none</a>
+  1372) <a name="l1372" style="background-color: #ffcccc">    integer,  intent(in)     :: ncol, mkx</a>
+  1373) <a name="l1373" style="background-color: #ffcccc">    real(r8), intent(in)     :: cp, xlv, xls</a>
+  1374) <a name="l1374" style="background-color: #ffcccc">    real(r8), intent(in)     :: dt, qvmin, qlmin, qimin</a>
+  1375) <a name="l1375" style="background-color: #ffcccc">    real(r8), intent(in)     :: dp(ncol,mkx)</a>
+  1376) <a name="l1376" style="background-color: #ffcccc">    real(r8), intent(inout)  :: qv(ncol,mkx), ql(ncol,mkx), qi(ncol,mkx), t(ncol,mkx), s(ncol,mkx)</a>
+  1377) <a name="l1377" style="background-color: #ffcccc">    real(r8), intent(inout)  :: qvten(ncol,mkx), qlten(ncol,mkx), qiten(ncol,mkx), sten(ncol,mkx)</a>
+  1378) <a name="l1378" style="background-color: #ffcccc">    integer   i, k</a>
+  1379) <a name="l1379" style="background-color: #ffcccc">    real(r8)  dql, dqi, dqv, sum, aa, dum </a>
+  1380) <a name="l1380" style="background-color: #ffcccc"></a>
+  1381) <a name="l1381" style="background-color: #ffcccc">  ! Modification : I should check whether this is exactly same as the one used in</a>
+  1382) <a name="l1382" style="background-color: #ffcccc">  !                shallow convection and cloud macrophysics.</a>
+  1383) <a name="l1383" style="background-color: #ffcccc"></a>
+  1384) <a name="l1384" style="background-color: #ffcccc">    do i = 1, ncol</a>
+  1385) <a name="l1385" style="background-color: #ffcccc">       do k = mkx, 1, -1    ! From the top to the 1st (lowest) layer from the surface</a>
+  1386) <a name="l1386" style="background-color: #ffcccc">          dql        = max(0._r8,1._r8*qlmin-ql(i,k))</a>
+  1387) <a name="l1387" style="background-color: #ffcccc">          dqi        = max(0._r8,1._r8*qimin-qi(i,k))</a>
+  1388) <a name="l1388" style="background-color: #ffcccc">          qlten(i,k) = qlten(i,k) +  dql/dt</a>
+  1389) <a name="l1389" style="background-color: #ffcccc">          qiten(i,k) = qiten(i,k) +  dqi/dt</a>
+  1390) <a name="l1390" style="background-color: #ffcccc">          qvten(i,k) = qvten(i,k) - (dql+dqi)/dt</a>
+  1391) <a name="l1391" style="background-color: #ffcccc">          sten(i,k)  = sten(i,k)  + xlv * (dql/dt) + xls * (dqi/dt)</a>
+  1392) <a name="l1392" style="background-color: #ffcccc">          ql(i,k)    = ql(i,k) +  dql</a>
+  1393) <a name="l1393" style="background-color: #ffcccc">          qi(i,k)    = qi(i,k) +  dqi</a>
+  1394) <a name="l1394" style="background-color: #ffcccc">          qv(i,k)    = qv(i,k) -  dql - dqi</a>
+  1395) <a name="l1395" style="background-color: #ffcccc">          s(i,k)     = s(i,k)  +  xlv * dql + xls * dqi</a>
+  1396) <a name="l1396" style="background-color: #ffcccc">          t(i,k)     = t(i,k)  + (xlv * dql + xls * dqi)/cp</a>
+  1397) <a name="l1397" style="background-color: #ffcccc">          dqv        = max(0._r8,1._r8*qvmin-qv(i,k))</a>
+  1398) <a name="l1398" style="background-color: #ffcccc">          qvten(i,k) = qvten(i,k) + dqv/dt</a>
+  1399) <a name="l1399" style="background-color: #ffcccc">          qv(i,k)    = qv(i,k)    + dqv</a>
+  1400) <a name="l1400" style="background-color: #ffcccc">          if( k .ne. 1 ) then </a>
+  1401) <a name="l1401" style="background-color: #ffcccc">              qv(i,k-1)    = qv(i,k-1)    - dqv*dp(i,k)/dp(i,k-1)</a>
+  1402) <a name="l1402" style="background-color: #ffcccc">              qvten(i,k-1) = qvten(i,k-1) - dqv*dp(i,k)/dp(i,k-1)/dt</a>
+  1403) <a name="l1403" style="background-color: #ffcccc">          endif</a>
+  1404) <a name="l1404" style="background-color: #ffcccc">          qv(i,k) = max(qv(i,k),qvmin)</a>
+  1405) <a name="l1405" style="background-color: #ffcccc">          ql(i,k) = max(ql(i,k),qlmin)</a>
+  1406) <a name="l1406" style="background-color: #ffcccc">          qi(i,k) = max(qi(i,k),qimin)</a>
+  1407) <a name="l1407" style="background-color: #ffcccc">       end do</a>
+  1408) <a name="l1408" style="background-color: #ffcccc">       ! Extra moisture used to satisfy 'qv(i,1)=qvmin' is proportionally </a>
+  1409) <a name="l1409" style="background-color: #ffcccc">       ! extracted from all the layers that has 'qv &gt; 2*qvmin'. This fully</a>
+  1410) <a name="l1410" style="background-color: #ffcccc">       ! preserves column moisture. </a>
+  1411) <a name="l1411" style="background-color: #ffcccc">       if( dqv .gt. 1.e-20_r8 ) then</a>
+  1412) <a name="l1412" style="background-color: #ffcccc">           sum = 0._r8</a>
+  1413) <a name="l1413" style="background-color: #ffcccc">           do k = 1, mkx</a>
+  1414) <a name="l1414" style="background-color: #ffcccc">              if( qv(i,k) .gt. 2._r8*qvmin ) sum = sum + qv(i,k)*dp(i,k)</a>
+  1415) <a name="l1415" style="background-color: #ffcccc">           enddo</a>
+  1416) <a name="l1416" style="background-color: #ffcccc">           aa = dqv*dp(i,1)/max(1.e-20_r8,sum)</a>
+  1417) <a name="l1417" style="background-color: #ffcccc">           if( aa .lt. 0.5_r8 ) then</a>
+  1418) <a name="l1418" style="background-color: #ffcccc">               do k = 1, mkx</a>
+  1419) <a name="l1419" style="background-color: #ffcccc">                  if( qv(i,k) .gt. 2._r8*qvmin ) then</a>
+  1420) <a name="l1420" style="background-color: #ffcccc">                      dum        = aa*qv(i,k)</a>
+  1421) <a name="l1421" style="background-color: #ffcccc">                      qv(i,k)    = qv(i,k) - dum</a>
+  1422) <a name="l1422" style="background-color: #ffcccc">                      qvten(i,k) = qvten(i,k) - dum/dt</a>
+  1423) <a name="l1423" style="background-color: #ffcccc">                  endif</a>
+  1424) <a name="l1424" style="background-color: #ffcccc">               enddo </a>
+  1425) <a name="l1425" style="background-color: #ffcccc">           else </a>
+  1426) <a name="l1426" style="background-color: #ffcccc">               write(iulog,*) 'Full positive_moisture is impossible in vertical_diffusion'</a>
+  1427) <a name="l1427" style="background-color: #ffcccc">           endif</a>
+  1428) <a name="l1428" style="background-color: #ffcccc">       endif </a>
+  1429) <a name="l1429" style="background-color: #ffcccc">    end do</a>
+  1430) <a name="l1430" style="background-color: #ffcccc">    return</a>
+  1431) <a name="l1431" style="background-color: #ffcccc"></a>
+  1432) <a name="l1432" style="background-color: #ffcccc">  end subroutine positive_moisture</a>
+  1433) <a name="l1433" style="background-color: #ffffff"></a>
+  1434) <a name="l1434" style="background-color: #ffffff">end module vertical_diffusion</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

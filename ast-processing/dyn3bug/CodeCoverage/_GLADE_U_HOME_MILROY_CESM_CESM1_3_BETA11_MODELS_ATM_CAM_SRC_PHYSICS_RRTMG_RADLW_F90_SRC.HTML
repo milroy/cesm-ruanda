@@ -1,0 +1,363 @@
+<html>
+<head>
+<title>Listing of radlw.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;radlw.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 60.46&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff"></a>
+     2) <a name="l2" style="background-color: #ffffff">module radlw</a>
+     3) <a name="l3" style="background-color: #ffffff">!----------------------------------------------------------------------- </a>
+     4) <a name="l4" style="background-color: #ffffff">! </a>
+     5) <a name="l5" style="background-color: #ffffff">! Purpose: Longwave radiation calculations.</a>
+     6) <a name="l6" style="background-color: #ffffff">!</a>
+     7) <a name="l7" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     8) <a name="l8" style="background-color: #ffffff">use shr_kind_mod,      only: r8 =&gt; shr_kind_r8</a>
+     9) <a name="l9" style="background-color: #ffffff">use ppgrid,            only: pcols, pver, pverp</a>
+    10) <a name="l10" style="background-color: #ffffff">use scamMod,           only: single_column, scm_crm_mode</a>
+    11) <a name="l11" style="background-color: #ffffff">use parrrtm,           only: nbndlw, ngptlw</a>
+    12) <a name="l12" style="background-color: #ffffff">use rrtmg_lw_init,     only: rrtmg_lw_ini</a>
+    13) <a name="l13" style="background-color: #ffffff">use rrtmg_lw_rad,      only: rrtmg_lw</a>
+    14) <a name="l14" style="background-color: #ffffff">use spmd_utils,        only: masterproc</a>
+    15) <a name="l15" style="background-color: #ffffff">use perf_mod,          only: t_startf, t_stopf</a>
+    16) <a name="l16" style="background-color: #ffffff">use cam_logfile,       only: iulog</a>
+    17) <a name="l17" style="background-color: #ffffff">use abortutils,        only: endrun</a>
+    18) <a name="l18" style="background-color: #ffffff">use radconstants,      only: nlwbands</a>
+    19) <a name="l19" style="background-color: #ffffff"></a>
+    20) <a name="l20" style="background-color: #ffffff">implicit none</a>
+    21) <a name="l21" style="background-color: #ffffff"></a>
+    22) <a name="l22" style="background-color: #ffffff">private</a>
+    23) <a name="l23" style="background-color: #ffffff">save</a>
+    24) <a name="l24" style="background-color: #ffffff"></a>
+    25) <a name="l25" style="background-color: #ffffff">! Public methods</a>
+    26) <a name="l26" style="background-color: #ffffff"></a>
+    27) <a name="l27" style="background-color: #ffffff">public ::&amp;</a>
+    28) <a name="l28" style="background-color: #ffffff">   radlw_init,   &amp;! initialize constants</a>
+    29) <a name="l29" style="background-color: #ffffff">   rad_rrtmg_lw   ! driver for longwave radiation code</a>
+    30) <a name="l30" style="background-color: #ffffff">   </a>
+    31) <a name="l31" style="background-color: #ffffff">! Private data</a>
+    32) <a name="l32" style="background-color: #ffffff">integer :: ntoplw    ! top level to solve for longwave cooling</a>
+    33) <a name="l33" style="background-color: #ffffff"></a>
+    34) <a name="l34" style="background-color: #ffffff">!===============================================================================</a>
+    35) <a name="l35" style="background-color: #ffffff">CONTAINS</a>
+    36) <a name="l36" style="background-color: #ffffff">!===============================================================================</a>
+    37) <a name="l37" style="background-color: #ffffff"></a>
+    38) <a name="l38" style="background-color: #ffffff">subroutine rad_rrtmg_lw(lchnk   ,ncol      ,rrtmg_levs,r_state,       &amp;</a>
+    39) <a name="l39" style="background-color: #ffffff">                        pmid    ,aer_lw_abs,cld       ,tauc_lw,       &amp;</a>
+    40) <a name="l40" style="background-color: #ffffff">                        qrl     ,qrlc      ,                          &amp;</a>
+    41) <a name="l41" style="background-color: #ffffff">                        flns    ,flnt      ,flnsc     ,flntc  ,flwds, &amp;</a>
+    42) <a name="l42" style="background-color: #ffffff">                        flut    ,flutc     ,fnl       ,fcnl   ,fldsc, &amp;</a>
+    43) <a name="l43" style="background-color: #ffffff">                        lu      ,ld        )</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    46) <a name="l46" style="background-color: #ffffff">   use cam_history,         only: outfld</a>
+    47) <a name="l47" style="background-color: #ffffff">   use mcica_subcol_gen_lw, only: mcica_subcol_lw</a>
+    48) <a name="l48" style="background-color: #ffffff">   use physconst,           only: cpair</a>
+    49) <a name="l49" style="background-color: #ffffff">   use rrtmg_state,         only: rrtmg_state_t</a>
+    50) <a name="l50" style="background-color: #ffffff"></a>
+    51) <a name="l51" style="background-color: #ffffff">!------------------------------Arguments--------------------------------</a>
+    52) <a name="l52" style="background-color: #ffffff">!</a>
+    53) <a name="l53" style="background-color: #ffffff">! Input arguments</a>
+    54) <a name="l54" style="background-color: #ffffff">!</a>
+    55) <a name="l55" style="background-color: #ffffff">   integer, intent(in) :: lchnk                 ! chunk identifier</a>
+    56) <a name="l56" style="background-color: #ffffff">   integer, intent(in) :: ncol                  ! number of atmospheric columns</a>
+    57) <a name="l57" style="background-color: #ffffff">   integer, intent(in) :: rrtmg_levs            ! number of levels rad is applied</a>
+    58) <a name="l58" style="background-color: #ffffff"></a>
+    59) <a name="l59" style="background-color: #ffffff">!</a>
+    60) <a name="l60" style="background-color: #ffffff">! Input arguments which are only passed to other routines</a>
+    61) <a name="l61" style="background-color: #ffffff">!</a>
+    62) <a name="l62" style="background-color: #ffffff">    type(rrtmg_state_t), intent(in) :: r_state</a>
+    63) <a name="l63" style="background-color: #ffffff"></a>
+    64) <a name="l64" style="background-color: #ffffff">   real(r8), intent(in) :: pmid(pcols,pver)     ! Level pressure (Pascals)</a>
+    65) <a name="l65" style="background-color: #ffffff"></a>
+    66) <a name="l66" style="background-color: #ffffff">   real(r8), intent(in) :: aer_lw_abs (pcols,pver,nbndlw) ! aerosol absorption optics depth (LW)</a>
+    67) <a name="l67" style="background-color: #ffffff"></a>
+    68) <a name="l68" style="background-color: #ffffff">   real(r8), intent(in) :: cld(pcols,pver)      ! Cloud cover</a>
+    69) <a name="l69" style="background-color: #ffffff">   real(r8), intent(in) :: tauc_lw(nbndlw,pcols,pver)   ! Cloud longwave optical depth by band</a>
+    70) <a name="l70" style="background-color: #ffffff"></a>
+    71) <a name="l71" style="background-color: #ffffff">!</a>
+    72) <a name="l72" style="background-color: #ffffff">! Output arguments</a>
+    73) <a name="l73" style="background-color: #ffffff">!</a>
+    74) <a name="l74" style="background-color: #ffffff">   real(r8), intent(out) :: qrl (pcols,pver)     ! Longwave heating rate</a>
+    75) <a name="l75" style="background-color: #ffffff">   real(r8), intent(out) :: qrlc(pcols,pver)     ! Clearsky longwave heating rate</a>
+    76) <a name="l76" style="background-color: #ffffff">   real(r8), intent(out) :: flns(pcols)          ! Surface cooling flux</a>
+    77) <a name="l77" style="background-color: #ffffff">   real(r8), intent(out) :: flnt(pcols)          ! Net outgoing flux</a>
+    78) <a name="l78" style="background-color: #ffffff">   real(r8), intent(out) :: flut(pcols)          ! Upward flux at top of model</a>
+    79) <a name="l79" style="background-color: #ffffff">   real(r8), intent(out) :: flnsc(pcols)         ! Clear sky surface cooing</a>
+    80) <a name="l80" style="background-color: #ffffff">   real(r8), intent(out) :: flntc(pcols)         ! Net clear sky outgoing flux</a>
+    81) <a name="l81" style="background-color: #ffffff">   real(r8), intent(out) :: flutc(pcols)         ! Upward clear-sky flux at top of model</a>
+    82) <a name="l82" style="background-color: #ffffff">   real(r8), intent(out) :: flwds(pcols)         ! Down longwave flux at surface</a>
+    83) <a name="l83" style="background-color: #ffffff">   real(r8), intent(out) :: fldsc(pcols)         ! Down longwave clear flux at surface</a>
+    84) <a name="l84" style="background-color: #ffffff">   real(r8), intent(out) :: fcnl(pcols,pverp)    ! clear sky net flux at interfaces</a>
+    85) <a name="l85" style="background-color: #ffffff">   real(r8), intent(out) :: fnl(pcols,pverp)     ! net flux at interfaces</a>
+    86) <a name="l86" style="background-color: #ffffff"></a>
+    87) <a name="l87" style="background-color: #ffffff">   real(r8), pointer, dimension(:,:,:) :: lu ! longwave spectral flux up</a>
+    88) <a name="l88" style="background-color: #ffffff">   real(r8), pointer, dimension(:,:,:) :: ld ! longwave spectral flux down</a>
+    89) <a name="l89" style="background-color: #ffffff">   </a>
+    90) <a name="l90" style="background-color: #ffffff">!</a>
+    91) <a name="l91" style="background-color: #ffffff">!---------------------------Local variables-----------------------------</a>
+    92) <a name="l92" style="background-color: #ffffff">!</a>
+    93) <a name="l93" style="background-color: #ffffff">   integer :: i, k, kk, nbnd         ! indices</a>
+    94) <a name="l94" style="background-color: #ffffff"></a>
+    95) <a name="l95" style="background-color: #ffffff">   real(r8) :: ful(pcols,pverp)     ! Total upwards longwave flux</a>
+    96) <a name="l96" style="background-color: #ffffff">   real(r8) :: fsul(pcols,pverp)    ! Clear sky upwards longwave flux</a>
+    97) <a name="l97" style="background-color: #ffffff">   real(r8) :: fdl(pcols,pverp)     ! Total downwards longwave flux</a>
+    98) <a name="l98" style="background-color: #ffffff">   real(r8) :: fsdl(pcols,pverp)    ! Clear sky downwards longwv flux</a>
+    99) <a name="l99" style="background-color: #ffffff"></a>
+   100) <a name="l100" style="background-color: #ffffff">   integer :: inflglw               ! Flag for cloud parameterization method</a>
+   101) <a name="l101" style="background-color: #ffffff">   integer :: iceflglw              ! Flag for ice cloud param method</a>
+   102) <a name="l102" style="background-color: #ffffff">   integer :: liqflglw              ! Flag for liquid cloud param method</a>
+   103) <a name="l103" style="background-color: #ffffff">   integer :: icld                  ! Flag for cloud overlap method</a>
+   104) <a name="l104" style="background-color: #ffffff">                                 ! 0=clear, 1=random, 2=maximum/random, 3=maximum</a>
+   105) <a name="l105" style="background-color: #ffffff"></a>
+   106) <a name="l106" style="background-color: #ffffff">   real(r8) :: tsfc(pcols)          ! surface temperature</a>
+   107) <a name="l107" style="background-color: #ffffff">   real(r8) :: emis(pcols,nbndlw)   ! surface emissivity</a>
+   108) <a name="l108" style="background-color: #ffffff"></a>
+   109) <a name="l109" style="background-color: #ffffff">   real(r8) :: taua_lw(pcols,rrtmg_levs-1,nbndlw)     ! aerosol optical depth by band</a>
+   110) <a name="l110" style="background-color: #ffffff"></a>
+   111) <a name="l111" style="background-color: #ffffff">   real(r8), parameter :: dps = 1._r8/86400._r8 ! Inverse of seconds per day</a>
+   112) <a name="l112" style="background-color: #ffffff"></a>
+   113) <a name="l113" style="background-color: #ffffff">   ! Cloud arrays for McICA </a>
+   114) <a name="l114" style="background-color: #ffffff">   integer, parameter :: nsubclw = ngptlw       ! rrtmg_lw g-point (quadrature point) dimension</a>
+   115) <a name="l115" style="background-color: #ffffff">   integer :: permuteseed                       ! permute seed for sub-column generator</a>
+   116) <a name="l116" style="background-color: #ffffff"></a>
+   117) <a name="l117" style="background-color: #ffffff">   real(r8) :: cicewp(pcols,rrtmg_levs-1)   ! in-cloud cloud ice water path</a>
+   118) <a name="l118" style="background-color: #ffffff">   real(r8) :: cliqwp(pcols,rrtmg_levs-1)   ! in-cloud cloud liquid water path</a>
+   119) <a name="l119" style="background-color: #ffffff">   real(r8) :: rei(pcols,rrtmg_levs-1)      ! ice particle effective radius (microns)</a>
+   120) <a name="l120" style="background-color: #ffffff">   real(r8) :: rel(pcols,rrtmg_levs-1)      ! liquid particle radius (micron)</a>
+   121) <a name="l121" style="background-color: #ffffff"></a>
+   122) <a name="l122" style="background-color: #ffffff">   real(r8) :: cld_stolw(nsubclw, pcols, rrtmg_levs-1)     ! cloud fraction (mcica)</a>
+   123) <a name="l123" style="background-color: #ffffff">   real(r8) :: cicewp_stolw(nsubclw, pcols, rrtmg_levs-1)  ! cloud ice water path (mcica)</a>
+   124) <a name="l124" style="background-color: #ffffff">   real(r8) :: cliqwp_stolw(nsubclw, pcols, rrtmg_levs-1)  ! cloud liquid water path (mcica)</a>
+   125) <a name="l125" style="background-color: #ffffff">   real(r8) :: rei_stolw(pcols,rrtmg_levs-1)               ! ice particle size (mcica)</a>
+   126) <a name="l126" style="background-color: #ffffff">   real(r8) :: rel_stolw(pcols,rrtmg_levs-1)               ! liquid particle size (mcica)</a>
+   127) <a name="l127" style="background-color: #ffffff">   real(r8) :: tauc_stolw(nsubclw, pcols, rrtmg_levs-1)    ! cloud optical depth (mcica - optional)</a>
+   128) <a name="l128" style="background-color: #ffffff"></a>
+   129) <a name="l129" style="background-color: #ffffff">   ! Includes extra layer above model top</a>
+   130) <a name="l130" style="background-color: #ffffff">   real(r8) :: uflx(pcols,rrtmg_levs+1)  ! Total upwards longwave flux</a>
+   131) <a name="l131" style="background-color: #ffffff">   real(r8) :: uflxc(pcols,rrtmg_levs+1) ! Clear sky upwards longwave flux</a>
+   132) <a name="l132" style="background-color: #ffffff">   real(r8) :: dflx(pcols,rrtmg_levs+1)  ! Total downwards longwave flux</a>
+   133) <a name="l133" style="background-color: #ffffff">   real(r8) :: dflxc(pcols,rrtmg_levs+1) ! Clear sky downwards longwv flux</a>
+   134) <a name="l134" style="background-color: #ffffff">   real(r8) :: hr(pcols,rrtmg_levs)      ! Longwave heating rate (K/d)</a>
+   135) <a name="l135" style="background-color: #ffffff">   real(r8) :: hrc(pcols,rrtmg_levs)     ! Clear sky longwave heating rate (K/d)</a>
+   136) <a name="l136" style="background-color: #ffffff">   real(r8) lwuflxs(nbndlw,pcols,pverp+1)  ! Longwave spectral flux up</a>
+   137) <a name="l137" style="background-color: #ffffff">   real(r8) lwdflxs(nbndlw,pcols,pverp+1)  ! Longwave spectral flux down</a>
+   138) <a name="l138" style="background-color: #ffffff">   !-----------------------------------------------------------------------</a>
+   139) <a name="l139" style="background-color: #ffffff"></a>
+   140) <a name="l140" style="background-color: #ffffff">   ! mji/rrtmg</a>
+   141) <a name="l141" style="background-color: #ffffff"></a>
+   142) <a name="l142" style="background-color: #ffffff">   ! Calculate cloud optical properties here if using CAM method, or if using one of the</a>
+   143) <a name="l143" style="background-color: #ffffff">   ! methods in RRTMG_LW, then pass in cloud physical properties and zero out cloud optical </a>
+   144) <a name="l144" style="background-color: #ffffff">   ! properties here</a>
+   145) <a name="l145" style="background-color: #ffffff">   </a>
+   146) <a name="l146" style="background-color: #ffffff">   ! Zero optional cloud optical depth input array tauc_lw, </a>
+   147) <a name="l147" style="background-color: #ffffff">   ! if inputting cloud physical properties into RRTMG_LW</a>
+   148) <a name="l148" style="background-color: #ffffff">   !          tauc_lw(:,:,:) = 0.</a>
+   149) <a name="l149" style="background-color: #ffffff">   ! Or, pass in CAM cloud longwave optical depth to RRTMG_LW</a>
+   150) <a name="l150" style="background-color: #ffffff">   ! do nbnd = 1, nbndlw</a>
+   151) <a name="l151" style="background-color: #ffffff">   !    tauc_lw(nbnd,:ncol,:pver) = cldtau(:ncol,:pver)</a>
+   152) <a name="l152" style="background-color: #ffffff">   ! end do</a>
+   153) <a name="l153" style="background-color: #ffffff"></a>
+   154) <a name="l154" style="background-color: #ffffff">   ! Call mcica sub-column generator for RRTMG_LW</a>
+   155) <a name="l155" style="background-color: #ffffff"></a>
+   156) <a name="l156" style="background-color: #ffffff">   ! Call sub-column generator for McICA in radiation</a>
+   157) <a name="l157" style="background-color: #ffffff">   call t_startf('mcica_subcol_lw')</a>
+   158) <a name="l158" style="background-color: #ffffff"></a>
+   159) <a name="l159" style="background-color: #ffffff">   ! Select cloud overlap approach (1=random, 2=maximum-random, 3=maximum)</a>
+   160) <a name="l160" style="background-color: #ffffff">   icld = 2</a>
+   161) <a name="l161" style="background-color: #ffffff">   ! Set permute seed (must be offset between LW and SW by at least 140 to insure </a>
+   162) <a name="l162" style="background-color: #ffffff">   ! effective randomization)</a>
+   163) <a name="l163" style="background-color: #ffffff">   permuteseed = 150</a>
+   164) <a name="l164" style="background-color: #ffffff"></a>
+   165) <a name="l165" style="background-color: #ffffff">   ! These fields are no longer supplied by CAM.</a>
+   166) <a name="l166" style="background-color: #ffffff">   cicewp = 0.0_r8</a>
+   167) <a name="l167" style="background-color: #ffffff">   cliqwp = 0.0_r8</a>
+   168) <a name="l168" style="background-color: #ffffff">   rei = 0.0_r8</a>
+   169) <a name="l169" style="background-color: #ffffff">   rel = 0.0_r8</a>
+   170) <a name="l170" style="background-color: #ffffff"></a>
+   171) <a name="l171" style="background-color: #ffffff">   call mcica_subcol_lw(lchnk, ncol, rrtmg_levs-1, icld, permuteseed, pmid(:, pverp-rrtmg_levs+1:pverp-1), &amp;</a>
+   172) <a name="l172" style="background-color: #ffffff">      cld(:, pverp-rrtmg_levs+1:pverp-1), cicewp, cliqwp, rei, rel, tauc_lw(:, :ncol, pverp-rrtmg_levs+1:pverp-1), &amp;</a>
+   173) <a name="l173" style="background-color: #ffffff">      cld_stolw, cicewp_stolw, cliqwp_stolw, rei_stolw, rel_stolw, tauc_stolw)</a>
+   174) <a name="l174" style="background-color: #ffffff"></a>
+   175) <a name="l175" style="background-color: #ffffff">   call t_stopf('mcica_subcol_lw')</a>
+   176) <a name="l176" style="background-color: #ffffff"></a>
+   177) <a name="l177" style="background-color: #ffffff">   </a>
+   178) <a name="l178" style="background-color: #ffffff">   call t_startf('rrtmg_lw')</a>
+   179) <a name="l179" style="background-color: #ffffff"></a>
+   180) <a name="l180" style="background-color: #ffffff">   !</a>
+   181) <a name="l181" style="background-color: #ffffff">   ! Call RRTMG_LW model</a>
+   182) <a name="l182" style="background-color: #ffffff">   !</a>
+   183) <a name="l183" style="background-color: #ffffff">   ! Set input flags for cloud parameterizations</a>
+   184) <a name="l184" style="background-color: #ffffff">   ! Use separate specification of ice and liquid cloud optical depth.</a>
+   185) <a name="l185" style="background-color: #ffffff">   ! Use either Ebert and Curry ice parameterization (iceflglw = 0 or 1), </a>
+   186) <a name="l186" style="background-color: #ffffff">   ! or use Key (Streamer) approach (iceflglw = 2), or use Fu method</a>
+   187) <a name="l187" style="background-color: #ffffff">   ! (iceflglw = 3), and Hu/Stamnes for liquid (liqflglw = 1).</a>
+   188) <a name="l188" style="background-color: #ffffff">   ! For use in Fu method (iceflglw = 3), rei is converted in RRTMG_LW</a>
+   189) <a name="l189" style="background-color: #ffffff">   ! from effective radius to generalized effective size using the</a>
+   190) <a name="l190" style="background-color: #ffffff">   ! conversion of D. Mitchell, JAS, 2002.  For ice particles outside</a>
+   191) <a name="l191" style="background-color: #ffffff">   ! the effective range of either the Key or Fu approaches, the </a>
+   192) <a name="l192" style="background-color: #ffffff">   ! Ebert and Curry method is applied. </a>
+   193) <a name="l193" style="background-color: #ffffff"></a>
+   194) <a name="l194" style="background-color: #ffffff">   ! Input CAM cloud optical depth directly</a>
+   195) <a name="l195" style="background-color: #ffffff">   inflglw = 0</a>
+   196) <a name="l196" style="background-color: #ffffff">   iceflglw = 0</a>
+   197) <a name="l197" style="background-color: #ffffff">   liqflglw = 0</a>
+   198) <a name="l198" style="background-color: #ffffff">   ! Use E&amp;C approach for ice to mimic CAM3</a>
+   199) <a name="l199" style="background-color: #ffffff">   !   inflglw = 2</a>
+   200) <a name="l200" style="background-color: #ffffff">   !   iceflglw = 1</a>
+   201) <a name="l201" style="background-color: #ffffff">   !   liqflglw = 1</a>
+   202) <a name="l202" style="background-color: #ffffff">   ! Use merged Fu and E&amp;C params for ice</a>
+   203) <a name="l203" style="background-color: #ffffff">   !   inflglw = 2</a>
+   204) <a name="l204" style="background-color: #ffffff">   !   iceflglw = 3</a>
+   205) <a name="l205" style="background-color: #ffffff">   !   liqflglw = 1</a>
+   206) <a name="l206" style="background-color: #ffffff"></a>
+   207) <a name="l207" style="background-color: #ffffff">   ! Convert incoming water amounts from specific humidity to vmr as needed;</a>
+   208) <a name="l208" style="background-color: #ffffff">   ! Convert other incoming molecular amounts from mmr to vmr as needed;</a>
+   209) <a name="l209" style="background-color: #ffffff">   ! Convert pressures from Pa to hPa;</a>
+   210) <a name="l210" style="background-color: #ffffff">   ! Set surface emissivity to 1.0 here, this is treated in land surface model;</a>
+   211) <a name="l211" style="background-color: #ffffff">   ! Set surface temperature</a>
+   212) <a name="l212" style="background-color: #ffffff">   ! Set aerosol optical depth to zero for now</a>
+   213) <a name="l213" style="background-color: #ffffff"></a>
+   214) <a name="l214" style="background-color: #ffffff">   emis(:ncol,:nbndlw) = 1._r8</a>
+   215) <a name="l215" style="background-color: #ffffff">   tsfc(:ncol) = r_state%tlev(:ncol,rrtmg_levs+1)</a>
+   216) <a name="l216" style="background-color: #ffffff">   taua_lw(:ncol, 1:rrtmg_levs-1, :nbndlw) = aer_lw_abs(:ncol,pverp-rrtmg_levs+1:pverp-1,:nbndlw)</a>
+   217) <a name="l217" style="background-color: #ffffff"></a>
+   218) <a name="l218" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">associated(lu)) </a><a style="background-color: #ffff99">lu(1:ncol,:,:) = 0.0_r8</a>
+   219) <a name="l219" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">associated(ld)) </a><a style="background-color: #ffff99">ld(1:ncol,:,:) = 0.0_r8</a>
+   220) <a name="l220" style="background-color: #ffff99"></a>
+   221) <a name="l221" style="background-color: #ffff99">   call </a><a style="background-color: #ffffff">rrtmg_lw(lchnk  ,ncol ,rrtmg_levs    ,icld    ,                 &amp;</a>
+   222) <a name="l222" style="background-color: #ffffff">        r_state%pmidmb  ,r_state%pintmb  ,r_state%tlay    ,r_state%tlev    ,tsfc    ,r_state%h2ovmr, &amp;</a>
+   223) <a name="l223" style="background-color: #ffffff">        r_state%o3vmr   ,r_state%co2vmr  ,r_state%ch4vmr  ,r_state%o2vmr   ,r_state%n2ovmr  ,r_state%cfc11vmr,r_state%cfc12vmr, &amp;</a>
+   224) <a name="l224" style="background-color: #ffffff">        r_state%cfc22vmr,r_state%ccl4vmr ,emis    ,inflglw ,iceflglw,liqflglw, &amp;</a>
+   225) <a name="l225" style="background-color: #ffffff">        cld_stolw,tauc_stolw,cicewp_stolw,cliqwp_stolw ,rei, rel, &amp;</a>
+   226) <a name="l226" style="background-color: #ffffff">        taua_lw, &amp;</a>
+   227) <a name="l227" style="background-color: #ffffff">        uflx    ,dflx    ,hr      ,uflxc   ,dflxc   ,hrc, &amp;</a>
+   228) <a name="l228" style="background-color: #ffffff">        lwuflxs, lwdflxs)</a>
+   229) <a name="l229" style="background-color: #ffffff"></a>
+   230) <a name="l230" style="background-color: #ffffff">   !</a>
+   231) <a name="l231" style="background-color: #ffffff">   !----------------------------------------------------------------------</a>
+   232) <a name="l232" style="background-color: #ffffff">   ! All longitudes: store history tape quantities</a>
+   233) <a name="l233" style="background-color: #ffffff">   ! Flux units are in W/m2 on output from rrtmg_lw and contain output for</a>
+   234) <a name="l234" style="background-color: #ffffff">   ! extra layer above model top with vertical indexing from bottom to top.</a>
+   235) <a name="l235" style="background-color: #ffffff">   ! Heating units are in K/d on output from RRTMG and contain output for</a>
+   236) <a name="l236" style="background-color: #ffffff">   ! extra layer above model top with vertical indexing from bottom to top.</a>
+   237) <a name="l237" style="background-color: #ffffff">   ! Heating units are converted to J/kg/s below for use in CAM. </a>
+   238) <a name="l238" style="background-color: #ffffff"></a>
+   239) <a name="l239" style="background-color: #ffffff">   flwds(:ncol) = dflx (:ncol,1)</a>
+   240) <a name="l240" style="background-color: #ffffff">   fldsc(:ncol) = dflxc(:ncol,1)</a>
+   241) <a name="l241" style="background-color: #ffffff">   flns(:ncol)  = uflx (:ncol,1) - dflx (:ncol,1)</a>
+   242) <a name="l242" style="background-color: #ffffff">   flnsc(:ncol) = uflxc(:ncol,1) - dflxc(:ncol,1)</a>
+   243) <a name="l243" style="background-color: #ffffff">   flnt(:ncol)  = uflx (:ncol,rrtmg_levs) - dflx (:ncol,rrtmg_levs)</a>
+   244) <a name="l244" style="background-color: #ffffff">   flntc(:ncol) = uflxc(:ncol,rrtmg_levs) - dflxc(:ncol,rrtmg_levs)</a>
+   245) <a name="l245" style="background-color: #ffffff">   flut(:ncol)  = uflx (:ncol,rrtmg_levs)</a>
+   246) <a name="l246" style="background-color: #ffffff">   flutc(:ncol) = uflxc(:ncol,rrtmg_levs)</a>
+   247) <a name="l247" style="background-color: #ffffff"></a>
+   248) <a name="l248" style="background-color: #ffffff">   !</a>
+   249) <a name="l249" style="background-color: #ffffff">   ! Reverse vertical indexing here for CAM arrays to go from top to bottom.</a>
+   250) <a name="l250" style="background-color: #ffffff">   !</a>
+   251) <a name="l251" style="background-color: #ffffff">   ful = 0._r8</a>
+   252) <a name="l252" style="background-color: #ffffff">   fdl = 0._r8</a>
+   253) <a name="l253" style="background-color: #ffffff">   fsul = 0._r8</a>
+   254) <a name="l254" style="background-color: #ffffff">   fsdl = 0._r8</a>
+   255) <a name="l255" style="background-color: #ffffff">   ful (:ncol,pverp-rrtmg_levs+1:pverp)= uflx(:ncol,rrtmg_levs:1:-1)</a>
+   256) <a name="l256" style="background-color: #ffffff">   fdl (:ncol,pverp-rrtmg_levs+1:pverp)= dflx(:ncol,rrtmg_levs:1:-1)</a>
+   257) <a name="l257" style="background-color: #ffffff">   fsul(:ncol,pverp-rrtmg_levs+1:pverp)=uflxc(:ncol,rrtmg_levs:1:-1)</a>
+   258) <a name="l258" style="background-color: #ffffff">   fsdl(:ncol,pverp-rrtmg_levs+1:pverp)=dflxc(:ncol,rrtmg_levs:1:-1)</a>
+   259) <a name="l259" style="background-color: #ffffff"></a>
+   260) <a name="l260" style="background-color: #ffffff">   if (</a><a style="background-color: #ffff99">single_column.and.scm_crm_mode) then</a>
+   261) <a name="l261" style="background-color: #ffff99">      call outfld('FUL     ',ful,pcols,lchnk)</a>
+   262) <a name="l262" style="background-color: #ffff99">      call outfld('FDL     ',fdl,pcols,lchnk)</a>
+   263) <a name="l263" style="background-color: #ffff99">      call outfld('FULC    ',fsul,pcols,lchnk)</a>
+   264) <a name="l264" style="background-color: #ffff99">      call outfld('FDLC    ',fsdl,pcols,lchnk)</a>
+   265) <a name="l265" style="background-color: #ffff99">   endif</a>
+   266) <a name="l266" style="background-color: #ffff99">   </a>
+   267) <a name="l267" style="background-color: #ffffff">   fnl(:ncol,:) = ful(:ncol,:) - fdl(:ncol,:)</a>
+   268) <a name="l268" style="background-color: #ffffff">   ! mji/ cam excluded this?</a>
+   269) <a name="l269" style="background-color: #ffffff">   fcnl(:ncol,:) = fsul(:ncol,:) - fsdl(:ncol,:)</a>
+   270) <a name="l270" style="background-color: #ffffff"></a>
+   271) <a name="l271" style="background-color: #ffffff">   ! Pass longwave heating to CAM arrays and convert from K/d to J/kg/s</a>
+   272) <a name="l272" style="background-color: #ffffff">   qrl = 0._r8</a>
+   273) <a name="l273" style="background-color: #ffffff">   qrlc = 0._r8</a>
+   274) <a name="l274" style="background-color: #ffffff">   qrl (:ncol,pverp-rrtmg_levs+1:pver)=hr (:ncol,rrtmg_levs-1:1:-1)*cpair*dps</a>
+   275) <a name="l275" style="background-color: #ffffff">   qrlc(:ncol,pverp-rrtmg_levs+1:pver)=hrc(:ncol,rrtmg_levs-1:1:-1)*cpair*dps</a>
+   276) <a name="l276" style="background-color: #ffffff"></a>
+   277) <a name="l277" style="background-color: #ffffff">   ! Return 0 above solution domain</a>
+   278) <a name="l278" style="background-color: #ffffff">   if ( ntoplw &gt; 1 )then</a>
+   279) <a name="l279" style="background-color: #ffff99">      qrl(:ncol,:ntoplw-1) = 0._r8</a>
+   280) <a name="l280" style="background-color: #ffff99">      qrlc(:ncol,:ntoplw-1) = 0._r8</a>
+   281) <a name="l281" style="background-color: #ffff99">   end if</a>
+   282) <a name="l282" style="background-color: #ffff99"></a>
+   283) <a name="l283" style="background-color: #ffff99">   ! Pass spectral fluxes, reverse layering</a>
+   284) <a name="l284" style="background-color: #ffff99">   ! order=(/3,1,2/) maps the first index of lwuflxs to the third index of lu.</a>
+   285) <a name="l285" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">associated(lu)) then</a>
+   286) <a name="l286" style="background-color: #ffff99">      lu(:ncol,pverp-rrtmg_levs+1:pverp,:) = reshape(lwuflxs(:,:ncol,rrtmg_levs:1:-1), &amp;</a>
+   287) <a name="l287" style="background-color: #ffff99">           (/ncol,rrtmg_levs,nbndlw/), order=(/3,1,2/))</a>
+   288) <a name="l288" style="background-color: #ffff99">   end if</a>
+   289) <a name="l289" style="background-color: #ffff99">   </a>
+   290) <a name="l290" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">associated(ld)) then</a>
+   291) <a name="l291" style="background-color: #ffff99">      ld(:ncol,pverp-rrtmg_levs+1:pverp,:) = reshape(lwdflxs(:,:ncol,rrtmg_levs:1:-1), &amp;</a>
+   292) <a name="l292" style="background-color: #ffff99">           (/ncol,rrtmg_levs,nbndlw/), order=(/3,1,2/))</a>
+   293) <a name="l293" style="background-color: #ffff99">   end if</a>
+   294) <a name="l294" style="background-color: #ffff99">   </a>
+   295) <a name="l295" style="background-color: #ffff99">   call </a><a style="background-color: #ffffff">t_stopf('rrtmg_lw')</a>
+   296) <a name="l296" style="background-color: #ffffff"></a>
+   297) <a name="l297" style="background-color: #ffffff">end subroutine rad_rrtmg_lw</a>
+   298) <a name="l298" style="background-color: #ffffff"></a>
+   299) <a name="l299" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   300) <a name="l300" style="background-color: #ffffff"></a>
+   301) <a name="l301" style="background-color: #ffffff">subroutine radlw_init()</a>
+   302) <a name="l302" style="background-color: #ffffff">!----------------------------------------------------------------------- </a>
+   303) <a name="l303" style="background-color: #ffffff">! </a>
+   304) <a name="l304" style="background-color: #ffffff">! Purpose: </a>
+   305) <a name="l305" style="background-color: #ffffff">! Initialize various constants for radiation scheme.</a>
+   306) <a name="l306" style="background-color: #ffffff">!</a>
+   307) <a name="l307" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   308) <a name="l308" style="background-color: #ffffff"></a>
+   309) <a name="l309" style="background-color: #ffffff">   use ref_pres, only : pref_mid</a>
+   310) <a name="l310" style="background-color: #ffffff"></a>
+   311) <a name="l311" style="background-color: #ffffff">   integer :: k</a>
+   312) <a name="l312" style="background-color: #ffffff"></a>
+   313) <a name="l313" style="background-color: #ffffff">   ! If the top model level is above ~90 km (0.1 Pa), set the top level to compute</a>
+   314) <a name="l314" style="background-color: #ffffff">   ! longwave cooling to about 80 km (1 Pa)</a>
+   315) <a name="l315" style="background-color: #ffffff">   if (pref_mid(1) .lt. 0.1_r8) then</a>
+   316) <a name="l316" style="background-color: #ffff99">      do k = 1, pver</a>
+   317) <a name="l317" style="background-color: #ffff99">         if (pref_mid(k) .lt. 1._r8) ntoplw  = k</a>
+   318) <a name="l318" style="background-color: #ffff99">      end do</a>
+   319) <a name="l319" style="background-color: #ffff99">   else</a>
+   320) <a name="l320" style="background-color: #ffffff">      ntoplw  = 1</a>
+   321) <a name="l321" style="background-color: #ffffff">   end if</a>
+   322) <a name="l322" style="background-color: #ffffff">   if (masterproc) then</a>
+   323) <a name="l323" style="background-color: #ffffff">      write(iulog,*) 'radlw_init: ntoplw =',ntoplw</a>
+   324) <a name="l324" style="background-color: #ffffff">   endif</a>
+   325) <a name="l325" style="background-color: #ffffff"></a>
+   326) <a name="l326" style="background-color: #ffffff">   call rrtmg_lw_ini</a>
+   327) <a name="l327" style="background-color: #ffffff"></a>
+   328) <a name="l328" style="background-color: #ffffff">end subroutine radlw_init</a>
+   329) <a name="l329" style="background-color: #ffffff"></a>
+   330) <a name="l330" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   331) <a name="l331" style="background-color: #ffffff"></a>
+   332) <a name="l332" style="background-color: #ffffff">end module radlw</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

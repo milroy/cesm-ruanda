@@ -1,0 +1,750 @@
+<html>
+<head>
+<title>Listing of m_GlobalToLocal.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;m_GlobalToLocal.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 33.33&#160;%func&#160;&#160;&#160;&#160; 43.32&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+     2) <a name="l2" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+     3) <a name="l3" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">! CVS $Id$</a>
+     5) <a name="l5" style="background-color: #ffffff">! CVS $Name$ </a>
+     6) <a name="l6" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !MODULE: m_GlobalToLocal - Global to Local Index Translation</a>
+     9) <a name="l9" style="background-color: #ffffff">!</a>
+    10) <a name="l10" style="background-color: #ffffff">! !DESCRIPTION:</a>
+    11) <a name="l11" style="background-color: #ffffff">! This module contains routines for translating global array indices </a>
+    12) <a name="l12" style="background-color: #ffffff">! into their local counterparts (that is, the indices into the local </a>
+    13) <a name="l13" style="background-color: #ffffff">! data structure holding a given process' chunk of a distributed array).</a>
+    14) <a name="l14" style="background-color: #ffffff">! The MCT domain decomposition descriptors {\tt GlobalMap} and </a>
+    15) <a name="l15" style="background-color: #ffffff">! {\tt GlobalSegMap} are both supported.   Indices can be translated </a>
+    16) <a name="l16" style="background-color: #ffffff">! one-at-a-time using the {\tt GlobalToLocalIndex} routine or many </a>
+    17) <a name="l17" style="background-color: #ffffff">! at once using the {\tt GlobalToLocalIndices} routine.</a>
+    18) <a name="l18" style="background-color: #ffffff">!</a>
+    19) <a name="l19" style="background-color: #ffffff">! This module also provides facilities for setting the local row and </a>
+    20) <a name="l20" style="background-color: #ffffff">! column indices for a {\tt SparseMatrix} through the </a>
+    21) <a name="l21" style="background-color: #ffffff">! {\tt GlobalToLocalMatrix} routines.</a>
+    22) <a name="l22" style="background-color: #ffffff">!</a>
+    23) <a name="l23" style="background-color: #ffffff">! !INTERFACE:</a>
+    24) <a name="l24" style="background-color: #ffffff"></a>
+    25) <a name="l25" style="background-color: #ffffff"> module m_GlobalToLocal</a>
+    26) <a name="l26" style="background-color: #ffffff"></a>
+    27) <a name="l27" style="background-color: #ffffff">! !USES:</a>
+    28) <a name="l28" style="background-color: #ffffff">! No external modules are used in the declaration section of this module.</a>
+    29) <a name="l29" style="background-color: #ffffff"></a>
+    30) <a name="l30" style="background-color: #ffffff">      implicit none</a>
+    31) <a name="l31" style="background-color: #ffffff"></a>
+    32) <a name="l32" style="background-color: #ffffff">      private   ! except</a>
+    33) <a name="l33" style="background-color: #ffffff"></a>
+    34) <a name="l34" style="background-color: #ffffff">! !PUBLIC MEMBER FUNCTIONS:</a>
+    35) <a name="l35" style="background-color: #ffffff"></a>
+    36) <a name="l36" style="background-color: #ffffff">      public :: GlobalToLocalIndex   ! Translate Global to Local index</a>
+    37) <a name="l37" style="background-color: #ffffff">                                     ! (i.e. recover local index for a</a>
+    38) <a name="l38" style="background-color: #ffffff">                                     ! point from its global index). </a>
+    39) <a name="l39" style="background-color: #ffffff"></a>
+    40) <a name="l40" style="background-color: #ffffff">      public :: GlobalToLocalIndices ! Translate Global to Local indices</a>
+    41) <a name="l41" style="background-color: #ffffff">                                     ! (i.e. recover local starts/lengths </a>
+    42) <a name="l42" style="background-color: #ffffff">                                     ! of distributed data segments).</a>
+    43) <a name="l43" style="background-color: #ffffff">                                     </a>
+    44) <a name="l44" style="background-color: #ffffff">      public :: GlobalToLocalMatrix  ! Re-indexing of row or column</a>
+    45) <a name="l45" style="background-color: #ffffff">                                     ! indices for a SparseMatrix</a>
+    46) <a name="l46" style="background-color: #ffffff"></a>
+    47) <a name="l47" style="background-color: #ffffff">    interface GlobalToLocalIndices ; module procedure   &amp;</a>
+    48) <a name="l48" style="background-color: #ffffff">       GlobalSegMapToIndices_,  &amp;   ! local arrays of starts/lengths</a>
+    49) <a name="l49" style="background-color: #ffffff">       GlobalSegMapToNavigator_, &amp;  ! return local indices as Navigator</a>
+    50) <a name="l50" style="background-color: #ffffff">       GlobalSegMapToIndexArr_</a>
+    51) <a name="l51" style="background-color: #ffffff">    end interface</a>
+    52) <a name="l52" style="background-color: #ffffff"></a>
+    53) <a name="l53" style="background-color: #ffffff">    interface GlobalToLocalIndex ; module procedure &amp;</a>
+    54) <a name="l54" style="background-color: #ffffff">       GlobalSegMapToIndex_, &amp;</a>
+    55) <a name="l55" style="background-color: #ffffff">       GlobalMapToIndex_</a>
+    56) <a name="l56" style="background-color: #ffffff">    end interface</a>
+    57) <a name="l57" style="background-color: #ffffff"></a>
+    58) <a name="l58" style="background-color: #ffffff">    interface GlobalToLocalMatrix ; module procedure &amp;</a>
+    59) <a name="l59" style="background-color: #ffffff">       GlobalSegMapToLocalMatrix_</a>
+    60) <a name="l60" style="background-color: #ffffff">    end interface</a>
+    61) <a name="l61" style="background-color: #ffffff"></a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">! !SEE ALSO:</a>
+    64) <a name="l64" style="background-color: #ffffff">!</a>
+    65) <a name="l65" style="background-color: #ffffff">! The MCT modules {\tt m\_GlobalMap} and {m\_GlobalSegMap} for more </a>
+    66) <a name="l66" style="background-color: #ffffff">! information regarding MCT's domain decomposition descriptors.</a>
+    67) <a name="l67" style="background-color: #ffffff">!</a>
+    68) <a name="l68" style="background-color: #ffffff">! The MCT module {\tt m\_SparseMatrix} for more information regarding </a>
+    69) <a name="l69" style="background-color: #ffffff">! the {\tt SparseMatrix} datatype.</a>
+    70) <a name="l70" style="background-color: #ffffff">!</a>
+    71) <a name="l71" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    72) <a name="l72" style="background-color: #ffffff">!  2Feb01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - initial prototype</a>
+    73) <a name="l73" style="background-color: #ffffff">!EOP ___________________________________________________________________</a>
+    74) <a name="l74" style="background-color: #ffffff"></a>
+    75) <a name="l75" style="background-color: #ffffff">  character(len=*),parameter :: myname='MCT::m_GlobalToLocal'</a>
+    76) <a name="l76" style="background-color: #ffffff"></a>
+    77) <a name="l77" style="background-color: #ffffff"> contains</a>
+    78) <a name="l78" style="background-color: #ffffff"></a>
+    79) <a name="l79" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+    80) <a name="l80" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+    81) <a name="l81" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+    82) <a name="l82" style="background-color: #ffffff">!</a>
+    83) <a name="l83" style="background-color: #ffffff">! !IROUTINE: GlobalSegMapToIndices_ - Return _local_ indices in arrays.</a>
+    84) <a name="l84" style="background-color: #ffffff">!</a>
+    85) <a name="l85" style="background-color: #ffffff">! !DESCRIPTION:  {\tt GlobalSegMapToIndices\_()} takes a user-supplied</a>
+    86) <a name="l86" style="background-color: #ffffff">! {\tt GlobalSegMap} data type {\tt GSMap}, which desribes a decomposition </a>
+    87) <a name="l87" style="background-color: #ffffff">! on the input MPI communicator corresponding to the Fortran {\tt INTEGER} </a>
+    88) <a name="l88" style="background-color: #ffffff">! handle {\tt comm} to translate the global directory of segment locations </a>
+    89) <a name="l89" style="background-color: #ffffff">! into local indices for referencing the on-pe storage of the mapped </a>
+    90) <a name="l90" style="background-color: #ffffff">! distributed data.</a>
+    91) <a name="l91" style="background-color: #ffffff">!</a>
+    92) <a name="l92" style="background-color: #ffffff">! {\bf N.B.:}  This routine returns two allocated arrays---{\tt start(:)} </a>
+    93) <a name="l93" style="background-color: #ffffff">! and {\tt length(:)}---which must be deallocated once the user no longer</a>
+    94) <a name="l94" style="background-color: #ffffff">! needs them.  Failure to do this will create a memory leak.</a>
+    95) <a name="l95" style="background-color: #ffffff">!</a>
+    96) <a name="l96" style="background-color: #ffffff">! !INTERFACE:</a>
+    97) <a name="l97" style="background-color: #ffffff"></a>
+    98) <a name="l98" style="background-color: #ffffff"> subroutine </a><a style="background-color: #ffcccc">GlobalSegMapToIndices_(GSMap, comm, start, length)</a>
+    99) <a name="l99" style="background-color: #ffcccc"></a>
+   100) <a name="l100" style="background-color: #ffcccc">!</a>
+   101) <a name="l101" style="background-color: #ffcccc">! !USES:</a>
+   102) <a name="l102" style="background-color: #ffcccc">!</a>
+   103) <a name="l103" style="background-color: #ffcccc">      use m_mpif90</a>
+   104) <a name="l104" style="background-color: #ffcccc">      use m_die,          only : MP_perr_die, die, warn</a>
+   105) <a name="l105" style="background-color: #ffcccc">      use m_GlobalSegMap, only : GlobalSegMap</a>
+   106) <a name="l106" style="background-color: #ffcccc">      use m_GlobalSegMap, only : GlobalSegMap_ngseg =&gt; ngseg</a>
+   107) <a name="l107" style="background-color: #ffcccc">      use m_GlobalSegMap, only : GlobalSegMap_nlseg =&gt; nlseg</a>
+   108) <a name="l108" style="background-color: #ffcccc"></a>
+   109) <a name="l109" style="background-color: #ffcccc">      implicit none</a>
+   110) <a name="l110" style="background-color: #ffcccc"></a>
+   111) <a name="l111" style="background-color: #ffcccc">! !INPUT PARAMETERS:</a>
+   112) <a name="l112" style="background-color: #ffcccc"></a>
+   113) <a name="l113" style="background-color: #ffcccc">      type(GlobalSegMap),   intent(in) :: GSMap ! Output GlobalSegMap</a>
+   114) <a name="l114" style="background-color: #ffcccc">      integer,              intent(in) :: comm  ! communicator handle</a>
+   115) <a name="l115" style="background-color: #ffcccc"></a>
+   116) <a name="l116" style="background-color: #ffcccc">! !OUTPUT PARAMETERS:</a>
+   117) <a name="l117" style="background-color: #ffcccc"></a>
+   118) <a name="l118" style="background-color: #ffcccc">      integer,dimension(:), pointer :: start  ! local segment start indices</a>
+   119) <a name="l119" style="background-color: #ffcccc">      integer,dimension(:), pointer :: length ! local segment sizes</a>
+   120) <a name="l120" style="background-color: #ffcccc"></a>
+   121) <a name="l121" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   122) <a name="l122" style="background-color: #ffcccc">!  2Feb01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - initial version</a>
+   123) <a name="l123" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+   124) <a name="l124" style="background-color: #ffcccc"></a>
+   125) <a name="l125" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::GlobalSegMapToIndices_'</a>
+   126) <a name="l126" style="background-color: #ffcccc"></a>
+   127) <a name="l127" style="background-color: #ffcccc">  integer :: myID, ierr, ngseg, nlseg, n, count</a>
+   128) <a name="l128" style="background-color: #ffcccc"> </a>
+   129) <a name="l129" style="background-color: #ffcccc">          ! determine local process id myID</a>
+   130) <a name="l130" style="background-color: #ffcccc"></a>
+   131) <a name="l131" style="background-color: #ffcccc">  call MP_COMM_RANK(comm, myID, ierr)</a>
+   132) <a name="l132" style="background-color: #ffcccc">  if(ierr /= 0) call MP_perr_die(myname_,'MP_COMM_RANK',ierr)</a>
+   133) <a name="l133" style="background-color: #ffcccc"></a>
+   134) <a name="l134" style="background-color: #ffcccc">          ! determine number of global segments ngseg:</a>
+   135) <a name="l135" style="background-color: #ffcccc"></a>
+   136) <a name="l136" style="background-color: #ffcccc">  ngseg = GlobalSegMap_ngseg(GSMap)</a>
+   137) <a name="l137" style="background-color: #ffcccc"></a>
+   138) <a name="l138" style="background-color: #ffcccc">          ! determine number of local segments on process myID nlseg:</a>
+   139) <a name="l139" style="background-color: #ffcccc"></a>
+   140) <a name="l140" style="background-color: #ffcccc">  nlseg = GlobalSegMap_nlseg(GSMap, myID)</a>
+   141) <a name="l141" style="background-color: #ffcccc"></a>
+   142) <a name="l142" style="background-color: #ffcccc">          ! allocate arrays start(:) and length(:) to store local</a>
+   143) <a name="l143" style="background-color: #ffcccc">          ! segment information.</a>
+   144) <a name="l144" style="background-color: #ffcccc"></a>
+   145) <a name="l145" style="background-color: #ffcccc">  allocate(start(nlseg), length(nlseg), stat=ierr)</a>
+   146) <a name="l146" style="background-color: #ffcccc">  if(ierr /= 0) call die(myname_,'allocate(start...',ierr)</a>
+   147) <a name="l147" style="background-color: #ffcccc"></a>
+   148) <a name="l148" style="background-color: #ffcccc">          ! Loop over GlobalSegMap%pe_loc(:) values to isolate</a>
+   149) <a name="l149" style="background-color: #ffcccc">          ! global index values of local data.  Record number of</a>
+   150) <a name="l150" style="background-color: #ffcccc">          ! matches in the INTEGER count.</a>
+   151) <a name="l151" style="background-color: #ffcccc"></a>
+   152) <a name="l152" style="background-color: #ffcccc">  count = 0</a>
+   153) <a name="l153" style="background-color: #ffcccc">  do n=1, ngseg</a>
+   154) <a name="l154" style="background-color: #ffcccc">     if(GSMap%pe_loc(n) == myID) then</a>
+   155) <a name="l155" style="background-color: #ffcccc">        count = count + 1</a>
+   156) <a name="l156" style="background-color: #ffcccc">        if(count &gt; nlseg) then</a>
+   157) <a name="l157" style="background-color: #ffcccc">           ierr = 2</a>
+   158) <a name="l158" style="background-color: #ffcccc">           call die(myname_,'too many pe matches',ierr)</a>
+   159) <a name="l159" style="background-color: #ffcccc">	endif</a>
+   160) <a name="l160" style="background-color: #ffcccc">	start(count) = GSMap%start(n)</a>
+   161) <a name="l161" style="background-color: #ffcccc">	length(count) = GSMap%length(n)</a>
+   162) <a name="l162" style="background-color: #ffcccc">     endif</a>
+   163) <a name="l163" style="background-color: #ffcccc">  end do</a>
+   164) <a name="l164" style="background-color: #ffcccc"></a>
+   165) <a name="l165" style="background-color: #ffcccc">  if(count &lt; nlseg) then</a>
+   166) <a name="l166" style="background-color: #ffcccc">     ierr = 3</a>
+   167) <a name="l167" style="background-color: #ffcccc">     call die(myname_,'too few pe matches',ierr)</a>
+   168) <a name="l168" style="background-color: #ffcccc">  endif</a>
+   169) <a name="l169" style="background-color: #ffcccc"></a>
+   170) <a name="l170" style="background-color: #ffcccc">          ! translate global start indices to their local </a>
+   171) <a name="l171" style="background-color: #ffcccc">          ! values, based on their storage order and number</a>
+   172) <a name="l172" style="background-color: #ffcccc">          ! of elements in each segment</a>
+   173) <a name="l173" style="background-color: #ffcccc"></a>
+   174) <a name="l174" style="background-color: #ffcccc">  do n=1, count</a>
+   175) <a name="l175" style="background-color: #ffcccc">     if(n == 1) then</a>
+   176) <a name="l176" style="background-color: #ffcccc">	start(n) = 1</a>
+   177) <a name="l177" style="background-color: #ffcccc">     else</a>
+   178) <a name="l178" style="background-color: #ffcccc">	start(n) = start(n-1) + length(n-1)</a>
+   179) <a name="l179" style="background-color: #ffcccc">     endif</a>
+   180) <a name="l180" style="background-color: #ffcccc">  end do</a>
+   181) <a name="l181" style="background-color: #ffcccc"></a>
+   182) <a name="l182" style="background-color: #ffcccc"> end subroutine GlobalSegMapToIndices_</a>
+   183) <a name="l183" style="background-color: #ffffff"></a>
+   184) <a name="l184" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   185) <a name="l185" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+   186) <a name="l186" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   187) <a name="l187" style="background-color: #ffffff">!</a>
+   188) <a name="l188" style="background-color: #ffffff">! !IROUTINE: GlobalSegMapToIndex_ - Global to Local Index Translation</a>
+   189) <a name="l189" style="background-color: #ffffff">!</a>
+   190) <a name="l190" style="background-color: #ffffff">! !DESCRIPTION:  This {\tt INTEGER} query function takes a user-supplied</a>
+   191) <a name="l191" style="background-color: #ffffff">! {\tt GlobalSegMap} data type {\tt GSMap}, which desribes a decomposition </a>
+   192) <a name="l192" style="background-color: #ffffff">! on the input MPI communicator corresponding to the Fortran {\tt INTEGER} </a>
+   193) <a name="l193" style="background-color: #ffffff">! handle {\tt comm}, and the input global index value {\tt i\_g}, and </a>
+   194) <a name="l194" style="background-color: #ffffff">! returns a positive local index value if the datum {\tt i\_g}.   If </a>
+   195) <a name="l195" style="background-color: #ffffff">! the datum {\tt i\_g} is not stored on the local process ID, a value </a>
+   196) <a name="l196" style="background-color: #ffffff">! of {\tt -1} is returned.</a>
+   197) <a name="l197" style="background-color: #ffffff">!</a>
+   198) <a name="l198" style="background-color: #ffffff">! !INTERFACE:</a>
+   199) <a name="l199" style="background-color: #ffffff"></a>
+   200) <a name="l200" style="background-color: #ffffff"></a>
+   201) <a name="l201" style="background-color: #ffffff"> integer function </a><a style="background-color: #ffcccc">GlobalSegMapToIndex_(GSMap, i_g, comm)</a>
+   202) <a name="l202" style="background-color: #ffcccc"></a>
+   203) <a name="l203" style="background-color: #ffcccc">!</a>
+   204) <a name="l204" style="background-color: #ffcccc">! !USES:</a>
+   205) <a name="l205" style="background-color: #ffcccc">!</a>
+   206) <a name="l206" style="background-color: #ffcccc">      use m_mpif90</a>
+   207) <a name="l207" style="background-color: #ffcccc">      use m_die,          only : MP_perr_die, die, warn</a>
+   208) <a name="l208" style="background-color: #ffcccc">      use m_GlobalSegMap, only : GlobalSegMap</a>
+   209) <a name="l209" style="background-color: #ffcccc">      use m_GlobalSegMap, only : GlobalSegMap_ngseg =&gt; ngseg</a>
+   210) <a name="l210" style="background-color: #ffcccc">      use m_GlobalSegMap, only : GlobalSegMap_nlseg =&gt; nlseg</a>
+   211) <a name="l211" style="background-color: #ffcccc"></a>
+   212) <a name="l212" style="background-color: #ffcccc">      implicit none</a>
+   213) <a name="l213" style="background-color: #ffcccc"></a>
+   214) <a name="l214" style="background-color: #ffcccc">! !INPUT PARAMETERS:</a>
+   215) <a name="l215" style="background-color: #ffcccc"></a>
+   216) <a name="l216" style="background-color: #ffcccc">      type(GlobalSegMap), intent(in)  :: GSMap ! Output GlobalSegMap</a>
+   217) <a name="l217" style="background-color: #ffcccc">      integer,            intent(in)  :: i_g   ! global index</a>
+   218) <a name="l218" style="background-color: #ffcccc">      integer,            intent(in)  :: comm  ! communicator handle</a>
+   219) <a name="l219" style="background-color: #ffcccc"></a>
+   220) <a name="l220" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   221) <a name="l221" style="background-color: #ffcccc">!  2Feb01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - initial version</a>
+   222) <a name="l222" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+   223) <a name="l223" style="background-color: #ffcccc"></a>
+   224) <a name="l224" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::GlobalSegMapToIndex_'</a>
+   225) <a name="l225" style="background-color: #ffcccc"></a>
+   226) <a name="l226" style="background-color: #ffcccc">  integer :: myID</a>
+   227) <a name="l227" style="background-color: #ffcccc">  integer :: count, ierr, ngseg, nlseg, n</a>
+   228) <a name="l228" style="background-color: #ffcccc">  integer :: lower_bound, upper_bound</a>
+   229) <a name="l229" style="background-color: #ffcccc">  integer :: local_start, local_index</a>
+   230) <a name="l230" style="background-color: #ffcccc">  logical :: found</a>
+   231) <a name="l231" style="background-color: #ffcccc"></a>
+   232) <a name="l232" style="background-color: #ffcccc">  ! Determine local process id myID:</a>
+   233) <a name="l233" style="background-color: #ffcccc"></a>
+   234) <a name="l234" style="background-color: #ffcccc">  call MP_COMM_RANK(comm, myID, ierr)</a>
+   235) <a name="l235" style="background-color: #ffcccc">  if(ierr /= 0) call MP_perr_die(myname_,'MP_COMM_RANK()',ierr)</a>
+   236) <a name="l236" style="background-color: #ffcccc"></a>
+   237) <a name="l237" style="background-color: #ffcccc">  ! Extract the global number of segments in GSMap</a>
+   238) <a name="l238" style="background-color: #ffcccc"></a>
+   239) <a name="l239" style="background-color: #ffcccc">  ngseg = GlobalSegMap_ngseg(GSMap)</a>
+   240) <a name="l240" style="background-color: #ffcccc"></a>
+   241) <a name="l241" style="background-color: #ffcccc">  ! Extract the global number of segments in GSMap for myID</a>
+   242) <a name="l242" style="background-color: #ffcccc"></a>
+   243) <a name="l243" style="background-color: #ffcccc">  nlseg = GlobalSegMap_nlseg(GSMap, myID)</a>
+   244) <a name="l244" style="background-color: #ffcccc"></a>
+   245) <a name="l245" style="background-color: #ffcccc">  ! set the counter count, which records the number of times myID</a>
+   246) <a name="l246" style="background-color: #ffcccc">  ! matches entries in GSMap%pe_loc(:)</a>
+   247) <a name="l247" style="background-color: #ffcccc"></a>
+   248) <a name="l248" style="background-color: #ffcccc">  count = 0</a>
+   249) <a name="l249" style="background-color: #ffcccc"></a>
+   250) <a name="l250" style="background-color: #ffcccc">  ! set local_start, which is the current local storage segment</a>
+   251) <a name="l251" style="background-color: #ffcccc">  ! starting position</a>
+   252) <a name="l252" style="background-color: #ffcccc"></a>
+   253) <a name="l253" style="background-color: #ffcccc">  local_start = 1</a>
+   254) <a name="l254" style="background-color: #ffcccc"></a>
+   255) <a name="l255" style="background-color: #ffcccc">  ! set logical flag found to signify we havent found i_g:</a>
+   256) <a name="l256" style="background-color: #ffcccc"></a>
+   257) <a name="l257" style="background-color: #ffcccc">  found = .false.</a>
+   258) <a name="l258" style="background-color: #ffcccc"></a>
+   259) <a name="l259" style="background-color: #ffcccc">  n = 0</a>
+   260) <a name="l260" style="background-color: #ffcccc"></a>
+   261) <a name="l261" style="background-color: #ffcccc">  SEARCH_LOOP: do </a>
+   262) <a name="l262" style="background-color: #ffcccc">     </a>
+   263) <a name="l263" style="background-color: #ffcccc">     n = n+1</a>
+   264) <a name="l264" style="background-color: #ffcccc">     if (n &gt; ngseg) EXIT</a>
+   265) <a name="l265" style="background-color: #ffcccc"></a>
+   266) <a name="l266" style="background-color: #ffcccc">     if(GSMap%pe_loc(n) == myID) then</a>
+   267) <a name="l267" style="background-color: #ffcccc"></a>
+   268) <a name="l268" style="background-color: #ffcccc">  ! increment / check the pe_loc match counter</a>
+   269) <a name="l269" style="background-color: #ffcccc"></a>
+   270) <a name="l270" style="background-color: #ffcccc">        count = count + 1</a>
+   271) <a name="l271" style="background-color: #ffcccc">        if(count &gt; nlseg) then</a>
+   272) <a name="l272" style="background-color: #ffcccc">           ierr = 2</a>
+   273) <a name="l273" style="background-color: #ffcccc">           call die(myname_,'too many pe matches',ierr)</a>
+   274) <a name="l274" style="background-color: #ffcccc">	endif</a>
+   275) <a name="l275" style="background-color: #ffcccc"></a>
+   276) <a name="l276" style="background-color: #ffcccc">  ! is i_g in this segment?</a>
+   277) <a name="l277" style="background-color: #ffcccc"></a>
+   278) <a name="l278" style="background-color: #ffcccc">        lower_bound = GSMap%start(n)</a>
+   279) <a name="l279" style="background-color: #ffcccc">        upper_bound = GSMap%start(n) + GSMap%length(n) - 1</a>
+   280) <a name="l280" style="background-color: #ffcccc"></a>
+   281) <a name="l281" style="background-color: #ffcccc">        if((lower_bound &lt;= i_g) .and. (i_g &lt;= upper_bound)) then</a>
+   282) <a name="l282" style="background-color: #ffcccc">	   local_index = local_start + (i_g - GSMap%start(n))</a>
+   283) <a name="l283" style="background-color: #ffcccc">	   found = .true.</a>
+   284) <a name="l284" style="background-color: #ffcccc">	   EXIT</a>
+   285) <a name="l285" style="background-color: #ffcccc">	else</a>
+   286) <a name="l286" style="background-color: #ffcccc">	   local_start = local_start + GSMap%length(n)</a>
+   287) <a name="l287" style="background-color: #ffcccc">        endif</a>
+   288) <a name="l288" style="background-color: #ffcccc"></a>
+   289) <a name="l289" style="background-color: #ffcccc">     endif</a>
+   290) <a name="l290" style="background-color: #ffcccc">  end do SEARCH_LOOP</a>
+   291) <a name="l291" style="background-color: #ffcccc"></a>
+   292) <a name="l292" style="background-color: #ffcccc">  ! We either found the local index, or have exhausted our options.</a>
+   293) <a name="l293" style="background-color: #ffcccc"></a>
+   294) <a name="l294" style="background-color: #ffcccc">  if(found) then</a>
+   295) <a name="l295" style="background-color: #ffcccc">     GlobalSegMapToIndex_ = local_index</a>
+   296) <a name="l296" style="background-color: #ffcccc">  else</a>
+   297) <a name="l297" style="background-color: #ffcccc">     GlobalSegMapToIndex_ = -1</a>
+   298) <a name="l298" style="background-color: #ffcccc">  endif</a>
+   299) <a name="l299" style="background-color: #ffcccc"></a>
+   300) <a name="l300" style="background-color: #ffcccc"> end function GlobalSegMapToIndex_</a>
+   301) <a name="l301" style="background-color: #ffffff"></a>
+   302) <a name="l302" style="background-color: #ffffff"></a>
+   303) <a name="l303" style="background-color: #ffffff"></a>
+   304) <a name="l304" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   305) <a name="l305" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+   306) <a name="l306" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   307) <a name="l307" style="background-color: #ffffff">!</a>
+   308) <a name="l308" style="background-color: #ffffff">! !IROUTINE: GlobalSegMapToIndexArr_ - Global to Local Index Array Translation</a>
+   309) <a name="l309" style="background-color: #ffffff">!</a>
+   310) <a name="l310" style="background-color: #ffffff">! !DESCRIPTION:  Given a {\tt GlobalSegMap} data type {\tt GSMap}</a>
+   311) <a name="l311" style="background-color: #ffffff">! and MPI communicator corresponding to the Fortran {\tt INTEGER} </a>
+   312) <a name="l312" style="background-color: #ffffff">! handle {\tt comm}, convert an array of global index values</a>
+   313) <a name="l313" style="background-color: #ffffff">! {\tt i\_global()} to an array of local index values {\tt i\_local()}.  If </a>
+   314) <a name="l314" style="background-color: #ffffff">! the datum {\tt i\_global(j)} is not stored on the local process ID,</a>
+   315) <a name="l315" style="background-color: #ffffff">! then {\tt i\_local(j)} will be set to {\tt -1}/</a>
+   316) <a name="l316" style="background-color: #ffffff">!</a>
+   317) <a name="l317" style="background-color: #ffffff">! !INTERFACE:</a>
+   318) <a name="l318" style="background-color: #ffffff"></a>
+   319) <a name="l319" style="background-color: #ffffff"></a>
+   320) <a name="l320" style="background-color: #ffffff">subroutine GlobalSegMapToIndexArr_(GSMap, i_global, i_local, nindex, comm)</a>
+   321) <a name="l321" style="background-color: #ffffff"></a>
+   322) <a name="l322" style="background-color: #ffffff">!</a>
+   323) <a name="l323" style="background-color: #ffffff">! !USES:</a>
+   324) <a name="l324" style="background-color: #ffffff">!</a>
+   325) <a name="l325" style="background-color: #ffffff">      use m_stdio</a>
+   326) <a name="l326" style="background-color: #ffffff">      use m_mpif90</a>
+   327) <a name="l327" style="background-color: #ffffff">      use m_die,          only : MP_perr_die, die, warn</a>
+   328) <a name="l328" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap</a>
+   329) <a name="l329" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_ngseg =&gt; ngseg</a>
+   330) <a name="l330" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap_nlseg =&gt; nlseg</a>
+   331) <a name="l331" style="background-color: #ffffff"></a>
+   332) <a name="l332" style="background-color: #ffffff">      implicit none</a>
+   333) <a name="l333" style="background-color: #ffffff"></a>
+   334) <a name="l334" style="background-color: #ffffff">! !INPUT PARAMETERS:</a>
+   335) <a name="l335" style="background-color: #ffffff"></a>
+   336) <a name="l336" style="background-color: #ffffff">      type(GlobalSegMap), intent(in)  :: GSMap ! Output GlobalSegMap</a>
+   337) <a name="l337" style="background-color: #ffffff">      integer,            intent(in)  :: i_global(:)   ! global index</a>
+   338) <a name="l338" style="background-color: #ffffff">      integer,            intent(out) :: i_local(:)    ! local index</a>
+   339) <a name="l339" style="background-color: #ffffff">      integer,            intent(in)  :: nindex          ! size of i_global()</a>
+   340) <a name="l340" style="background-color: #ffffff">      integer,            intent(in)  :: comm  ! communicator handle</a>
+   341) <a name="l341" style="background-color: #ffffff"></a>
+   342) <a name="l342" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   343) <a name="l343" style="background-color: #ffffff">!  12-apr-2006   R. Loy &lt;rloy@mcs.anl.gov&gt; - initial version</a>
+   344) <a name="l344" style="background-color: #ffffff">!EOP ___________________________________________________________________</a>
+   345) <a name="l345" style="background-color: #ffffff"></a>
+   346) <a name="l346" style="background-color: #ffffff">  character(len=*),parameter :: myname_=myname//'::GlobalSegMapToIndexArr_'</a>
+   347) <a name="l347" style="background-color: #ffffff"></a>
+   348) <a name="l348" style="background-color: #ffffff">  integer :: myID</a>
+   349) <a name="l349" style="background-color: #ffffff">  integer :: count, ierr, ngseg, nlseg</a>
+   350) <a name="l350" style="background-color: #ffffff">  integer,allocatable  :: mygs_lb(:),mygs_ub(:),mygs_len(:),mygs_lstart(:)</a>
+   351) <a name="l351" style="background-color: #ffffff"></a>
+   352) <a name="l352" style="background-color: #ffffff">  integer :: i,j,n,startj</a>
+   353) <a name="l353" style="background-color: #ffffff"></a>
+   354) <a name="l354" style="background-color: #ffffff">  ! Determine local process id myID:</a>
+   355) <a name="l355" style="background-color: #ffffff"></a>
+   356) <a name="l356" style="background-color: #ffffff">  call MP_COMM_RANK(comm, myID, ierr)</a>
+   357) <a name="l357" style="background-color: #ffffff">  if(ierr /= 0) </a><a style="background-color: #ffff99">call MP_perr_die(myname_,'MP_COMM_RANK()',ierr)</a>
+   358) <a name="l358" style="background-color: #ffff99"></a>
+   359) <a name="l359" style="background-color: #ffff99"></a>
+   360) <a name="l360" style="background-color: #ffffff">  ngseg = GlobalSegMap_ngseg(GSMap)</a>
+   361) <a name="l361" style="background-color: #ffffff">  nlseg = GlobalSegMap_nlseg(GSMap, myID)</a>
+   362) <a name="l362" style="background-color: #ffffff"></a>
+   363) <a name="l363" style="background-color: #ffffff">  if (nlseg &lt;= 0) return;</a>
+   364) <a name="l364" style="background-color: #ffffff"></a>
+   365) <a name="l365" style="background-color: #fafad2">  allocate( mygs_lb(nlseg), mygs_ub(nlseg), mygs_len(nlseg) )</a>
+   366) <a name="l366" style="background-color: #fafad2">  allocate( mygs_lstart(nlseg) )</a>
+   367) <a name="l367" style="background-color: #fafad2"></a>
+   368) <a name="l368" style="background-color: #fafad2"></a>
+   369) <a name="l369" style="background-color: #fafad2">!! </a>
+   370) <a name="l370" style="background-color: #fafad2">!! determine the global segments on this processor </a>
+   371) <a name="l371" style="background-color: #fafad2">!! just once, so the info be used repeatedly below</a>
+   372) <a name="l372" style="background-color: #fafad2">!!</a>
+   373) <a name="l373" style="background-color: #fafad2"></a>
+   374) <a name="l374" style="background-color: #ffffff">  n = 0</a>
+   375) <a name="l375" style="background-color: #ffffff">  do i=1,ngseg</a>
+   376) <a name="l376" style="background-color: #ffffff">    if (GSMap%pe_loc(i) == myID ) then</a>
+   377) <a name="l377" style="background-color: #ffffff">      n=n+1</a>
+   378) <a name="l378" style="background-color: #ffffff">      mygs_lb(n)=GSMap%start(i)</a>
+   379) <a name="l379" style="background-color: #ffffff">      mygs_ub(n)=GSMap%start(i) + GSMap%length(i) -1</a>
+   380) <a name="l380" style="background-color: #ffffff">      mygs_len(n)=GSMap%length(i)</a>
+   381) <a name="l381" style="background-color: #ffffff">    endif</a>
+   382) <a name="l382" style="background-color: #ffffff">  enddo</a>
+   383) <a name="l383" style="background-color: #ffffff"></a>
+   384) <a name="l384" style="background-color: #ffffff">  if (n .ne. nlseg) then</a>
+   385) <a name="l385" style="background-color: #ffff99">    write(stderr,*) myname_,&quot;mismatch nlseg&quot;,n,nlseg</a>
+   386) <a name="l386" style="background-color: #ffff99">    call die(myname)</a>
+   387) <a name="l387" style="background-color: #ffff99">  endif</a>
+   388) <a name="l388" style="background-color: #ffff99"></a>
+   389) <a name="l389" style="background-color: #ffffff">  mygs_lstart(1)=1</a>
+   390) <a name="l390" style="background-color: #ffffff">  do j=2,nlseg</a>
+   391) <a name="l391" style="background-color: #ffffff">    mygs_lstart(j)=mygs_lstart(j-1)+mygs_len(j-1)</a>
+   392) <a name="l392" style="background-color: #ffffff">  enddo</a>
+   393) <a name="l393" style="background-color: #ffffff"></a>
+   394) <a name="l394" style="background-color: #ffffff"></a>
+   395) <a name="l395" style="background-color: #ffffff">!! </a>
+   396) <a name="l396" style="background-color: #ffffff">!! this loop is optimized for the case that the indices in iglobal()</a>
+   397) <a name="l397" style="background-color: #ffffff">!! are in the same order that they appear in the global segments,</a>
+   398) <a name="l398" style="background-color: #ffffff">!! which seems usually (always?) to be the case. </a>
+   399) <a name="l399" style="background-color: #ffffff">!!</a>
+   400) <a name="l400" style="background-color: #ffffff">!! note that the j loop exit condition is only executed when the index</a>
+   401) <a name="l401" style="background-color: #ffffff">!! is not found in the current segment, which saves a factor of 2</a>
+   402) <a name="l402" style="background-color: #ffffff">!! since many consecutive indices are in the same segment.</a>
+   403) <a name="l403" style="background-color: #ffffff">!! </a>
+   404) <a name="l404" style="background-color: #ffffff"></a>
+   405) <a name="l405" style="background-color: #ffffff"></a>
+   406) <a name="l406" style="background-color: #ffffff">  j=1</a>
+   407) <a name="l407" style="background-color: #ffffff">  do i=1,nindex</a>
+   408) <a name="l408" style="background-color: #ffffff"></a>
+   409) <a name="l409" style="background-color: #ffffff">    i_local(i)= -1</a>
+   410) <a name="l410" style="background-color: #ffffff"></a>
+   411) <a name="l411" style="background-color: #ffffff">    startj=j</a>
+   412) <a name="l412" style="background-color: #ffffff">    SEARCH_LOOP: do</a>
+   413) <a name="l413" style="background-color: #ffffff"></a>
+   414) <a name="l414" style="background-color: #ffffff">      if ( (mygs_lb(j) &lt;= i_global(i)) .and. &amp;</a>
+   415) <a name="l415" style="background-color: #ffffff">           (i_global(i) &lt;= mygs_ub(j))) then</a>
+   416) <a name="l416" style="background-color: #ffffff">        i_local(i) = mygs_lstart(j) + (i_global(i) - mygs_lb(j))</a>
+   417) <a name="l417" style="background-color: #ffffff">        EXIT SEARCH_LOOP</a>
+   418) <a name="l418" style="background-color: #ffffff">      else</a>
+   419) <a name="l419" style="background-color: #ffffff">        j=j+1</a>
+   420) <a name="l420" style="background-color: #ffffff">        if (j &gt; nlseg) j=1                      ! wrap around</a>
+   421) <a name="l421" style="background-color: #ffffff">        if (j == startj) EXIT SEARCH_LOOP</a>
+   422) <a name="l422" style="background-color: #ffffff">      endif</a>
+   423) <a name="l423" style="background-color: #ffffff"></a>
+   424) <a name="l424" style="background-color: #ffffff">    end do SEARCH_LOOP</a>
+   425) <a name="l425" style="background-color: #ffffff"></a>
+   426) <a name="l426" style="background-color: #ffffff">  end do</a>
+   427) <a name="l427" style="background-color: #ffffff"></a>
+   428) <a name="l428" style="background-color: #ffffff">!!!! this version vectorizes (outer loop)</a>
+   429) <a name="l429" style="background-color: #ffffff">!!!! performance for in-order input is slightly slower than the above</a>
+   430) <a name="l430" style="background-color: #ffffff">!!!! but performance on out-of-order input is probably much better</a>
+   431) <a name="l431" style="background-color: #ffffff">!!!! at the moment we are going on the assumption that caller is</a>
+   432) <a name="l432" style="background-color: #ffffff">!!!! likely providing in-order, so we won't use this version.</a>
+   433) <a name="l433" style="background-color: #ffffff">!!</a>
+   434) <a name="l434" style="background-color: #ffffff">!!  do i=1,nindex</a>
+   435) <a name="l435" style="background-color: #ffffff">!!</a>
+   436) <a name="l436" style="background-color: #ffffff">!!    i_local(i)= -1</a>
+   437) <a name="l437" style="background-color: #ffffff">!!</a>
+   438) <a name="l438" style="background-color: #ffffff">!!    SEARCH_LOOP: do j=1,nlseg</a>
+   439) <a name="l439" style="background-color: #ffffff">!!</a>
+   440) <a name="l440" style="background-color: #ffffff">!!      if ( (mygs_lb(j) &lt;= i_global(i)) .and. &amp;</a>
+   441) <a name="l441" style="background-color: #ffffff">!!           (i_global(i) &lt;= mygs_ub(j))) then</a>
+   442) <a name="l442" style="background-color: #ffffff">!!        i_local(i) = mygs_lstart(j) + (i_global(i) - mygs_lb(j))</a>
+   443) <a name="l443" style="background-color: #ffffff">!!      endif</a>
+   444) <a name="l444" style="background-color: #ffffff">!!</a>
+   445) <a name="l445" style="background-color: #ffffff">!!    end do SEARCH_LOOP</a>
+   446) <a name="l446" style="background-color: #ffffff">!!</a>
+   447) <a name="l447" style="background-color: #ffffff">!!  end do</a>
+   448) <a name="l448" style="background-color: #ffffff"></a>
+   449) <a name="l449" style="background-color: #ffffff"></a>
+   450) <a name="l450" style="background-color: #ffffff">  deallocate( mygs_lb, mygs_ub, mygs_len, mygs_lstart )</a>
+   451) <a name="l451" style="background-color: #ffffff"></a>
+   452) <a name="l452" style="background-color: #fafad2"> end subroutine GlobalSegMapToIndexArr_</a>
+   453) <a name="l453" style="background-color: #ffffff"></a>
+   454) <a name="l454" style="background-color: #ffffff"></a>
+   455) <a name="l455" style="background-color: #ffffff"></a>
+   456) <a name="l456" style="background-color: #ffffff"></a>
+   457) <a name="l457" style="background-color: #ffffff"></a>
+   458) <a name="l458" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   459) <a name="l459" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+   460) <a name="l460" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   461) <a name="l461" style="background-color: #ffffff">!</a>
+   462) <a name="l462" style="background-color: #ffffff">! !IROUTINE: GlobalMapToIndex_ - Global to Local Index Translation</a>
+   463) <a name="l463" style="background-color: #ffffff">!</a>
+   464) <a name="l464" style="background-color: #ffffff">! !DESCRIPTION:  </a>
+   465) <a name="l465" style="background-color: #ffffff">! This {\tt INTEGER} query function takes as its input a user-supplied</a>
+   466) <a name="l466" style="background-color: #ffffff">! {\tt GlobalMap} data type {\tt GMap}, which desribes a decomposition </a>
+   467) <a name="l467" style="background-color: #ffffff">! on the input MPI communicator corresponding to the Fortran {\tt INTEGER} </a>
+   468) <a name="l468" style="background-color: #ffffff">! handle {\tt comm}, and the input global index value {\tt i\_g}, and </a>
+   469) <a name="l469" style="background-color: #ffffff">! returns a positive local index value if the datum {\tt i\_g}.   If </a>
+   470) <a name="l470" style="background-color: #ffffff">! the datum {\tt i\_g} is not stored on the local process ID, a value </a>
+   471) <a name="l471" style="background-color: #ffffff">! of {\tt -1} is returned.</a>
+   472) <a name="l472" style="background-color: #ffffff">!</a>
+   473) <a name="l473" style="background-color: #ffffff">! !INTERFACE:</a>
+   474) <a name="l474" style="background-color: #ffffff"></a>
+   475) <a name="l475" style="background-color: #ffffff"></a>
+   476) <a name="l476" style="background-color: #ffffff"> integer function </a><a style="background-color: #ffcccc">GlobalMapToIndex_(GMap, i_g, comm)</a>
+   477) <a name="l477" style="background-color: #ffcccc"></a>
+   478) <a name="l478" style="background-color: #ffcccc">!</a>
+   479) <a name="l479" style="background-color: #ffcccc">! !USES:</a>
+   480) <a name="l480" style="background-color: #ffcccc">!</a>
+   481) <a name="l481" style="background-color: #ffcccc">      use m_mpif90</a>
+   482) <a name="l482" style="background-color: #ffcccc">      use m_die,          only : MP_perr_die, die, warn</a>
+   483) <a name="l483" style="background-color: #ffcccc">      use m_GlobalMap,    only : GlobalMap</a>
+   484) <a name="l484" style="background-color: #ffcccc"></a>
+   485) <a name="l485" style="background-color: #ffcccc">      implicit none</a>
+   486) <a name="l486" style="background-color: #ffcccc"></a>
+   487) <a name="l487" style="background-color: #ffcccc">! !INPUT PARAMETERS:</a>
+   488) <a name="l488" style="background-color: #ffcccc"></a>
+   489) <a name="l489" style="background-color: #ffcccc">      type(GlobalMap), intent(in)  :: GMap  ! Input GlobalMap</a>
+   490) <a name="l490" style="background-color: #ffcccc">      integer,         intent(in)  :: i_g   ! global index</a>
+   491) <a name="l491" style="background-color: #ffcccc">      integer,         intent(in)  :: comm  ! communicator handle</a>
+   492) <a name="l492" style="background-color: #ffcccc"></a>
+   493) <a name="l493" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   494) <a name="l494" style="background-color: #ffcccc">!  2Feb01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - initial version</a>
+   495) <a name="l495" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+   496) <a name="l496" style="background-color: #ffcccc"></a>
+   497) <a name="l497" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::GlobalMapToIndex_'</a>
+   498) <a name="l498" style="background-color: #ffcccc"></a>
+   499) <a name="l499" style="background-color: #ffcccc">  integer :: myID</a>
+   500) <a name="l500" style="background-color: #ffcccc">  integer :: count, ierr, ngseg, nlseg, n</a>
+   501) <a name="l501" style="background-color: #ffcccc">  integer :: lower_bound, upper_bound</a>
+   502) <a name="l502" style="background-color: #ffcccc">  integer :: local_start, local_index</a>
+   503) <a name="l503" style="background-color: #ffcccc">  logical :: found</a>
+   504) <a name="l504" style="background-color: #ffcccc"></a>
+   505) <a name="l505" style="background-color: #ffcccc">  ! Determine local process id myID:</a>
+   506) <a name="l506" style="background-color: #ffcccc"></a>
+   507) <a name="l507" style="background-color: #ffcccc">  call MP_COMM_RANK(comm, myID, ierr)</a>
+   508) <a name="l508" style="background-color: #ffcccc">  if(ierr /= 0) call MP_perr_die(myname_,'MP_COMM_RANK()',ierr)</a>
+   509) <a name="l509" style="background-color: #ffcccc"></a>
+   510) <a name="l510" style="background-color: #ffcccc">  ! Initialize logical &quot;point located&quot; flag found as false</a>
+   511) <a name="l511" style="background-color: #ffcccc"></a>
+   512) <a name="l512" style="background-color: #ffcccc">  found = .false.</a>
+   513) <a name="l513" style="background-color: #ffcccc"></a>
+   514) <a name="l514" style="background-color: #ffcccc">  lower_bound = GMap%displs(myID) + 1</a>
+   515) <a name="l515" style="background-color: #ffcccc">  upper_bound = GMap%displs(myID) + GMap%counts(myID) </a>
+   516) <a name="l516" style="background-color: #ffcccc"></a>
+   517) <a name="l517" style="background-color: #ffcccc">  if((lower_bound &lt;= i_g) .and. (i_g &lt;= upper_bound)) then</a>
+   518) <a name="l518" style="background-color: #ffcccc">     found = .true.</a>
+   519) <a name="l519" style="background-color: #ffcccc">     local_index = i_g - lower_bound + 1</a>
+   520) <a name="l520" style="background-color: #ffcccc">  endif</a>
+   521) <a name="l521" style="background-color: #ffcccc"></a>
+   522) <a name="l522" style="background-color: #ffcccc">  if(found) then</a>
+   523) <a name="l523" style="background-color: #ffcccc">     GlobalMapToIndex_ = local_index</a>
+   524) <a name="l524" style="background-color: #ffcccc">  else</a>
+   525) <a name="l525" style="background-color: #ffcccc">     GlobalMapToIndex_ = -1</a>
+   526) <a name="l526" style="background-color: #ffcccc">  endif</a>
+   527) <a name="l527" style="background-color: #ffcccc"></a>
+   528) <a name="l528" style="background-color: #ffcccc"> end function GlobalMapToIndex_</a>
+   529) <a name="l529" style="background-color: #ffffff"></a>
+   530) <a name="l530" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   531) <a name="l531" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+   532) <a name="l532" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   533) <a name="l533" style="background-color: #ffffff">!</a>
+   534) <a name="l534" style="background-color: #ffffff">! !IROUTINE: GlobalSegMapToNavigator_ - Return Navigator to Local Segments</a>
+   535) <a name="l535" style="background-color: #ffffff">!</a>
+   536) <a name="l536" style="background-color: #ffffff">! !DESCRIPTION:  </a>
+   537) <a name="l537" style="background-color: #ffffff">! This routine takes as its input takes a user-supplied</a>
+   538) <a name="l538" style="background-color: #ffffff">! {\tt GlobalSegMap} data type {\tt GSMap}, which desribes a decomposition </a>
+   539) <a name="l539" style="background-color: #ffffff">! on the input MPI communicator corresponding to the Fortran {\tt INTEGER} </a>
+   540) <a name="l540" style="background-color: #ffffff">! handle {\tt comm}, and returns the local segment start index and length </a>
+   541) <a name="l541" style="background-color: #ffffff">! information for referencing the on-pe storage of the mapped distributed</a>
+   542) <a name="l542" style="background-color: #ffffff">! data.  These data are returned in the form of the output {\tt Navigator} </a>
+   543) <a name="l543" style="background-color: #ffffff">! argument {Nav}.</a>
+   544) <a name="l544" style="background-color: #ffffff">!</a>
+   545) <a name="l545" style="background-color: #ffffff">! {\bf N.B.:}  This routine returns a {\tt Navigator} variable {\tt Nav},</a>
+   546) <a name="l546" style="background-color: #ffffff">! which must be deallocated once the user no longer needs it.  Failure to </a>
+   547) <a name="l547" style="background-color: #ffffff">! do this will create a memory leak.</a>
+   548) <a name="l548" style="background-color: #ffffff">!</a>
+   549) <a name="l549" style="background-color: #ffffff">! !INTERFACE:</a>
+   550) <a name="l550" style="background-color: #ffffff"></a>
+   551) <a name="l551" style="background-color: #ffffff"> subroutine </a><a style="background-color: #ffcccc">GlobalSegMapToNavigator_(GSMap, comm, oNav)</a>
+   552) <a name="l552" style="background-color: #ffcccc"></a>
+   553) <a name="l553" style="background-color: #ffcccc">!</a>
+   554) <a name="l554" style="background-color: #ffcccc">! !USES:</a>
+   555) <a name="l555" style="background-color: #ffcccc">!</a>
+   556) <a name="l556" style="background-color: #ffcccc">      use m_mpif90</a>
+   557) <a name="l557" style="background-color: #ffcccc">      use m_die,          only : MP_perr_die, die, warn</a>
+   558) <a name="l558" style="background-color: #ffcccc">      use m_GlobalSegMap, only : GlobalSegMap</a>
+   559) <a name="l559" style="background-color: #ffcccc">      use m_GlobalSegMap, only : GlobalSegMap_ngseg =&gt; ngseg</a>
+   560) <a name="l560" style="background-color: #ffcccc">      use m_GlobalSegMap, only : GlobalSegMap_nlseg =&gt; nlseg</a>
+   561) <a name="l561" style="background-color: #ffcccc">      use m_Navigator, only    : Navigator</a>
+   562) <a name="l562" style="background-color: #ffcccc">      use m_Navigator, only    : Navigator_init =&gt; init</a>
+   563) <a name="l563" style="background-color: #ffcccc"></a>
+   564) <a name="l564" style="background-color: #ffcccc">      implicit none</a>
+   565) <a name="l565" style="background-color: #ffcccc"></a>
+   566) <a name="l566" style="background-color: #ffcccc">! !INPUT PARAMETERS:</a>
+   567) <a name="l567" style="background-color: #ffcccc"></a>
+   568) <a name="l568" style="background-color: #ffcccc">      type(GlobalSegMap), intent(in)  :: GSMap ! Input GlobalSegMap</a>
+   569) <a name="l569" style="background-color: #ffcccc">      integer,            intent(in)  :: comm  ! communicator handle</a>
+   570) <a name="l570" style="background-color: #ffcccc"></a>
+   571) <a name="l571" style="background-color: #ffcccc">! !OUTPUT PARAMETERS:</a>
+   572) <a name="l572" style="background-color: #ffcccc"></a>
+   573) <a name="l573" style="background-color: #ffcccc">      type(Navigator),    intent(out) :: oNav   ! Output Navigator</a>
+   574) <a name="l574" style="background-color: #ffcccc"></a>
+   575) <a name="l575" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   576) <a name="l576" style="background-color: #ffcccc">!  2Feb01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - initial version</a>
+   577) <a name="l577" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+   578) <a name="l578" style="background-color: #ffcccc"></a>
+   579) <a name="l579" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::GlobalSegMapToNavigator_'</a>
+   580) <a name="l580" style="background-color: #ffcccc"></a>
+   581) <a name="l581" style="background-color: #ffcccc">  integer :: myID, ierr, ngseg, nlseg, n, count</a>
+   582) <a name="l582" style="background-color: #ffcccc"> </a>
+   583) <a name="l583" style="background-color: #ffcccc">          ! determine local process id myID</a>
+   584) <a name="l584" style="background-color: #ffcccc"></a>
+   585) <a name="l585" style="background-color: #ffcccc">  call MP_COMM_RANK(comm, myID, ierr)</a>
+   586) <a name="l586" style="background-color: #ffcccc">  if(ierr /= 0) call MP_perr_die(myname_,'MP_COMM_RANK',ierr)</a>
+   587) <a name="l587" style="background-color: #ffcccc"></a>
+   588) <a name="l588" style="background-color: #ffcccc">          ! determine number of global segments ngseg:</a>
+   589) <a name="l589" style="background-color: #ffcccc"></a>
+   590) <a name="l590" style="background-color: #ffcccc">  ngseg = GlobalSegMap_ngseg(GSMap)</a>
+   591) <a name="l591" style="background-color: #ffcccc"></a>
+   592) <a name="l592" style="background-color: #ffcccc">          ! determine number of local segments on process myID nlseg:</a>
+   593) <a name="l593" style="background-color: #ffcccc"></a>
+   594) <a name="l594" style="background-color: #ffcccc">  nlseg = GlobalSegMap_nlseg(GSMap, myID)</a>
+   595) <a name="l595" style="background-color: #ffcccc"></a>
+   596) <a name="l596" style="background-color: #ffcccc">          ! Allocate space for the Navigator oNav:</a>
+   597) <a name="l597" style="background-color: #ffcccc"></a>
+   598) <a name="l598" style="background-color: #ffcccc">  call Navigator_init(oNav, nlseg, ierr)</a>
+   599) <a name="l599" style="background-color: #ffcccc">  if(ierr /= 0) call die(myname_,'Navigator_init',ierr)</a>
+   600) <a name="l600" style="background-color: #ffcccc"></a>
+   601) <a name="l601" style="background-color: #ffcccc">  call GlobalSegMapToIndices_(GSMap, comm, oNav%displs, oNav%counts)</a>
+   602) <a name="l602" style="background-color: #ffcccc"></a>
+   603) <a name="l603" style="background-color: #ffcccc"> end subroutine GlobalSegMapToNavigator_</a>
+   604) <a name="l604" style="background-color: #ffffff"></a>
+   605) <a name="l605" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   606) <a name="l606" style="background-color: #ffffff">!    Math and Computer Science Division, Argonne National Laboratory   !</a>
+   607) <a name="l607" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   608) <a name="l608" style="background-color: #ffffff">!</a>
+   609) <a name="l609" style="background-color: #ffffff">! !IROUTINE: GlobalSegMapToLocalMatrix_ - Set Local SparseMatrix Indices</a>
+   610) <a name="l610" style="background-color: #ffffff">!</a>
+   611) <a name="l611" style="background-color: #ffffff">! !DESCRIPTION:  </a>
+   612) <a name="l612" style="background-color: #ffffff">! This routine takes as its input a user-supplied {\tt GlobalSegMap} </a>
+   613) <a name="l613" style="background-color: #ffffff">! domain decomposition {\tt GSMap}, which describes the decomposition of </a>
+   614) <a name="l614" style="background-color: #ffffff">! either the rows or columns of the input/output {\tt SparseMatrix} </a>
+   615) <a name="l615" style="background-color: #ffffff">! argument {\tt sMat} on the communicator associated with the {\tt INTEGER}</a>
+   616) <a name="l616" style="background-color: #ffffff">! handle {\tt comm}, and to translate the global row or column indices </a>
+   617) <a name="l617" style="background-color: #ffffff">! of {\tt sMat} into their local counterparts.  The choice of either row</a>
+   618) <a name="l618" style="background-color: #ffffff">! or column is governed by the value of the input {\tt CHARACTER} </a>
+   619) <a name="l619" style="background-color: #ffffff">! argument {\tt RCFlag}.  One sets this variable to either {\tt 'ROW'} or </a>
+   620) <a name="l620" style="background-color: #ffffff">! {\tt 'row'} to specify row re-indexing (which are stored in</a>
+   621) <a name="l621" style="background-color: #ffffff">! {\tt sMat} and retrieved by indexing the attribute {\tt lrow}), and </a>
+   622) <a name="l622" style="background-color: #ffffff">! {\tt 'COLUMN'} or {\tt 'column'} to specify column re-indexing (which </a>
+   623) <a name="l623" style="background-color: #ffffff">! are stored in {\tt sMat} and retrieved by indexing the {\tt SparseMatrix} </a>
+   624) <a name="l624" style="background-color: #ffffff">! attribute {\tt lcol}).</a>
+   625) <a name="l625" style="background-color: #ffffff">!</a>
+   626) <a name="l626" style="background-color: #ffffff">! !INTERFACE:</a>
+   627) <a name="l627" style="background-color: #ffffff"></a>
+   628) <a name="l628" style="background-color: #ffffff"> subroutine GlobalSegMapToLocalMatrix_(sMat, GSMap, RCFlag, comm)</a>
+   629) <a name="l629" style="background-color: #ffffff"></a>
+   630) <a name="l630" style="background-color: #ffffff">!</a>
+   631) <a name="l631" style="background-color: #ffffff">! !USES:</a>
+   632) <a name="l632" style="background-color: #ffffff">!</a>
+   633) <a name="l633" style="background-color: #ffffff">      use m_stdio</a>
+   634) <a name="l634" style="background-color: #ffffff">      use m_die,          only : die</a>
+   635) <a name="l635" style="background-color: #ffffff"></a>
+   636) <a name="l636" style="background-color: #ffffff">      use m_SparseMatrix, only : SparseMatrix</a>
+   637) <a name="l637" style="background-color: #ffffff">      use m_SparseMatrix, only : SparseMatrix_indexIA =&gt; indexIA</a>
+   638) <a name="l638" style="background-color: #ffffff">      use m_SparseMatrix, only : SparseMatrix_lsize =&gt; lsize</a>
+   639) <a name="l639" style="background-color: #ffffff"></a>
+   640) <a name="l640" style="background-color: #ffffff">      use m_GlobalSegMap, only : GlobalSegMap</a>
+   641) <a name="l641" style="background-color: #ffffff"></a>
+   642) <a name="l642" style="background-color: #ffffff"></a>
+   643) <a name="l643" style="background-color: #ffffff">      implicit none</a>
+   644) <a name="l644" style="background-color: #ffffff"></a>
+   645) <a name="l645" style="background-color: #ffffff">! !INPUT PARAMETERS:</a>
+   646) <a name="l646" style="background-color: #ffffff"></a>
+   647) <a name="l647" style="background-color: #ffffff">      type(GlobalSegMap), intent(in)    :: GSMap  ! Input GlobalSegMap</a>
+   648) <a name="l648" style="background-color: #ffffff">      character(len=*),   intent(in)    :: RCFlag ! 'row' or 'column'</a>
+   649) <a name="l649" style="background-color: #ffffff">      integer,            intent(in)    :: comm   ! communicator handle</a>
+   650) <a name="l650" style="background-color: #ffffff"></a>
+   651) <a name="l651" style="background-color: #ffffff">! !INPUT/OUTPUT PARAMETERS:</a>
+   652) <a name="l652" style="background-color: #ffffff"></a>
+   653) <a name="l653" style="background-color: #ffffff">      type(SparseMatrix), intent(inout) :: sMat</a>
+   654) <a name="l654" style="background-color: #ffffff"></a>
+   655) <a name="l655" style="background-color: #ffffff">! !SEE ALSO:</a>
+   656) <a name="l656" style="background-color: #ffffff">! The MCT module m_SparseMatrix for more information about the </a>
+   657) <a name="l657" style="background-color: #ffffff">! SparseMatrix type and its storage of global and local row-and</a>
+   658) <a name="l658" style="background-color: #ffffff">! column indices.</a>
+   659) <a name="l659" style="background-color: #ffffff">!</a>
+   660) <a name="l660" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   661) <a name="l661" style="background-color: #ffffff">!  3May01 - J.W. Larson &lt;larson@mcs.anl.gov&gt; - initial version, which</a>
+   662) <a name="l662" style="background-color: #ffffff">!           is _extremely_ slow, but safe.  This must be re-examined</a>
+   663) <a name="l663" style="background-color: #ffffff">!           later.</a>
+   664) <a name="l664" style="background-color: #ffffff">!EOP ___________________________________________________________________</a>
+   665) <a name="l665" style="background-color: #ffffff"></a>
+   666) <a name="l666" style="background-color: #ffffff">  character(len=*),parameter :: myname_=myname//'::GlobalSegMapToLocalMatrix_'</a>
+   667) <a name="l667" style="background-color: #ffffff"></a>
+   668) <a name="l668" style="background-color: #ffffff"></a>
+   669) <a name="l669" style="background-color: #ffffff">  integer :: i, GlobalIndex, gindex, lindex, lsize</a>
+   670) <a name="l670" style="background-color: #ffffff"></a>
+   671) <a name="l671" style="background-color: #ffffff">   integer, allocatable :: temp_gindex(:)  !! rml</a>
+   672) <a name="l672" style="background-color: #ffffff">   integer, allocatable :: temp_lindex(:)  !! rml</a>
+   673) <a name="l673" style="background-color: #ffffff"></a>
+   674) <a name="l674" style="background-color: #ffffff"></a>
+   675) <a name="l675" style="background-color: #ffffff">       ! What are we re-indexing, rows or columns?</a>
+   676) <a name="l676" style="background-color: #ffffff"></a>
+   677) <a name="l677" style="background-color: #ffffff">  select case(RCFlag)</a>
+   678) <a name="l678" style="background-color: #ffffff">  case('ROW','row')</a>
+   679) <a name="l679" style="background-color: #ffffff">     gindex = SparseMatrix_indexIA(sMat, 'grow', dieWith=myname_)</a>
+   680) <a name="l680" style="background-color: #ffffff">     lindex = SparseMatrix_indexIA(sMat,'lrow', dieWith=myname_)</a>
+   681) <a name="l681" style="background-color: #ffffff">  case('COLUMN','column')</a>
+   682) <a name="l682" style="background-color: #ffffff">     gindex = SparseMatrix_indexIA(sMat,'gcol', dieWith=myname_)</a>
+   683) <a name="l683" style="background-color: #ffffff">     lindex = SparseMatrix_indexIA(sMat,'lcol', dieWith=myname_)</a>
+   684) <a name="l684" style="background-color: #ffffff">  case default</a>
+   685) <a name="l685" style="background-color: #ffff99">     write(stderr,'(3a)') myname_,&quot;:: unrecognized value of RCFLag &quot;,RCFlag</a>
+   686) <a name="l686" style="background-color: #ffff99">     call die(myname)</a>
+   687) <a name="l687" style="background-color: #ffff99">  end select</a>
+   688) <a name="l688" style="background-color: #ffff99"></a>
+   689) <a name="l689" style="background-color: #ffff99"></a>
+   690) <a name="l690" style="background-color: #ffff99">       ! How many matrix elements are there?</a>
+   691) <a name="l691" style="background-color: #ffff99"></a>
+   692) <a name="l692" style="background-color: #ffffff">  lsize = SparseMatrix_lsize(sMat)</a>
+   693) <a name="l693" style="background-color: #ffffff"></a>
+   694) <a name="l694" style="background-color: #ffffff"></a>
+   695) <a name="l695" style="background-color: #ffffff">  !! rml new code from here down - do the mapping all in one</a>
+   696) <a name="l696" style="background-color: #ffffff">  !! function call which has been tuned for speed</a>
+   697) <a name="l697" style="background-color: #ffffff"></a>
+   698) <a name="l698" style="background-color: #fafad2">  allocate( temp_gindex(lsize) )</a>
+   699) <a name="l699" style="background-color: #fafad2">  allocate( temp_lindex(lsize) )</a>
+   700) <a name="l700" style="background-color: #fafad2"></a>
+   701) <a name="l701" style="background-color: #fafad2"></a>
+   702) <a name="l702" style="background-color: #ffffff">  do i=1,lsize</a>
+   703) <a name="l703" style="background-color: #ffffff">     temp_gindex(i) = sMat%data%iAttr(gindex,i)</a>
+   704) <a name="l704" style="background-color: #ffffff">  end do</a>
+   705) <a name="l705" style="background-color: #ffffff"></a>
+   706) <a name="l706" style="background-color: #ffffff">  call GlobalSegMapToIndexArr_(GSMap, temp_gindex, temp_lindex, lsize, comm)  </a>
+   707) <a name="l707" style="background-color: #ffffff"></a>
+   708) <a name="l708" style="background-color: #ffffff">  do i=1,lsize</a>
+   709) <a name="l709" style="background-color: #ffffff">    sMat%data%iAttr(lindex,i) = temp_lindex(i)</a>
+   710) <a name="l710" style="background-color: #ffffff">  end do</a>
+   711) <a name="l711" style="background-color: #ffffff"></a>
+   712) <a name="l712" style="background-color: #ffffff"></a>
+   713) <a name="l713" style="background-color: #ffffff">  deallocate(temp_gindex)  ! rml</a>
+   714) <a name="l714" style="background-color: #ffffff">  deallocate(temp_lindex)  ! rml</a>
+   715) <a name="l715" style="background-color: #ffffff"></a>
+   716) <a name="l716" style="background-color: #ffffff"></a>
+   717) <a name="l717" style="background-color: #fafad2"> end subroutine	GlobalSegMapToLocalMatrix_</a>
+   718) <a name="l718" style="background-color: #ffffff"></a>
+   719) <a name="l719" style="background-color: #ffffff"> end module m_GlobalToLocal</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

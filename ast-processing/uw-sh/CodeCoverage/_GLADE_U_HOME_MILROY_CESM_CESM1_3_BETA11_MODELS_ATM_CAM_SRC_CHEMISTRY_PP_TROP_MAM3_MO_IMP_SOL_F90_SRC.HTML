@@ -1,0 +1,876 @@
+<html>
+<head>
+<title>Listing of mo_imp_sol.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;mo_imp_sol.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 36.63&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module mo_imp_sol</a>
+     2) <a name="l2" style="background-color: #ffffff">  use shr_kind_mod, only : r8 =&gt; shr_kind_r8</a>
+     3) <a name="l3" style="background-color: #ffffff">  use chem_mods, only : clscnt4, gas_pcnst, clsmap</a>
+     4) <a name="l4" style="background-color: #ffffff">  use cam_logfile, only : iulog</a>
+     5) <a name="l5" style="background-color: #ffffff">  implicit none</a>
+     6) <a name="l6" style="background-color: #ffffff">  private</a>
+     7) <a name="l7" style="background-color: #ffffff">  public :: imp_slv_inti, imp_sol</a>
+     8) <a name="l8" style="background-color: #ffffff">  save</a>
+     9) <a name="l9" style="background-color: #ffffff">  real(r8), parameter :: rel_err = 1.e-3_r8</a>
+    10) <a name="l10" style="background-color: #ffffff">  real(r8), parameter :: high_rel_err = 1.e-4_r8</a>
+    11) <a name="l11" style="background-color: #ffffff">  !-----------------------------------------------------------------------</a>
+    12) <a name="l12" style="background-color: #ffffff">  ! Newton-Raphson iteration limits</a>
+    13) <a name="l13" style="background-color: #ffffff">  !-----------------------------------------------------------------------</a>
+    14) <a name="l14" style="background-color: #ffffff">  integer, parameter :: itermax = 11</a>
+    15) <a name="l15" style="background-color: #ffffff">  integer, parameter :: cut_limit = 5</a>
+    16) <a name="l16" style="background-color: #ffffff">  real(r8) :: small</a>
+    17) <a name="l17" style="background-color: #ffffff">  real(r8) :: epsilon(clscnt4)</a>
+    18) <a name="l18" style="background-color: #ffffff">  logical :: factor(itermax)</a>
+    19) <a name="l19" style="background-color: #ffffff">  integer :: ox_ndx</a>
+    20) <a name="l20" style="background-color: #ffffff">  integer :: o1d_ndx = -1</a>
+    21) <a name="l21" style="background-color: #ffffff">  integer :: h2o_ndx = -1</a>
+    22) <a name="l22" style="background-color: #ffffff">  integer :: oh_ndx, ho2_ndx, ch3o2_ndx, po2_ndx, ch3co3_ndx</a>
+    23) <a name="l23" style="background-color: #ffffff">  integer :: c2h5o2_ndx, isopo2_ndx, macro2_ndx, mco3_ndx, c3h7o2_ndx</a>
+    24) <a name="l24" style="background-color: #ffffff">  integer :: ro2_ndx, xo2_ndx, no_ndx, no2_ndx, no3_ndx, n2o5_ndx</a>
+    25) <a name="l25" style="background-color: #ffffff">  integer :: c2h4_ndx, c3h6_ndx, isop_ndx, mvk_ndx, c10h16_ndx</a>
+    26) <a name="l26" style="background-color: #ffffff">  integer :: ox_p1_ndx, ox_p2_ndx, ox_p3_ndx, ox_p4_ndx, ox_p5_ndx</a>
+    27) <a name="l27" style="background-color: #ffffff">  integer :: ox_p6_ndx, ox_p7_ndx, ox_p8_ndx, ox_p9_ndx, ox_p10_ndx</a>
+    28) <a name="l28" style="background-color: #ffffff">  integer :: ox_p11_ndx</a>
+    29) <a name="l29" style="background-color: #ffffff">  integer :: ox_l1_ndx, ox_l2_ndx, ox_l3_ndx, ox_l4_ndx, ox_l5_ndx</a>
+    30) <a name="l30" style="background-color: #ffffff">  integer :: ox_l6_ndx, ox_l7_ndx, ox_l8_ndx, ox_l9_ndx, usr4_ndx</a>
+    31) <a name="l31" style="background-color: #ffffff">  integer :: usr16_ndx, usr17_ndx, c2o3_ndx,ole_ndx</a>
+    32) <a name="l32" style="background-color: #ffffff">  integer :: tolo2_ndx, terpo2_ndx, alko2_ndx, eneo2_ndx, eo2_ndx, meko2_ndx</a>
+    33) <a name="l33" style="background-color: #ffffff">  integer :: ox_p17_ndx,ox_p12_ndx,ox_p13_ndx,ox_p14_ndx,ox_p15_ndx,ox_p16_ndx</a>
+    34) <a name="l34" style="background-color: #ffffff">  integer :: lt_cnt</a>
+    35) <a name="l35" style="background-color: #ffffff">  logical :: full_ozone_chem = .false.</a>
+    36) <a name="l36" style="background-color: #ffffff">  logical :: middle_atm_chem = .false.</a>
+    37) <a name="l37" style="background-color: #ffffff">  logical :: reduced_ozone_chem = .false.</a>
+    38) <a name="l38" style="background-color: #ffffff">  ! for xnox ozone chemistry diagnostics</a>
+    39) <a name="l39" style="background-color: #ffffff">  integer :: o3a_ndx, xno2_ndx, no2xno3_ndx, xno2no3_ndx, xno3_ndx, o1da_ndx, xno_ndx</a>
+    40) <a name="l40" style="background-color: #ffffff">  integer :: usr4a_ndx, usr16a_ndx, usr16b_ndx, usr17b_ndx</a>
+    41) <a name="l41" style="background-color: #ffffff">contains</a>
+    42) <a name="l42" style="background-color: #ffffff">  subroutine imp_slv_inti</a>
+    43) <a name="l43" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+    44) <a name="l44" style="background-color: #ffffff">    ! ... Initialize the implict solver</a>
+    45) <a name="l45" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+    46) <a name="l46" style="background-color: #ffffff">    use mo_chem_utls, only : get_spc_ndx, get_rxt_ndx</a>
+    47) <a name="l47" style="background-color: #ffffff">    use abortutils, only : endrun</a>
+    48) <a name="l48" style="background-color: #ffffff">    use cam_history, only : addfld, add_default, phys_decomp</a>
+    49) <a name="l49" style="background-color: #ffffff">    use ppgrid, only : pver</a>
+    50) <a name="l50" style="background-color: #ffffff">    use mo_tracname, only : solsym</a>
+    51) <a name="l51" style="background-color: #ffffff">    implicit none</a>
+    52) <a name="l52" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+    53) <a name="l53" style="background-color: #ffffff">    ! ... Local variables</a>
+    54) <a name="l54" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+    55) <a name="l55" style="background-color: #ffffff">    integer :: m</a>
+    56) <a name="l56" style="background-color: #ffffff">    real(r8) :: eps(gas_pcnst)</a>
+    57) <a name="l57" style="background-color: #ffffff">    integer :: wrk(27)</a>
+    58) <a name="l58" style="background-color: #ffffff">    integer :: i,j</a>
+    59) <a name="l59" style="background-color: #ffffff">    ! small = 1.e6_r8 * tiny( small )</a>
+    60) <a name="l60" style="background-color: #ffffff">    small = 1.e-40_r8</a>
+    61) <a name="l61" style="background-color: #ffffff">    factor(:) = .true.</a>
+    62) <a name="l62" style="background-color: #ffffff">    eps(:) = rel_err</a>
+    63) <a name="l63" style="background-color: #ffffff">    ox_ndx = get_spc_ndx( 'OX' )</a>
+    64) <a name="l64" style="background-color: #ffffff">    h2o_ndx = get_spc_ndx( 'H2O' )</a>
+    65) <a name="l65" style="background-color: #ffffff">    if( ox_ndx &lt; 1 ) then</a>
+    66) <a name="l66" style="background-color: #ffffff">       ox_ndx = get_spc_ndx( 'O3' )</a>
+    67) <a name="l67" style="background-color: #ffffff">       o1d_ndx = get_spc_ndx( 'O1D' )</a>
+    68) <a name="l68" style="background-color: #ffffff">       o1da_ndx = get_spc_ndx( 'O1DA' )</a>
+    69) <a name="l69" style="background-color: #ffffff">    end if</a>
+    70) <a name="l70" style="background-color: #ffffff">    if( ox_ndx &gt; 0 ) then</a>
+    71) <a name="l71" style="background-color: #ffff99">       eps(ox_ndx) = high_rel_err</a>
+    72) <a name="l72" style="background-color: #ffff99">    end if</a>
+    73) <a name="l73" style="background-color: #ffffff">    m = get_spc_ndx( 'NO' )</a>
+    74) <a name="l74" style="background-color: #ffffff">    if( m &gt; 0 ) then</a>
+    75) <a name="l75" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+    76) <a name="l76" style="background-color: #ffff99">    end if</a>
+    77) <a name="l77" style="background-color: #ffffff">    m = get_spc_ndx( 'NO2' )</a>
+    78) <a name="l78" style="background-color: #ffffff">    if( m &gt; 0 ) then</a>
+    79) <a name="l79" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+    80) <a name="l80" style="background-color: #ffff99">    end if</a>
+    81) <a name="l81" style="background-color: #ffffff">    m = get_spc_ndx( 'NO3' )</a>
+    82) <a name="l82" style="background-color: #ffffff">    if( m &gt; 0 ) then</a>
+    83) <a name="l83" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+    84) <a name="l84" style="background-color: #ffff99">    end if</a>
+    85) <a name="l85" style="background-color: #ffffff">    m = get_spc_ndx( 'HNO3' )</a>
+    86) <a name="l86" style="background-color: #ffffff">    if( m &gt; 0 ) then</a>
+    87) <a name="l87" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+    88) <a name="l88" style="background-color: #ffff99">    end if</a>
+    89) <a name="l89" style="background-color: #ffffff">    m = get_spc_ndx( 'HO2NO2' )</a>
+    90) <a name="l90" style="background-color: #ffffff">    if( m &gt; 0 ) then</a>
+    91) <a name="l91" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+    92) <a name="l92" style="background-color: #ffff99">    end if</a>
+    93) <a name="l93" style="background-color: #ffffff">    m = get_spc_ndx( 'N2O5' )</a>
+    94) <a name="l94" style="background-color: #ffffff">    if( m &gt; 0 ) then</a>
+    95) <a name="l95" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+    96) <a name="l96" style="background-color: #ffff99">    end if</a>
+    97) <a name="l97" style="background-color: #ffffff">    m = get_spc_ndx( 'OH' )</a>
+    98) <a name="l98" style="background-color: #ffffff">    if( m &gt; 0 ) then</a>
+    99) <a name="l99" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+   100) <a name="l100" style="background-color: #ffff99">    end if</a>
+   101) <a name="l101" style="background-color: #ffffff">    m = get_spc_ndx( 'HO2' )</a>
+   102) <a name="l102" style="background-color: #ffffff">    if( m &gt; 0 ) then</a>
+   103) <a name="l103" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+   104) <a name="l104" style="background-color: #ffff99">    end if</a>
+   105) <a name="l105" style="background-color: #ffffff">    o3a_ndx = get_spc_ndx( 'O3A' )</a>
+   106) <a name="l106" style="background-color: #ffffff">    if( o3a_ndx &gt; 0 ) then</a>
+   107) <a name="l107" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+   108) <a name="l108" style="background-color: #ffff99">    end if</a>
+   109) <a name="l109" style="background-color: #ffffff">    m = get_spc_ndx( 'XNO' )</a>
+   110) <a name="l110" style="background-color: #ffffff">    if( m &gt; 0 ) then</a>
+   111) <a name="l111" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+   112) <a name="l112" style="background-color: #ffff99">    end if</a>
+   113) <a name="l113" style="background-color: #ffffff">    m = get_spc_ndx( 'XNO2' )</a>
+   114) <a name="l114" style="background-color: #ffffff">    if( m &gt; 0 ) then</a>
+   115) <a name="l115" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+   116) <a name="l116" style="background-color: #ffff99">    end if</a>
+   117) <a name="l117" style="background-color: #ffffff">    m = get_spc_ndx( 'XNO3' )</a>
+   118) <a name="l118" style="background-color: #ffffff">    if( m &gt; 0 ) then</a>
+   119) <a name="l119" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+   120) <a name="l120" style="background-color: #ffff99">    end if</a>
+   121) <a name="l121" style="background-color: #ffffff">    m = get_spc_ndx( 'XHNO3' )</a>
+   122) <a name="l122" style="background-color: #ffffff">    if( m &gt; 0 ) then</a>
+   123) <a name="l123" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+   124) <a name="l124" style="background-color: #ffff99">    end if</a>
+   125) <a name="l125" style="background-color: #ffffff">    m = get_spc_ndx( 'XHO2NO2' )</a>
+   126) <a name="l126" style="background-color: #ffffff">    if( m &gt; 0 ) then</a>
+   127) <a name="l127" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+   128) <a name="l128" style="background-color: #ffff99">    end if</a>
+   129) <a name="l129" style="background-color: #ffffff">    m = get_spc_ndx( 'XNO2NO3' )</a>
+   130) <a name="l130" style="background-color: #ffffff">    if( m &gt; 0 ) then</a>
+   131) <a name="l131" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+   132) <a name="l132" style="background-color: #ffff99">    end if</a>
+   133) <a name="l133" style="background-color: #ffffff">    m = get_spc_ndx( 'NO2XNO3' )</a>
+   134) <a name="l134" style="background-color: #ffffff">    if( m &gt; 0 ) then</a>
+   135) <a name="l135" style="background-color: #ffff99">       eps(m) = high_rel_err</a>
+   136) <a name="l136" style="background-color: #ffff99">    end if</a>
+   137) <a name="l137" style="background-color: #ffff99">    !do m = 1,max(1,clscnt4)</a>
+   138) <a name="l138" style="background-color: #ffffff">    do m = 1,clscnt4</a>
+   139) <a name="l139" style="background-color: #ffffff">       epsilon(m) = eps(clsmap(m,4))</a>
+   140) <a name="l140" style="background-color: #ffffff">    end do</a>
+   141) <a name="l141" style="background-color: #ffffff">    has_o3_chem: if( ox_ndx &gt; 0 ) then</a>
+   142) <a name="l142" style="background-color: #ffff99">       ox_p1_ndx = get_rxt_ndx( 'ox_p1' )</a>
+   143) <a name="l143" style="background-color: #ffff99">       if ( ox_p1_ndx &lt; 0 ) then</a>
+   144) <a name="l144" style="background-color: #ffff99">          ox_p1_ndx = get_rxt_ndx( 'NO_HO2' )</a>
+   145) <a name="l145" style="background-color: #ffff99">       end if</a>
+   146) <a name="l146" style="background-color: #ffff99">       if ( ox_p1_ndx &lt; 0 ) then</a>
+   147) <a name="l147" style="background-color: #ffff99">          ox_p1_ndx = get_rxt_ndx( 'cph_NO_HO2' )</a>
+   148) <a name="l148" style="background-color: #ffff99">       end if</a>
+   149) <a name="l149" style="background-color: #ffff99">       ox_p2_ndx = get_rxt_ndx( 'ox_p2' )</a>
+   150) <a name="l150" style="background-color: #ffff99">       if ( ox_p2_ndx &lt; 0 ) then</a>
+   151) <a name="l151" style="background-color: #ffff99">          ox_p2_ndx = get_rxt_ndx( 'CH3O2_NO' )</a>
+   152) <a name="l152" style="background-color: #ffff99">       end if</a>
+   153) <a name="l153" style="background-color: #ffff99">       ox_p3_ndx = get_rxt_ndx( 'ox_p3' )</a>
+   154) <a name="l154" style="background-color: #ffff99">       if ( ox_p3_ndx &lt; 0 ) then</a>
+   155) <a name="l155" style="background-color: #ffff99">          ox_p3_ndx = get_rxt_ndx( 'PO2_NO' )</a>
+   156) <a name="l156" style="background-color: #ffff99">       end if</a>
+   157) <a name="l157" style="background-color: #ffff99">       ox_p4_ndx = get_rxt_ndx( 'ox_p4' )</a>
+   158) <a name="l158" style="background-color: #ffff99">       if ( ox_p4_ndx &lt; 0 ) then</a>
+   159) <a name="l159" style="background-color: #ffff99">          ox_p4_ndx = get_rxt_ndx( 'CH3CO3_NO' )</a>
+   160) <a name="l160" style="background-color: #ffff99">       end if</a>
+   161) <a name="l161" style="background-color: #ffff99">       ox_p5_ndx = get_rxt_ndx( 'ox_p5' )</a>
+   162) <a name="l162" style="background-color: #ffff99">       if ( ox_p5_ndx &lt; 0 ) then</a>
+   163) <a name="l163" style="background-color: #ffff99">          ox_p5_ndx = get_rxt_ndx( 'C2H5O2_NO' )</a>
+   164) <a name="l164" style="background-color: #ffff99">       end if</a>
+   165) <a name="l165" style="background-color: #ffff99">       ox_p6_ndx = get_rxt_ndx( 'ox_p6' )</a>
+   166) <a name="l166" style="background-color: #ffff99">       if ( ox_p6_ndx &lt; 0 ) then</a>
+   167) <a name="l167" style="background-color: #ffff99">          ox_p6_ndx = get_rxt_ndx( 'ISOPO2_NO' )</a>
+   168) <a name="l168" style="background-color: #ffff99">       end if</a>
+   169) <a name="l169" style="background-color: #ffff99">       ox_p7_ndx = get_rxt_ndx( 'ox_p7' )</a>
+   170) <a name="l170" style="background-color: #ffff99">       if ( ox_p7_ndx &lt; 0 ) then</a>
+   171) <a name="l171" style="background-color: #ffff99">          ox_p7_ndx = get_rxt_ndx( 'MACRO2_NO' )</a>
+   172) <a name="l172" style="background-color: #ffff99">       end if</a>
+   173) <a name="l173" style="background-color: #ffff99">       if ( ox_p7_ndx &lt; 0 ) then</a>
+   174) <a name="l174" style="background-color: #ffff99">          ox_p7_ndx = get_rxt_ndx( 'MACRO2_NOa' )</a>
+   175) <a name="l175" style="background-color: #ffff99">       end if</a>
+   176) <a name="l176" style="background-color: #ffff99">       ox_p8_ndx = get_rxt_ndx( 'ox_p8' )</a>
+   177) <a name="l177" style="background-color: #ffff99">       if ( ox_p8_ndx &lt; 0 ) then</a>
+   178) <a name="l178" style="background-color: #ffff99">          ox_p8_ndx = get_rxt_ndx( 'MCO3_NO' )</a>
+   179) <a name="l179" style="background-color: #ffff99">       end if</a>
+   180) <a name="l180" style="background-color: #ffff99">       ox_p9_ndx = get_rxt_ndx( 'ox_p9' )</a>
+   181) <a name="l181" style="background-color: #ffff99">       if ( ox_p9_ndx &lt; 0 ) then</a>
+   182) <a name="l182" style="background-color: #ffff99">          ox_p9_ndx = get_rxt_ndx( 'C3H7O2_NO' )</a>
+   183) <a name="l183" style="background-color: #ffff99">       end if</a>
+   184) <a name="l184" style="background-color: #ffff99">       ox_p10_ndx = get_rxt_ndx( 'ox_p10' )</a>
+   185) <a name="l185" style="background-color: #ffff99">       if ( ox_p10_ndx &lt; 0 ) then</a>
+   186) <a name="l186" style="background-color: #ffff99">          ox_p10_ndx = get_rxt_ndx( 'RO2_NO' )</a>
+   187) <a name="l187" style="background-color: #ffff99">       end if</a>
+   188) <a name="l188" style="background-color: #ffff99">       ox_p11_ndx = get_rxt_ndx( 'ox_p11' )</a>
+   189) <a name="l189" style="background-color: #ffff99">       if ( ox_p11_ndx &lt; 0 ) then</a>
+   190) <a name="l190" style="background-color: #ffff99">          ox_p11_ndx = get_rxt_ndx( 'XO2_NO' )</a>
+   191) <a name="l191" style="background-color: #ffff99">       end if</a>
+   192) <a name="l192" style="background-color: #ffff99">       if ( ox_p11_ndx &lt; 0 ) then</a>
+   193) <a name="l193" style="background-color: #ffff99">          ox_p11_ndx = get_rxt_ndx( 'tag_XO2_NO' )</a>
+   194) <a name="l194" style="background-color: #ffff99">       end if</a>
+   195) <a name="l195" style="background-color: #ffff99">       if ( ox_p11_ndx &lt; 0 ) then</a>
+   196) <a name="l196" style="background-color: #ffff99">          ox_p11_ndx = get_rxt_ndx( 'r63' )</a>
+   197) <a name="l197" style="background-color: #ffff99">       end if</a>
+   198) <a name="l198" style="background-color: #ffff99">       ox_p12_ndx = get_rxt_ndx( 'ox_p12' )</a>
+   199) <a name="l199" style="background-color: #ffff99">       if ( ox_p12_ndx &lt; 0 ) then</a>
+   200) <a name="l200" style="background-color: #ffff99">          ox_p12_ndx = get_rxt_ndx( 'TOLO2_NO' )</a>
+   201) <a name="l201" style="background-color: #ffff99">       end if</a>
+   202) <a name="l202" style="background-color: #ffff99">       ox_p13_ndx = get_rxt_ndx( 'ox_p13' )</a>
+   203) <a name="l203" style="background-color: #ffff99">       if ( ox_p13_ndx &lt; 0 ) then</a>
+   204) <a name="l204" style="background-color: #ffff99">          ox_p13_ndx = get_rxt_ndx( 'TERPO2_NO' )</a>
+   205) <a name="l205" style="background-color: #ffff99">       end if</a>
+   206) <a name="l206" style="background-color: #ffff99">       ox_p14_ndx = get_rxt_ndx( 'ox_p14' )</a>
+   207) <a name="l207" style="background-color: #ffff99">       if ( ox_p14_ndx &lt; 0 ) then</a>
+   208) <a name="l208" style="background-color: #ffff99">          ox_p14_ndx = get_rxt_ndx( 'ALKO2_NO' )</a>
+   209) <a name="l209" style="background-color: #ffff99">       end if</a>
+   210) <a name="l210" style="background-color: #ffff99">       ox_p15_ndx = get_rxt_ndx( 'ox_p15' )</a>
+   211) <a name="l211" style="background-color: #ffff99">       if ( ox_p15_ndx &lt; 0 ) then</a>
+   212) <a name="l212" style="background-color: #ffff99">          ox_p15_ndx = get_rxt_ndx( 'ENEO2_NO' )</a>
+   213) <a name="l213" style="background-color: #ffff99">       end if</a>
+   214) <a name="l214" style="background-color: #ffff99">       ox_p16_ndx = get_rxt_ndx( 'ox_p16' )</a>
+   215) <a name="l215" style="background-color: #ffff99">       if ( ox_p16_ndx &lt; 0 ) then</a>
+   216) <a name="l216" style="background-color: #ffff99">          ox_p16_ndx = get_rxt_ndx( 'EO2_NO' )</a>
+   217) <a name="l217" style="background-color: #ffff99">       end if</a>
+   218) <a name="l218" style="background-color: #ffff99">       ox_p17_ndx = get_rxt_ndx( 'ox_p17' )</a>
+   219) <a name="l219" style="background-color: #ffff99">       if ( ox_p17_ndx &lt; 0 ) then</a>
+   220) <a name="l220" style="background-color: #ffff99">          ox_p17_ndx = get_rxt_ndx( 'MEKO2_NO' )</a>
+   221) <a name="l221" style="background-color: #ffff99">       end if</a>
+   222) <a name="l222" style="background-color: #ffff99">       wrk(1:17) = (/ ox_p1_ndx, ox_p2_ndx, ox_p3_ndx, ox_p4_ndx, ox_p5_ndx, &amp;</a>
+   223) <a name="l223" style="background-color: #ffff99">            ox_p6_ndx, ox_p7_ndx, ox_p8_ndx, ox_p9_ndx, ox_p10_ndx, ox_p11_ndx, &amp;</a>
+   224) <a name="l224" style="background-color: #ffff99">            ox_p12_ndx, ox_p13_ndx, ox_p14_ndx, ox_p15_ndx, ox_p16_ndx, ox_p17_ndx /)</a>
+   225) <a name="l225" style="background-color: #ffff99">       if( all( wrk(1:17) &gt; 0 ) ) then</a>
+   226) <a name="l226" style="background-color: #ffff99">          full_ozone_chem = .true.</a>
+   227) <a name="l227" style="background-color: #ffff99">       end if</a>
+   228) <a name="l228" style="background-color: #ffff99">       if ( ox_p11_ndx &lt; 0 ) then</a>
+   229) <a name="l229" style="background-color: #ffff99">          ox_p11_ndx = get_rxt_ndx( 'tag_XO2_NO' )</a>
+   230) <a name="l230" style="background-color: #ffff99">       end if</a>
+   231) <a name="l231" style="background-color: #ffff99">       ox_p12_ndx = get_rxt_ndx( 'ox_p12' )</a>
+   232) <a name="l232" style="background-color: #ffff99">       if ( ox_p12_ndx &lt; 0 ) then</a>
+   233) <a name="l233" style="background-color: #ffff99">          ox_p12_ndx = get_rxt_ndx( 'TOLO2_NO' )</a>
+   234) <a name="l234" style="background-color: #ffff99">       end if</a>
+   235) <a name="l235" style="background-color: #ffff99">       ox_p13_ndx = get_rxt_ndx( 'ox_p13' )</a>
+   236) <a name="l236" style="background-color: #ffff99">       if ( ox_p13_ndx &lt; 0 ) then</a>
+   237) <a name="l237" style="background-color: #ffff99">          ox_p13_ndx = get_rxt_ndx( 'TERPO2_NO' )</a>
+   238) <a name="l238" style="background-color: #ffff99">       end if</a>
+   239) <a name="l239" style="background-color: #ffff99">       ox_p14_ndx = get_rxt_ndx( 'ox_p14' )</a>
+   240) <a name="l240" style="background-color: #ffff99">       if ( ox_p14_ndx &lt; 0 ) then</a>
+   241) <a name="l241" style="background-color: #ffff99">          ox_p14_ndx = get_rxt_ndx( 'ALKO2_NO' )</a>
+   242) <a name="l242" style="background-color: #ffff99">       end if</a>
+   243) <a name="l243" style="background-color: #ffff99">       ox_p15_ndx = get_rxt_ndx( 'ox_p15' )</a>
+   244) <a name="l244" style="background-color: #ffff99">       if ( ox_p15_ndx &lt; 0 ) then</a>
+   245) <a name="l245" style="background-color: #ffff99">          ox_p15_ndx = get_rxt_ndx( 'ENEO2_NO' )</a>
+   246) <a name="l246" style="background-color: #ffff99">       end if</a>
+   247) <a name="l247" style="background-color: #ffff99">       ox_p16_ndx = get_rxt_ndx( 'ox_p16' )</a>
+   248) <a name="l248" style="background-color: #ffff99">       if ( ox_p16_ndx &lt; 0 ) then</a>
+   249) <a name="l249" style="background-color: #ffff99">          ox_p16_ndx = get_rxt_ndx( 'EO2_NO' )</a>
+   250) <a name="l250" style="background-color: #ffff99">       end if</a>
+   251) <a name="l251" style="background-color: #ffff99">       ox_p17_ndx = get_rxt_ndx( 'ox_p17' )</a>
+   252) <a name="l252" style="background-color: #ffff99">       if ( ox_p17_ndx &lt; 0 ) then</a>
+   253) <a name="l253" style="background-color: #ffff99">          ox_p17_ndx = get_rxt_ndx( 'MEKO2_NO' )</a>
+   254) <a name="l254" style="background-color: #ffff99">       end if</a>
+   255) <a name="l255" style="background-color: #ffff99">       wrk(1:17) = (/ ox_p1_ndx, ox_p2_ndx, ox_p3_ndx, ox_p4_ndx, ox_p5_ndx, &amp;</a>
+   256) <a name="l256" style="background-color: #ffff99">            ox_p6_ndx, ox_p7_ndx, ox_p8_ndx, ox_p9_ndx, ox_p10_ndx, ox_p11_ndx, &amp;</a>
+   257) <a name="l257" style="background-color: #ffff99">            ox_p12_ndx, ox_p13_ndx, ox_p14_ndx, ox_p15_ndx, ox_p16_ndx, ox_p17_ndx /)</a>
+   258) <a name="l258" style="background-color: #ffff99">       if( all( wrk(1:17) &gt; 0 ) ) then</a>
+   259) <a name="l259" style="background-color: #ffff99">          full_ozone_chem = .true.</a>
+   260) <a name="l260" style="background-color: #ffff99">       end if</a>
+   261) <a name="l261" style="background-color: #ffff99">       if ( .not. full_ozone_chem ) then</a>
+   262) <a name="l262" style="background-color: #ffff99">          wrk(1:4) = (/ ox_p1_ndx, ox_p2_ndx, ox_p3_ndx, ox_p11_ndx/)</a>
+   263) <a name="l263" style="background-color: #ffff99">          if( all( wrk(1:4) &gt; 0 ) ) then</a>
+   264) <a name="l264" style="background-color: #ffff99">             reduced_ozone_chem = .true.</a>
+   265) <a name="l265" style="background-color: #ffff99">          end if</a>
+   266) <a name="l266" style="background-color: #ffff99">          if ( .not. reduced_ozone_chem ) then</a>
+   267) <a name="l267" style="background-color: #ffff99">             wrk(1:2) = (/ ox_p1_ndx, ox_p2_ndx/)</a>
+   268) <a name="l268" style="background-color: #ffff99">             if( all( wrk(1:2) &gt; 0 ) ) then</a>
+   269) <a name="l269" style="background-color: #ffff99">                middle_atm_chem = .true.</a>
+   270) <a name="l270" style="background-color: #ffff99">             end if</a>
+   271) <a name="l271" style="background-color: #ffff99">          end if</a>
+   272) <a name="l272" style="background-color: #ffff99">       endif</a>
+   273) <a name="l273" style="background-color: #ffff99">       if( full_ozone_chem .or. reduced_ozone_chem .or. middle_atm_chem ) then</a>
+   274) <a name="l274" style="background-color: #ffff99">          ox_l1_ndx = get_rxt_ndx( 'ox_l1' )</a>
+   275) <a name="l275" style="background-color: #ffff99">          if ( ox_l1_ndx &lt; 0 ) then</a>
+   276) <a name="l276" style="background-color: #ffff99">            ox_l1_ndx = get_rxt_ndx( 'O1D_H2O' )</a>
+   277) <a name="l277" style="background-color: #ffff99">          end if</a>
+   278) <a name="l278" style="background-color: #ffff99">          ox_l2_ndx = get_rxt_ndx( 'ox_l2' )</a>
+   279) <a name="l279" style="background-color: #ffff99">          if ( ox_l2_ndx &lt; 0 ) then</a>
+   280) <a name="l280" style="background-color: #ffff99">            ox_l2_ndx = get_rxt_ndx( 'OH_O3' )</a>
+   281) <a name="l281" style="background-color: #ffff99">          end if</a>
+   282) <a name="l282" style="background-color: #ffff99">          if ( ox_l2_ndx &lt; 0 ) then</a>
+   283) <a name="l283" style="background-color: #ffff99">            ox_l2_ndx = get_rxt_ndx( 'cph_OH_O3' )</a>
+   284) <a name="l284" style="background-color: #ffff99">          end if</a>
+   285) <a name="l285" style="background-color: #ffff99">          ox_l3_ndx = get_rxt_ndx( 'ox_l3' )</a>
+   286) <a name="l286" style="background-color: #ffff99">          if ( ox_l3_ndx &lt; 0 ) then</a>
+   287) <a name="l287" style="background-color: #ffff99">            ox_l3_ndx = get_rxt_ndx( 'HO2_O3' )</a>
+   288) <a name="l288" style="background-color: #ffff99">          end if</a>
+   289) <a name="l289" style="background-color: #ffff99">          if ( ox_l3_ndx &lt; 0 ) then</a>
+   290) <a name="l290" style="background-color: #ffff99">            ox_l3_ndx = get_rxt_ndx( 'cph_HO2_O3' )</a>
+   291) <a name="l291" style="background-color: #ffff99">          end if</a>
+   292) <a name="l292" style="background-color: #ffff99">          ox_l4_ndx = get_rxt_ndx( 'ox_l4' )</a>
+   293) <a name="l293" style="background-color: #ffff99">          if ( ox_l4_ndx &lt; 0 ) then</a>
+   294) <a name="l294" style="background-color: #ffff99">            ox_l4_ndx = get_rxt_ndx( 'C3H6_O3' )</a>
+   295) <a name="l295" style="background-color: #ffff99">          end if</a>
+   296) <a name="l296" style="background-color: #ffff99">          ox_l5_ndx = get_rxt_ndx( 'ox_l5' )</a>
+   297) <a name="l297" style="background-color: #ffff99">          if ( ox_l5_ndx &lt; 0 ) then</a>
+   298) <a name="l298" style="background-color: #ffff99">            ox_l5_ndx = get_rxt_ndx( 'ISOP_O3' )</a>
+   299) <a name="l299" style="background-color: #ffff99">          end if</a>
+   300) <a name="l300" style="background-color: #ffff99">          ox_l6_ndx = get_rxt_ndx( 'ox_l6' )</a>
+   301) <a name="l301" style="background-color: #ffff99">          if ( ox_l6_ndx &lt; 0 ) then</a>
+   302) <a name="l302" style="background-color: #ffff99">            ox_l6_ndx = get_rxt_ndx( 'C2H4_O3' )</a>
+   303) <a name="l303" style="background-color: #ffff99">          end if</a>
+   304) <a name="l304" style="background-color: #ffff99">          ox_l7_ndx = get_rxt_ndx( 'ox_l7' )</a>
+   305) <a name="l305" style="background-color: #ffff99">          if ( ox_l7_ndx &lt; 0 ) then</a>
+   306) <a name="l306" style="background-color: #ffff99">            ox_l7_ndx = get_rxt_ndx( 'MVK_O3' )</a>
+   307) <a name="l307" style="background-color: #ffff99">          end if</a>
+   308) <a name="l308" style="background-color: #ffff99">          ox_l8_ndx = get_rxt_ndx( 'ox_l8' )</a>
+   309) <a name="l309" style="background-color: #ffff99">          if ( ox_l8_ndx &lt; 0 ) then</a>
+   310) <a name="l310" style="background-color: #ffff99">            ox_l8_ndx = get_rxt_ndx( 'MACR_O3' )</a>
+   311) <a name="l311" style="background-color: #ffff99">          end if</a>
+   312) <a name="l312" style="background-color: #ffff99">          ox_l9_ndx = get_rxt_ndx( 'ox_l9' )</a>
+   313) <a name="l313" style="background-color: #ffff99">          if( ox_l9_ndx &lt; 1 ) then</a>
+   314) <a name="l314" style="background-color: #ffff99">             ox_l9_ndx = get_rxt_ndx( 'soa1' )</a>
+   315) <a name="l315" style="background-color: #ffff99">          end if</a>
+   316) <a name="l316" style="background-color: #ffff99">          if( ox_l9_ndx &lt; 1 ) then</a>
+   317) <a name="l317" style="background-color: #ffff99">             ox_l9_ndx = get_rxt_ndx( 'C10H16_O3' )</a>
+   318) <a name="l318" style="background-color: #ffff99">          end if</a>
+   319) <a name="l319" style="background-color: #ffff99">          usr4_ndx = get_rxt_ndx( 'usr4' )</a>
+   320) <a name="l320" style="background-color: #ffff99">          if (usr4_ndx &lt; 1) then</a>
+   321) <a name="l321" style="background-color: #ffff99">             usr4_ndx = get_rxt_ndx( 'tag_NO2_OH' )</a>
+   322) <a name="l322" style="background-color: #ffff99">          endif</a>
+   323) <a name="l323" style="background-color: #ffff99">          usr16_ndx = get_rxt_ndx( 'usr16' )</a>
+   324) <a name="l324" style="background-color: #ffff99">          if (usr16_ndx &lt; 1) then</a>
+   325) <a name="l325" style="background-color: #ffff99">            usr16_ndx = get_rxt_ndx( 'usr_N2O5_aer' )</a>
+   326) <a name="l326" style="background-color: #ffff99">          endif</a>
+   327) <a name="l327" style="background-color: #ffff99">          usr17_ndx = get_rxt_ndx( 'usr17' )</a>
+   328) <a name="l328" style="background-color: #ffff99">          if (usr17_ndx &lt; 1) then</a>
+   329) <a name="l329" style="background-color: #ffff99">            usr17_ndx = get_rxt_ndx( 'usr_NO3_aer' )</a>
+   330) <a name="l330" style="background-color: #ffff99">          endif</a>
+   331) <a name="l331" style="background-color: #ffff99">          usr4a_ndx = get_rxt_ndx( 'usr4a' )</a>
+   332) <a name="l332" style="background-color: #ffff99">          if (usr4a_ndx &lt; 1) then</a>
+   333) <a name="l333" style="background-color: #ffff99">            usr4a_ndx = get_rxt_ndx( 'tag_XNO2_OH' )</a>
+   334) <a name="l334" style="background-color: #ffff99">          endif</a>
+   335) <a name="l335" style="background-color: #ffff99">          usr16b_ndx = get_rxt_ndx( 'usr16b' )</a>
+   336) <a name="l336" style="background-color: #ffff99">          if (usr16b_ndx &lt; 1) then</a>
+   337) <a name="l337" style="background-color: #ffff99">            usr16b_ndx = get_rxt_ndx( 'usr_NO2XNO3_aer' )</a>
+   338) <a name="l338" style="background-color: #ffff99">          endif</a>
+   339) <a name="l339" style="background-color: #ffff99">          usr16a_ndx = get_rxt_ndx( 'usr16a' )</a>
+   340) <a name="l340" style="background-color: #ffff99">          if (usr16a_ndx &lt; 1) then</a>
+   341) <a name="l341" style="background-color: #ffff99">            usr16a_ndx = get_rxt_ndx( 'usr_XNO2NO3_aer' )</a>
+   342) <a name="l342" style="background-color: #ffff99">          endif</a>
+   343) <a name="l343" style="background-color: #ffff99">          usr17b_ndx = get_rxt_ndx( 'usr17b' )</a>
+   344) <a name="l344" style="background-color: #ffff99">          if (usr17b_ndx &lt; 1) then</a>
+   345) <a name="l345" style="background-color: #ffff99">            usr17b_ndx = get_rxt_ndx( 'usr_NO2_aer' )</a>
+   346) <a name="l346" style="background-color: #ffff99">          endif</a>
+   347) <a name="l347" style="background-color: #ffff99">          if ( full_ozone_chem ) then</a>
+   348) <a name="l348" style="background-color: #ffff99">             wrk(1:12) = (/ ox_l1_ndx, ox_l2_ndx, ox_l3_ndx, ox_l4_ndx, ox_l5_ndx, &amp;</a>
+   349) <a name="l349" style="background-color: #ffff99">                  ox_l6_ndx, ox_l7_ndx, ox_l8_ndx, ox_l9_ndx, usr4_ndx, &amp;</a>
+   350) <a name="l350" style="background-color: #ffff99">                  usr16_ndx, usr17_ndx /)</a>
+   351) <a name="l351" style="background-color: #ffff99">             if( any( wrk(1:12) &lt; 1 ) ) then</a>
+   352) <a name="l352" style="background-color: #ffff99">                full_ozone_chem = .false.</a>
+   353) <a name="l353" style="background-color: #ffff99">             endif</a>
+   354) <a name="l354" style="background-color: #ffff99">          endif</a>
+   355) <a name="l355" style="background-color: #ffff99">          if ( reduced_ozone_chem ) then</a>
+   356) <a name="l356" style="background-color: #ffff99">             wrk(1:9) = (/ ox_l1_ndx, ox_l2_ndx, ox_l3_ndx, ox_l5_ndx, &amp;</a>
+   357) <a name="l357" style="background-color: #ffff99">                  ox_l6_ndx, ox_l7_ndx, usr4_ndx, &amp;</a>
+   358) <a name="l358" style="background-color: #ffff99">                  usr16_ndx, usr17_ndx /)</a>
+   359) <a name="l359" style="background-color: #ffff99">             if( any( wrk(1:9) &lt; 1 ) ) then</a>
+   360) <a name="l360" style="background-color: #ffff99">                reduced_ozone_chem = .false.</a>
+   361) <a name="l361" style="background-color: #ffff99">             end if</a>
+   362) <a name="l362" style="background-color: #ffff99">          endif</a>
+   363) <a name="l363" style="background-color: #ffff99">          if ( middle_atm_chem ) then</a>
+   364) <a name="l364" style="background-color: #ffff99">             wrk(1:3) = (/ ox_l1_ndx, ox_l2_ndx, ox_l3_ndx /)</a>
+   365) <a name="l365" style="background-color: #ffff99">             if( any( wrk(1:3) &lt; 1 ) ) then</a>
+   366) <a name="l366" style="background-color: #ffff99">                middle_atm_chem = .false.</a>
+   367) <a name="l367" style="background-color: #ffff99">             end if</a>
+   368) <a name="l368" style="background-color: #ffff99">          endif</a>
+   369) <a name="l369" style="background-color: #ffff99">          oh_ndx = get_spc_ndx( 'OH' )</a>
+   370) <a name="l370" style="background-color: #ffff99">          ho2_ndx = get_spc_ndx( 'HO2' )</a>
+   371) <a name="l371" style="background-color: #ffff99">          ch3o2_ndx = get_spc_ndx( 'CH3O2' )</a>
+   372) <a name="l372" style="background-color: #ffff99">          po2_ndx = get_spc_ndx( 'PO2' )</a>
+   373) <a name="l373" style="background-color: #ffff99">          ch3co3_ndx = get_spc_ndx( 'CH3CO3' )</a>
+   374) <a name="l374" style="background-color: #ffff99">          c2h5o2_ndx = get_spc_ndx( 'C2H5O2' )</a>
+   375) <a name="l375" style="background-color: #ffff99">          macro2_ndx = get_spc_ndx( 'MACRO2' )</a>
+   376) <a name="l376" style="background-color: #ffff99">          mco3_ndx = get_spc_ndx( 'MCO3' )</a>
+   377) <a name="l377" style="background-color: #ffff99">          c3h7o2_ndx = get_spc_ndx( 'C3H7O2' )</a>
+   378) <a name="l378" style="background-color: #ffff99">          ro2_ndx = get_spc_ndx( 'RO2' )</a>
+   379) <a name="l379" style="background-color: #ffff99">          xo2_ndx = get_spc_ndx( 'XO2' )</a>
+   380) <a name="l380" style="background-color: #ffff99">          no_ndx = get_spc_ndx( 'NO' )</a>
+   381) <a name="l381" style="background-color: #ffff99">          xno_ndx = get_spc_ndx( 'XNO' )</a>
+   382) <a name="l382" style="background-color: #ffff99">          no2_ndx = get_spc_ndx( 'NO2' )</a>
+   383) <a name="l383" style="background-color: #ffff99">          xno2_ndx = get_spc_ndx( 'XNO2' )</a>
+   384) <a name="l384" style="background-color: #ffff99">          no3_ndx = get_spc_ndx( 'NO3' )</a>
+   385) <a name="l385" style="background-color: #ffff99">          xno3_ndx = get_spc_ndx( 'XNO3' )</a>
+   386) <a name="l386" style="background-color: #ffff99">          n2o5_ndx = get_spc_ndx( 'N2O5' )</a>
+   387) <a name="l387" style="background-color: #ffff99">          xno2no3_ndx = get_spc_ndx( 'XNO2NO3' )</a>
+   388) <a name="l388" style="background-color: #ffff99">          no2xno3_ndx = get_spc_ndx( 'NO2XNO3' )</a>
+   389) <a name="l389" style="background-color: #ffff99">          c2h4_ndx = get_spc_ndx( 'C2H4' )</a>
+   390) <a name="l390" style="background-color: #ffff99">          c3h6_ndx = get_spc_ndx( 'C3H6' )</a>
+   391) <a name="l391" style="background-color: #ffff99">          isop_ndx = get_spc_ndx( 'ISOP' )</a>
+   392) <a name="l392" style="background-color: #ffff99">          isopo2_ndx = get_spc_ndx( 'ISOPO2' )</a>
+   393) <a name="l393" style="background-color: #ffff99">          mvk_ndx = get_spc_ndx( 'MVK' )</a>
+   394) <a name="l394" style="background-color: #ffff99">          c10h16_ndx = get_spc_ndx( 'C10H16' )</a>
+   395) <a name="l395" style="background-color: #ffff99">          tolo2_ndx = get_spc_ndx('TOLO2')</a>
+   396) <a name="l396" style="background-color: #ffff99">          terpo2_ndx =get_spc_ndx('TERPO2')</a>
+   397) <a name="l397" style="background-color: #ffff99">          alko2_ndx = get_spc_ndx('ALKO2')</a>
+   398) <a name="l398" style="background-color: #ffff99">          eneo2_ndx = get_spc_ndx('ENEO2')</a>
+   399) <a name="l399" style="background-color: #ffff99">          eo2_ndx = get_spc_ndx('EO2')</a>
+   400) <a name="l400" style="background-color: #ffff99">          meko2_ndx = get_spc_ndx('MEKO2')</a>
+   401) <a name="l401" style="background-color: #ffff99">          if ( full_ozone_chem ) then</a>
+   402) <a name="l402" style="background-color: #ffff99">             wrk(1:27) = (/ oh_ndx, ho2_ndx, ch3o2_ndx, po2_ndx, ch3co3_ndx, &amp;</a>
+   403) <a name="l403" style="background-color: #ffff99">                  c2h5o2_ndx, macro2_ndx, mco3_ndx, c3h7o2_ndx, ro2_ndx, &amp;</a>
+   404) <a name="l404" style="background-color: #ffff99">                  xo2_ndx, no_ndx, no2_ndx, no3_ndx, n2o5_ndx, &amp;</a>
+   405) <a name="l405" style="background-color: #ffff99">                  c2h4_ndx, c3h6_ndx, isop_ndx, isopo2_ndx, mvk_ndx, c10h16_ndx, &amp;</a>
+   406) <a name="l406" style="background-color: #ffff99">                  tolo2_ndx, terpo2_ndx, alko2_ndx, eneo2_ndx, eo2_ndx, meko2_ndx /)</a>
+   407) <a name="l407" style="background-color: #ffff99">             if( any( wrk(1:27) &lt; 1 ) ) then</a>
+   408) <a name="l408" style="background-color: #ffff99">                full_ozone_chem = .false.</a>
+   409) <a name="l409" style="background-color: #ffff99">             end if</a>
+   410) <a name="l410" style="background-color: #ffff99">          endif</a>
+   411) <a name="l411" style="background-color: #ffff99">          if ( reduced_ozone_chem ) then</a>
+   412) <a name="l412" style="background-color: #ffff99">             c2o3_ndx = get_spc_ndx( 'C2O3' )</a>
+   413) <a name="l413" style="background-color: #ffff99">             ole_ndx = get_spc_ndx( 'OLE' )</a>
+   414) <a name="l414" style="background-color: #ffff99">             wrk(1:12) = (/ oh_ndx, ho2_ndx, ch3o2_ndx, &amp;</a>
+   415) <a name="l415" style="background-color: #ffff99">                  ole_ndx,c2o3_ndx, &amp;</a>
+   416) <a name="l416" style="background-color: #ffff99">                  xo2_ndx, no_ndx, no2_ndx, no3_ndx, n2o5_ndx, &amp;</a>
+   417) <a name="l417" style="background-color: #ffff99">                  c2h4_ndx, isop_ndx /)</a>
+   418) <a name="l418" style="background-color: #ffff99">             if( any( wrk(1:12) &lt; 1 ) ) then</a>
+   419) <a name="l419" style="background-color: #ffff99">                reduced_ozone_chem = .false.</a>
+   420) <a name="l420" style="background-color: #ffff99">             end if</a>
+   421) <a name="l421" style="background-color: #ffff99">          endif</a>
+   422) <a name="l422" style="background-color: #ffff99">       end if</a>
+   423) <a name="l423" style="background-color: #ffff99">    else</a>
+   424) <a name="l424" style="background-color: #ffffff">       reduced_ozone_chem = .false.</a>
+   425) <a name="l425" style="background-color: #ffffff">       full_ozone_chem = .false.</a>
+   426) <a name="l426" style="background-color: #ffffff">    end if has_o3_chem</a>
+   427) <a name="l427" style="background-color: #ffffff">    if ( </a><a style="background-color: #ffff99">reduced_ozone_chem .and. full_ozone_chem ) then</a>
+   428) <a name="l428" style="background-color: #ffff99">       write(iulog,*) 'can not have both full_ozone_chem and reduced_ozone_chem'</a>
+   429) <a name="l429" style="background-color: #ffff99">       call endrun</a>
+   430) <a name="l430" style="background-color: #ffff99">    endif</a>
+   431) <a name="l431" style="background-color: #ffffff">    do i = 1,clscnt4</a>
+   432) <a name="l432" style="background-color: #ffffff">       j = clsmap(i,4)</a>
+   433) <a name="l433" style="background-color: #ffffff">       call addfld( trim(solsym(j))//'_CHMP', '/cm3/s ', pver, 'I', 'chemical production rate', phys_decomp )</a>
+   434) <a name="l434" style="background-color: #ffffff">       call addfld( trim(solsym(j))//'_CHML', '/cm3/s ', pver, 'I', 'chemical loss rate',       phys_decomp )</a>
+   435) <a name="l435" style="background-color: #ffffff">    enddo</a>
+   436) <a name="l436" style="background-color: #ffffff">    call addfld('H_PEROX_CHMP', '/cm3/s ', pver, 'I', 'total ROOH production rate', phys_decomp ) !PJY changed &quot;RO2&quot; to &quot;ROOH&quot;</a>
+   437) <a name="l437" style="background-color: #ffffff">  end subroutine imp_slv_inti</a>
+   438) <a name="l438" style="background-color: #ffffff">  subroutine imp_sol( base_sol, reaction_rates, het_rates, extfrc, delt, &amp;</a>
+   439) <a name="l439" style="background-color: #ffffff">       xhnm, ncol, lchnk, ltrop, o3s_loss )</a>
+   440) <a name="l440" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   441) <a name="l441" style="background-color: #ffffff">    ! ... imp_sol advances the volumetric mixing ratio</a>
+   442) <a name="l442" style="background-color: #ffffff">    ! forward one time step via the fully implicit euler scheme.</a>
+   443) <a name="l443" style="background-color: #ffffff">    ! this source is meant for small l1 cache machines such as</a>
+   444) <a name="l444" style="background-color: #ffffff">    ! the intel pentium and itanium cpus</a>
+   445) <a name="l445" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   446) <a name="l446" style="background-color: #ffffff">    use chem_mods, only : rxntot, extcnt, nzcnt, permute, cls_rxt_cnt</a>
+   447) <a name="l447" style="background-color: #ffffff">    use mo_tracname, only : solsym</a>
+   448) <a name="l448" style="background-color: #ffffff">    use ppgrid, only : pver</a>
+   449) <a name="l449" style="background-color: #ffffff">    use mo_lin_matrix, only : linmat</a>
+   450) <a name="l450" style="background-color: #ffffff">    use mo_nln_matrix, only : nlnmat</a>
+   451) <a name="l451" style="background-color: #ffffff">    use mo_lu_factor, only : lu_fac</a>
+   452) <a name="l452" style="background-color: #ffffff">    use mo_lu_solve, only : lu_slv</a>
+   453) <a name="l453" style="background-color: #ffffff">    use mo_prod_loss, only : imp_prod_loss</a>
+   454) <a name="l454" style="background-color: #ffffff">    use mo_indprd, only : indprd</a>
+   455) <a name="l455" style="background-color: #ffffff">    use time_manager, only : get_nstep</a>
+   456) <a name="l456" style="background-color: #ffffff">    use cam_history, only : outfld</a>
+   457) <a name="l457" style="background-color: #ffffff">    implicit none</a>
+   458) <a name="l458" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   459) <a name="l459" style="background-color: #ffffff">    ! ... dummy args</a>
+   460) <a name="l460" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   461) <a name="l461" style="background-color: #ffffff">    integer, intent(in) :: ncol ! columns in chunck</a>
+   462) <a name="l462" style="background-color: #ffffff">    integer, intent(in) :: lchnk ! chunk id</a>
+   463) <a name="l463" style="background-color: #ffffff">    real(r8), intent(in) :: delt ! time step (s)</a>
+   464) <a name="l464" style="background-color: #ffffff">    real(r8), intent(in) :: reaction_rates(ncol,pver,max(1,rxntot)), &amp; ! rxt rates (1/cm^3/s)</a>
+   465) <a name="l465" style="background-color: #ffffff">         extfrc(ncol,pver,max(1,extcnt)), &amp; ! external in-situ forcing (1/cm^3/s)</a>
+   466) <a name="l466" style="background-color: #ffffff">         het_rates(ncol,pver,max(1,gas_pcnst)) ! washout rates (1/s)</a>
+   467) <a name="l467" style="background-color: #ffffff">    real(r8), intent(inout) :: base_sol(ncol,pver,gas_pcnst) ! species mixing ratios (vmr)</a>
+   468) <a name="l468" style="background-color: #ffffff">    real(r8), intent(in) :: xhnm(ncol,pver)</a>
+   469) <a name="l469" style="background-color: #ffffff">    integer, intent(in) :: ltrop(ncol) ! chemistry troposphere boundary (index)</a>
+   470) <a name="l470" style="background-color: #ffffff">    real(r8), optional, intent(out) :: o3s_loss(ncol,pver)</a>
+   471) <a name="l471" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   472) <a name="l472" style="background-color: #ffffff">    ! ... local variables</a>
+   473) <a name="l473" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   474) <a name="l474" style="background-color: #ffffff">    integer :: nr_iter, &amp;</a>
+   475) <a name="l475" style="background-color: #ffffff">         lev, &amp;</a>
+   476) <a name="l476" style="background-color: #ffffff">         i, &amp;</a>
+   477) <a name="l477" style="background-color: #ffffff">         j, &amp;</a>
+   478) <a name="l478" style="background-color: #ffffff">         k, l, &amp;</a>
+   479) <a name="l479" style="background-color: #ffffff">         m</a>
+   480) <a name="l480" style="background-color: #ffffff">    integer :: fail_cnt, cut_cnt, stp_con_cnt</a>
+   481) <a name="l481" style="background-color: #ffffff">    integer :: nstep</a>
+   482) <a name="l482" style="background-color: #ffffff">    real(r8) :: interval_done, dt, dti, wrk</a>
+   483) <a name="l483" style="background-color: #ffffff">    real(r8) :: max_delta(max(1,clscnt4))</a>
+   484) <a name="l484" style="background-color: #ffffff">    real(r8) :: sys_jac(max(1,nzcnt))</a>
+   485) <a name="l485" style="background-color: #ffffff">    real(r8) :: lin_jac(max(1,nzcnt))</a>
+   486) <a name="l486" style="background-color: #ffffff">    real(r8), dimension(max(1,clscnt4)) :: &amp;</a>
+   487) <a name="l487" style="background-color: #ffffff">         solution, &amp;</a>
+   488) <a name="l488" style="background-color: #ffffff">         forcing, &amp;</a>
+   489) <a name="l489" style="background-color: #ffffff">         iter_invariant, &amp;</a>
+   490) <a name="l490" style="background-color: #ffffff">         prod, &amp;</a>
+   491) <a name="l491" style="background-color: #ffffff">         loss</a>
+   492) <a name="l492" style="background-color: #ffffff">    real(r8) :: lrxt(max(1,rxntot))</a>
+   493) <a name="l493" style="background-color: #ffffff">    real(r8) :: lsol(max(1,gas_pcnst))</a>
+   494) <a name="l494" style="background-color: #ffffff">    real(r8) :: lhet(max(1,gas_pcnst))</a>
+   495) <a name="l495" style="background-color: #ffffff">    real(r8), dimension(ncol,pver,max(1,clscnt4)) :: &amp;</a>
+   496) <a name="l496" style="background-color: #ffffff">         ind_prd</a>
+   497) <a name="l497" style="background-color: #ffffff">    logical :: convergence</a>
+   498) <a name="l498" style="background-color: #ffffff">    logical :: frc_mask, iter_conv</a>
+   499) <a name="l499" style="background-color: #ffffff">    logical :: converged(max(1,clscnt4))</a>
+   500) <a name="l500" style="background-color: #ffffff">    real(r8), dimension(ncol,pver,max(1,clscnt4)) :: prod_out, loss_out</a>
+   501) <a name="l501" style="background-color: #ffffff">    real(r8), dimension(ncol,pver) :: prod_hydrogen_peroxides_out</a>
+   502) <a name="l502" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(o3s_loss)) then</a>
+   503) <a name="l503" style="background-color: #ffffff">       o3s_loss(:,:) = 0._r8</a>
+   504) <a name="l504" style="background-color: #ffffff">    endif</a>
+   505) <a name="l505" style="background-color: #ffffff">    prod_out(:,:,:) = 0._r8</a>
+   506) <a name="l506" style="background-color: #ffffff">    loss_out(:,:,:) = 0._r8</a>
+   507) <a name="l507" style="background-color: #ffffff">    prod_hydrogen_peroxides_out(:,:) = 0._r8</a>
+   508) <a name="l508" style="background-color: #ffffff">    solution(:) = 0._r8</a>
+   509) <a name="l509" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   510) <a name="l510" style="background-color: #ffffff">    ! ... class independent forcing</a>
+   511) <a name="l511" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   512) <a name="l512" style="background-color: #ffffff">    if( cls_rxt_cnt(1,4) &gt; 0 .or. extcnt &gt; 0 ) then</a>
+   513) <a name="l513" style="background-color: #ffffff">       call indprd( 4, ind_prd, clscnt4, base_sol, extfrc, &amp;</a>
+   514) <a name="l514" style="background-color: #ffffff">            reaction_rates, ncol )</a>
+   515) <a name="l515" style="background-color: #ffffff">    else</a>
+   516) <a name="l516" style="background-color: #ffff99">       do m = 1,max(1,clscnt4)</a>
+   517) <a name="l517" style="background-color: #ffff99">          ind_prd(:,:,m) = 0._r8</a>
+   518) <a name="l518" style="background-color: #ffff99">       end do</a>
+   519) <a name="l519" style="background-color: #ffff99">    end if</a>
+   520) <a name="l520" style="background-color: #ffffff">    level_loop : do lev = 1,pver</a>
+   521) <a name="l521" style="background-color: #ffffff">       column_loop : do i = 1,ncol</a>
+   522) <a name="l522" style="background-color: #ffffff">          IF (lev &lt;= ltrop(i)) CYCLE column_loop</a>
+   523) <a name="l523" style="background-color: #ffffff">          !-----------------------------------------------------------------------</a>
+   524) <a name="l524" style="background-color: #ffffff">          ! ... transfer from base to local work arrays</a>
+   525) <a name="l525" style="background-color: #ffffff">          !-----------------------------------------------------------------------</a>
+   526) <a name="l526" style="background-color: #ffffff">          do m = 1,rxntot</a>
+   527) <a name="l527" style="background-color: #ffffff">             lrxt(m) = reaction_rates(i,lev,m)</a>
+   528) <a name="l528" style="background-color: #ffffff">          end do</a>
+   529) <a name="l529" style="background-color: #ffffff">          if( gas_pcnst &gt; 0 ) then</a>
+   530) <a name="l530" style="background-color: #ffffff">             do m = 1,gas_pcnst</a>
+   531) <a name="l531" style="background-color: #ffffff">                lhet(m) = het_rates(i,lev,m)</a>
+   532) <a name="l532" style="background-color: #ffffff">             end do</a>
+   533) <a name="l533" style="background-color: #ffffff">          end if</a>
+   534) <a name="l534" style="background-color: #ffffff">          !-----------------------------------------------------------------------</a>
+   535) <a name="l535" style="background-color: #ffffff">          ! ... time step loop</a>
+   536) <a name="l536" style="background-color: #ffffff">          !-----------------------------------------------------------------------</a>
+   537) <a name="l537" style="background-color: #ffffff">          dt = delt</a>
+   538) <a name="l538" style="background-color: #ffffff">          cut_cnt = 0</a>
+   539) <a name="l539" style="background-color: #ffffff">          fail_cnt = 0</a>
+   540) <a name="l540" style="background-color: #ffffff">          stp_con_cnt = 0</a>
+   541) <a name="l541" style="background-color: #ffffff">          interval_done = 0._r8</a>
+   542) <a name="l542" style="background-color: #ffffff">          time_step_loop : do</a>
+   543) <a name="l543" style="background-color: #ffffff">             dti = 1._r8 / dt</a>
+   544) <a name="l544" style="background-color: #ffffff">             !-----------------------------------------------------------------------</a>
+   545) <a name="l545" style="background-color: #ffffff">             ! ... transfer from base to local work arrays</a>
+   546) <a name="l546" style="background-color: #ffffff">             !-----------------------------------------------------------------------</a>
+   547) <a name="l547" style="background-color: #ffffff">             do m = 1,gas_pcnst</a>
+   548) <a name="l548" style="background-color: #ffffff">                lsol(m) = base_sol(i,lev,m)</a>
+   549) <a name="l549" style="background-color: #ffffff">             end do</a>
+   550) <a name="l550" style="background-color: #ffffff">             !-----------------------------------------------------------------------</a>
+   551) <a name="l551" style="background-color: #ffffff">             ! ... transfer from base to class array</a>
+   552) <a name="l552" style="background-color: #ffffff">             !-----------------------------------------------------------------------</a>
+   553) <a name="l553" style="background-color: #ffffff">             do k = 1,clscnt4</a>
+   554) <a name="l554" style="background-color: #ffffff">                j = clsmap(k,4)</a>
+   555) <a name="l555" style="background-color: #ffffff">                m = permute(k,4)</a>
+   556) <a name="l556" style="background-color: #ffffff">                solution(m) = lsol(j)</a>
+   557) <a name="l557" style="background-color: #ffffff">             end do</a>
+   558) <a name="l558" style="background-color: #ffffff">             !-----------------------------------------------------------------------</a>
+   559) <a name="l559" style="background-color: #ffffff">             ! ... set the iteration invariant part of the function f(y)</a>
+   560) <a name="l560" style="background-color: #ffffff">             !-----------------------------------------------------------------------</a>
+   561) <a name="l561" style="background-color: #ffffff">             if( cls_rxt_cnt(1,4) &gt; 0 .or. extcnt &gt; 0 ) then</a>
+   562) <a name="l562" style="background-color: #ffffff">                do m = 1,clscnt4</a>
+   563) <a name="l563" style="background-color: #ffffff">                   iter_invariant(m) = dti * solution(m) + ind_prd(i,lev,m)</a>
+   564) <a name="l564" style="background-color: #ffffff">                end do</a>
+   565) <a name="l565" style="background-color: #ffffff">             else</a>
+   566) <a name="l566" style="background-color: #ffff99">                do m = 1,clscnt4</a>
+   567) <a name="l567" style="background-color: #ffff99">                   iter_invariant(m) = dti * solution(m)</a>
+   568) <a name="l568" style="background-color: #ffff99">                end do</a>
+   569) <a name="l569" style="background-color: #ffff99">             end if</a>
+   570) <a name="l570" style="background-color: #ffff99">             !-----------------------------------------------------------------------</a>
+   571) <a name="l571" style="background-color: #ffff99">             ! ... the linear component</a>
+   572) <a name="l572" style="background-color: #ffff99">             !-----------------------------------------------------------------------</a>
+   573) <a name="l573" style="background-color: #ffff99">             !if( cls_rxt_cnt(2,4) &gt; 0 ) then</a>
+   574) <a name="l574" style="background-color: #ffff99">                call </a><a style="background-color: #ffffff">linmat( lin_jac, lsol, lrxt, lhet )</a>
+   575) <a name="l575" style="background-color: #ffffff">             !end if</a>
+   576) <a name="l576" style="background-color: #ffffff">             !=======================================================================</a>
+   577) <a name="l577" style="background-color: #ffffff">             ! the newton-raphson iteration for f(y) = 0</a>
+   578) <a name="l578" style="background-color: #ffffff">             !=======================================================================</a>
+   579) <a name="l579" style="background-color: #ffffff">             iter_loop : do nr_iter = 1,itermax</a>
+   580) <a name="l580" style="background-color: #ffffff">                !-----------------------------------------------------------------------</a>
+   581) <a name="l581" style="background-color: #ffffff">                ! ... the non-linear component</a>
+   582) <a name="l582" style="background-color: #ffffff">                !-----------------------------------------------------------------------</a>
+   583) <a name="l583" style="background-color: #ffffff">                if( factor(nr_iter) ) then</a>
+   584) <a name="l584" style="background-color: #ffffff">                   call nlnmat( sys_jac, lsol, lrxt, lin_jac, dti )</a>
+   585) <a name="l585" style="background-color: #ffffff">                   !-----------------------------------------------------------------------</a>
+   586) <a name="l586" style="background-color: #ffffff">                   ! ... factor the &quot;system&quot; matrix</a>
+   587) <a name="l587" style="background-color: #ffffff">                   !-----------------------------------------------------------------------</a>
+   588) <a name="l588" style="background-color: #ffffff">                   call lu_fac( sys_jac )</a>
+   589) <a name="l589" style="background-color: #ffffff">                end if</a>
+   590) <a name="l590" style="background-color: #ffffff">                !-----------------------------------------------------------------------</a>
+   591) <a name="l591" style="background-color: #ffffff">                ! ... form f(y)</a>
+   592) <a name="l592" style="background-color: #ffffff">                !-----------------------------------------------------------------------</a>
+   593) <a name="l593" style="background-color: #ffffff">                call imp_prod_loss( prod, loss, lsol, lrxt, lhet )</a>
+   594) <a name="l594" style="background-color: #ffffff">                do m = 1,clscnt4</a>
+   595) <a name="l595" style="background-color: #ffffff">                   forcing(m) = solution(m)*dti - (iter_invariant(m) + prod(m) - loss(m))</a>
+   596) <a name="l596" style="background-color: #ffffff">                end do</a>
+   597) <a name="l597" style="background-color: #ffffff">                !-----------------------------------------------------------------------</a>
+   598) <a name="l598" style="background-color: #ffffff">                ! ... solve for the mixing ratio at t(n+1)</a>
+   599) <a name="l599" style="background-color: #ffffff">                !-----------------------------------------------------------------------</a>
+   600) <a name="l600" style="background-color: #ffffff">                call lu_slv( sys_jac, forcing )</a>
+   601) <a name="l601" style="background-color: #ffffff">                do m = 1,clscnt4</a>
+   602) <a name="l602" style="background-color: #ffffff">                   solution(m) = solution(m) + forcing(m)</a>
+   603) <a name="l603" style="background-color: #ffffff">                end do</a>
+   604) <a name="l604" style="background-color: #ffffff">                !-----------------------------------------------------------------------</a>
+   605) <a name="l605" style="background-color: #ffffff">                ! ... convergence measures</a>
+   606) <a name="l606" style="background-color: #ffffff">                !-----------------------------------------------------------------------</a>
+   607) <a name="l607" style="background-color: #ffffff">                if( nr_iter &gt; 1 ) then</a>
+   608) <a name="l608" style="background-color: #ffffff">                   do k = 1,clscnt4</a>
+   609) <a name="l609" style="background-color: #ffffff">                      m = permute(k,4)</a>
+   610) <a name="l610" style="background-color: #ffffff">                      if( abs(solution(m)) &gt; 1.e-20_r8 ) then</a>
+   611) <a name="l611" style="background-color: #ffffff">                         max_delta(k) = abs( forcing(m)/solution(m) )</a>
+   612) <a name="l612" style="background-color: #ffffff">                      else</a>
+   613) <a name="l613" style="background-color: #ffffff">                         max_delta(k) = 0._r8</a>
+   614) <a name="l614" style="background-color: #ffffff">                      end if</a>
+   615) <a name="l615" style="background-color: #ffffff">                   end do</a>
+   616) <a name="l616" style="background-color: #ffffff">                end if</a>
+   617) <a name="l617" style="background-color: #ffffff">                !-----------------------------------------------------------------------</a>
+   618) <a name="l618" style="background-color: #ffffff">                ! ... limit iterate</a>
+   619) <a name="l619" style="background-color: #ffffff">                !-----------------------------------------------------------------------</a>
+   620) <a name="l620" style="background-color: #ffffff">                where( solution(:) </a><a style="background-color: #fafad2">&lt; 0._r8 )</a>
+   621) <a name="l621" style="background-color: #fafad2">                   solution(:) = 0._r8</a>
+   622) <a name="l622" style="background-color: #fafad2">                endwhere</a>
+   623) <a name="l623" style="background-color: #fafad2">                !-----------------------------------------------------------------------</a>
+   624) <a name="l624" style="background-color: #fafad2">                ! ... transfer latest solution back to work array</a>
+   625) <a name="l625" style="background-color: #fafad2">                !-----------------------------------------------------------------------</a>
+   626) <a name="l626" style="background-color: #ffffff">                do k = 1,clscnt4</a>
+   627) <a name="l627" style="background-color: #ffffff">                   j = clsmap(k,4)</a>
+   628) <a name="l628" style="background-color: #ffffff">                   m = permute(k,4)</a>
+   629) <a name="l629" style="background-color: #ffffff">                   lsol(j) = solution(m)</a>
+   630) <a name="l630" style="background-color: #ffffff">                end do</a>
+   631) <a name="l631" style="background-color: #ffffff">                !-----------------------------------------------------------------------</a>
+   632) <a name="l632" style="background-color: #ffffff">                ! ... check for convergence</a>
+   633) <a name="l633" style="background-color: #ffffff">                !-----------------------------------------------------------------------</a>
+   634) <a name="l634" style="background-color: #ffffff">                converged(:) = .true.</a>
+   635) <a name="l635" style="background-color: #ffffff">                if( nr_iter &gt; 1 ) then</a>
+   636) <a name="l636" style="background-color: #ffffff">                   do k = 1,clscnt4</a>
+   637) <a name="l637" style="background-color: #ffffff">                      m = permute(k,4)</a>
+   638) <a name="l638" style="background-color: #ffffff">                      frc_mask = abs( forcing(m) ) &gt; small</a>
+   639) <a name="l639" style="background-color: #ffffff">                      if( frc_mask ) then</a>
+   640) <a name="l640" style="background-color: #fafad2">                         converged(k) = abs(forcing(m)) &lt;= epsilon(k)*abs(solution(m))</a>
+   641) <a name="l641" style="background-color: #fafad2">                      else</a>
+   642) <a name="l642" style="background-color: #ffffff">                         converged(k) = .true.</a>
+   643) <a name="l643" style="background-color: #ffffff">                      end if</a>
+   644) <a name="l644" style="background-color: #ffffff">                   end do</a>
+   645) <a name="l645" style="background-color: #ffffff">                   convergence = all( converged(:) )</a>
+   646) <a name="l646" style="background-color: #ffffff">                   if( convergence ) then</a>
+   647) <a name="l647" style="background-color: #ffffff">                      exit</a>
+   648) <a name="l648" style="background-color: #ffffff">                   end if</a>
+   649) <a name="l649" style="background-color: #ffffff">                end if</a>
+   650) <a name="l650" style="background-color: #ffffff">             end do iter_loop</a>
+   651) <a name="l651" style="background-color: #ffffff">             !-----------------------------------------------------------------------</a>
+   652) <a name="l652" style="background-color: #ffffff">             ! ... check for newton-raphson convergence</a>
+   653) <a name="l653" style="background-color: #ffffff">             !-----------------------------------------------------------------------</a>
+   654) <a name="l654" style="background-color: #ffffff">             if( .not. convergence ) then</a>
+   655) <a name="l655" style="background-color: #ffffff">                !-----------------------------------------------------------------------</a>
+   656) <a name="l656" style="background-color: #ffffff">                ! ... non-convergence</a>
+   657) <a name="l657" style="background-color: #ffffff">                !-----------------------------------------------------------------------</a>
+   658) <a name="l658" style="background-color: #ffff99">                fail_cnt = fail_cnt + 1</a>
+   659) <a name="l659" style="background-color: #ffff99">                nstep = get_nstep()</a>
+   660) <a name="l660" style="background-color: #ffff99">                write(iulog,'('' imp_sol: Time step '',1p,e21.13,'' failed to converge @ (lchnk,lev,col,nstep) = '',4i6)') &amp;</a>
+   661) <a name="l661" style="background-color: #ffff99">                     dt,lchnk,lev,i,nstep</a>
+   662) <a name="l662" style="background-color: #ffff99">                stp_con_cnt = 0</a>
+   663) <a name="l663" style="background-color: #ffff99">                if( cut_cnt &lt; cut_limit ) then</a>
+   664) <a name="l664" style="background-color: #ffff99">                   cut_cnt = cut_cnt + 1</a>
+   665) <a name="l665" style="background-color: #ffff99">                   if( cut_cnt &lt; cut_limit ) then</a>
+   666) <a name="l666" style="background-color: #ffff99">                      dt = .5_r8 * dt</a>
+   667) <a name="l667" style="background-color: #ffff99">                   else</a>
+   668) <a name="l668" style="background-color: #ffff99">                      dt = .1_r8 * dt</a>
+   669) <a name="l669" style="background-color: #ffff99">                   end if</a>
+   670) <a name="l670" style="background-color: #ffff99">                   cycle time_step_loop</a>
+   671) <a name="l671" style="background-color: #ffff99">                else</a>
+   672) <a name="l672" style="background-color: #ffff99">                   write(iulog,'('' imp_sol: Failed to converge @ (lchnk,lev,col,nstep,dt,time) = '',4i6,1p,2e21.13)') &amp;</a>
+   673) <a name="l673" style="background-color: #ffff99">                        lchnk,lev,i,nstep,dt,interval_done+dt</a>
+   674) <a name="l674" style="background-color: #ffff99">                   do m = 1,clscnt4</a>
+   675) <a name="l675" style="background-color: #ffff99">                      if( .not. converged(m) ) then</a>
+   676) <a name="l676" style="background-color: #ffff99">                         write(iulog,'(1x,a8,1x,1pe10.3)') solsym(clsmap(m,4)), max_delta(m)</a>
+   677) <a name="l677" style="background-color: #ffff99">                      end if</a>
+   678) <a name="l678" style="background-color: #ffff99">                   end do</a>
+   679) <a name="l679" style="background-color: #ffff99">                end if</a>
+   680) <a name="l680" style="background-color: #ffff99">             end if</a>
+   681) <a name="l681" style="background-color: #ffff99">             !-----------------------------------------------------------------------</a>
+   682) <a name="l682" style="background-color: #ffff99">             ! ... check for interval done</a>
+   683) <a name="l683" style="background-color: #ffff99">             !-----------------------------------------------------------------------</a>
+   684) <a name="l684" style="background-color: #ffffff">             interval_done = interval_done + dt</a>
+   685) <a name="l685" style="background-color: #ffffff">             if( abs( delt - interval_done ) &lt;= .0001_r8 ) then</a>
+   686) <a name="l686" style="background-color: #ffffff">                if( fail_cnt &gt; 0 ) then</a>
+   687) <a name="l687" style="background-color: #ffff99">                   write(iulog,*) 'imp_sol : @ (lchnk,lev,col) = ',lchnk,lev,i,' failed ',fail_cnt,' times'</a>
+   688) <a name="l688" style="background-color: #ffff99">                end if</a>
+   689) <a name="l689" style="background-color: #ffff99">                exit time_step_loop</a>
+   690) <a name="l690" style="background-color: #ffff99">             else</a>
+   691) <a name="l691" style="background-color: #ffff99">                !-----------------------------------------------------------------------</a>
+   692) <a name="l692" style="background-color: #ffff99">                ! ... transfer latest solution back to base array</a>
+   693) <a name="l693" style="background-color: #ffff99">                !-----------------------------------------------------------------------</a>
+   694) <a name="l694" style="background-color: #ffff99">                if( convergence ) then</a>
+   695) <a name="l695" style="background-color: #ffff99">                   stp_con_cnt = stp_con_cnt + 1</a>
+   696) <a name="l696" style="background-color: #ffff99">                end if</a>
+   697) <a name="l697" style="background-color: #ffff99">                do m = 1,gas_pcnst</a>
+   698) <a name="l698" style="background-color: #ffff99">                   base_sol(i,lev,m) = lsol(m)</a>
+   699) <a name="l699" style="background-color: #ffff99">                end do</a>
+   700) <a name="l700" style="background-color: #ffff99">                if( stp_con_cnt &gt;= 2 ) then</a>
+   701) <a name="l701" style="background-color: #ffff99">                   dt = 2._r8*dt</a>
+   702) <a name="l702" style="background-color: #ffff99">                   stp_con_cnt = 0</a>
+   703) <a name="l703" style="background-color: #ffff99">                end if</a>
+   704) <a name="l704" style="background-color: #ffff99">                dt = min( dt,delt-interval_done )</a>
+   705) <a name="l705" style="background-color: #ffff99">                ! write(iulog,'('' imp_sol: New time step '',1p,e21.13)') dt</a>
+   706) <a name="l706" style="background-color: #ffff99">             end if</a>
+   707) <a name="l707" style="background-color: #ffff99">          end do time_step_loop</a>
+   708) <a name="l708" style="background-color: #ffff99">          !-----------------------------------------------------------------------</a>
+   709) <a name="l709" style="background-color: #ffff99">          ! ... Transfer latest solution back to base array</a>
+   710) <a name="l710" style="background-color: #ffff99">          !-----------------------------------------------------------------------</a>
+   711) <a name="l711" style="background-color: #ffffff">          cls_loop: do k = 1,clscnt4</a>
+   712) <a name="l712" style="background-color: #ffffff">             j = clsmap(k,4)</a>
+   713) <a name="l713" style="background-color: #ffffff">             m = permute(k,4)</a>
+   714) <a name="l714" style="background-color: #ffffff">             base_sol(i,lev,j) = solution(m)</a>
+   715) <a name="l715" style="background-color: #ffffff">          end do cls_loop</a>
+   716) <a name="l716" style="background-color: #ffffff">          !-----------------------------------------------------------------------</a>
+   717) <a name="l717" style="background-color: #ffffff">          ! ... Prod/Loss history buffers...</a>
+   718) <a name="l718" style="background-color: #ffffff">          !-----------------------------------------------------------------------</a>
+   719) <a name="l719" style="background-color: #ffffff">          cls_loop2: do k = 1,clscnt4</a>
+   720) <a name="l720" style="background-color: #ffffff">             j = clsmap(k,4)</a>
+   721) <a name="l721" style="background-color: #ffffff">             m = permute(k,4)</a>
+   722) <a name="l722" style="background-color: #ffffff">             has_o3_chem: if( ( full_ozone_chem .or. reduced_ozone_chem </a><a style="background-color: #ffff99">.or. middle_atm_chem ) .and. &amp;</a>
+   723) <a name="l723" style="background-color: #ffff99">                              (j == ox_ndx .or. j == o3a_ndx )) then</a>
+   724) <a name="l724" style="background-color: #ffff99">                if( o1d_ndx &lt; 1 ) then</a>
+   725) <a name="l725" style="background-color: #ffff99">                   loss_out(i,lev,k) = reaction_rates(i,lev,ox_l1_ndx)</a>
+   726) <a name="l726" style="background-color: #ffff99">                else</a>
+   727) <a name="l727" style="background-color: #ffff99">                   if (j == ox_ndx) &amp;</a>
+   728) <a name="l728" style="background-color: #ffff99">                      loss_out(i,lev,k) = reaction_rates(i,lev,ox_l1_ndx) * base_sol(i,lev,o1d_ndx) &amp;</a>
+   729) <a name="l729" style="background-color: #ffff99">                                          / base_sol(i,lev,ox_ndx)</a>
+   730) <a name="l730" style="background-color: #ffff99">                   if (j == o3a_ndx) &amp;</a>
+   731) <a name="l731" style="background-color: #ffff99">                      loss_out(i,lev,k) = reaction_rates(i,lev,ox_l1_ndx) * base_sol(i,lev,o1da_ndx)&amp;</a>
+   732) <a name="l732" style="background-color: #ffff99">                                          / base_sol(i,lev,o3a_ndx)</a>
+   733) <a name="l733" style="background-color: #ffff99">                   if ( h2o_ndx &gt; 0 ) &amp;</a>
+   734) <a name="l734" style="background-color: #ffff99">                      loss_out(i,lev,k) = loss_out(i,lev,k) * base_sol(i,lev,h2o_ndx)</a>
+   735) <a name="l735" style="background-color: #ffff99">                end if</a>
+   736) <a name="l736" style="background-color: #ffff99">                if ( full_ozone_chem ) then</a>
+   737) <a name="l737" style="background-color: #ffff99">                   prod_out(i,lev,k) = reaction_rates(i,lev,ox_p1_ndx) * base_sol(i,lev,ho2_ndx) &amp;</a>
+   738) <a name="l738" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p2_ndx) * base_sol(i,lev,ch3o2_ndx) &amp;</a>
+   739) <a name="l739" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p3_ndx) * base_sol(i,lev,po2_ndx) &amp;</a>
+   740) <a name="l740" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p4_ndx) * base_sol(i,lev,ch3co3_ndx) &amp;</a>
+   741) <a name="l741" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p5_ndx) * base_sol(i,lev,c2h5o2_ndx) &amp;</a>
+   742) <a name="l742" style="background-color: #ffff99">                        + .92_r8* reaction_rates(i,lev,ox_p6_ndx) * base_sol(i,lev,isopo2_ndx) &amp;</a>
+   743) <a name="l743" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p7_ndx) * base_sol(i,lev,macro2_ndx) &amp;</a>
+   744) <a name="l744" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p8_ndx) * base_sol(i,lev,mco3_ndx) &amp;</a>
+   745) <a name="l745" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p9_ndx) * base_sol(i,lev,c3h7o2_ndx) &amp;</a>
+   746) <a name="l746" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p10_ndx)* base_sol(i,lev,ro2_ndx) &amp;</a>
+   747) <a name="l747" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p11_ndx)* base_sol(i,lev,xo2_ndx) &amp;</a>
+   748) <a name="l748" style="background-color: #ffff99">                        + .9_r8*reaction_rates(i,lev,ox_p12_ndx)*base_sol(i,lev,tolo2_ndx) &amp;</a>
+   749) <a name="l749" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p13_ndx)*base_sol(i,lev,terpo2_ndx)&amp;</a>
+   750) <a name="l750" style="background-color: #ffff99">                        + .9_r8*reaction_rates(i,lev,ox_p14_ndx)*base_sol(i,lev,alko2_ndx) &amp;</a>
+   751) <a name="l751" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p15_ndx)*base_sol(i,lev,eneo2_ndx) &amp;</a>
+   752) <a name="l752" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p16_ndx)*base_sol(i,lev,eo2_ndx) &amp;</a>
+   753) <a name="l753" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p17_ndx)*base_sol(i,lev,meko2_ndx)</a>
+   754) <a name="l754" style="background-color: #ffff99">                   loss_out(i,lev,k) = loss_out(i,lev,k) &amp;</a>
+   755) <a name="l755" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_l2_ndx) * base_sol(i,lev,oh_ndx) &amp;</a>
+   756) <a name="l756" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_l3_ndx) * base_sol(i,lev,ho2_ndx) &amp;</a>
+   757) <a name="l757" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_l6_ndx) * base_sol(i,lev,c2h4_ndx) &amp;</a>
+   758) <a name="l758" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_l4_ndx) * base_sol(i,lev,c3h6_ndx) &amp;</a>
+   759) <a name="l759" style="background-color: #ffff99">                        + .9_r8* reaction_rates(i,lev,ox_l5_ndx) * base_sol(i,lev,isop_ndx) &amp;</a>
+   760) <a name="l760" style="background-color: #ffff99">                        + .8_r8*( reaction_rates(i,lev,ox_l7_ndx) * base_sol(i,lev,mvk_ndx) &amp;</a>
+   761) <a name="l761" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_l8_ndx) * base_sol(i,lev,macro2_ndx)) &amp;</a>
+   762) <a name="l762" style="background-color: #ffff99">                        + .235_r8*reaction_rates(i,lev,ox_l9_ndx) * base_sol(i,lev,c10h16_ndx)</a>
+   763) <a name="l763" style="background-color: #ffff99">                else if ( reduced_ozone_chem ) then</a>
+   764) <a name="l764" style="background-color: #ffff99">                   prod_out(i,lev,k) = reaction_rates(i,lev,ox_p1_ndx ) * base_sol(i,lev,ho2_ndx) &amp;</a>
+   765) <a name="l765" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p2_ndx ) * base_sol(i,lev,ch3o2_ndx) &amp;</a>
+   766) <a name="l766" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p3_ndx ) * base_sol(i,lev,c2o3_ndx) &amp;</a>
+   767) <a name="l767" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_p11_ndx ) * base_sol(i,lev,xo2_ndx)</a>
+   768) <a name="l768" style="background-color: #ffff99">                   loss_out(i,lev,k) = loss_out(i,lev,k) &amp;</a>
+   769) <a name="l769" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_l2_ndx) * base_sol(i,lev,oh_ndx) &amp;</a>
+   770) <a name="l770" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_l3_ndx) * base_sol(i,lev,ho2_ndx) &amp;</a>
+   771) <a name="l771" style="background-color: #ffff99">                        + .9_r8* reaction_rates(i,lev,ox_l5_ndx) * base_sol(i,lev,isop_ndx) &amp;</a>
+   772) <a name="l772" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_l6_ndx) * base_sol(i,lev,c2h4_ndx) &amp;</a>
+   773) <a name="l773" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_l7_ndx) * base_sol(i,lev,ole_ndx)</a>
+   774) <a name="l774" style="background-color: #ffff99">                else if ( middle_atm_chem ) then</a>
+   775) <a name="l775" style="background-color: #ffff99">                   loss_out(i,lev,k) = loss_out(i,lev,k) &amp;</a>
+   776) <a name="l776" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_l2_ndx) * base_sol(i,lev,oh_ndx) &amp;</a>
+   777) <a name="l777" style="background-color: #ffff99">                        + reaction_rates(i,lev,ox_l3_ndx) * base_sol(i,lev,ho2_ndx)</a>
+   778) <a name="l778" style="background-color: #ffff99">                endif</a>
+   779) <a name="l779" style="background-color: #ffff99">                if (j == ox_ndx) then</a>
+   780) <a name="l780" style="background-color: #ffff99">                   if ( .not. middle_atm_chem ) then</a>
+   781) <a name="l781" style="background-color: #ffff99">                      loss_out(i,lev,k) = loss_out(i,lev,k) &amp;</a>
+   782) <a name="l782" style="background-color: #ffff99">                           + ( reaction_rates(i,lev,usr4_ndx) * base_sol(i,lev,no2_ndx) * base_sol(i,lev,oh_ndx) &amp;</a>
+   783) <a name="l783" style="background-color: #ffff99">                           + 3._r8 * reaction_rates(i,lev,usr16_ndx) * base_sol(i,lev,n2o5_ndx) &amp;</a>
+   784) <a name="l784" style="background-color: #ffff99">                           + 2._r8 * reaction_rates(i,lev,usr17_ndx) * base_sol(i,lev,no3_ndx) ) &amp;</a>
+   785) <a name="l785" style="background-color: #ffff99">                           / max( base_sol(i,lev,ox_ndx),1.e-20_r8 )</a>
+   786) <a name="l786" style="background-color: #ffff99">                   end if</a>
+   787) <a name="l787" style="background-color: #ffff99">                   if (present(o3s_loss)) then</a>
+   788) <a name="l788" style="background-color: #ffff99">                      o3s_loss(i,lev) = loss_out(i,lev,k)</a>
+   789) <a name="l789" style="background-color: #ffff99">                   endif</a>
+   790) <a name="l790" style="background-color: #ffff99">                   loss_out(i,lev,k) = loss_out(i,lev,k) * base_sol(i,lev,ox_ndx)</a>
+   791) <a name="l791" style="background-color: #ffff99">                   prod_out(i,lev,k) = prod_out(i,lev,k) * base_sol(i,lev,no_ndx)</a>
+   792) <a name="l792" style="background-color: #ffff99">                else if (j == o3a_ndx) then</a>
+   793) <a name="l793" style="background-color: #ffff99">                   loss_out(i,lev,k) = loss_out(i,lev,k) &amp;</a>
+   794) <a name="l794" style="background-color: #ffff99">                        + ( reaction_rates(i,lev,usr4a_ndx) * base_sol(i,lev,xno2_ndx) * base_sol(i,lev,oh_ndx) &amp;</a>
+   795) <a name="l795" style="background-color: #ffff99">                        + 1._r8 * reaction_rates(i,lev,usr16a_ndx) * base_sol(i,lev,xno2no3_ndx) &amp;</a>
+   796) <a name="l796" style="background-color: #ffff99">                        + 2._r8 * reaction_rates(i,lev,usr16b_ndx) * base_sol(i,lev,no2xno3_ndx) &amp;</a>
+   797) <a name="l797" style="background-color: #ffff99">                        + 2._r8 * reaction_rates(i,lev,usr17b_ndx) * base_sol(i,lev,xno3_ndx) ) &amp;</a>
+   798) <a name="l798" style="background-color: #ffff99">                        / max( base_sol(i,lev,o3a_ndx),1.e-20_r8 )</a>
+   799) <a name="l799" style="background-color: #ffff99">                   loss_out(i,lev,k) = loss_out(i,lev,k) * base_sol(i,lev,o3a_ndx)</a>
+   800) <a name="l800" style="background-color: #ffff99">                   prod_out(i,lev,k) = prod_out(i,lev,k) * base_sol(i,lev,xno_ndx)</a>
+   801) <a name="l801" style="background-color: #ffff99">                endif</a>
+   802) <a name="l802" style="background-color: #ffff99">             else</a>
+   803) <a name="l803" style="background-color: #ffffff">                prod_out(i,lev,k) = prod(m) + ind_prd(i,lev,m)</a>
+   804) <a name="l804" style="background-color: #ffffff">                loss_out(i,lev,k) = loss(m)</a>
+   805) <a name="l805" style="background-color: #ffffff">             endif has_o3_chem</a>
+   806) <a name="l806" style="background-color: #ffffff">          end do cls_loop2</a>
+   807) <a name="l807" style="background-color: #ffffff">       end do column_loop</a>
+   808) <a name="l808" style="background-color: #ffffff">    end do level_loop</a>
+   809) <a name="l809" style="background-color: #ffffff">    do i = 1,clscnt4</a>
+   810) <a name="l810" style="background-color: #ffffff">       j = clsmap(i,4)</a>
+   811) <a name="l811" style="background-color: #ffffff">       prod_out(:,:,i) = prod_out(:,:,i)*xhnm</a>
+   812) <a name="l812" style="background-color: #ffffff">       loss_out(:,:,i) = loss_out(:,:,i)*xhnm</a>
+   813) <a name="l813" style="background-color: #ffffff">       call outfld( trim(solsym(j))//'_CHMP', prod_out(:,:,i), ncol, lchnk )</a>
+   814) <a name="l814" style="background-color: #ffffff">       call outfld( trim(solsym(j))//'_CHML', loss_out(:,:,i), ncol, lchnk )</a>
+   815) <a name="l815" style="background-color: #ffffff">!</a>
+   816) <a name="l816" style="background-color: #ffffff">! added code for ROOH production !PJY not &quot;RO2 production&quot;</a>
+   817) <a name="l817" style="background-color: #ffffff">!</a>
+   818) <a name="l818" style="background-color: #ffffff">       if ( trim(solsym(j)) == 'ALKOOH' &amp;</a>
+   819) <a name="l819" style="background-color: #ffffff">        .or.trim(solsym(j)) == 'C2H5OOH' &amp;</a>
+   820) <a name="l820" style="background-color: #ffffff">        .or.trim(solsym(j)) == 'CH3OOH' &amp; !PJY added this</a>
+   821) <a name="l821" style="background-color: #ffffff">        .or.trim(solsym(j)) == 'CH3COOH' &amp;</a>
+   822) <a name="l822" style="background-color: #ffffff">        .or.trim(solsym(j)) == 'CH3COOOH' &amp;</a>
+   823) <a name="l823" style="background-color: #ffffff">        .or.trim(solsym(j)) == 'C3H7OOH' &amp; !PJY corrected this (from CH3H7OOH)</a>
+   824) <a name="l824" style="background-color: #ffffff">        .or.trim(solsym(j)) == 'EOOH' &amp;</a>
+   825) <a name="l825" style="background-color: #ffffff">! .or.trim(solsym(j)) == 'H2O2' &amp; !PJY removed as H2O2 production asked for separately (as I read 4.2.3, point 7)</a>
+   826) <a name="l826" style="background-color: #ffffff">! .or.trim(solsym(j)) == 'HCOOH' &amp; !PJY removed this as this is formic acid HC(O)OH - i.e. not H-C-O-O-H</a>
+   827) <a name="l827" style="background-color: #ffffff">        .or.trim(solsym(j)) == 'ISOPOOH' &amp;</a>
+   828) <a name="l828" style="background-color: #ffffff">        .or.trim(solsym(j)) == 'MACROOH' &amp;</a>
+   829) <a name="l829" style="background-color: #ffffff">        .or.trim(solsym(j)) == 'MEKOOH' &amp;</a>
+   830) <a name="l830" style="background-color: #ffffff">        .or.trim(solsym(j)) == 'POOH' &amp;</a>
+   831) <a name="l831" style="background-color: #ffffff">        .or.trim(solsym(j)) == 'ROOH' &amp;</a>
+   832) <a name="l832" style="background-color: #ffffff">        .or.trim(solsym(j)) == 'TERPOOH' &amp;</a>
+   833) <a name="l833" style="background-color: #ffffff">        .or.trim(solsym(j)) == 'TOLOOH' &amp;</a>
+   834) <a name="l834" style="background-color: #ffffff">        .or.trim(solsym(j)) == 'XOOH' ) then</a>
+   835) <a name="l835" style="background-color: #ffffff">!</a>
+   836) <a name="l836" style="background-color: #ffff99">          prod_hydrogen_peroxides_out(:,:) = prod_hydrogen_peroxides_out(:,:) + prod_out(:,:,i)</a>
+   837) <a name="l837" style="background-color: #ffff99">!</a>
+   838) <a name="l838" style="background-color: #ffff99">       end if</a>
+   839) <a name="l839" style="background-color: #ffff99">!</a>
+   840) <a name="l840" style="background-color: #ffff99">    enddo</a>
+   841) <a name="l841" style="background-color: #ffff99">!</a>
+   842) <a name="l842" style="background-color: #ffff99">     call </a><a style="background-color: #ffffff">outfld( 'H_PEROX_CHMP', prod_hydrogen_peroxides_out(:,:), ncol, lchnk )</a>
+   843) <a name="l843" style="background-color: #ffffff">!</a>
+   844) <a name="l844" style="background-color: #ffffff">  end subroutine imp_sol</a>
+   845) <a name="l845" style="background-color: #ffffff">end module mo_imp_sol</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

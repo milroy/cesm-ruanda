@@ -1,0 +1,1417 @@
+<html>
+<head>
+<title>Listing of seq_hist_mod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;seq_hist_mod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!===============================================================================</a>
+     2) <a name="l2" style="background-color: #ffffff">!BOP ===========================================================================</a>
+     3) <a name="l3" style="background-color: #ffffff">!</a>
+     4) <a name="l4" style="background-color: #ffffff">! !MODULE: seq_hist_mod -- cpl7 history writing routines</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">!    Creates cpl7 history files, instantanious, time-avg, and auxilliary</a>
+     9) <a name="l9" style="background-color: #ffffff">!</a>
+    10) <a name="l10" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    11) <a name="l11" style="background-color: #ffffff">!     2009-Sep-25 - B. Kauffman - move from cpl7 main program into hist module</a>
+    12) <a name="l12" style="background-color: #ffffff">!     2009-mmm-dd - T. Craig - initial versions</a>
+    13) <a name="l13" style="background-color: #ffffff">!</a>
+    14) <a name="l14" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------</a>
+    15) <a name="l15" style="background-color: #ffffff"></a>
+    16) <a name="l16" style="background-color: #ffffff">module seq_hist_mod</a>
+    17) <a name="l17" style="background-color: #ffffff"></a>
+    18) <a name="l18" style="background-color: #ffffff">! !USES:</a>
+    19) <a name="l19" style="background-color: #ffffff"></a>
+    20) <a name="l20" style="background-color: #ffffff">   use shr_kind_mod,      only: R8 =&gt; SHR_KIND_R8, IN =&gt; SHR_KIND_IN</a>
+    21) <a name="l21" style="background-color: #ffffff">   use shr_kind_mod,      only: CL =&gt; SHR_KIND_CL, CS =&gt; SHR_KIND_CS</a>
+    22) <a name="l22" style="background-color: #ffffff">   use shr_sys_mod,       only: shr_sys_abort, shr_sys_flush</a>
+    23) <a name="l23" style="background-color: #ffffff">   use shr_cal_mod,       only: shr_cal_date2ymd</a>
+    24) <a name="l24" style="background-color: #ffffff">   use mct_mod           ! adds mct_ prefix to mct lib</a>
+    25) <a name="l25" style="background-color: #ffffff">   use ESMF</a>
+    26) <a name="l26" style="background-color: #ffffff"></a>
+    27) <a name="l27" style="background-color: #ffffff">   use seq_infodata_mod  ! &quot;infodata&quot; gathers various control flags into one datatype</a>
+    28) <a name="l28" style="background-color: #ffffff">   use seq_timemgr_mod   ! clock &amp; alarm routines</a>
+    29) <a name="l29" style="background-color: #ffffff">   use seq_io_mod        ! lower level io routines</a>
+    30) <a name="l30" style="background-color: #ffffff"></a>
+    31) <a name="l31" style="background-color: #ffffff">   use seq_comm_mct     , only: seq_comm_getdata=&gt;seq_comm_setptrs</a>
+    32) <a name="l32" style="background-color: #ffffff">   use seq_comm_mct,      only: seq_comm_setnthreads, seq_comm_iamin</a>
+    33) <a name="l33" style="background-color: #ffffff">   use seq_comm_mct,      only: CPLID, GLOID, logunit, loglevel</a>
+    34) <a name="l34" style="background-color: #ffffff">   use seq_comm_mct,      only: num_inst_atm, num_inst_lnd, num_inst_ocn</a>
+    35) <a name="l35" style="background-color: #ffffff">   use seq_comm_mct,      only: num_inst_ice, num_inst_glc, num_inst_wav</a>
+    36) <a name="l36" style="background-color: #ffffff">   use seq_comm_mct,      only: num_inst_rof</a>
+    37) <a name="l37" style="background-color: #ffffff"></a>
+    38) <a name="l38" style="background-color: #ffffff">   use prep_ocn_mod,      only: prep_ocn_get_r2x_ox</a>
+    39) <a name="l39" style="background-color: #ffffff">   use prep_ocn_mod,      only: prep_ocn_get_x2oacc_ox</a>
+    40) <a name="l40" style="background-color: #ffffff">   use prep_ocn_mod,      only: prep_ocn_get_x2oacc_ox_cnt  </a>
+    41) <a name="l41" style="background-color: #ffffff">   use prep_atm_mod,      only: prep_atm_get_o2x_ax</a>
+    42) <a name="l42" style="background-color: #ffffff">   use prep_aoflux_mod,   only: prep_aoflux_get_xao_ox</a>
+    43) <a name="l43" style="background-color: #ffffff">   use prep_aoflux_mod,   only: prep_aoflux_get_xao_ax</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">   use component_type_mod</a>
+    46) <a name="l46" style="background-color: #ffffff"></a>
+    47) <a name="l47" style="background-color: #ffffff">   implicit none</a>
+    48) <a name="l48" style="background-color: #ffffff"></a>
+    49) <a name="l49" style="background-color: #ffffff">   private</a>
+    50) <a name="l50" style="background-color: #ffffff"></a>
+    51) <a name="l51" style="background-color: #ffffff">! !PUBLIC TYPES:</a>
+    52) <a name="l52" style="background-color: #ffffff">  </a>
+    53) <a name="l53" style="background-color: #ffffff">   ! no public types</a>
+    54) <a name="l54" style="background-color: #ffffff"></a>
+    55) <a name="l55" style="background-color: #ffffff">! !PUBLIC MEMBER FUNCTIONS</a>
+    56) <a name="l56" style="background-color: #ffffff"></a>
+    57) <a name="l57" style="background-color: #ffffff">   public :: seq_hist_write     ! write instantaneous hist file</a>
+    58) <a name="l58" style="background-color: #ffffff">   public :: seq_hist_writeavg  ! write time-avg      hist file</a>
+    59) <a name="l59" style="background-color: #ffffff">   public :: seq_hist_writeaux  ! write auxiliary     hist files</a>
+    60) <a name="l60" style="background-color: #ffffff">   public :: seq_hist_spewav    ! write avs to history file for debugging</a>
+    61) <a name="l61" style="background-color: #ffffff"></a>
+    62) <a name="l62" style="background-color: #ffffff">! !PUBLIC DATA MEMBERS:</a>
+    63) <a name="l63" style="background-color: #ffffff"></a>
+    64) <a name="l64" style="background-color: #ffffff">   ! no public data</a>
+    65) <a name="l65" style="background-color: #ffffff"></a>
+    66) <a name="l66" style="background-color: #ffffff">!EOP</a>
+    67) <a name="l67" style="background-color: #ffffff"></a>
+    68) <a name="l68" style="background-color: #ffffff">   !----------------------------------------------------------------------------</a>
+    69) <a name="l69" style="background-color: #ffffff">   ! local/module data</a>
+    70) <a name="l70" style="background-color: #ffffff">   !----------------------------------------------------------------------------</a>
+    71) <a name="l71" style="background-color: #ffffff"></a>
+    72) <a name="l72" style="background-color: #ffffff">   logical     :: iamin_CPLID            ! pe associated with CPLID</a>
+    73) <a name="l73" style="background-color: #ffffff">   integer(IN) :: mpicom_GLOID           ! MPI global communicator</a>
+    74) <a name="l74" style="background-color: #ffffff">   integer(IN) :: mpicom_CPLID           ! MPI cpl communicator</a>
+    75) <a name="l75" style="background-color: #ffffff"></a>
+    76) <a name="l76" style="background-color: #ffffff">   integer(IN) :: nthreads_GLOID         ! OMP global number of threads</a>
+    77) <a name="l77" style="background-color: #ffffff">   integer(IN) :: nthreads_CPLID         ! OMP cpl number of threads</a>
+    78) <a name="l78" style="background-color: #ffffff">   logical     :: drv_threading          ! driver threading control</a>
+    79) <a name="l79" style="background-color: #ffffff"></a>
+    80) <a name="l80" style="background-color: #ffffff">   logical     :: atm_present            ! .true.  =&gt; atm is present</a>
+    81) <a name="l81" style="background-color: #ffffff">   logical     :: lnd_present            ! .true.  =&gt; land is present</a>
+    82) <a name="l82" style="background-color: #ffffff">   logical     :: ice_present            ! .true.  =&gt; ice is present</a>
+    83) <a name="l83" style="background-color: #ffffff">   logical     :: ocn_present            ! .true.  =&gt; ocn is present</a>
+    84) <a name="l84" style="background-color: #ffffff">   logical     :: rof_present            ! .true.  =&gt; land runoff is present</a>
+    85) <a name="l85" style="background-color: #ffffff">   logical     :: glc_present            ! .true.  =&gt; glc is present</a>
+    86) <a name="l86" style="background-color: #ffffff">   logical     :: wav_present            ! .true.  =&gt; wav is present</a>
+    87) <a name="l87" style="background-color: #ffffff">   </a>
+    88) <a name="l88" style="background-color: #ffffff">   logical     :: atm_prognostic         ! .true.  =&gt; atm comp expects input</a>
+    89) <a name="l89" style="background-color: #ffffff">   logical     :: lnd_prognostic         ! .true.  =&gt; lnd comp expects input</a>
+    90) <a name="l90" style="background-color: #ffffff">   logical     :: ice_prognostic         ! .true.  =&gt; ice comp expects input</a>
+    91) <a name="l91" style="background-color: #ffffff">   logical     :: ocn_prognostic         ! .true.  =&gt; ocn comp expects input</a>
+    92) <a name="l92" style="background-color: #ffffff">   logical     :: ocnrof_prognostic      ! .true.  =&gt; ocn comp expects runoff input</a>
+    93) <a name="l93" style="background-color: #ffffff">   logical     :: rof_prognostic         ! .true.  =&gt; rof comp expects input</a>
+    94) <a name="l94" style="background-color: #ffffff">   logical     :: glc_prognostic         ! .true.  =&gt; glc comp expects input</a>
+    95) <a name="l95" style="background-color: #ffffff">   logical     :: wav_prognostic         ! .true.  =&gt; wav comp expects input</a>
+    96) <a name="l96" style="background-color: #ffffff"></a>
+    97) <a name="l97" style="background-color: #ffffff">   logical     :: cdf64                  ! true =&gt; use 64 bit addressing in netCDF files</a>
+    98) <a name="l98" style="background-color: #ffffff"></a>
+    99) <a name="l99" style="background-color: #ffffff">   !--- domain equivalent 2d grid size ---</a>
+   100) <a name="l100" style="background-color: #ffffff">   integer(IN) :: atm_nx, atm_ny         ! nx,ny of 2d grid, if known</a>
+   101) <a name="l101" style="background-color: #ffffff">   integer(IN) :: lnd_nx, lnd_ny         ! nx,ny of 2d grid, if known</a>
+   102) <a name="l102" style="background-color: #ffffff">   integer(IN) :: ice_nx, ice_ny         ! nx,ny of 2d grid, if known</a>
+   103) <a name="l103" style="background-color: #ffffff">   integer(IN) :: ocn_nx, ocn_ny         ! nx,ny of 2d grid, if known</a>
+   104) <a name="l104" style="background-color: #ffffff">   integer(IN) :: rof_nx, rof_ny         ! nx,ny of 2d grid, if known</a>
+   105) <a name="l105" style="background-color: #ffffff">   integer(IN) :: glc_nx, glc_ny         ! nx,ny of 2d grid, if known</a>
+   106) <a name="l106" style="background-color: #ffffff">   integer(IN) :: wav_nx, wav_ny         ! nx,ny of 2d grid, if known</a>
+   107) <a name="l107" style="background-color: #ffffff"></a>
+   108) <a name="l108" style="background-color: #ffffff">   integer(IN) :: info_debug = 0         ! local info_debug level</a>
+   109) <a name="l109" style="background-color: #ffffff"></a>
+   110) <a name="l110" style="background-color: #ffffff">   !--- temporary pointers ---</a>
+   111) <a name="l111" style="background-color: #ffffff">   type(mct_aVect), pointer :: r2x_ox(:)</a>
+   112) <a name="l112" style="background-color: #ffffff">   type(mct_aVect), pointer :: x2oacc_ox(:)</a>
+   113) <a name="l113" style="background-color: #ffffff">   integer        , pointer :: x2oacc_ox_cnt</a>
+   114) <a name="l114" style="background-color: #ffffff">   type(mct_aVect), pointer :: xao_ox(:)</a>
+   115) <a name="l115" style="background-color: #ffffff">   type(mct_aVect), pointer :: xao_ax(:)</a>
+   116) <a name="l116" style="background-color: #ffffff">   type(mct_aVect), pointer :: o2x_ax(:)</a>
+   117) <a name="l117" style="background-color: #ffffff"></a>
+   118) <a name="l118" style="background-color: #ffffff">!===============================================================================</a>
+   119) <a name="l119" style="background-color: #ffffff">contains</a>
+   120) <a name="l120" style="background-color: #ffffff">!===============================================================================</a>
+   121) <a name="l121" style="background-color: #ffffff"></a>
+   122) <a name="l122" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">seq_hist_write(infodata, EClock_d, &amp;</a>
+   123) <a name="l123" style="background-color: #ffcccc">     atm, lnd, ice, ocn, rof, glc, wav, &amp;</a>
+   124) <a name="l124" style="background-color: #ffcccc">     fractions_ax, fractions_lx, fractions_ix, fractions_ox, fractions_rx,  &amp;</a>
+   125) <a name="l125" style="background-color: #ffcccc">     fractions_gx, fractions_wx)</a>
+   126) <a name="l126" style="background-color: #ffcccc"></a>
+   127) <a name="l127" style="background-color: #ffcccc">   implicit none</a>
+   128) <a name="l128" style="background-color: #ffcccc">   !</a>
+   129) <a name="l129" style="background-color: #ffcccc">   ! Arguments</a>
+   130) <a name="l130" style="background-color: #ffcccc">   type(seq_infodata_type) , intent(in)    :: infodata</a>
+   131) <a name="l131" style="background-color: #ffcccc">   type (ESMF_Clock)       , intent(in)    :: EClock_d   ! driver clock</a>
+   132) <a name="l132" style="background-color: #ffcccc">   type (component_type)   , intent(inout) :: atm(:)</a>
+   133) <a name="l133" style="background-color: #ffcccc">   type (component_type)   , intent(inout) :: lnd(:)</a>
+   134) <a name="l134" style="background-color: #ffcccc">   type (component_type)   , intent(inout) :: ice(:)</a>
+   135) <a name="l135" style="background-color: #ffcccc">   type (component_type)   , intent(inout) :: ocn(:)</a>
+   136) <a name="l136" style="background-color: #ffcccc">   type (component_type)   , intent(inout) :: rof(:)</a>
+   137) <a name="l137" style="background-color: #ffcccc">   type (component_type)   , intent(inout) :: glc(:)</a>
+   138) <a name="l138" style="background-color: #ffcccc">   type (component_type)   , intent(inout) :: wav(:)</a>
+   139) <a name="l139" style="background-color: #ffcccc">   type(mct_aVect)         , intent(inout) :: fractions_ax(:) ! Fractions on atm grid/decomp</a>
+   140) <a name="l140" style="background-color: #ffcccc">   type(mct_aVect)         , intent(inout) :: fractions_lx(:) ! Fractions on lnd grid/decomp</a>
+   141) <a name="l141" style="background-color: #ffcccc">   type(mct_aVect)         , intent(inout) :: fractions_ix(:) ! Fractions on ice grid/decomp</a>
+   142) <a name="l142" style="background-color: #ffcccc">   type(mct_aVect)         , intent(inout) :: fractions_ox(:) ! Fractions on ocn grid/decomp</a>
+   143) <a name="l143" style="background-color: #ffcccc">   type(mct_aVect)         , intent(inout) :: fractions_rx(:) ! Fractions on rof grid/decomp</a>
+   144) <a name="l144" style="background-color: #ffcccc">   type(mct_aVect)         , intent(inout) :: fractions_gx(:) ! Fractions on glc grid/decomp</a>
+   145) <a name="l145" style="background-color: #ffcccc">   type(mct_aVect)         , intent(inout) :: fractions_wx(:) ! Fractions on wav grid/decomp</a>
+   146) <a name="l146" style="background-color: #ffcccc">   !</a>
+   147) <a name="l147" style="background-color: #ffcccc">   ! Local Variables</a>
+   148) <a name="l148" style="background-color: #ffcccc">   integer(IN)   :: curr_ymd     ! Current date YYYYMMDD</a>
+   149) <a name="l149" style="background-color: #ffcccc">   integer(IN)   :: curr_tod     ! Current time-of-day (s)</a>
+   150) <a name="l150" style="background-color: #ffcccc">   integer(IN)   :: start_ymd    ! Starting date YYYYMMDD</a>
+   151) <a name="l151" style="background-color: #ffcccc">   integer(IN)   :: start_tod    ! Starting time-of-day (s)</a>
+   152) <a name="l152" style="background-color: #ffcccc">   real(r8)      :: curr_time    ! Time interval since reference time</a>
+   153) <a name="l153" style="background-color: #ffcccc">   integer(IN)   :: yy,mm,dd     ! year, month, day</a>
+   154) <a name="l154" style="background-color: #ffcccc">   integer(IN)   :: fk           ! index</a>
+   155) <a name="l155" style="background-color: #ffcccc">   character(CL) :: time_units   ! units of time variable</a>
+   156) <a name="l156" style="background-color: #ffcccc">   character(CL) :: calendar     ! calendar type</a>
+   157) <a name="l157" style="background-color: #ffcccc">   character(CL) :: case_name    ! case name</a>
+   158) <a name="l158" style="background-color: #ffcccc">   character(CL) :: hist_file    ! Local path to history filename</a>
+   159) <a name="l159" style="background-color: #ffcccc">   integer(IN)   :: lsize        ! local size of an aVect</a>
+   160) <a name="l160" style="background-color: #ffcccc">   real(r8)      :: tbnds(2)     ! CF1.0 time bounds</a>
+   161) <a name="l161" style="background-color: #ffcccc">   logical       :: whead,wdata  ! for writing restart/history cdf files</a>
+   162) <a name="l162" style="background-color: #ffcccc"></a>
+   163) <a name="l163" style="background-color: #ffcccc">   type(mct_gsMap), pointer :: gsmap</a>
+   164) <a name="l164" style="background-color: #ffcccc">   type(mct_gGrid), pointer :: dom    ! comp domain on cpl pes</a>
+   165) <a name="l165" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   166) <a name="l166" style="background-color: #ffcccc">!</a>
+   167) <a name="l167" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   168) <a name="l168" style="background-color: #ffcccc"></a>
+   169) <a name="l169" style="background-color: #ffcccc">   !----------------------------------------------------------------------------</a>
+   170) <a name="l170" style="background-color: #ffcccc">   ! get required infodata</a>
+   171) <a name="l171" style="background-color: #ffcccc">   !----------------------------------------------------------------------------</a>
+   172) <a name="l172" style="background-color: #ffcccc">   iamin_CPLID  = seq_comm_iamin(CPLID)</a>
+   173) <a name="l173" style="background-color: #ffcccc"></a>
+   174) <a name="l174" style="background-color: #ffcccc">   call seq_comm_getdata(GLOID,mpicom=mpicom_GLOID,nthreads=nthreads_GLOID)</a>
+   175) <a name="l175" style="background-color: #ffcccc">   call seq_comm_getdata(CPLID,mpicom=mpicom_CPLID,nthreads=nthreads_CPLID)</a>
+   176) <a name="l176" style="background-color: #ffcccc"></a>
+   177) <a name="l177" style="background-color: #ffcccc">   call seq_infodata_getData(infodata,       &amp;</a>
+   178) <a name="l178" style="background-color: #ffcccc">        drv_threading=drv_threading,         &amp;</a>
+   179) <a name="l179" style="background-color: #ffcccc">        atm_present=atm_present,             &amp;</a>
+   180) <a name="l180" style="background-color: #ffcccc">        lnd_present=lnd_present,             &amp;</a>
+   181) <a name="l181" style="background-color: #ffcccc">        rof_present=rof_present,             &amp;</a>
+   182) <a name="l182" style="background-color: #ffcccc">        ice_present=ice_present,             &amp;</a>
+   183) <a name="l183" style="background-color: #ffcccc">        ocn_present=ocn_present,             &amp;</a>
+   184) <a name="l184" style="background-color: #ffcccc">        glc_present=glc_present,             &amp;</a>
+   185) <a name="l185" style="background-color: #ffcccc">        wav_present=wav_present,             &amp;</a>
+   186) <a name="l186" style="background-color: #ffcccc">        atm_prognostic=atm_prognostic,       &amp;</a>
+   187) <a name="l187" style="background-color: #ffcccc">        lnd_prognostic=lnd_prognostic,       &amp;</a>
+   188) <a name="l188" style="background-color: #ffcccc">        ice_prognostic=ice_prognostic,       &amp;</a>
+   189) <a name="l189" style="background-color: #ffcccc">        ocn_prognostic=ocn_prognostic,       &amp;</a>
+   190) <a name="l190" style="background-color: #ffcccc">        ocnrof_prognostic=ocnrof_prognostic, &amp;</a>
+   191) <a name="l191" style="background-color: #ffcccc">        rof_prognostic=rof_prognostic,       &amp;</a>
+   192) <a name="l192" style="background-color: #ffcccc">        glc_prognostic=glc_prognostic,       &amp;</a>
+   193) <a name="l193" style="background-color: #ffcccc">        wav_prognostic=wav_prognostic,       &amp;</a>
+   194) <a name="l194" style="background-color: #ffcccc">        atm_nx=atm_nx, atm_ny=atm_ny,        &amp;</a>
+   195) <a name="l195" style="background-color: #ffcccc">        lnd_nx=lnd_nx, lnd_ny=lnd_ny,        &amp;</a>
+   196) <a name="l196" style="background-color: #ffcccc">        rof_nx=rof_nx, rof_ny=rof_ny,        &amp;</a>
+   197) <a name="l197" style="background-color: #ffcccc">        ice_nx=ice_nx, ice_ny=ice_ny,        &amp;</a>
+   198) <a name="l198" style="background-color: #ffcccc">        glc_nx=glc_nx, glc_ny=glc_ny,        &amp;</a>
+   199) <a name="l199" style="background-color: #ffcccc">        wav_nx=wav_nx, wav_ny=wav_ny,        &amp;</a>
+   200) <a name="l200" style="background-color: #ffcccc">        ocn_nx=ocn_nx, ocn_ny=ocn_ny,        &amp;</a>
+   201) <a name="l201" style="background-color: #ffcccc">        cpl_cdf64=cdf64,                     &amp; </a>
+   202) <a name="l202" style="background-color: #ffcccc">        case_name=case_name)</a>
+   203) <a name="l203" style="background-color: #ffcccc"></a>
+   204) <a name="l204" style="background-color: #ffcccc">   !--- Get current date from clock needed to label the history pointer file ---</a>
+   205) <a name="l205" style="background-color: #ffcccc"></a>
+   206) <a name="l206" style="background-color: #ffcccc">   call seq_timemgr_EClockGetData( EClock_d, curr_ymd=curr_ymd, curr_tod=curr_tod, &amp;</a>
+   207) <a name="l207" style="background-color: #ffcccc">        start_ymd=start_ymd, start_tod=start_tod, curr_time=curr_time, &amp;</a>
+   208) <a name="l208" style="background-color: #ffcccc">        calendar=calendar)</a>
+   209) <a name="l209" style="background-color: #ffcccc">   call shr_cal_date2ymd(curr_ymd,yy,mm,dd)</a>
+   210) <a name="l210" style="background-color: #ffcccc">   write(hist_file,&quot;(2a,i4.4,a,i2.2,a,i2.2,a,i5.5,a)&quot;) &amp;</a>
+   211) <a name="l211" style="background-color: #ffcccc">      trim(case_name), '.cpl.hi.', yy,'-',mm,'-',dd,'-',curr_tod,'.nc'</a>
+   212) <a name="l212" style="background-color: #ffcccc"></a>
+   213) <a name="l213" style="background-color: #ffcccc">   time_units = 'days since ' &amp;</a>
+   214) <a name="l214" style="background-color: #ffcccc">        // seq_io_date2yyyymmdd(start_ymd) // ' ' // seq_io_sec2hms(start_tod)</a>
+   215) <a name="l215" style="background-color: #ffcccc"></a>
+   216) <a name="l216" style="background-color: #ffcccc">   if (iamin_CPLID) then</a>
+   217) <a name="l217" style="background-color: #ffcccc"></a>
+   218) <a name="l218" style="background-color: #ffcccc">      if (drv_threading) call seq_comm_setnthreads(nthreads_CPLID)</a>
+   219) <a name="l219" style="background-color: #ffcccc">      call seq_io_wopen(hist_file,clobber=.true.,cdf64=cdf64)</a>
+   220) <a name="l220" style="background-color: #ffcccc"></a>
+   221) <a name="l221" style="background-color: #ffcccc">      ! loop twice, first time write header, second time write data for perf</a>
+   222) <a name="l222" style="background-color: #ffcccc"></a>
+   223) <a name="l223" style="background-color: #ffcccc">      do fk = 1,2</a>
+   224) <a name="l224" style="background-color: #ffcccc">         if (fk == 1) then</a>
+   225) <a name="l225" style="background-color: #ffcccc">            whead = .true.</a>
+   226) <a name="l226" style="background-color: #ffcccc">            wdata = .false.</a>
+   227) <a name="l227" style="background-color: #ffcccc">         elseif (fk == 2) then</a>
+   228) <a name="l228" style="background-color: #ffcccc">            whead = .false.</a>
+   229) <a name="l229" style="background-color: #ffcccc">            wdata = .true.</a>
+   230) <a name="l230" style="background-color: #ffcccc">            call seq_io_enddef(hist_file)</a>
+   231) <a name="l231" style="background-color: #ffcccc">         else</a>
+   232) <a name="l232" style="background-color: #ffcccc">            call shr_sys_abort('seq_hist_write fk illegal')</a>
+   233) <a name="l233" style="background-color: #ffcccc">         end if</a>
+   234) <a name="l234" style="background-color: #ffcccc"></a>
+   235) <a name="l235" style="background-color: #ffcccc">         tbnds = curr_time</a>
+   236) <a name="l236" style="background-color: #ffcccc">         !------- tcx nov 2011 tbnds of same values causes problems in ferret</a>
+   237) <a name="l237" style="background-color: #ffcccc">         if (tbnds(1) &gt;= tbnds(2)) then</a>
+   238) <a name="l238" style="background-color: #ffcccc">            call seq_io_write(hist_file,&amp;</a>
+   239) <a name="l239" style="background-color: #ffcccc">                 time_units=time_units, time_cal=calendar, time_val=curr_time, &amp;</a>
+   240) <a name="l240" style="background-color: #ffcccc">                 whead=whead, wdata=wdata)</a>
+   241) <a name="l241" style="background-color: #ffcccc">         else</a>
+   242) <a name="l242" style="background-color: #ffcccc">            call seq_io_write(hist_file, &amp;</a>
+   243) <a name="l243" style="background-color: #ffcccc">                 time_units=time_units, time_cal=calendar, time_val=curr_time, &amp;</a>
+   244) <a name="l244" style="background-color: #ffcccc">                 whead=whead, wdata=wdata, tbnds=tbnds)</a>
+   245) <a name="l245" style="background-color: #ffcccc">         endif</a>
+   246) <a name="l246" style="background-color: #ffcccc"></a>
+   247) <a name="l247" style="background-color: #ffcccc">         if (atm_present) then</a>
+   248) <a name="l248" style="background-color: #ffcccc">            gsmap =&gt; component_get_gsmap_cx(atm(1))</a>
+   249) <a name="l249" style="background-color: #ffcccc">            dom   =&gt; component_get_dom_cx(atm(1))</a>
+   250) <a name="l250" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, dom%data, 'dom_ax',  &amp;</a>
+   251) <a name="l251" style="background-color: #ffcccc">                 nx=atm_nx, ny=atm_ny, nt=1, whead=whead, wdata=wdata, pre='doma')</a>
+   252) <a name="l252" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, fractions_ax, 'fractions_ax',  &amp;</a>
+   253) <a name="l253" style="background-color: #ffcccc">                 nx=atm_nx, ny=atm_ny, nt=1, whead=whead, wdata=wdata, pre='fraca')</a>
+   254) <a name="l254" style="background-color: #ffcccc">            call seq_io_write(hist_file, atm, 'x2c', 'x2a_ax', &amp;</a>
+   255) <a name="l255" style="background-color: #ffcccc">                 nx=atm_nx, ny=atm_ny, nt=1, whead=whead, wdata=wdata, pre='x2a')</a>
+   256) <a name="l256" style="background-color: #ffcccc">            call seq_io_write(hist_file, atm, 'c2x', 'a2x_ax', &amp;</a>
+   257) <a name="l257" style="background-color: #ffcccc">                 nx=atm_nx, ny=atm_ny, nt=1, whead=whead, wdata=wdata, pre='a2x')</a>
+   258) <a name="l258" style="background-color: #ffcccc">            !call seq_io_write(hist_file, gsmap, l2x_ax, 'l2x_ax',  &amp;</a>
+   259) <a name="l259" style="background-color: #ffcccc">            !    nx=atm_nx, ny=atm_ny, nt=1, whead=whead, wdata=wdata, pre='l2x_ax')</a>
+   260) <a name="l260" style="background-color: #ffcccc">            !call seq_io_write(hist_file, gsmap, o2x_ax, 'o2x_ax',  &amp;</a>
+   261) <a name="l261" style="background-color: #ffcccc">            !    nx=atm_nx, ny=atm_ny, nt=1, whead=whead, wdata=wdata, pre='o2x_ax')</a>
+   262) <a name="l262" style="background-color: #ffcccc">            !call seq_io_write(hist_file, gsmap, i2x_ax, 'i2x_ax',  &amp;</a>
+   263) <a name="l263" style="background-color: #ffcccc">            !    nx=atm_nx, ny=atm_ny, nt=1, whead=whead, wdata=wdata, pre='i2x_ax')</a>
+   264) <a name="l264" style="background-color: #ffcccc">         endif</a>
+   265) <a name="l265" style="background-color: #ffcccc"></a>
+   266) <a name="l266" style="background-color: #ffcccc">         if (lnd_present) then</a>
+   267) <a name="l267" style="background-color: #ffcccc">            gsmap =&gt; component_get_gsmap_cx(lnd(1))</a>
+   268) <a name="l268" style="background-color: #ffcccc">            dom   =&gt; component_get_dom_cx(lnd(1))</a>
+   269) <a name="l269" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, dom%data, 'dom_lx',  &amp;</a>
+   270) <a name="l270" style="background-color: #ffcccc">                 nx=lnd_nx, ny=lnd_ny, nt=1, whead=whead, wdata=wdata, pre='doml')</a>
+   271) <a name="l271" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, fractions_lx, 'fractions_lx',  &amp;</a>
+   272) <a name="l272" style="background-color: #ffcccc">                 nx=lnd_nx, ny=lnd_ny, nt=1, whead=whead, wdata=wdata, pre='fracl')</a>
+   273) <a name="l273" style="background-color: #ffcccc">            call seq_io_write(hist_file, lnd, 'c2x', 'l2x_lx', &amp;</a>
+   274) <a name="l274" style="background-color: #ffcccc">                 nx=lnd_nx, ny=lnd_ny, nt=1, whead=whead, wdata=wdata, pre='l2x')</a>
+   275) <a name="l275" style="background-color: #ffcccc">            call seq_io_write(hist_file, lnd, 'x2c', 'x2l_lx',&amp;</a>
+   276) <a name="l276" style="background-color: #ffcccc">                 nx=lnd_nx, ny=lnd_ny, nt=1, whead=whead, wdata=wdata, pre='x2l')</a>
+   277) <a name="l277" style="background-color: #ffcccc">         endif</a>
+   278) <a name="l278" style="background-color: #ffcccc"></a>
+   279) <a name="l279" style="background-color: #ffcccc">         if (rof_present) then</a>
+   280) <a name="l280" style="background-color: #ffcccc">            gsmap =&gt; component_get_gsmap_cx(rof(1))</a>
+   281) <a name="l281" style="background-color: #ffcccc">            dom   =&gt; component_get_dom_cx(rof(1))</a>
+   282) <a name="l282" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, dom%data, 'dom_rx',  &amp;</a>
+   283) <a name="l283" style="background-color: #ffcccc">                 nx=rof_nx, ny=rof_ny, nt=1, whead=whead, wdata=wdata, pre='domr')</a>
+   284) <a name="l284" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, fractions_rx, 'fractions_rx',  &amp;</a>
+   285) <a name="l285" style="background-color: #ffcccc">                 nx=rof_nx, ny=rof_ny, nt=1, whead=whead, wdata=wdata, pre='fracr')</a>
+   286) <a name="l286" style="background-color: #ffcccc">            call seq_io_write(hist_file, rof, 'c2x', 'r2x_rx', &amp;</a>
+   287) <a name="l287" style="background-color: #ffcccc">                 nx=rof_nx, ny=rof_ny, nt=1, whead=whead, wdata=wdata, pre='r2x')</a>
+   288) <a name="l288" style="background-color: #ffcccc">            call seq_io_write(hist_file, rof, 'x2c', 'x2r_rx', &amp;</a>
+   289) <a name="l289" style="background-color: #ffcccc">                 nx=rof_nx, ny=rof_ny, nt=1, whead=whead, wdata=wdata, pre='x2r')</a>
+   290) <a name="l290" style="background-color: #ffcccc">         endif</a>
+   291) <a name="l291" style="background-color: #ffcccc"></a>
+   292) <a name="l292" style="background-color: #ffcccc">         if (rof_present .and. ocnrof_prognostic) then</a>
+   293) <a name="l293" style="background-color: #ffcccc">            gsmap  =&gt; component_get_gsmap_cx(ocn(1))</a>
+   294) <a name="l294" style="background-color: #ffcccc">            r2x_ox =&gt; prep_ocn_get_r2x_ox()</a>
+   295) <a name="l295" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, r2x_ox, 'r2x_ox',  &amp;</a>
+   296) <a name="l296" style="background-color: #ffcccc">                 nx=ocn_nx, ny=ocn_ny, nt=1, whead=whead, wdata=wdata, pre='r2xo')</a>
+   297) <a name="l297" style="background-color: #ffcccc">         endif</a>
+   298) <a name="l298" style="background-color: #ffcccc"></a>
+   299) <a name="l299" style="background-color: #ffcccc">         if (ocn_present) then</a>
+   300) <a name="l300" style="background-color: #ffcccc">            gsmap =&gt; component_get_gsmap_cx(ocn(1))</a>
+   301) <a name="l301" style="background-color: #ffcccc">            dom   =&gt; component_get_dom_cx(ocn(1))</a>
+   302) <a name="l302" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, dom%data, 'dom_ox',  &amp;</a>
+   303) <a name="l303" style="background-color: #ffcccc">                              nx=ocn_nx, ny=ocn_ny, nt=1, whead=whead, wdata=wdata, pre='domo')</a>
+   304) <a name="l304" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, fractions_ox, 'fractions_ox',  &amp;</a>
+   305) <a name="l305" style="background-color: #ffcccc">                              nx=ocn_nx, ny=ocn_ny, nt=1, whead=whead, wdata=wdata, pre='fraco')</a>
+   306) <a name="l306" style="background-color: #ffcccc">            call seq_io_write(hist_file, ocn, 'c2x', 'o2x_ox', &amp;</a>
+   307) <a name="l307" style="background-color: #ffcccc">                              nx=ocn_nx, ny=ocn_ny, nt=1, whead=whead, wdata=wdata, pre='o2x')</a>
+   308) <a name="l308" style="background-color: #ffcccc">            !call seq_io_write(hist_file, ocn, 'x2c', 'x2o_ox', &amp;</a>
+   309) <a name="l309" style="background-color: #ffcccc">            !                  nx=ocn_nx, ny=ocn_ny, nt=1, whead=whead, wdata=wdata, pre='x2o')</a>
+   310) <a name="l310" style="background-color: #ffcccc"></a>
+   311) <a name="l311" style="background-color: #ffcccc">            gsmap     =&gt; component_get_gsmap_cx(ocn(1))</a>
+   312) <a name="l312" style="background-color: #ffcccc">            x2oacc_ox =&gt; prep_ocn_get_x2oacc_ox()</a>
+   313) <a name="l313" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, x2oacc_ox, 'x2oacc_ox',  &amp;</a>
+   314) <a name="l314" style="background-color: #ffcccc">                 nx=ocn_nx, ny=ocn_ny, nt=1, whead=whead, wdata=wdata, pre='x2oacc')</a>
+   315) <a name="l315" style="background-color: #ffcccc"></a>
+   316) <a name="l316" style="background-color: #ffcccc">            gsmap         =&gt; component_get_gsmap_cx(ocn(1))</a>
+   317) <a name="l317" style="background-color: #ffcccc">            x2oacc_ox_cnt =&gt; prep_ocn_get_x2oacc_ox_cnt()</a>
+   318) <a name="l318" style="background-color: #ffcccc">            call seq_io_write(hist_file, x2oacc_ox_cnt, 'x2oacc_ox_cnt',  &amp;</a>
+   319) <a name="l319" style="background-color: #ffcccc">                 whead=whead, wdata=wdata)</a>
+   320) <a name="l320" style="background-color: #ffcccc">            gsmap =&gt; component_get_gsmap_cx(ocn(1))</a>
+   321) <a name="l321" style="background-color: #ffcccc">            xao_ox =&gt; prep_aoflux_get_xao_ox()</a>
+   322) <a name="l322" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, xao_ox, 'xao_ox',  &amp;</a>
+   323) <a name="l323" style="background-color: #ffcccc">                 nx=ocn_nx, ny=ocn_ny, nt=1, whead=whead, wdata=wdata, pre='xaoo')</a>
+   324) <a name="l324" style="background-color: #ffcccc"></a>
+   325) <a name="l325" style="background-color: #ffcccc">            gsmap  =&gt; component_get_gsmap_cx(atm(1))</a>
+   326) <a name="l326" style="background-color: #ffcccc">            o2x_ax =&gt; prep_atm_get_o2x_ax()</a>
+   327) <a name="l327" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, o2x_ax, 'o2x_ax',  &amp;</a>
+   328) <a name="l328" style="background-color: #ffcccc">                 nx=atm_nx, ny=atm_ny, nt=1, whead=whead, wdata=wdata, pre='o2xa')</a>
+   329) <a name="l329" style="background-color: #ffcccc"></a>
+   330) <a name="l330" style="background-color: #ffcccc">            gsmap  =&gt; component_get_gsmap_cx(atm(1))</a>
+   331) <a name="l331" style="background-color: #ffcccc">            xao_ax =&gt; prep_aoflux_get_xao_ax()</a>
+   332) <a name="l332" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, xao_ax, 'xao_ax',  &amp;</a>
+   333) <a name="l333" style="background-color: #ffcccc">                 nx=atm_nx, ny=atm_ny, nt=1, whead=whead, wdata=wdata, pre='xaoa')</a>
+   334) <a name="l334" style="background-color: #ffcccc">         endif</a>
+   335) <a name="l335" style="background-color: #ffcccc"></a>
+   336) <a name="l336" style="background-color: #ffcccc">         if (ice_present) then</a>
+   337) <a name="l337" style="background-color: #ffcccc">            gsmap =&gt; component_get_gsmap_cx(ice(1))</a>
+   338) <a name="l338" style="background-color: #ffcccc">            dom   =&gt; component_get_dom_cx(ice(1))</a>
+   339) <a name="l339" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, dom%data, 'dom_ix',  &amp;</a>
+   340) <a name="l340" style="background-color: #ffcccc">                 nx=ice_nx, ny=ice_ny, nt=1, whead=whead, wdata=wdata, pre='domi')</a>
+   341) <a name="l341" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, fractions_ix, 'fractions_ix',  &amp;</a>
+   342) <a name="l342" style="background-color: #ffcccc">                 nx=ice_nx, ny=ice_ny, nt=1, whead=whead, wdata=wdata, pre='fraci')</a>
+   343) <a name="l343" style="background-color: #ffcccc">            call seq_io_write(hist_file, ice, 'c2x', 'i2x_ix', &amp;</a>
+   344) <a name="l344" style="background-color: #ffcccc">                 nx=ice_nx, ny=ice_ny, nt=1, whead=whead, wdata=wdata, pre='i2x')</a>
+   345) <a name="l345" style="background-color: #ffcccc">            call seq_io_write(hist_file, ice, 'x2c', 'x2i_ix', &amp;</a>
+   346) <a name="l346" style="background-color: #ffcccc">                 nx=ice_nx, ny=ice_ny, nt=1, whead=whead, wdata=wdata, pre='x2i')</a>
+   347) <a name="l347" style="background-color: #ffcccc">         endif</a>
+   348) <a name="l348" style="background-color: #ffcccc"></a>
+   349) <a name="l349" style="background-color: #ffcccc">         if (glc_present) then</a>
+   350) <a name="l350" style="background-color: #ffcccc">            gsmap =&gt; component_get_gsmap_cx(glc(1))</a>
+   351) <a name="l351" style="background-color: #ffcccc">            dom   =&gt; component_get_dom_cx(glc(1))</a>
+   352) <a name="l352" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, dom%data, 'dom_gx',  &amp;</a>
+   353) <a name="l353" style="background-color: #ffcccc">                 nx=glc_nx, ny=glc_ny, nt=1, whead=whead, wdata=wdata, pre='domg')</a>
+   354) <a name="l354" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, fractions_gx, 'fractions_gx',  &amp;</a>
+   355) <a name="l355" style="background-color: #ffcccc">                 nx=glc_nx, ny=glc_ny, nt=1, whead=whead, wdata=wdata, pre='fracg')</a>
+   356) <a name="l356" style="background-color: #ffcccc">            call seq_io_write(hist_file, glc, 'c2x', 'g2x_gx', &amp;</a>
+   357) <a name="l357" style="background-color: #ffcccc">                 nx=glc_nx, ny=glc_ny, nt=1, whead=whead, wdata=wdata, pre='g2x')</a>
+   358) <a name="l358" style="background-color: #ffcccc">            call seq_io_write(hist_file, glc, 'x2c', 'x2g_gx', &amp;</a>
+   359) <a name="l359" style="background-color: #ffcccc">                 nx=glc_nx, ny=glc_ny, nt=1, whead=whead, wdata=wdata, pre='x2g')</a>
+   360) <a name="l360" style="background-color: #ffcccc">         endif</a>
+   361) <a name="l361" style="background-color: #ffcccc"></a>
+   362) <a name="l362" style="background-color: #ffcccc">         if (wav_present) then</a>
+   363) <a name="l363" style="background-color: #ffcccc">            gsmap =&gt; component_get_gsmap_cx(wav(1))</a>
+   364) <a name="l364" style="background-color: #ffcccc">            dom   =&gt; component_get_dom_cx(wav(1))</a>
+   365) <a name="l365" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, dom%data, 'dom_wx',  &amp;</a>
+   366) <a name="l366" style="background-color: #ffcccc">                 nx=wav_nx, ny=wav_ny, nt=1, whead=whead, wdata=wdata, pre='domw')</a>
+   367) <a name="l367" style="background-color: #ffcccc">            call seq_io_write(hist_file, gsmap, fractions_wx, 'fractions_wx',  &amp;</a>
+   368) <a name="l368" style="background-color: #ffcccc">                 nx=wav_nx, ny=wav_ny, nt=1, whead=whead, wdata=wdata, pre='fracw')</a>
+   369) <a name="l369" style="background-color: #ffcccc">            call seq_io_write(hist_file, wav, 'c2x', 'w2x_wx', &amp;</a>
+   370) <a name="l370" style="background-color: #ffcccc">                 nx=wav_nx, ny=wav_ny, nt=1, whead=whead, wdata=wdata, pre='w2x')</a>
+   371) <a name="l371" style="background-color: #ffcccc">            call seq_io_write(hist_file, wav, 'x2c', 'x2w_wx', &amp;</a>
+   372) <a name="l372" style="background-color: #ffcccc">                 nx=wav_nx, ny=wav_ny, nt=1, whead=whead, wdata=wdata, pre='x2w')</a>
+   373) <a name="l373" style="background-color: #ffcccc">         endif</a>
+   374) <a name="l374" style="background-color: #ffcccc">      enddo</a>
+   375) <a name="l375" style="background-color: #ffcccc"></a>
+   376) <a name="l376" style="background-color: #ffcccc">      call seq_io_close(hist_file)</a>
+   377) <a name="l377" style="background-color: #ffcccc">      if (drv_threading) call seq_comm_setnthreads(nthreads_GLOID)</a>
+   378) <a name="l378" style="background-color: #ffcccc">   endif</a>
+   379) <a name="l379" style="background-color: #ffcccc"></a>
+   380) <a name="l380" style="background-color: #ffcccc">end subroutine seq_hist_write</a>
+   381) <a name="l381" style="background-color: #ffffff"></a>
+   382) <a name="l382" style="background-color: #ffffff">!===============================================================================</a>
+   383) <a name="l383" style="background-color: #ffffff"></a>
+   384) <a name="l384" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">seq_hist_writeavg(infodata, EClock_d, &amp;</a>
+   385) <a name="l385" style="background-color: #ffcccc">     atm, lnd, ice, ocn, rof, glc, wav, write_now)</a>
+   386) <a name="l386" style="background-color: #ffcccc"></a>
+   387) <a name="l387" style="background-color: #ffcccc">   implicit none</a>
+   388) <a name="l388" style="background-color: #ffcccc"></a>
+   389) <a name="l389" style="background-color: #ffcccc">   type(seq_infodata_type) ,  intent(in) :: infodata</a>
+   390) <a name="l390" style="background-color: #ffcccc">   type (ESMF_Clock)       ,  intent(in) :: EClock_d   ! driver clock</a>
+   391) <a name="l391" style="background-color: #ffcccc">   type (component_type)   ,  intent(in) :: atm(:)</a>
+   392) <a name="l392" style="background-color: #ffcccc">   type (component_type)   ,  intent(in) :: lnd(:)</a>
+   393) <a name="l393" style="background-color: #ffcccc">   type (component_type)   ,  intent(in) :: ice(:)</a>
+   394) <a name="l394" style="background-color: #ffcccc">   type (component_type)   ,  intent(in) :: ocn(:)</a>
+   395) <a name="l395" style="background-color: #ffcccc">   type (component_type)   ,  intent(in) :: rof(:)</a>
+   396) <a name="l396" style="background-color: #ffcccc">   type (component_type)   ,  intent(in) :: glc(:)</a>
+   397) <a name="l397" style="background-color: #ffcccc">   type (component_type)   ,  intent(in) :: wav(:)</a>
+   398) <a name="l398" style="background-color: #ffcccc">   logical                 ,  intent(in) :: write_now  ! write or accumulate</a>
+   399) <a name="l399" style="background-color: #ffcccc"></a>
+   400) <a name="l400" style="background-color: #ffcccc">   integer(IN)           :: curr_ymd     ! Current date YYYYMMDD</a>
+   401) <a name="l401" style="background-color: #ffcccc">   integer(IN)           :: curr_tod     ! Current time-of-day (s)</a>
+   402) <a name="l402" style="background-color: #ffcccc">   integer(IN)           :: prev_ymd     ! Previous date YYYYMMDD</a>
+   403) <a name="l403" style="background-color: #ffcccc">   integer(IN)           :: prev_tod     ! Previous time-of-day (s)</a>
+   404) <a name="l404" style="background-color: #ffcccc">   integer(IN)           :: start_ymd    ! Starting date YYYYMMDD</a>
+   405) <a name="l405" style="background-color: #ffcccc">   integer(IN)           :: start_tod    ! Starting time-of-day (s)</a>
+   406) <a name="l406" style="background-color: #ffcccc">   real(r8)              :: curr_time    ! Time interval since reference time</a>
+   407) <a name="l407" style="background-color: #ffcccc">   real(r8)              :: prev_time    ! Time interval since reference time</a>
+   408) <a name="l408" style="background-color: #ffcccc">   real(r8)              :: avg_time     ! Average time of tavg</a>
+   409) <a name="l409" style="background-color: #ffcccc">   integer(IN)           :: yy, mm, dd     ! year,  month,  day</a>
+   410) <a name="l410" style="background-color: #ffcccc">   integer(IN)           :: fk           ! index</a>
+   411) <a name="l411" style="background-color: #ffcccc">   character(CL)         :: time_units   ! units of time variable</a>
+   412) <a name="l412" style="background-color: #ffcccc">   character(CL)         :: calendar     ! calendar type</a>
+   413) <a name="l413" style="background-color: #ffcccc">   integer(IN)           :: lsize        ! local size of an aVect</a>
+   414) <a name="l414" style="background-color: #ffcccc">   character(CL)         :: case_name    ! case name</a>
+   415) <a name="l415" style="background-color: #ffcccc">   character(CL)         :: hist_file    ! Local path to history filename</a>
+   416) <a name="l416" style="background-color: #ffcccc">   logical               :: whead, wdata  ! flags write header vs. data</a>
+   417) <a name="l417" style="background-color: #ffcccc">   integer(IN)           :: iidx ! component instance counter</a>
+   418) <a name="l418" style="background-color: #ffcccc"></a>
+   419) <a name="l419" style="background-color: #ffcccc">   type(mct_aVect), save  :: a2x_ax_avg(num_inst_atm)   ! tavg aVect/bundle</a>
+   420) <a name="l420" style="background-color: #ffcccc">   type(mct_aVect), save  :: x2a_ax_avg(num_inst_atm)</a>
+   421) <a name="l421" style="background-color: #ffcccc">   type(mct_aVect), save  :: l2x_lx_avg(num_inst_lnd)</a>
+   422) <a name="l422" style="background-color: #ffcccc">   type(mct_aVect), save  :: x2l_lx_avg(num_inst_lnd)</a>
+   423) <a name="l423" style="background-color: #ffcccc">   type(mct_aVect), save  :: r2x_rx_avg(num_inst_rof)</a>
+   424) <a name="l424" style="background-color: #ffcccc">   type(mct_aVect), save  :: x2r_rx_avg(num_inst_rof)</a>
+   425) <a name="l425" style="background-color: #ffcccc">   type(mct_aVect), save  :: o2x_ox_avg(num_inst_ocn)</a>
+   426) <a name="l426" style="background-color: #ffcccc">   type(mct_aVect), save  :: x2o_ox_avg(num_inst_ocn)</a>
+   427) <a name="l427" style="background-color: #ffcccc">   type(mct_aVect), save  :: i2x_ix_avg(num_inst_ice)</a>
+   428) <a name="l428" style="background-color: #ffcccc">   type(mct_aVect), save  :: x2i_ix_avg(num_inst_ice)</a>
+   429) <a name="l429" style="background-color: #ffcccc">   type(mct_aVect), save  :: g2x_gx_avg(num_inst_glc)</a>
+   430) <a name="l430" style="background-color: #ffcccc">   type(mct_aVect), save  :: x2g_gx_avg(num_inst_glc)</a>
+   431) <a name="l431" style="background-color: #ffcccc">   type(mct_aVect), save  :: w2x_wx_avg(num_inst_wav)</a>
+   432) <a name="l432" style="background-color: #ffcccc">   type(mct_aVect), save  :: x2w_wx_avg(num_inst_wav)</a>
+   433) <a name="l433" style="background-color: #ffcccc"></a>
+   434) <a name="l434" style="background-color: #ffcccc">   integer(IN)    , save  :: cnt                 ! counts samples in tavg</a>
+   435) <a name="l435" style="background-color: #ffcccc">   real(r8)       , save  :: tbnds(2)            ! CF1.0 time bounds</a>
+   436) <a name="l436" style="background-color: #ffcccc"></a>
+   437) <a name="l437" style="background-color: #ffcccc">   logical        , save  :: first_call = .true. ! flags 1st call of this routine</a>
+   438) <a name="l438" style="background-color: #ffcccc"></a>
+   439) <a name="l439" style="background-color: #ffcccc">   type(mct_gsMap),  pointer :: gsmap  ! component decomp on cpl pes</a>
+   440) <a name="l440" style="background-color: #ffcccc">   type(mct_gGrid),  pointer :: dom    ! component domain on cpl pes</a>
+   441) <a name="l441" style="background-color: #ffcccc">   type(mct_avect),  pointer :: c2x    ! component-&gt;coupler avs on cpl pes</a>
+   442) <a name="l442" style="background-color: #ffcccc">   type(mct_avect),  pointer :: x2c    ! coupler-&gt;component avs on cpl pes</a>
+   443) <a name="l443" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   444) <a name="l444" style="background-color: #ffcccc">!</a>
+   445) <a name="l445" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   446) <a name="l446" style="background-color: #ffcccc"></a>
+   447) <a name="l447" style="background-color: #ffcccc">   !----------------------------------------------------------------------------</a>
+   448) <a name="l448" style="background-color: #ffcccc">   ! get required infodata</a>
+   449) <a name="l449" style="background-color: #ffcccc">   !----------------------------------------------------------------------------</a>
+   450) <a name="l450" style="background-color: #ffcccc">   iamin_CPLID  = seq_comm_iamin(CPLID)</a>
+   451) <a name="l451" style="background-color: #ffcccc">   call seq_comm_getdata(GLOID, &amp;</a>
+   452) <a name="l452" style="background-color: #ffcccc">        mpicom=mpicom_GLOID, nthreads=nthreads_GLOID)</a>
+   453) <a name="l453" style="background-color: #ffcccc">   call seq_comm_getdata(CPLID, &amp;</a>
+   454) <a name="l454" style="background-color: #ffcccc">        mpicom=mpicom_CPLID, nthreads=nthreads_CPLID)</a>
+   455) <a name="l455" style="background-color: #ffcccc"></a>
+   456) <a name="l456" style="background-color: #ffcccc">   call seq_infodata_getData(infodata,       &amp;</a>
+   457) <a name="l457" style="background-color: #ffcccc">        drv_threading=drv_threading,         &amp;</a>
+   458) <a name="l458" style="background-color: #ffcccc">        atm_present=atm_present,             &amp;</a>
+   459) <a name="l459" style="background-color: #ffcccc">        lnd_present=lnd_present,             &amp;</a>
+   460) <a name="l460" style="background-color: #ffcccc">        rof_present=rof_present,             &amp;</a>
+   461) <a name="l461" style="background-color: #ffcccc">        ice_present=ice_present,             &amp;</a>
+   462) <a name="l462" style="background-color: #ffcccc">        ocn_present=ocn_present,             &amp;</a>
+   463) <a name="l463" style="background-color: #ffcccc">        glc_present=glc_present,             &amp;</a>
+   464) <a name="l464" style="background-color: #ffcccc">        wav_present=wav_present,             &amp; </a>
+   465) <a name="l465" style="background-color: #ffcccc">        atm_prognostic=atm_prognostic,       &amp;</a>
+   466) <a name="l466" style="background-color: #ffcccc">        lnd_prognostic=lnd_prognostic,       &amp;</a>
+   467) <a name="l467" style="background-color: #ffcccc">        ice_prognostic=ice_prognostic,       &amp;</a>
+   468) <a name="l468" style="background-color: #ffcccc">        ocn_prognostic=ocn_prognostic,       &amp;</a>
+   469) <a name="l469" style="background-color: #ffcccc">        ocnrof_prognostic=ocnrof_prognostic, &amp;</a>
+   470) <a name="l470" style="background-color: #ffcccc">        glc_prognostic=glc_prognostic,       &amp;</a>
+   471) <a name="l471" style="background-color: #ffcccc">        wav_prognostic=wav_prognostic,       &amp;</a>
+   472) <a name="l472" style="background-color: #ffcccc">        atm_nx=atm_nx,  atm_ny=atm_ny,       &amp;</a>
+   473) <a name="l473" style="background-color: #ffcccc">        lnd_nx=lnd_nx,  lnd_ny=lnd_ny,       &amp;</a>
+   474) <a name="l474" style="background-color: #ffcccc">        rof_nx=rof_nx,  rof_ny=rof_ny,       &amp;</a>
+   475) <a name="l475" style="background-color: #ffcccc">        ice_nx=ice_nx,  ice_ny=ice_ny,       &amp;</a>
+   476) <a name="l476" style="background-color: #ffcccc">        glc_nx=glc_nx,  glc_ny=glc_ny,       &amp;</a>
+   477) <a name="l477" style="background-color: #ffcccc">        wav_nx=wav_nx,  wav_ny=wav_ny,       &amp;</a>
+   478) <a name="l478" style="background-color: #ffcccc">        ocn_nx=ocn_nx,  ocn_ny=ocn_ny,       &amp;</a>
+   479) <a name="l479" style="background-color: #ffcccc">        cpl_cdf64=cdf64 )</a>
+   480) <a name="l480" style="background-color: #ffcccc"></a>
+   481) <a name="l481" style="background-color: #ffcccc">   ! Get current date from clock needed to label the histavg pointer file</a>
+   482) <a name="l482" style="background-color: #ffcccc"></a>
+   483) <a name="l483" style="background-color: #ffcccc">   call seq_timemgr_EClockGetData( EClock_d,  curr_ymd=curr_ymd,  curr_tod=curr_tod,  &amp;</a>
+   484) <a name="l484" style="background-color: #ffcccc">        start_ymd=start_ymd,  start_tod=start_tod,  curr_time=curr_time,  prev_time=prev_time,  &amp;</a>
+   485) <a name="l485" style="background-color: #ffcccc">        calendar=calendar)</a>
+   486) <a name="l486" style="background-color: #ffcccc"></a>
+   487) <a name="l487" style="background-color: #ffcccc">   if (first_call) then</a>
+   488) <a name="l488" style="background-color: #ffcccc">      if (atm_present) then</a>
+   489) <a name="l489" style="background-color: #ffcccc">         do iidx = 1,  num_inst_atm</a>
+   490) <a name="l490" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(atm(iidx))</a>
+   491) <a name="l491" style="background-color: #ffcccc">            lsize = mct_aVect_lsize(c2x)</a>
+   492) <a name="l492" style="background-color: #ffcccc">            call mct_aVect_init(a2x_ax_avg(iidx), c2x, lsize)</a>
+   493) <a name="l493" style="background-color: #ffcccc">            call mct_aVect_zero(a2x_ax_avg(iidx))</a>
+   494) <a name="l494" style="background-color: #ffcccc"></a>
+   495) <a name="l495" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(atm(iidx))</a>
+   496) <a name="l496" style="background-color: #ffcccc">            lsize = mct_aVect_lsize(x2c)</a>
+   497) <a name="l497" style="background-color: #ffcccc">            call mct_aVect_init(x2a_ax_avg(iidx), x2c, lsize)</a>
+   498) <a name="l498" style="background-color: #ffcccc">            call mct_aVect_zero(x2a_ax_avg(iidx))</a>
+   499) <a name="l499" style="background-color: #ffcccc">         enddo</a>
+   500) <a name="l500" style="background-color: #ffcccc">      endif</a>
+   501) <a name="l501" style="background-color: #ffcccc">      if (lnd_present) then</a>
+   502) <a name="l502" style="background-color: #ffcccc">         do iidx = 1,  num_inst_lnd</a>
+   503) <a name="l503" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(lnd(iidx))</a>
+   504) <a name="l504" style="background-color: #ffcccc">            lsize = mct_aVect_lsize(c2x)</a>
+   505) <a name="l505" style="background-color: #ffcccc">            call mct_aVect_init(l2x_lx_avg(iidx), c2x, lsize)</a>
+   506) <a name="l506" style="background-color: #ffcccc">            call mct_aVect_zero(l2x_lx_avg(iidx))</a>
+   507) <a name="l507" style="background-color: #ffcccc"></a>
+   508) <a name="l508" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(lnd(iidx))</a>
+   509) <a name="l509" style="background-color: #ffcccc">            lsize = mct_aVect_lsize(x2c)</a>
+   510) <a name="l510" style="background-color: #ffcccc">            call mct_aVect_init(x2l_lx_avg(iidx), x2c, lsize)</a>
+   511) <a name="l511" style="background-color: #ffcccc">            call mct_aVect_zero(x2l_lx_avg(iidx))</a>
+   512) <a name="l512" style="background-color: #ffcccc">         enddo</a>
+   513) <a name="l513" style="background-color: #ffcccc">      endif</a>
+   514) <a name="l514" style="background-color: #ffcccc">      if (rof_present .and. ocnrof_prognostic) then</a>
+   515) <a name="l515" style="background-color: #ffcccc">         do iidx = 1,  num_inst_rof</a>
+   516) <a name="l516" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(rof(iidx))</a>
+   517) <a name="l517" style="background-color: #ffcccc">            lsize = mct_aVect_lsize(c2x)</a>
+   518) <a name="l518" style="background-color: #ffcccc">            call mct_aVect_init(r2x_rx_avg(iidx), c2x, lsize)</a>
+   519) <a name="l519" style="background-color: #ffcccc">            call mct_aVect_zero(r2x_rx_avg(iidx))</a>
+   520) <a name="l520" style="background-color: #ffcccc"></a>
+   521) <a name="l521" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(rof(iidx))</a>
+   522) <a name="l522" style="background-color: #ffcccc">            lsize = mct_aVect_lsize(x2c)</a>
+   523) <a name="l523" style="background-color: #ffcccc">            call mct_aVect_init(x2r_rx_avg(iidx), x2c, lsize)</a>
+   524) <a name="l524" style="background-color: #ffcccc">            call mct_aVect_zero(x2r_rx_avg(iidx))</a>
+   525) <a name="l525" style="background-color: #ffcccc">         enddo</a>
+   526) <a name="l526" style="background-color: #ffcccc">      endif</a>
+   527) <a name="l527" style="background-color: #ffcccc">      if (ocn_present) then</a>
+   528) <a name="l528" style="background-color: #ffcccc">         do iidx = 1,  num_inst_ocn</a>
+   529) <a name="l529" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(ocn(iidx))</a>
+   530) <a name="l530" style="background-color: #ffcccc">            lsize = mct_aVect_lsize(c2x)</a>
+   531) <a name="l531" style="background-color: #ffcccc">            call mct_aVect_init(o2x_ox_avg(iidx), c2x, lsize)</a>
+   532) <a name="l532" style="background-color: #ffcccc">            call mct_aVect_zero(o2x_ox_avg(iidx))</a>
+   533) <a name="l533" style="background-color: #ffcccc"></a>
+   534) <a name="l534" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(ocn(iidx))</a>
+   535) <a name="l535" style="background-color: #ffcccc">            lsize = mct_aVect_lsize(x2c)</a>
+   536) <a name="l536" style="background-color: #ffcccc">            call mct_aVect_init(x2o_ox_avg(iidx), x2c, lsize)</a>
+   537) <a name="l537" style="background-color: #ffcccc">            call mct_aVect_zero(x2o_ox_avg(iidx))</a>
+   538) <a name="l538" style="background-color: #ffcccc">         enddo</a>
+   539) <a name="l539" style="background-color: #ffcccc">      endif</a>
+   540) <a name="l540" style="background-color: #ffcccc">      if (ice_present) then</a>
+   541) <a name="l541" style="background-color: #ffcccc">         do iidx = 1,  num_inst_ice</a>
+   542) <a name="l542" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(ice(iidx))</a>
+   543) <a name="l543" style="background-color: #ffcccc">            lsize = mct_aVect_lsize(c2x)</a>
+   544) <a name="l544" style="background-color: #ffcccc">            call mct_aVect_init(i2x_ix_avg(iidx), c2x, lsize)</a>
+   545) <a name="l545" style="background-color: #ffcccc">            call mct_aVect_zero(i2x_ix_avg(iidx))</a>
+   546) <a name="l546" style="background-color: #ffcccc"></a>
+   547) <a name="l547" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(ice(iidx))</a>
+   548) <a name="l548" style="background-color: #ffcccc">            lsize = mct_aVect_lsize(x2c)</a>
+   549) <a name="l549" style="background-color: #ffcccc">            call mct_aVect_init(x2i_ix_avg(iidx), x2c, lsize)</a>
+   550) <a name="l550" style="background-color: #ffcccc">            call mct_aVect_zero(x2i_ix_avg(iidx))</a>
+   551) <a name="l551" style="background-color: #ffcccc">         enddo</a>
+   552) <a name="l552" style="background-color: #ffcccc">      endif</a>
+   553) <a name="l553" style="background-color: #ffcccc">      if (glc_present) then</a>
+   554) <a name="l554" style="background-color: #ffcccc">         do iidx = 1,  num_inst_glc</a>
+   555) <a name="l555" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(glc(iidx))</a>
+   556) <a name="l556" style="background-color: #ffcccc">            lsize = mct_aVect_lsize(c2x)</a>
+   557) <a name="l557" style="background-color: #ffcccc">            call mct_aVect_init(g2x_gx_avg(iidx), c2x, lsize)</a>
+   558) <a name="l558" style="background-color: #ffcccc">            call mct_aVect_zero(g2x_gx_avg(iidx))</a>
+   559) <a name="l559" style="background-color: #ffcccc"></a>
+   560) <a name="l560" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(glc(iidx))</a>
+   561) <a name="l561" style="background-color: #ffcccc">            lsize = mct_aVect_lsize(x2c)</a>
+   562) <a name="l562" style="background-color: #ffcccc">            call mct_aVect_init(x2g_gx_avg(iidx), x2c, lsize)</a>
+   563) <a name="l563" style="background-color: #ffcccc">            call mct_aVect_zero(x2g_gx_avg(iidx))</a>
+   564) <a name="l564" style="background-color: #ffcccc">         enddo</a>
+   565) <a name="l565" style="background-color: #ffcccc">      endif</a>
+   566) <a name="l566" style="background-color: #ffcccc">      if (wav_present) then</a>
+   567) <a name="l567" style="background-color: #ffcccc">         do iidx = 1,  num_inst_wav</a>
+   568) <a name="l568" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(wav(iidx))</a>
+   569) <a name="l569" style="background-color: #ffcccc">            lsize = mct_aVect_lsize(c2x)</a>
+   570) <a name="l570" style="background-color: #ffcccc">            call mct_aVect_init(w2x_wx_avg(iidx), c2x, lsize)</a>
+   571) <a name="l571" style="background-color: #ffcccc">            call mct_aVect_zero(w2x_wx_avg(iidx))</a>
+   572) <a name="l572" style="background-color: #ffcccc"></a>
+   573) <a name="l573" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(wav(iidx))</a>
+   574) <a name="l574" style="background-color: #ffcccc">            lsize = mct_aVect_lsize(x2c)</a>
+   575) <a name="l575" style="background-color: #ffcccc">            call mct_aVect_init(x2w_wx_avg(iidx), x2c, lsize)</a>
+   576) <a name="l576" style="background-color: #ffcccc">            call mct_aVect_zero(x2w_wx_avg(iidx))</a>
+   577) <a name="l577" style="background-color: #ffcccc">         enddo</a>
+   578) <a name="l578" style="background-color: #ffcccc">      endif</a>
+   579) <a name="l579" style="background-color: #ffcccc">      cnt = 0</a>
+   580) <a name="l580" style="background-color: #ffcccc">      tbnds(1) = prev_time</a>
+   581) <a name="l581" style="background-color: #ffcccc">      first_call = .false.</a>
+   582) <a name="l582" style="background-color: #ffcccc">   endif</a>
+   583) <a name="l583" style="background-color: #ffcccc"></a>
+   584) <a name="l584" style="background-color: #ffcccc">   if (.not.write_now) then</a>
+   585) <a name="l585" style="background-color: #ffcccc">      cnt = cnt + 1</a>
+   586) <a name="l586" style="background-color: #ffcccc">      if (atm_present) then</a>
+   587) <a name="l587" style="background-color: #ffcccc">         do iidx = 1,  num_inst_atm</a>
+   588) <a name="l588" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(atm(iidx))</a>
+   589) <a name="l589" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(atm(iidx))</a>
+   590) <a name="l590" style="background-color: #ffcccc">            a2x_ax_avg(iidx)%rAttr = a2x_ax_avg(iidx)%rAttr + c2x%rAttr</a>
+   591) <a name="l591" style="background-color: #ffcccc">            x2a_ax_avg(iidx)%rAttr = x2a_ax_avg(iidx)%rAttr + x2c%rAttr</a>
+   592) <a name="l592" style="background-color: #ffcccc">         enddo</a>
+   593) <a name="l593" style="background-color: #ffcccc">      endif</a>
+   594) <a name="l594" style="background-color: #ffcccc">      if (lnd_present) then</a>
+   595) <a name="l595" style="background-color: #ffcccc">         do iidx = 1,  num_inst_lnd</a>
+   596) <a name="l596" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(lnd(iidx))</a>
+   597) <a name="l597" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(lnd(iidx))</a>
+   598) <a name="l598" style="background-color: #ffcccc">            l2x_lx_avg(iidx)%rAttr = l2x_lx_avg(iidx)%rAttr + c2x%rAttr</a>
+   599) <a name="l599" style="background-color: #ffcccc">            x2l_lx_avg(iidx)%rAttr = x2l_lx_avg(iidx)%rAttr + x2c%rAttr</a>
+   600) <a name="l600" style="background-color: #ffcccc">         enddo</a>
+   601) <a name="l601" style="background-color: #ffcccc">      endif</a>
+   602) <a name="l602" style="background-color: #ffcccc">      if (rof_present .and. ocnrof_prognostic) then</a>
+   603) <a name="l603" style="background-color: #ffcccc">         do iidx = 1,  num_inst_rof</a>
+   604) <a name="l604" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(rof(iidx))</a>
+   605) <a name="l605" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(rof(iidx))</a>
+   606) <a name="l606" style="background-color: #ffcccc">            r2x_rx_avg(iidx)%rAttr = r2x_rx_avg(iidx)%rAttr + c2x%rAttr</a>
+   607) <a name="l607" style="background-color: #ffcccc">            x2r_rx_avg(iidx)%rAttr = x2r_rx_avg(iidx)%rAttr + x2c%rAttr</a>
+   608) <a name="l608" style="background-color: #ffcccc">         enddo</a>
+   609) <a name="l609" style="background-color: #ffcccc">      endif</a>
+   610) <a name="l610" style="background-color: #ffcccc">      if (ocn_present) then</a>
+   611) <a name="l611" style="background-color: #ffcccc">         do iidx = 1,  num_inst_ocn</a>
+   612) <a name="l612" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(ocn(iidx))</a>
+   613) <a name="l613" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(ocn(iidx))</a>
+   614) <a name="l614" style="background-color: #ffcccc">            o2x_ox_avg(iidx)%rAttr = o2x_ox_avg(iidx)%rAttr + c2x%rAttr</a>
+   615) <a name="l615" style="background-color: #ffcccc">            x2o_ox_avg(iidx)%rAttr = x2o_ox_avg(iidx)%rAttr + x2c%rAttr</a>
+   616) <a name="l616" style="background-color: #ffcccc">         enddo</a>
+   617) <a name="l617" style="background-color: #ffcccc">      endif</a>
+   618) <a name="l618" style="background-color: #ffcccc">      if (ice_present) then</a>
+   619) <a name="l619" style="background-color: #ffcccc">         do iidx = 1,  num_inst_ice</a>
+   620) <a name="l620" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(ice(iidx))</a>
+   621) <a name="l621" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(ice(iidx))</a>
+   622) <a name="l622" style="background-color: #ffcccc">            i2x_ix_avg(iidx)%rAttr = i2x_ix_avg(iidx)%rAttr + c2x%rAttr</a>
+   623) <a name="l623" style="background-color: #ffcccc">            x2i_ix_avg(iidx)%rAttr = x2i_ix_avg(iidx)%rAttr + x2c%rAttr</a>
+   624) <a name="l624" style="background-color: #ffcccc">         enddo</a>
+   625) <a name="l625" style="background-color: #ffcccc">      endif</a>
+   626) <a name="l626" style="background-color: #ffcccc">      if (glc_present) then</a>
+   627) <a name="l627" style="background-color: #ffcccc">         do iidx = 1,  num_inst_glc</a>
+   628) <a name="l628" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(glc(iidx))</a>
+   629) <a name="l629" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(glc(iidx))</a>
+   630) <a name="l630" style="background-color: #ffcccc">            g2x_gx_avg(iidx)%rAttr = g2x_gx_avg(iidx)%rAttr + c2x%rAttr</a>
+   631) <a name="l631" style="background-color: #ffcccc">            x2g_gx_avg(iidx)%rAttr = x2g_gx_avg(iidx)%rAttr + x2c%rAttr</a>
+   632) <a name="l632" style="background-color: #ffcccc">         enddo</a>
+   633) <a name="l633" style="background-color: #ffcccc">      endif</a>
+   634) <a name="l634" style="background-color: #ffcccc">      if (wav_present) then</a>
+   635) <a name="l635" style="background-color: #ffcccc">         do iidx = 1,  num_inst_wav</a>
+   636) <a name="l636" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(wav(iidx))</a>
+   637) <a name="l637" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(wav(iidx))</a>
+   638) <a name="l638" style="background-color: #ffcccc">            w2x_wx_avg(iidx)%rAttr = w2x_wx_avg(iidx)%rAttr + c2x%rAttr</a>
+   639) <a name="l639" style="background-color: #ffcccc">            x2w_wx_avg(iidx)%rAttr = x2w_wx_avg(iidx)%rAttr + x2c%rAttr</a>
+   640) <a name="l640" style="background-color: #ffcccc">         enddo</a>
+   641) <a name="l641" style="background-color: #ffcccc">      endif</a>
+   642) <a name="l642" style="background-color: #ffcccc"></a>
+   643) <a name="l643" style="background-color: #ffcccc">   else</a>
+   644) <a name="l644" style="background-color: #ffcccc"></a>
+   645) <a name="l645" style="background-color: #ffcccc">      cnt = cnt + 1</a>
+   646) <a name="l646" style="background-color: #ffcccc">      tbnds(2) = curr_time</a>
+   647) <a name="l647" style="background-color: #ffcccc">      if (atm_present) then</a>
+   648) <a name="l648" style="background-color: #ffcccc">         do iidx = 1,  num_inst_atm</a>
+   649) <a name="l649" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(atm(iidx))</a>
+   650) <a name="l650" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(atm(iidx))</a>
+   651) <a name="l651" style="background-color: #ffcccc">            a2x_ax_avg(iidx)%rAttr = (a2x_ax_avg(iidx)%rAttr + c2x%rAttr) / (cnt * 1.0_r8)</a>
+   652) <a name="l652" style="background-color: #ffcccc">            x2a_ax_avg(iidx)%rAttr = (x2a_ax_avg(iidx)%rAttr + x2c%rAttr) / (cnt * 1.0_r8)</a>
+   653) <a name="l653" style="background-color: #ffcccc">         enddo</a>
+   654) <a name="l654" style="background-color: #ffcccc">      endif</a>
+   655) <a name="l655" style="background-color: #ffcccc">      if (lnd_present) then</a>
+   656) <a name="l656" style="background-color: #ffcccc">         do iidx = 1,  num_inst_lnd</a>
+   657) <a name="l657" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(lnd(iidx))</a>
+   658) <a name="l658" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(lnd(iidx))</a>
+   659) <a name="l659" style="background-color: #ffcccc">            l2x_lx_avg(iidx)%rAttr = (l2x_lx_avg(iidx)%rAttr + c2x%rAttr) / (cnt * 1.0_r8)</a>
+   660) <a name="l660" style="background-color: #ffcccc">            x2l_lx_avg(iidx)%rAttr = (x2l_lx_avg(iidx)%rAttr + x2c%rAttr) / (cnt * 1.0_r8)</a>
+   661) <a name="l661" style="background-color: #ffcccc">         enddo</a>
+   662) <a name="l662" style="background-color: #ffcccc">      endif</a>
+   663) <a name="l663" style="background-color: #ffcccc">      if (rof_present .and. ocnrof_prognostic) then</a>
+   664) <a name="l664" style="background-color: #ffcccc">         do iidx = 1,  num_inst_rof</a>
+   665) <a name="l665" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(rof(iidx))</a>
+   666) <a name="l666" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(rof(iidx))</a>
+   667) <a name="l667" style="background-color: #ffcccc">            r2x_rx_avg(iidx)%rAttr = (r2x_rx_avg(iidx)%rAttr + c2x%rAttr) / (cnt * 1.0_r8)</a>
+   668) <a name="l668" style="background-color: #ffcccc">            x2r_rx_avg(iidx)%rAttr = (x2r_rx_avg(iidx)%rAttr + x2c%rAttr) / (cnt * 1.0_r8)</a>
+   669) <a name="l669" style="background-color: #ffcccc">         enddo</a>
+   670) <a name="l670" style="background-color: #ffcccc">      endif</a>
+   671) <a name="l671" style="background-color: #ffcccc">      if (ocn_present) then</a>
+   672) <a name="l672" style="background-color: #ffcccc">         do iidx = 1,  num_inst_ocn</a>
+   673) <a name="l673" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(ocn(iidx))</a>
+   674) <a name="l674" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(ocn(iidx))</a>
+   675) <a name="l675" style="background-color: #ffcccc">            o2x_ox_avg(iidx)%rAttr = (o2x_ox_avg(iidx)%rAttr + c2x%rAttr) / (cnt * 1.0_r8)</a>
+   676) <a name="l676" style="background-color: #ffcccc">            x2o_ox_avg(iidx)%rAttr = (x2o_ox_avg(iidx)%rAttr + x2c%rAttr) / (cnt * 1.0_r8)</a>
+   677) <a name="l677" style="background-color: #ffcccc">         enddo</a>
+   678) <a name="l678" style="background-color: #ffcccc">      endif</a>
+   679) <a name="l679" style="background-color: #ffcccc">      if (ice_present) then</a>
+   680) <a name="l680" style="background-color: #ffcccc">         do iidx = 1,  num_inst_ice</a>
+   681) <a name="l681" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(ice(iidx))</a>
+   682) <a name="l682" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(ice(iidx))</a>
+   683) <a name="l683" style="background-color: #ffcccc">            i2x_ix_avg(iidx)%rAttr = (i2x_ix_avg(iidx)%rAttr + c2x%rAttr) / (cnt * 1.0_r8)</a>
+   684) <a name="l684" style="background-color: #ffcccc">            x2i_ix_avg(iidx)%rAttr = (x2i_ix_avg(iidx)%rAttr + x2c%rAttr) / (cnt * 1.0_r8)</a>
+   685) <a name="l685" style="background-color: #ffcccc">         enddo</a>
+   686) <a name="l686" style="background-color: #ffcccc">      endif</a>
+   687) <a name="l687" style="background-color: #ffcccc">      if (glc_present) then</a>
+   688) <a name="l688" style="background-color: #ffcccc">         do iidx = 1,  num_inst_glc</a>
+   689) <a name="l689" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(glc(iidx))</a>
+   690) <a name="l690" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(glc(iidx))</a>
+   691) <a name="l691" style="background-color: #ffcccc">            g2x_gx_avg(iidx)%rAttr = (g2x_gx_avg(iidx)%rAttr + c2x%rAttr) / (cnt * 1.0_r8)</a>
+   692) <a name="l692" style="background-color: #ffcccc">            x2g_gx_avg(iidx)%rAttr = (x2g_gx_avg(iidx)%rAttr + x2c%rAttr) / (cnt * 1.0_r8)</a>
+   693) <a name="l693" style="background-color: #ffcccc">         enddo</a>
+   694) <a name="l694" style="background-color: #ffcccc">      endif</a>
+   695) <a name="l695" style="background-color: #ffcccc">      if (wav_present) then</a>
+   696) <a name="l696" style="background-color: #ffcccc">         do iidx = 1,  num_inst_wav</a>
+   697) <a name="l697" style="background-color: #ffcccc">            c2x =&gt; component_get_c2x_cx(wav(iidx))</a>
+   698) <a name="l698" style="background-color: #ffcccc">            x2c =&gt; component_get_x2c_cx(wav(iidx))</a>
+   699) <a name="l699" style="background-color: #ffcccc">            w2x_wx_avg(iidx)%rAttr = (w2x_wx_avg(iidx)%rAttr + c2x%rAttr) / (cnt * 1.0_r8)</a>
+   700) <a name="l700" style="background-color: #ffcccc">            x2w_wx_avg(iidx)%rAttr = (x2w_wx_avg(iidx)%rAttr + x2c%rAttr) / (cnt * 1.0_r8)</a>
+   701) <a name="l701" style="background-color: #ffcccc">         enddo</a>
+   702) <a name="l702" style="background-color: #ffcccc">      endif</a>
+   703) <a name="l703" style="background-color: #ffcccc"></a>
+   704) <a name="l704" style="background-color: #ffcccc">      call seq_infodata_GetData( infodata,  case_name=case_name)</a>
+   705) <a name="l705" style="background-color: #ffcccc">      call seq_timemgr_EClockGetData( EClock_d,  prev_ymd=prev_ymd,  prev_tod=prev_tod)</a>
+   706) <a name="l706" style="background-color: #ffcccc">      if (seq_timemgr_histavg_type == seq_timemgr_type_nyear) then</a>
+   707) <a name="l707" style="background-color: #ffcccc">         call shr_cal_date2ymd(prev_ymd, yy, mm, dd)</a>
+   708) <a name="l708" style="background-color: #ffcccc">         write(hist_file, &quot;(2a, i4.4, a)&quot;) &amp;</a>
+   709) <a name="l709" style="background-color: #ffcccc">            trim(case_name),  '.cpl.ha.',  yy, '.nc'</a>
+   710) <a name="l710" style="background-color: #ffcccc">      elseif (seq_timemgr_histavg_type == seq_timemgr_type_nmonth) then</a>
+   711) <a name="l711" style="background-color: #ffcccc">         call shr_cal_date2ymd(prev_ymd, yy, mm, dd)</a>
+   712) <a name="l712" style="background-color: #ffcccc">         write(hist_file, &quot;(2a, i4.4, a, i2.2, a)&quot;) &amp;</a>
+   713) <a name="l713" style="background-color: #ffcccc">            trim(case_name),  '.cpl.ha.',  yy, '-', mm, '.nc'</a>
+   714) <a name="l714" style="background-color: #ffcccc">      elseif (seq_timemgr_histavg_type == seq_timemgr_type_nday) then</a>
+   715) <a name="l715" style="background-color: #ffcccc">         call shr_cal_date2ymd(prev_ymd, yy, mm, dd)</a>
+   716) <a name="l716" style="background-color: #ffcccc">         write(hist_file, &quot;(2a, i4.4, a, i2.2, a, i2.2, a)&quot;) &amp;</a>
+   717) <a name="l717" style="background-color: #ffcccc">            trim(case_name),  '.cpl.ha.',  yy, '-', mm, '-', dd, '.nc'</a>
+   718) <a name="l718" style="background-color: #ffcccc">      else</a>
+   719) <a name="l719" style="background-color: #ffcccc">         call shr_cal_date2ymd(curr_ymd, yy, mm, dd)</a>
+   720) <a name="l720" style="background-color: #ffcccc">         write(hist_file, &quot;(2a, i4.4, a, i2.2, a, i2.2, a, i5.5, a)&quot;) &amp;</a>
+   721) <a name="l721" style="background-color: #ffcccc">            trim(case_name),  '.cpl.ha.',  yy, '-', mm, '-', dd, '-', curr_tod, '.nc'</a>
+   722) <a name="l722" style="background-color: #ffcccc">      endif</a>
+   723) <a name="l723" style="background-color: #ffcccc"></a>
+   724) <a name="l724" style="background-color: #ffcccc">      time_units = 'days since ' &amp;</a>
+   725) <a name="l725" style="background-color: #ffcccc">           // seq_io_date2yyyymmdd(start_ymd) // ' ' // seq_io_sec2hms(start_tod)</a>
+   726) <a name="l726" style="background-color: #ffcccc"></a>
+   727) <a name="l727" style="background-color: #ffcccc">      if (iamin_CPLID) then</a>
+   728) <a name="l728" style="background-color: #ffcccc"></a>
+   729) <a name="l729" style="background-color: #ffcccc">         if (drv_threading) call seq_comm_setnthreads(nthreads_CPLID)</a>
+   730) <a name="l730" style="background-color: #ffcccc">         call seq_io_wopen(hist_file, clobber=.true., cdf64=cdf64)</a>
+   731) <a name="l731" style="background-color: #ffcccc"></a>
+   732) <a name="l732" style="background-color: #ffcccc">         ! loop twice,  first time write header,  second time write data for perf</a>
+   733) <a name="l733" style="background-color: #ffcccc"></a>
+   734) <a name="l734" style="background-color: #ffcccc">         do fk = 1, 2</a>
+   735) <a name="l735" style="background-color: #ffcccc">            if (fk == 1) then</a>
+   736) <a name="l736" style="background-color: #ffcccc">               whead = .true.</a>
+   737) <a name="l737" style="background-color: #ffcccc">               wdata = .false.</a>
+   738) <a name="l738" style="background-color: #ffcccc">            elseif (fk == 2) then</a>
+   739) <a name="l739" style="background-color: #ffcccc">               whead = .false.</a>
+   740) <a name="l740" style="background-color: #ffcccc">               wdata = .true.</a>
+   741) <a name="l741" style="background-color: #ffcccc">               call seq_io_enddef(hist_file)</a>
+   742) <a name="l742" style="background-color: #ffcccc">            else</a>
+   743) <a name="l743" style="background-color: #ffcccc">               call shr_sys_abort('seq_hist_writeavg fk illegal')</a>
+   744) <a name="l744" style="background-color: #ffcccc">            end if</a>
+   745) <a name="l745" style="background-color: #ffcccc"></a>
+   746) <a name="l746" style="background-color: #ffcccc">            avg_time = 0.5_r8 * (tbnds(1) + tbnds(2))</a>
+   747) <a name="l747" style="background-color: #ffcccc">            !---------- tcx nov 2011 tbnds of same values causes problems in ferret</a>
+   748) <a name="l748" style="background-color: #ffcccc">            if (tbnds(1) &gt;= tbnds(2)) then</a>
+   749) <a name="l749" style="background-color: #ffcccc">               call seq_io_write(hist_file, &amp;</a>
+   750) <a name="l750" style="background-color: #ffcccc">                    time_units=time_units, time_cal=calendar, time_val=avg_time, &amp;</a>
+   751) <a name="l751" style="background-color: #ffcccc">                    whead=whead, wdata=wdata)</a>
+   752) <a name="l752" style="background-color: #ffcccc">            else</a>
+   753) <a name="l753" style="background-color: #ffcccc">               call seq_io_write(hist_file, &amp;</a>
+   754) <a name="l754" style="background-color: #ffcccc">                    time_units=time_units, time_cal=calendar, time_val=avg_time, &amp;</a>
+   755) <a name="l755" style="background-color: #ffcccc">                    whead=whead, wdata=wdata, tbnds=tbnds)</a>
+   756) <a name="l756" style="background-color: #ffcccc">            endif</a>
+   757) <a name="l757" style="background-color: #ffcccc">            if (atm_present) then</a>
+   758) <a name="l758" style="background-color: #ffcccc">               gsmap =&gt; component_get_gsmap_cx(atm(1))</a>
+   759) <a name="l759" style="background-color: #ffcccc">               dom   =&gt; component_get_dom_cx(atm(1))</a>
+   760) <a name="l760" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, dom%data, 'dom_ax',  &amp;</a>
+   761) <a name="l761" style="background-color: #ffcccc">                    nx=atm_nx, ny=atm_ny, nt=1, whead=whead, wdata=wdata, pre='doma')</a>
+   762) <a name="l762" style="background-color: #ffcccc"></a>
+   763) <a name="l763" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, x2a_ax_avg, 'x2a_ax',  &amp; </a>
+   764) <a name="l764" style="background-color: #ffcccc">                    nx=atm_nx, ny=atm_ny, nt=1, whead=whead, wdata=wdata,  &amp;</a>
+   765) <a name="l765" style="background-color: #ffcccc">                    pre='x2aavg', tavg=.true.)</a>
+   766) <a name="l766" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, a2x_ax_avg, 'a2x_ax',  &amp; </a>
+   767) <a name="l767" style="background-color: #ffcccc">                    nx=atm_nx, ny=atm_ny, nt=1, whead=whead, wdata=wdata,  &amp;</a>
+   768) <a name="l768" style="background-color: #ffcccc">                    pre='a2xavg', tavg=.true.)</a>
+   769) <a name="l769" style="background-color: #ffcccc">            endif</a>
+   770) <a name="l770" style="background-color: #ffcccc">            if (lnd_present) then</a>
+   771) <a name="l771" style="background-color: #ffcccc">               gsmap =&gt; component_get_gsmap_cx(lnd(1))</a>
+   772) <a name="l772" style="background-color: #ffcccc">               dom   =&gt; component_get_dom_cx(lnd(1))</a>
+   773) <a name="l773" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, dom%data, 'dom_lx',  &amp;</a>
+   774) <a name="l774" style="background-color: #ffcccc">                    nx=lnd_nx, ny=lnd_ny, nt=1, whead=whead, wdata=wdata, pre='doml')</a>
+   775) <a name="l775" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, l2x_lx_avg, 'l2x_lx',  &amp;</a>
+   776) <a name="l776" style="background-color: #ffcccc">                    nx=lnd_nx, ny=lnd_ny, nt=1, whead=whead, wdata=wdata,  &amp;</a>
+   777) <a name="l777" style="background-color: #ffcccc">                    pre='l2xavg', tavg=.true.)</a>
+   778) <a name="l778" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, x2l_lx_avg, 'x2l_lx',  &amp;</a>
+   779) <a name="l779" style="background-color: #ffcccc">                    nx=lnd_nx, ny=lnd_ny, nt=1, whead=whead, wdata=wdata,  &amp;</a>
+   780) <a name="l780" style="background-color: #ffcccc">                    pre='x2lavg', tavg=.true.)</a>
+   781) <a name="l781" style="background-color: #ffcccc">            endif</a>
+   782) <a name="l782" style="background-color: #ffcccc"></a>
+   783) <a name="l783" style="background-color: #ffcccc">            if (rof_present .and. ocnrof_prognostic) then</a>
+   784) <a name="l784" style="background-color: #ffcccc">               gsmap =&gt; component_get_gsmap_cx(rof(1))</a>
+   785) <a name="l785" style="background-color: #ffcccc">               dom   =&gt; component_get_dom_cx(rof(1))</a>
+   786) <a name="l786" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, dom%data, 'dom_rx',  &amp;</a>
+   787) <a name="l787" style="background-color: #ffcccc">                    nx=rof_nx, ny=rof_ny, nt=1, whead=whead, wdata=wdata, pre='domr')</a>
+   788) <a name="l788" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, r2x_rx_avg, 'r2x_rx',  &amp;</a>
+   789) <a name="l789" style="background-color: #ffcccc">                    nx=rof_nx, ny=rof_ny, nt=1, whead=whead, wdata=wdata,  &amp;</a>
+   790) <a name="l790" style="background-color: #ffcccc">                    pre='r2xavg', tavg=.true.)</a>
+   791) <a name="l791" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, x2r_rx_avg, 'x2r_rx',  &amp;</a>
+   792) <a name="l792" style="background-color: #ffcccc">                    nx=rof_nx, ny=rof_ny, nt=1, whead=whead, wdata=wdata,  &amp;</a>
+   793) <a name="l793" style="background-color: #ffcccc">                    pre='x2ravg', tavg=.true.)</a>
+   794) <a name="l794" style="background-color: #ffcccc">            endif</a>
+   795) <a name="l795" style="background-color: #ffcccc">            if (ocn_present) then</a>
+   796) <a name="l796" style="background-color: #ffcccc">               gsmap =&gt; component_get_gsmap_cx(ocn(1))</a>
+   797) <a name="l797" style="background-color: #ffcccc">               dom   =&gt; component_get_dom_cx(ocn(1))</a>
+   798) <a name="l798" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, dom%data, 'dom_ox',  &amp;</a>
+   799) <a name="l799" style="background-color: #ffcccc">                    nx=ocn_nx, ny=ocn_ny, nt=1, whead=whead, wdata=wdata, pre='domo')</a>
+   800) <a name="l800" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, o2x_ox_avg, 'o2x_ox',  &amp;</a>
+   801) <a name="l801" style="background-color: #ffcccc">                    nx=ocn_nx, ny=ocn_ny, nt=1, whead=whead, wdata=wdata,  &amp;</a>
+   802) <a name="l802" style="background-color: #ffcccc">                    pre='o2xavg', tavg=.true.)</a>
+   803) <a name="l803" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, x2o_ox_avg, 'x2o_ox',  &amp;</a>
+   804) <a name="l804" style="background-color: #ffcccc">                    nx=ocn_nx, ny=ocn_ny, nt=1, whead=whead, wdata=wdata,  &amp;</a>
+   805) <a name="l805" style="background-color: #ffcccc">                    pre='x2oavg', tavg=.true.)</a>
+   806) <a name="l806" style="background-color: #ffcccc">            endif</a>
+   807) <a name="l807" style="background-color: #ffcccc">            if (ice_present) then</a>
+   808) <a name="l808" style="background-color: #ffcccc">               gsmap =&gt; component_get_gsmap_cx(ice(1))</a>
+   809) <a name="l809" style="background-color: #ffcccc">               dom   =&gt; component_get_dom_cx(ice(1))</a>
+   810) <a name="l810" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, dom%data, 'dom_ix',  &amp;</a>
+   811) <a name="l811" style="background-color: #ffcccc">                                 nx=ice_nx, ny=ice_ny, nt=1, whead=whead, wdata=wdata, pre='domi')</a>
+   812) <a name="l812" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, i2x_ix_avg, 'i2x_ix',  &amp;</a>
+   813) <a name="l813" style="background-color: #ffcccc">                                 nx=ice_nx, ny=ice_ny, nt=1, whead=whead, wdata=wdata,  &amp;</a>
+   814) <a name="l814" style="background-color: #ffcccc">                                 pre='i2xavg', tavg=.true.)</a>
+   815) <a name="l815" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, x2i_ix_avg, 'x2i_ix',  &amp;</a>
+   816) <a name="l816" style="background-color: #ffcccc">                                 nx=ice_nx, ny=ice_ny, nt=1, whead=whead, wdata=wdata,  &amp;</a>
+   817) <a name="l817" style="background-color: #ffcccc">                                 pre='x2iavg', tavg=.true.)</a>
+   818) <a name="l818" style="background-color: #ffcccc">            endif</a>
+   819) <a name="l819" style="background-color: #ffcccc">            if (glc_present) then</a>
+   820) <a name="l820" style="background-color: #ffcccc">               gsmap =&gt; component_get_gsmap_cx(glc(1))</a>
+   821) <a name="l821" style="background-color: #ffcccc">               dom   =&gt; component_get_dom_cx(glc(1))</a>
+   822) <a name="l822" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, dom%data, 'dom_gx',  &amp;</a>
+   823) <a name="l823" style="background-color: #ffcccc">                                 nx=glc_nx, ny=glc_ny, nt=1, whead=whead, wdata=wdata, pre='domg')</a>
+   824) <a name="l824" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, g2x_gx_avg, 'g2x_gx',  &amp;</a>
+   825) <a name="l825" style="background-color: #ffcccc">                                 nx=glc_nx, ny=glc_ny, nt=1, whead=whead, wdata=wdata,  &amp;</a>
+   826) <a name="l826" style="background-color: #ffcccc">                                 pre='g2xavg', tavg=.true.)</a>
+   827) <a name="l827" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, x2g_gx_avg, 'x2g_gx',  &amp;</a>
+   828) <a name="l828" style="background-color: #ffcccc">                                 nx=glc_nx, ny=glc_ny, nt=1, whead=whead, wdata=wdata,  &amp;</a>
+   829) <a name="l829" style="background-color: #ffcccc">                                 pre='x2gavg', tavg=.true.)</a>
+   830) <a name="l830" style="background-color: #ffcccc">            endif</a>
+   831) <a name="l831" style="background-color: #ffcccc">            if (wav_present) then</a>
+   832) <a name="l832" style="background-color: #ffcccc">               gsmap =&gt; component_get_gsmap_cx(wav(1))</a>
+   833) <a name="l833" style="background-color: #ffcccc">               dom   =&gt; component_get_dom_cx(wav(1))</a>
+   834) <a name="l834" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, dom%data, 'dom_wx',  &amp;</a>
+   835) <a name="l835" style="background-color: #ffcccc">                                 nx=wav_nx, ny=wav_ny, nt=1, whead=whead, wdata=wdata, pre='domw')</a>
+   836) <a name="l836" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, w2x_wx_avg, 'w2x_wx',  &amp;</a>
+   837) <a name="l837" style="background-color: #ffcccc">                                 nx=wav_nx, ny=wav_ny, nt=1, whead=whead, wdata=wdata,  &amp;</a>
+   838) <a name="l838" style="background-color: #ffcccc">                                 pre='w2xavg', tavg=.true.)</a>
+   839) <a name="l839" style="background-color: #ffcccc">               call seq_io_write(hist_file, gsmap, x2w_wx_avg, 'x2w_wx',  &amp;</a>
+   840) <a name="l840" style="background-color: #ffcccc">                                 nx=wav_nx, ny=wav_ny, nt=1, whead=whead, wdata=wdata,  &amp;</a>
+   841) <a name="l841" style="background-color: #ffcccc">                                 pre='x2wavg', tavg=.true.)</a>
+   842) <a name="l842" style="background-color: #ffcccc">            endif</a>
+   843) <a name="l843" style="background-color: #ffcccc">         enddo</a>
+   844) <a name="l844" style="background-color: #ffcccc"></a>
+   845) <a name="l845" style="background-color: #ffcccc">         call seq_io_close(hist_file)</a>
+   846) <a name="l846" style="background-color: #ffcccc">         if (drv_threading) call seq_comm_setnthreads(nthreads_GLOID)</a>
+   847) <a name="l847" style="background-color: #ffcccc"></a>
+   848) <a name="l848" style="background-color: #ffcccc">         if (atm_present) then</a>
+   849) <a name="l849" style="background-color: #ffcccc">            do iidx = 1,  num_inst_atm</a>
+   850) <a name="l850" style="background-color: #ffcccc">               call mct_aVect_zero(a2x_ax_avg(iidx))</a>
+   851) <a name="l851" style="background-color: #ffcccc">               call mct_aVect_zero(x2a_ax_avg(iidx))</a>
+   852) <a name="l852" style="background-color: #ffcccc">            enddo</a>
+   853) <a name="l853" style="background-color: #ffcccc">         endif</a>
+   854) <a name="l854" style="background-color: #ffcccc">         if (lnd_present) then</a>
+   855) <a name="l855" style="background-color: #ffcccc">            do iidx = 1,  num_inst_lnd</a>
+   856) <a name="l856" style="background-color: #ffcccc">               call mct_aVect_zero(l2x_lx_avg(iidx))</a>
+   857) <a name="l857" style="background-color: #ffcccc">               call mct_aVect_zero(x2l_lx_avg(iidx))</a>
+   858) <a name="l858" style="background-color: #ffcccc">            enddo</a>
+   859) <a name="l859" style="background-color: #ffcccc">         endif</a>
+   860) <a name="l860" style="background-color: #ffcccc">         if (rof_present .and. ocnrof_prognostic) then</a>
+   861) <a name="l861" style="background-color: #ffcccc">            do iidx = 1,  num_inst_rof</a>
+   862) <a name="l862" style="background-color: #ffcccc">               call mct_aVect_zero(r2x_rx_avg(iidx))</a>
+   863) <a name="l863" style="background-color: #ffcccc">               call mct_aVect_zero(x2r_rx_avg(iidx))</a>
+   864) <a name="l864" style="background-color: #ffcccc">            enddo</a>
+   865) <a name="l865" style="background-color: #ffcccc">         endif</a>
+   866) <a name="l866" style="background-color: #ffcccc">         if (ocn_present) then</a>
+   867) <a name="l867" style="background-color: #ffcccc">            do iidx = 1,  num_inst_ocn</a>
+   868) <a name="l868" style="background-color: #ffcccc">               call mct_aVect_zero(o2x_ox_avg(iidx))</a>
+   869) <a name="l869" style="background-color: #ffcccc">               call mct_aVect_zero(x2o_ox_avg(iidx))</a>
+   870) <a name="l870" style="background-color: #ffcccc">            enddo</a>
+   871) <a name="l871" style="background-color: #ffcccc">         endif</a>
+   872) <a name="l872" style="background-color: #ffcccc">         if (ice_present) then</a>
+   873) <a name="l873" style="background-color: #ffcccc">            do iidx = 1,  num_inst_ice</a>
+   874) <a name="l874" style="background-color: #ffcccc">               call mct_aVect_zero(i2x_ix_avg(iidx))</a>
+   875) <a name="l875" style="background-color: #ffcccc">               call mct_aVect_zero(x2i_ix_avg(iidx))</a>
+   876) <a name="l876" style="background-color: #ffcccc">            enddo</a>
+   877) <a name="l877" style="background-color: #ffcccc">         endif</a>
+   878) <a name="l878" style="background-color: #ffcccc">         if (glc_present) then</a>
+   879) <a name="l879" style="background-color: #ffcccc">            do iidx = 1,  num_inst_glc</a>
+   880) <a name="l880" style="background-color: #ffcccc">               call mct_aVect_zero(g2x_gx_avg(iidx))</a>
+   881) <a name="l881" style="background-color: #ffcccc">               call mct_aVect_zero(x2g_gx_avg(iidx))</a>
+   882) <a name="l882" style="background-color: #ffcccc">            enddo</a>
+   883) <a name="l883" style="background-color: #ffcccc">         endif </a>
+   884) <a name="l884" style="background-color: #ffcccc">         if (wav_present) then</a>
+   885) <a name="l885" style="background-color: #ffcccc">            do iidx = 1,  num_inst_wav</a>
+   886) <a name="l886" style="background-color: #ffcccc">               call mct_aVect_zero(w2x_wx_avg(iidx))</a>
+   887) <a name="l887" style="background-color: #ffcccc">               call mct_aVect_zero(x2w_wx_avg(iidx))</a>
+   888) <a name="l888" style="background-color: #ffcccc">            enddo</a>
+   889) <a name="l889" style="background-color: #ffcccc">         endif</a>
+   890) <a name="l890" style="background-color: #ffcccc">         cnt = 0</a>
+   891) <a name="l891" style="background-color: #ffcccc">         tbnds(1) = curr_time</a>
+   892) <a name="l892" style="background-color: #ffcccc"></a>
+   893) <a name="l893" style="background-color: #ffcccc">      endif</a>
+   894) <a name="l894" style="background-color: #ffcccc">   endif</a>
+   895) <a name="l895" style="background-color: #ffcccc"></a>
+   896) <a name="l896" style="background-color: #ffcccc">end subroutine seq_hist_writeavg</a>
+   897) <a name="l897" style="background-color: #ffffff"></a>
+   898) <a name="l898" style="background-color: #ffffff">!===============================================================================</a>
+   899) <a name="l899" style="background-color: #ffffff"></a>
+   900) <a name="l900" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">seq_hist_writeaux(infodata, EClock_d, comp, flow, aname, dname, &amp;</a>
+   901) <a name="l901" style="background-color: #ffcccc">     nx, ny, nt, write_now, flds, yr_offset)</a>
+   902) <a name="l902" style="background-color: #ffcccc"></a>
+   903) <a name="l903" style="background-color: #ffcccc">   implicit none</a>
+   904) <a name="l904" style="background-color: #ffcccc"></a>
+   905) <a name="l905" style="background-color: #ffcccc">   !--- arguments ---</a>
+   906) <a name="l906" style="background-color: #ffcccc">   type (seq_infodata_type) , intent(inout)        :: infodata</a>
+   907) <a name="l907" style="background-color: #ffcccc">   type(ESMF_Clock)         , intent(in)           :: EClock_d  ! driver clock</a>
+   908) <a name="l908" style="background-color: #ffcccc">   type(component_type)     , intent(in)           :: comp      ! component instance</a>
+   909) <a name="l909" style="background-color: #ffcccc">   character(len=3)         , intent(in)           :: flow      ! 'x2c' or 'c2x'</a>
+   910) <a name="l910" style="background-color: #ffcccc">   character(*)             , intent(in)           :: aname     ! avect name for hist file</a>
+   911) <a name="l911" style="background-color: #ffcccc">   character(*)             , intent(in)           :: dname     ! domain name for hist file</a>
+   912) <a name="l912" style="background-color: #ffcccc">   integer(IN)              , intent(in)           :: nx        ! 2d global size nx</a>
+   913) <a name="l913" style="background-color: #ffcccc">   integer(IN)              , intent(in)           :: ny        ! 2d global size ny</a>
+   914) <a name="l914" style="background-color: #ffcccc">   integer(IN)              , intent(in)           :: nt        ! number of time samples per file</a>
+   915) <a name="l915" style="background-color: #ffcccc">   logical                  , optional, intent(in) :: write_now ! write a sample now, if not used, write every call</a>
+   916) <a name="l916" style="background-color: #ffcccc">   character(*)             , optional, intent(in) :: flds      ! list of fields to write</a>
+   917) <a name="l917" style="background-color: #ffcccc">   integer                  , optional, intent(in) :: yr_offset ! offset to apply to current year when generating file name</a>
+   918) <a name="l918" style="background-color: #ffcccc"></a>
+   919) <a name="l919" style="background-color: #ffcccc">   !--- local ---</a>
+   920) <a name="l920" style="background-color: #ffcccc">   type(mct_gGrid), pointer :: dom</a>
+   921) <a name="l921" style="background-color: #ffcccc">   type(mct_avect), pointer :: av</a>
+   922) <a name="l922" style="background-color: #ffcccc">   type(mct_gsMap), pointer :: gsmap</a>
+   923) <a name="l923" style="background-color: #ffcccc">   character(CL)            :: case_name  ! case name</a>
+   924) <a name="l924" style="background-color: #ffcccc">   integer(IN)              :: curr_ymd   ! Current date YYYYMMDD</a>
+   925) <a name="l925" style="background-color: #ffcccc">   integer(IN)              :: curr_tod   ! Current time-of-day (s)</a>
+   926) <a name="l926" style="background-color: #ffcccc">   integer(IN)              :: start_ymd  ! Starting date YYYYMMDD</a>
+   927) <a name="l927" style="background-color: #ffcccc">   integer(IN)              :: start_tod  ! Starting time-of-day (s)</a>
+   928) <a name="l928" style="background-color: #ffcccc">   real(r8)                 :: curr_time  ! Time interval since reference time</a>
+   929) <a name="l929" style="background-color: #ffcccc">   real(r8)                 :: prev_time  ! Time interval since reference time</a>
+   930) <a name="l930" style="background-color: #ffcccc">   real(r8)                 :: avg_time   ! Average time for time average</a>
+   931) <a name="l931" style="background-color: #ffcccc">   integer(IN)              :: yy, mm, dd ! year,  month,  day</a>
+   932) <a name="l932" style="background-color: #ffcccc">   integer(IN)              :: n, fk, fk1 ! index</a>
+   933) <a name="l933" style="background-color: #ffcccc">   character(CL)            :: time_units ! units of time variable</a>
+   934) <a name="l934" style="background-color: #ffcccc">   character(CL)            :: calendar   ! calendar type</a>
+   935) <a name="l935" style="background-color: #ffcccc">   integer(IN)              :: samples_per_file</a>
+   936) <a name="l936" style="background-color: #ffcccc">   integer(IN)              :: lsize      ! local size of an aVect</a>
+   937) <a name="l937" style="background-color: #ffcccc">   logical                  :: first_call</a>
+   938) <a name="l938" style="background-color: #ffcccc">   integer(IN)              :: found = -10</a>
+   939) <a name="l939" style="background-color: #ffcccc">   logical                  :: useavg</a>
+   940) <a name="l940" style="background-color: #ffcccc">   logical                  :: lwrite_now     </a>
+   941) <a name="l941" style="background-color: #ffcccc">   logical                  :: whead, wdata  ! for writing restart/history cdf files</a>
+   942) <a name="l942" style="background-color: #ffcccc">   real(r8)                 :: tbnds(2)</a>
+   943) <a name="l943" style="background-color: #ffcccc"></a>
+   944) <a name="l944" style="background-color: #ffcccc">   integer(IN), parameter   :: maxout = 20</a>
+   945) <a name="l945" style="background-color: #ffcccc">   integer(IN)       , save :: ntout = 0</a>
+   946) <a name="l946" style="background-color: #ffcccc">   character(CS)     , save :: tname(maxout) = 'x1y2z3'</a>
+   947) <a name="l947" style="background-color: #ffcccc">   integer(IN)       , save :: ncnt(maxout)  = -10</a>
+   948) <a name="l948" style="background-color: #ffcccc">   character(CL)     , save :: hist_file(maxout)       ! local path to history filename</a>
+   949) <a name="l949" style="background-color: #ffcccc">   type(mct_aVect)   , save :: avavg(maxout)           ! av accumulator if needed</a>
+   950) <a name="l950" style="background-color: #ffcccc">   integer(IN)       , save :: avcnt(maxout) = 0       ! accumulator counter</a>
+   951) <a name="l951" style="background-color: #ffcccc">   logical           , save :: fwrite(maxout) = .true. ! first write</a>
+   952) <a name="l952" style="background-color: #ffcccc">   real(r8)          , save :: tbnds1(maxout)          ! first time_bnds</a>
+   953) <a name="l953" style="background-color: #ffcccc">   real(r8)          , save :: tbnds2(maxout)          ! second time_bnds</a>
+   954) <a name="l954" style="background-color: #ffcccc"></a>
+   955) <a name="l955" style="background-color: #ffcccc">   type(mct_aVect)         :: avflds                  ! non-avg av for a subset of fields</a>
+   956) <a name="l956" style="background-color: #ffcccc"></a>
+   957) <a name="l957" style="background-color: #ffcccc">   real(r8), parameter :: c0 = 0.0_r8 ! zero</a>
+   958) <a name="l958" style="background-color: #ffcccc"></a>
+   959) <a name="l959" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   960) <a name="l960" style="background-color: #ffcccc">!</a>
+   961) <a name="l961" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   962) <a name="l962" style="background-color: #ffcccc"></a>
+   963) <a name="l963" style="background-color: #ffcccc">   !----------------------------------------------------------------------------</a>
+   964) <a name="l964" style="background-color: #ffcccc">   ! get required infodata</a>
+   965) <a name="l965" style="background-color: #ffcccc">   !----------------------------------------------------------------------------</a>
+   966) <a name="l966" style="background-color: #ffcccc">   iamin_CPLID  = seq_comm_iamin(CPLID)</a>
+   967) <a name="l967" style="background-color: #ffcccc"></a>
+   968) <a name="l968" style="background-color: #ffcccc">   call seq_comm_getdata(GLOID, &amp;</a>
+   969) <a name="l969" style="background-color: #ffcccc">        mpicom=mpicom_GLOID, nthreads=nthreads_GLOID)</a>
+   970) <a name="l970" style="background-color: #ffcccc">   call seq_comm_getdata(CPLID, &amp;</a>
+   971) <a name="l971" style="background-color: #ffcccc">        mpicom=mpicom_CPLID, nthreads=nthreads_CPLID)</a>
+   972) <a name="l972" style="background-color: #ffcccc"></a>
+   973) <a name="l973" style="background-color: #ffcccc">   call seq_infodata_getData(infodata, &amp;</a>
+   974) <a name="l974" style="background-color: #ffcccc">        drv_threading=drv_threading,   &amp;</a>
+   975) <a name="l975" style="background-color: #ffcccc">        atm_present=atm_present,       &amp;</a>
+   976) <a name="l976" style="background-color: #ffcccc">        lnd_present=lnd_present,       &amp;</a>
+   977) <a name="l977" style="background-color: #ffcccc">        rof_present=rof_present,       &amp;</a>
+   978) <a name="l978" style="background-color: #ffcccc">        ice_present=ice_present,       &amp;</a>
+   979) <a name="l979" style="background-color: #ffcccc">        ocn_present=ocn_present,       &amp;</a>
+   980) <a name="l980" style="background-color: #ffcccc">        glc_present=glc_present,       &amp;</a>
+   981) <a name="l981" style="background-color: #ffcccc">        wav_present=wav_present,       &amp;</a>
+   982) <a name="l982" style="background-color: #ffcccc">        cpl_cdf64=cdf64 )</a>
+   983) <a name="l983" style="background-color: #ffcccc"></a>
+   984) <a name="l984" style="background-color: #ffcccc">   lwrite_now = .true.</a>
+   985) <a name="l985" style="background-color: #ffcccc">   useavg = .false.</a>
+   986) <a name="l986" style="background-color: #ffcccc">   if (present(write_now)) then</a>
+   987) <a name="l987" style="background-color: #ffcccc">      useavg = .true.</a>
+   988) <a name="l988" style="background-color: #ffcccc">      lwrite_now = write_now</a>
+   989) <a name="l989" style="background-color: #ffcccc">   endif</a>
+   990) <a name="l990" style="background-color: #ffcccc"> </a>
+   991) <a name="l991" style="background-color: #ffcccc">   call seq_timemgr_EClockGetData( EClock_d, &amp;</a>
+   992) <a name="l992" style="background-color: #ffcccc">        curr_ymd=curr_ymd,                   &amp;</a>
+   993) <a name="l993" style="background-color: #ffcccc">        curr_tod=curr_tod,                   &amp;</a>
+   994) <a name="l994" style="background-color: #ffcccc">        start_ymd=start_ymd,                 &amp;</a>
+   995) <a name="l995" style="background-color: #ffcccc">        start_tod=start_tod,                 &amp;</a>
+   996) <a name="l996" style="background-color: #ffcccc">        curr_time=curr_time,                 &amp;</a>
+   997) <a name="l997" style="background-color: #ffcccc">        prev_time=prev_time,                 &amp;</a>
+   998) <a name="l998" style="background-color: #ffcccc">        calendar=calendar)</a>
+   999) <a name="l999" style="background-color: #ffcccc"></a>
+  1000) <a name="l1000" style="background-color: #ffcccc">   first_call = .true.</a>
+  1001) <a name="l1001" style="background-color: #ffcccc">   do n = 1, ntout</a>
+  1002) <a name="l1002" style="background-color: #ffcccc">      if (trim(tname(n)) == trim(aname)) then</a>
+  1003) <a name="l1003" style="background-color: #ffcccc">         first_call = .false.</a>
+  1004) <a name="l1004" style="background-color: #ffcccc">         found = n</a>
+  1005) <a name="l1005" style="background-color: #ffcccc">      endif</a>
+  1006) <a name="l1006" style="background-color: #ffcccc">   enddo</a>
+  1007) <a name="l1007" style="background-color: #ffcccc"></a>
+  1008) <a name="l1008" style="background-color: #ffcccc">   if (first_call) then</a>
+  1009) <a name="l1009" style="background-color: #ffcccc">      ntout = ntout + 1</a>
+  1010) <a name="l1010" style="background-color: #ffcccc">      if (ntout &gt; maxout) then</a>
+  1011) <a name="l1011" style="background-color: #ffcccc">         write(logunit, *) 'write_history_writeaux maxout exceeded', ntout, maxout</a>
+  1012) <a name="l1012" style="background-color: #ffcccc">         call shr_sys_abort()</a>
+  1013) <a name="l1013" style="background-color: #ffcccc">      endif</a>
+  1014) <a name="l1014" style="background-color: #ffcccc">      tname(ntout) = trim(aname)</a>
+  1015) <a name="l1015" style="background-color: #ffcccc">      ncnt(ntout) = -10</a>
+  1016) <a name="l1016" style="background-color: #ffcccc">      if (iamin_CPLID .and. useavg) then</a>
+  1017) <a name="l1017" style="background-color: #ffcccc">         lsize = mct_aVect_lsize(av)</a>
+  1018) <a name="l1018" style="background-color: #ffcccc">         call mct_aVect_init(avavg(ntout), av, lsize)</a>
+  1019) <a name="l1019" style="background-color: #ffcccc">         call mct_aVect_zero(avavg(ntout))</a>
+  1020) <a name="l1020" style="background-color: #ffcccc">         avcnt(ntout) = 0</a>
+  1021) <a name="l1021" style="background-color: #ffcccc">      endif</a>
+  1022) <a name="l1022" style="background-color: #ffcccc">      tbnds1(ntout) = prev_time</a>
+  1023) <a name="l1023" style="background-color: #ffcccc">      found = ntout</a>
+  1024) <a name="l1024" style="background-color: #ffcccc">   endif</a>
+  1025) <a name="l1025" style="background-color: #ffcccc"></a>
+  1026) <a name="l1026" style="background-color: #ffcccc">   if (iamin_CPLID) then !&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;</a>
+  1027) <a name="l1027" style="background-color: #ffcccc"></a>
+  1028) <a name="l1028" style="background-color: #ffcccc">      dom   =&gt; component_get_dom_cx(comp)</a>
+  1029) <a name="l1029" style="background-color: #ffcccc">      gsmap =&gt; component_get_gsmap_cx(comp)</a>
+  1030) <a name="l1030" style="background-color: #ffcccc"></a>
+  1031) <a name="l1031" style="background-color: #ffcccc">      samples_per_file = nt      </a>
+  1032) <a name="l1032" style="background-color: #ffcccc"></a>
+  1033) <a name="l1033" style="background-color: #ffcccc">      if (useavg) then</a>
+  1034) <a name="l1034" style="background-color: #ffcccc">         if (lwrite_now) then</a>
+  1035) <a name="l1035" style="background-color: #ffcccc">            avcnt(found) = avcnt(found) + 1</a>
+  1036) <a name="l1036" style="background-color: #ffcccc">            avavg(found)%rAttr = (avavg(found)%rAttr + av%rAttr) / (avcnt(found) * 1.0_r8)</a>
+  1037) <a name="l1037" style="background-color: #ffcccc">         else</a>
+  1038) <a name="l1038" style="background-color: #ffcccc">            avcnt(found) = avcnt(found) + 1</a>
+  1039) <a name="l1039" style="background-color: #ffcccc">            avavg(found)%rAttr = avavg(found)%rAttr + av%rAttr</a>
+  1040) <a name="l1040" style="background-color: #ffcccc">         endif</a>
+  1041) <a name="l1041" style="background-color: #ffcccc">      endif</a>
+  1042) <a name="l1042" style="background-color: #ffcccc">      </a>
+  1043) <a name="l1043" style="background-color: #ffcccc">      if (lwrite_now) then</a>
+  1044) <a name="l1044" style="background-color: #ffcccc">         </a>
+  1045) <a name="l1045" style="background-color: #ffcccc">         ncnt(found) = ncnt(found) + 1</a>
+  1046) <a name="l1046" style="background-color: #ffcccc">         if (ncnt(found) &lt; 1 .or. ncnt(found) &gt; samples_per_file) ncnt(found) = 1</a>
+  1047) <a name="l1047" style="background-color: #ffcccc">         </a>
+  1048) <a name="l1048" style="background-color: #ffcccc">         time_units = 'days since ' &amp;</a>
+  1049) <a name="l1049" style="background-color: #ffcccc">              // seq_io_date2yyyymmdd(start_ymd) // ' ' // seq_io_sec2hms(start_tod)</a>
+  1050) <a name="l1050" style="background-color: #ffcccc">         tbnds2(found) = curr_time</a>
+  1051) <a name="l1051" style="background-color: #ffcccc">         </a>
+  1052) <a name="l1052" style="background-color: #ffcccc">         if (ncnt(found) == 1) then</a>
+  1053) <a name="l1053" style="background-color: #ffcccc">            fk1 = 1</a>
+  1054) <a name="l1054" style="background-color: #ffcccc">            call seq_infodata_GetData( infodata,  case_name=case_name)</a>
+  1055) <a name="l1055" style="background-color: #ffcccc">            call shr_cal_date2ymd(curr_ymd, yy, mm, dd)</a>
+  1056) <a name="l1056" style="background-color: #ffcccc">            </a>
+  1057) <a name="l1057" style="background-color: #ffcccc">            ! Adjust yyyy in file name by yr_offset,  if present</a>
+  1058) <a name="l1058" style="background-color: #ffcccc">            ! For example,  for a field written once a year,  this will make it so the file</a>
+  1059) <a name="l1059" style="background-color: #ffcccc">            ! with fields from year 1 has time stamp 0001-01-01 rather than 0002-01-01, </a>
+  1060) <a name="l1060" style="background-color: #ffcccc">            ! which can simplify later reading by a data model</a>
+  1061) <a name="l1061" style="background-color: #ffcccc">            if (present(yr_offset)) then</a>
+  1062) <a name="l1062" style="background-color: #ffcccc">               yy = yy + yr_offset</a>
+  1063) <a name="l1063" style="background-color: #ffcccc">            end if</a>
+  1064) <a name="l1064" style="background-color: #ffcccc">            </a>
+  1065) <a name="l1065" style="background-color: #ffcccc">            write(hist_file(found), &quot;(a, i4.4, a, i2.2, a, i2.2, a)&quot;) &amp;</a>
+  1066) <a name="l1066" style="background-color: #ffcccc">                 trim(case_name)//'.cpl.h'//trim(aname)//'.',  yy, '-', mm, '-', dd, '.nc'</a>
+  1067) <a name="l1067" style="background-color: #ffcccc">         else</a>
+  1068) <a name="l1068" style="background-color: #ffcccc">            fk1 = 2</a>
+  1069) <a name="l1069" style="background-color: #ffcccc">         endif</a>
+  1070) <a name="l1070" style="background-color: #ffcccc">         </a>
+  1071) <a name="l1071" style="background-color: #ffcccc">      if (drv_threading) call seq_comm_setnthreads(nthreads_CPLID)</a>
+  1072) <a name="l1072" style="background-color: #ffcccc">      if (fk1 == 1) then</a>
+  1073) <a name="l1073" style="background-color: #ffcccc">         call seq_io_wopen(hist_file(found), clobber=.true., cdf64=cdf64)</a>
+  1074) <a name="l1074" style="background-color: #ffcccc">      else</a>
+  1075) <a name="l1075" style="background-color: #ffcccc">         call seq_io_wopen(hist_file(found), clobber=.false., cdf64=cdf64)</a>
+  1076) <a name="l1076" style="background-color: #ffcccc">      endif</a>
+  1077) <a name="l1077" style="background-color: #ffcccc"></a>
+  1078) <a name="l1078" style="background-color: #ffcccc">      ! loop twice,  first time write header,  second time write data for perf</a>
+  1079) <a name="l1079" style="background-color: #ffcccc"></a>
+  1080) <a name="l1080" style="background-color: #ffcccc">      tbnds(1) = tbnds1(found)</a>
+  1081) <a name="l1081" style="background-color: #ffcccc">      tbnds(2) = tbnds2(found)</a>
+  1082) <a name="l1082" style="background-color: #ffcccc"></a>
+  1083) <a name="l1083" style="background-color: #ffcccc">      do fk = fk1, 2</a>
+  1084) <a name="l1084" style="background-color: #ffcccc">         if (fk == 1) then</a>
+  1085) <a name="l1085" style="background-color: #ffcccc">            whead = .true.</a>
+  1086) <a name="l1086" style="background-color: #ffcccc">            wdata = .false.</a>
+  1087) <a name="l1087" style="background-color: #ffcccc">         elseif (fk == 2) then</a>
+  1088) <a name="l1088" style="background-color: #ffcccc">            whead = .false.</a>
+  1089) <a name="l1089" style="background-color: #ffcccc">            wdata = .true.</a>
+  1090) <a name="l1090" style="background-color: #ffcccc">         else</a>
+  1091) <a name="l1091" style="background-color: #ffcccc">            call shr_sys_abort('seq_hist_writeaux fk illegal')</a>
+  1092) <a name="l1092" style="background-color: #ffcccc">         end if</a>
+  1093) <a name="l1093" style="background-color: #ffcccc"></a>
+  1094) <a name="l1094" style="background-color: #ffcccc">         if (present(flds)) then</a>
+  1095) <a name="l1095" style="background-color: #ffcccc">            if (fk == fk1) then</a>
+  1096) <a name="l1096" style="background-color: #ffcccc">               lsize = mct_aVect_lsize(av)</a>
+  1097) <a name="l1097" style="background-color: #ffcccc">               call mct_aVect_init(avflds,  rList=flds,  lsize=lsize)</a>
+  1098) <a name="l1098" style="background-color: #ffcccc">               call mct_aVect_zero(avflds)</a>
+  1099) <a name="l1099" style="background-color: #ffcccc">            end if</a>
+  1100) <a name="l1100" style="background-color: #ffcccc">         end if</a>
+  1101) <a name="l1101" style="background-color: #ffcccc"></a>
+  1102) <a name="l1102" style="background-color: #ffcccc">         avg_time = 0.5_r8 * (tbnds(1) + tbnds(2))</a>
+  1103) <a name="l1103" style="background-color: #ffcccc">         !------- tcx nov 2011 tbnds of same values causes problems in ferret</a>
+  1104) <a name="l1104" style="background-color: #ffcccc">         if (tbnds(1) &gt;= tbnds(2)) then</a>
+  1105) <a name="l1105" style="background-color: #ffcccc">            call seq_io_write(hist_file(found), &amp;</a>
+  1106) <a name="l1106" style="background-color: #ffcccc">                           time_units=time_units, time_cal=calendar, time_val=avg_time, &amp;</a>
+  1107) <a name="l1107" style="background-color: #ffcccc">                           nt=ncnt(found), whead=whead, wdata=wdata)</a>
+  1108) <a name="l1108" style="background-color: #ffcccc">         else</a>
+  1109) <a name="l1109" style="background-color: #ffcccc">            call seq_io_write(hist_file(found), &amp;</a>
+  1110) <a name="l1110" style="background-color: #ffcccc">                           time_units=time_units, time_cal=calendar, time_val=avg_time, &amp;</a>
+  1111) <a name="l1111" style="background-color: #ffcccc">                           nt=ncnt(found), whead=whead, wdata=wdata, tbnds=tbnds)</a>
+  1112) <a name="l1112" style="background-color: #ffcccc">         endif</a>
+  1113) <a name="l1113" style="background-color: #ffcccc"></a>
+  1114) <a name="l1114" style="background-color: #ffcccc">         if (fwrite(found)) then</a>
+  1115) <a name="l1115" style="background-color: #ffcccc">            call seq_io_write(hist_file(found), gsmap, dom%data, trim(dname),  &amp;</a>
+  1116) <a name="l1116" style="background-color: #ffcccc">                              nx=nx, ny=ny, whead=whead, wdata=wdata, fillval=c0, pre=trim(dname))</a>
+  1117) <a name="l1117" style="background-color: #ffcccc">         endif</a>
+  1118) <a name="l1118" style="background-color: #ffcccc"></a>
+  1119) <a name="l1119" style="background-color: #ffcccc">         if (useavg) then</a>
+  1120) <a name="l1120" style="background-color: #ffcccc">            if (present(flds)) then</a>
+  1121) <a name="l1121" style="background-color: #ffcccc">               call mct_aVect_copy(aVin=avavg(found),  aVout=avflds)</a>
+  1122) <a name="l1122" style="background-color: #ffcccc">               call seq_io_write(hist_file(found),  gsmap,  avflds,  trim(aname),  &amp;</a>
+  1123) <a name="l1123" style="background-color: #ffcccc">                                 nx=nx,  ny=ny,  nt=ncnt(found),  whead=whead,  wdata=wdata,  &amp;</a>
+  1124) <a name="l1124" style="background-color: #ffcccc">                                 pre=trim(aname), tavg=.true., use_float=.true.)</a>
+  1125) <a name="l1125" style="background-color: #ffcccc">            else</a>
+  1126) <a name="l1126" style="background-color: #ffcccc">               call seq_io_write(hist_file(found),  gsmap,  avavg(found),  trim(aname),  &amp;</a>
+  1127) <a name="l1127" style="background-color: #ffcccc">                                 nx=nx,  ny=ny,  nt=ncnt(found),  whead=whead,  wdata=wdata,  &amp;</a>
+  1128) <a name="l1128" style="background-color: #ffcccc">                                 pre=trim(aname), tavg=.true.,  use_float=.true.)</a>
+  1129) <a name="l1129" style="background-color: #ffcccc">            end if</a>
+  1130) <a name="l1130" style="background-color: #ffcccc">         else if (present(flds)) then</a>
+  1131) <a name="l1131" style="background-color: #ffcccc">            call mct_aVect_copy(aVin=av,  aVout=avflds)</a>
+  1132) <a name="l1132" style="background-color: #ffcccc">            call seq_io_write(hist_file(found),  gsmap,  avflds,  trim(aname),  &amp;</a>
+  1133) <a name="l1133" style="background-color: #ffcccc">                              nx=nx, ny=ny, nt=ncnt(found), whead=whead, wdata=wdata, pre=trim(aname), &amp;</a>
+  1134) <a name="l1134" style="background-color: #ffcccc">                              use_float=.true.)</a>
+  1135) <a name="l1135" style="background-color: #ffcccc">         else</a>
+  1136) <a name="l1136" style="background-color: #ffcccc">            call seq_io_write(hist_file(found),  gsmap,  av,  trim(aname),  &amp;</a>
+  1137) <a name="l1137" style="background-color: #ffcccc">                              nx=nx, ny=ny, nt=ncnt(found), whead=whead, wdata=wdata, pre=trim(aname), &amp;</a>
+  1138) <a name="l1138" style="background-color: #ffcccc">                              use_float=.true.)</a>
+  1139) <a name="l1139" style="background-color: #ffcccc">         endif</a>
+  1140) <a name="l1140" style="background-color: #ffcccc">   </a>
+  1141) <a name="l1141" style="background-color: #ffcccc">         if (present(flds)) then</a>
+  1142) <a name="l1142" style="background-color: #ffcccc">            if (fk == 2) then</a>
+  1143) <a name="l1143" style="background-color: #ffcccc">               call mct_aVect_clean(avflds)</a>
+  1144) <a name="l1144" style="background-color: #ffcccc">            end if</a>
+  1145) <a name="l1145" style="background-color: #ffcccc">         end if</a>
+  1146) <a name="l1146" style="background-color: #ffcccc"></a>
+  1147) <a name="l1147" style="background-color: #ffcccc">         if (fk == 1) call seq_io_enddef(hist_file(found))</a>
+  1148) <a name="l1148" style="background-color: #ffcccc">         if (fk == 2) then</a>
+  1149) <a name="l1149" style="background-color: #ffcccc">            fwrite(found) = .false.</a>
+  1150) <a name="l1150" style="background-color: #ffcccc">            if (useavg) then</a>
+  1151) <a name="l1151" style="background-color: #ffcccc">               call mct_aVect_zero(avavg(found))</a>
+  1152) <a name="l1152" style="background-color: #ffcccc">               avcnt(found) = 0</a>
+  1153) <a name="l1153" style="background-color: #ffcccc">            endif</a>
+  1154) <a name="l1154" style="background-color: #ffcccc">            tbnds1(found) = curr_time</a>
+  1155) <a name="l1155" style="background-color: #ffcccc">         endif</a>
+  1156) <a name="l1156" style="background-color: #ffcccc">      enddo</a>
+  1157) <a name="l1157" style="background-color: #ffcccc"></a>
+  1158) <a name="l1158" style="background-color: #ffcccc">      call seq_io_close(hist_file(found))</a>
+  1159) <a name="l1159" style="background-color: #ffcccc">      if (drv_threading) call seq_comm_setnthreads(nthreads_GLOID)</a>
+  1160) <a name="l1160" style="background-color: #ffcccc"></a>
+  1161) <a name="l1161" style="background-color: #ffcccc">   endif   ! lwrite_now</a>
+  1162) <a name="l1162" style="background-color: #ffcccc"></a>
+  1163) <a name="l1163" style="background-color: #ffcccc">   endif   ! iamin_CPLID &lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;</a>
+  1164) <a name="l1164" style="background-color: #ffcccc"></a>
+  1165) <a name="l1165" style="background-color: #ffcccc">end subroutine seq_hist_writeaux</a>
+  1166) <a name="l1166" style="background-color: #ffffff"></a>
+  1167) <a name="l1167" style="background-color: #ffffff">!===============================================================================</a>
+  1168) <a name="l1168" style="background-color: #ffffff"></a>
+  1169) <a name="l1169" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">seq_hist_spewav(infodata, aname, gsmap, av, nx, ny, nt, write_now, flds)</a>
+  1170) <a name="l1170" style="background-color: #ffcccc"></a>
+  1171) <a name="l1171" style="background-color: #ffcccc">   implicit none</a>
+  1172) <a name="l1172" style="background-color: #ffcccc"></a>
+  1173) <a name="l1173" style="background-color: #ffcccc">   type(seq_infodata_type) , intent(in)    :: infodata</a>
+  1174) <a name="l1174" style="background-color: #ffcccc">   character(*)    , intent(in)           :: aname     ! avect name for hist file</a>
+  1175) <a name="l1175" style="background-color: #ffcccc">   type(mct_gsmap) , intent(in)           :: gsmap     ! gsmap</a>
+  1176) <a name="l1176" style="background-color: #ffcccc">   type(mct_aVect) , intent(in)           :: av        ! avect</a>
+  1177) <a name="l1177" style="background-color: #ffcccc">   integer(IN)     , intent(in)           :: nx        ! 2d global size nx</a>
+  1178) <a name="l1178" style="background-color: #ffcccc">   integer(IN)     , intent(in)           :: ny        ! 2d global size ny</a>
+  1179) <a name="l1179" style="background-color: #ffcccc">   integer(IN)     , intent(in)           :: nt        ! number of time samples per file</a>
+  1180) <a name="l1180" style="background-color: #ffcccc">   logical         , intent(in), optional :: write_now ! write a sample now,  if not used,  write every call</a>
+  1181) <a name="l1181" style="background-color: #ffcccc">   character(*)    , intent(in), optional :: flds      ! list of fields to write</a>
+  1182) <a name="l1182" style="background-color: #ffcccc"></a>
+  1183) <a name="l1183" style="background-color: #ffcccc">   !--- local ---</a>
+  1184) <a name="l1184" style="background-color: #ffcccc">   character(CL)           :: case_name         ! case name</a>
+  1185) <a name="l1185" style="background-color: #ffcccc">   integer(IN)             :: n,fk,fk1          ! index</a>
+  1186) <a name="l1186" style="background-color: #ffcccc">   integer(IN)             :: samples_per_file</a>
+  1187) <a name="l1187" style="background-color: #ffcccc">   integer(IN)             :: lsize             ! local size of an aVect</a>
+  1188) <a name="l1188" style="background-color: #ffcccc">   logical                 :: first_call</a>
+  1189) <a name="l1189" style="background-color: #ffcccc">   integer(IN)             :: found = -10</a>
+  1190) <a name="l1190" style="background-color: #ffcccc">   logical                 :: useavg</a>
+  1191) <a name="l1191" style="background-color: #ffcccc">   logical                 :: lwrite_now     </a>
+  1192) <a name="l1192" style="background-color: #ffcccc">   logical                 :: whead,wdata  ! for writing restart/history cdf files</a>
+  1193) <a name="l1193" style="background-color: #ffcccc">   real(r8)                :: tbnds(2)</a>
+  1194) <a name="l1194" style="background-color: #ffcccc"></a>
+  1195) <a name="l1195" style="background-color: #ffcccc">   integer(IN),parameter   :: maxout = 20</a>
+  1196) <a name="l1196" style="background-color: #ffcccc">   integer(IN)       ,save :: ntout = 0</a>
+  1197) <a name="l1197" style="background-color: #ffcccc">   character(CS)     ,save :: tname(maxout) = 'x1y2z3'</a>
+  1198) <a name="l1198" style="background-color: #ffcccc">   integer(IN)       ,save :: ncnt(maxout)  = -10</a>
+  1199) <a name="l1199" style="background-color: #ffcccc">   integer(IN)       ,save :: nfiles(maxout) = 0</a>
+  1200) <a name="l1200" style="background-color: #ffcccc">   character(CL)     ,save :: hist_file(maxout)       ! local path to history filename</a>
+  1201) <a name="l1201" style="background-color: #ffcccc">   type(mct_aVect)   ,save :: avavg(maxout)           ! av accumulator if needed</a>
+  1202) <a name="l1202" style="background-color: #ffcccc">   integer(IN)       ,save :: avcnt(maxout) = 0       ! accumulator counter</a>
+  1203) <a name="l1203" style="background-color: #ffcccc">   logical           ,save :: fwrite(maxout) = .true. ! first write</a>
+  1204) <a name="l1204" style="background-color: #ffcccc"></a>
+  1205) <a name="l1205" style="background-color: #ffcccc">   type(mct_aVect)         :: avflds                  ! non-avg av for a subset of fields</a>
+  1206) <a name="l1206" style="background-color: #ffcccc"></a>
+  1207) <a name="l1207" style="background-color: #ffcccc">   real(r8),parameter :: c0 = 0.0_r8 ! zero</a>
+  1208) <a name="l1208" style="background-color: #ffcccc"></a>
+  1209) <a name="l1209" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+  1210) <a name="l1210" style="background-color: #ffcccc">!</a>
+  1211) <a name="l1211" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+  1212) <a name="l1212" style="background-color: #ffcccc"></a>
+  1213) <a name="l1213" style="background-color: #ffcccc">   !----------------------------------------------------------------------------</a>
+  1214) <a name="l1214" style="background-color: #ffcccc">   ! get required infodata</a>
+  1215) <a name="l1215" style="background-color: #ffcccc">   !----------------------------------------------------------------------------</a>
+  1216) <a name="l1216" style="background-color: #ffcccc">   iamin_CPLID  = seq_comm_iamin(CPLID)</a>
+  1217) <a name="l1217" style="background-color: #ffcccc"></a>
+  1218) <a name="l1218" style="background-color: #ffcccc">   call seq_comm_getdata(GLOID, mpicom=mpicom_GLOID, nthreads=nthreads_GLOID)</a>
+  1219) <a name="l1219" style="background-color: #ffcccc">   call seq_comm_getdata(CPLID, mpicom=mpicom_CPLID, nthreads=nthreads_CPLID)</a>
+  1220) <a name="l1220" style="background-color: #ffcccc"></a>
+  1221) <a name="l1221" style="background-color: #ffcccc">   call seq_infodata_getData(infodata, &amp;</a>
+  1222) <a name="l1222" style="background-color: #ffcccc">        drv_threading=drv_threading,   &amp;</a>
+  1223) <a name="l1223" style="background-color: #ffcccc">        atm_present=atm_present,       &amp;</a>
+  1224) <a name="l1224" style="background-color: #ffcccc">        lnd_present=lnd_present,       &amp;</a>
+  1225) <a name="l1225" style="background-color: #ffcccc">        rof_present=rof_present,       &amp;</a>
+  1226) <a name="l1226" style="background-color: #ffcccc">        ice_present=ice_present,       &amp;</a>
+  1227) <a name="l1227" style="background-color: #ffcccc">        ocn_present=ocn_present,       &amp;</a>
+  1228) <a name="l1228" style="background-color: #ffcccc">        glc_present=glc_present,       &amp;</a>
+  1229) <a name="l1229" style="background-color: #ffcccc">        wav_present=wav_present,       &amp;</a>
+  1230) <a name="l1230" style="background-color: #ffcccc">        cpl_cdf64=cdf64 )</a>
+  1231) <a name="l1231" style="background-color: #ffcccc"></a>
+  1232) <a name="l1232" style="background-color: #ffcccc">   lwrite_now = .true.</a>
+  1233) <a name="l1233" style="background-color: #ffcccc">   useavg = .false.</a>
+  1234) <a name="l1234" style="background-color: #ffcccc">   if (present(write_now)) then</a>
+  1235) <a name="l1235" style="background-color: #ffcccc">      useavg = .true.</a>
+  1236) <a name="l1236" style="background-color: #ffcccc">      lwrite_now = write_now</a>
+  1237) <a name="l1237" style="background-color: #ffcccc">   endif</a>
+  1238) <a name="l1238" style="background-color: #ffcccc"> </a>
+  1239) <a name="l1239" style="background-color: #ffcccc">   first_call = .true.</a>
+  1240) <a name="l1240" style="background-color: #ffcccc">   do n = 1, ntout</a>
+  1241) <a name="l1241" style="background-color: #ffcccc">      if (trim(tname(n)) == trim(aname)) then</a>
+  1242) <a name="l1242" style="background-color: #ffcccc">         first_call = .false.</a>
+  1243) <a name="l1243" style="background-color: #ffcccc">         found = n</a>
+  1244) <a name="l1244" style="background-color: #ffcccc">      endif</a>
+  1245) <a name="l1245" style="background-color: #ffcccc">   enddo</a>
+  1246) <a name="l1246" style="background-color: #ffcccc"></a>
+  1247) <a name="l1247" style="background-color: #ffcccc">   if (first_call) then</a>
+  1248) <a name="l1248" style="background-color: #ffcccc">      ntout = ntout + 1</a>
+  1249) <a name="l1249" style="background-color: #ffcccc">      if (ntout &gt; maxout) then</a>
+  1250) <a name="l1250" style="background-color: #ffcccc">         write(logunit, *) 'write_history_spewAV maxout exceeded', ntout, maxout</a>
+  1251) <a name="l1251" style="background-color: #ffcccc">         call shr_sys_abort()</a>
+  1252) <a name="l1252" style="background-color: #ffcccc">      endif</a>
+  1253) <a name="l1253" style="background-color: #ffcccc">      tname(ntout) = trim(aname)</a>
+  1254) <a name="l1254" style="background-color: #ffcccc">      ncnt(ntout) = -10</a>
+  1255) <a name="l1255" style="background-color: #ffcccc">      nfiles(ntout) = 0</a>
+  1256) <a name="l1256" style="background-color: #ffcccc">      if (iamin_CPLID .and. useavg) then</a>
+  1257) <a name="l1257" style="background-color: #ffcccc">         lsize = mct_aVect_lsize(av)</a>
+  1258) <a name="l1258" style="background-color: #ffcccc">         call mct_aVect_init(avavg(ntout), av, lsize)</a>
+  1259) <a name="l1259" style="background-color: #ffcccc">         call mct_aVect_zero(avavg(ntout))</a>
+  1260) <a name="l1260" style="background-color: #ffcccc">         avcnt(ntout) = 0</a>
+  1261) <a name="l1261" style="background-color: #ffcccc">      endif</a>
+  1262) <a name="l1262" style="background-color: #ffcccc">      found = ntout</a>
+  1263) <a name="l1263" style="background-color: #ffcccc">   endif</a>
+  1264) <a name="l1264" style="background-color: #ffcccc"></a>
+  1265) <a name="l1265" style="background-color: #ffcccc">!  if (.not. iamin_CPLID) return</a>
+  1266) <a name="l1266" style="background-color: #ffcccc">   if (iamin_CPLID) then !&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;</a>
+  1267) <a name="l1267" style="background-color: #ffcccc"></a>
+  1268) <a name="l1268" style="background-color: #ffcccc">   samples_per_file = nt      </a>
+  1269) <a name="l1269" style="background-color: #ffcccc"></a>
+  1270) <a name="l1270" style="background-color: #ffcccc">   if (useavg) then</a>
+  1271) <a name="l1271" style="background-color: #ffcccc">      if (lwrite_now) then</a>
+  1272) <a name="l1272" style="background-color: #ffcccc">         avcnt(found) = avcnt(found) + 1</a>
+  1273) <a name="l1273" style="background-color: #ffcccc">         avavg(found)%rAttr = (avavg(found)%rAttr + av%rAttr) / (avcnt(found) * 1.0_r8)</a>
+  1274) <a name="l1274" style="background-color: #ffcccc">      else</a>
+  1275) <a name="l1275" style="background-color: #ffcccc">         avcnt(found) = avcnt(found) + 1</a>
+  1276) <a name="l1276" style="background-color: #ffcccc">         avavg(found)%rAttr = avavg(found)%rAttr + av%rAttr</a>
+  1277) <a name="l1277" style="background-color: #ffcccc">      endif</a>
+  1278) <a name="l1278" style="background-color: #ffcccc">   endif</a>
+  1279) <a name="l1279" style="background-color: #ffcccc"></a>
+  1280) <a name="l1280" style="background-color: #ffcccc">   if (lwrite_now) then</a>
+  1281) <a name="l1281" style="background-color: #ffcccc"></a>
+  1282) <a name="l1282" style="background-color: #ffcccc">      ncnt(found) = ncnt(found) + 1</a>
+  1283) <a name="l1283" style="background-color: #ffcccc">      if (ncnt(found) &lt; 1 .or. ncnt(found) &gt; samples_per_file) then</a>
+  1284) <a name="l1284" style="background-color: #ffcccc">         ncnt(found) = 1</a>
+  1285) <a name="l1285" style="background-color: #ffcccc">         nfiles(found) = nfiles(found) + 1</a>
+  1286) <a name="l1286" style="background-color: #ffcccc">      endif</a>
+  1287) <a name="l1287" style="background-color: #ffcccc"></a>
+  1288) <a name="l1288" style="background-color: #ffcccc">      if (ncnt(found) == 1) then</a>
+  1289) <a name="l1289" style="background-color: #ffcccc">         fk1 = 1</a>
+  1290) <a name="l1290" style="background-color: #ffcccc">         call seq_infodata_GetData( infodata,  case_name=case_name)</a>
+  1291) <a name="l1291" style="background-color: #ffcccc">         write(hist_file(found), &quot;(a, i4.4, a)&quot;) &amp;</a>
+  1292) <a name="l1292" style="background-color: #ffcccc">            trim(case_name)//'.cpl.h'//trim(aname)//'.', nfiles(found), '.nc'</a>
+  1293) <a name="l1293" style="background-color: #ffcccc">      else</a>
+  1294) <a name="l1294" style="background-color: #ffcccc">         fk1 = 2</a>
+  1295) <a name="l1295" style="background-color: #ffcccc">      endif</a>
+  1296) <a name="l1296" style="background-color: #ffcccc"></a>
+  1297) <a name="l1297" style="background-color: #ffcccc">      if (drv_threading) call seq_comm_setnthreads(nthreads_CPLID)</a>
+  1298) <a name="l1298" style="background-color: #ffcccc">      if (fk1 == 1) then</a>
+  1299) <a name="l1299" style="background-color: #ffcccc">         call seq_io_wopen(hist_file(found), clobber=.true., cdf64=cdf64)</a>
+  1300) <a name="l1300" style="background-color: #ffcccc">      else</a>
+  1301) <a name="l1301" style="background-color: #ffcccc">         call seq_io_wopen(hist_file(found), clobber=.false., cdf64=cdf64)</a>
+  1302) <a name="l1302" style="background-color: #ffcccc">      endif</a>
+  1303) <a name="l1303" style="background-color: #ffcccc"></a>
+  1304) <a name="l1304" style="background-color: #ffcccc">      ! loop twice,  first time write header,  second time write data for perf</a>
+  1305) <a name="l1305" style="background-color: #ffcccc"></a>
+  1306) <a name="l1306" style="background-color: #ffcccc">      do fk = fk1, 2</a>
+  1307) <a name="l1307" style="background-color: #ffcccc">         if (fk == 1) then</a>
+  1308) <a name="l1308" style="background-color: #ffcccc">            whead = .true.</a>
+  1309) <a name="l1309" style="background-color: #ffcccc">            wdata = .false.</a>
+  1310) <a name="l1310" style="background-color: #ffcccc">         elseif (fk == 2) then</a>
+  1311) <a name="l1311" style="background-color: #ffcccc">            whead = .false.</a>
+  1312) <a name="l1312" style="background-color: #ffcccc">            wdata = .true.</a>
+  1313) <a name="l1313" style="background-color: #ffcccc">         else</a>
+  1314) <a name="l1314" style="background-color: #ffcccc">            call shr_sys_abort('seq_hist_spewav fk illegal')</a>
+  1315) <a name="l1315" style="background-color: #ffcccc">         end if</a>
+  1316) <a name="l1316" style="background-color: #ffcccc"></a>
+  1317) <a name="l1317" style="background-color: #ffcccc">         if (present(flds)) then</a>
+  1318) <a name="l1318" style="background-color: #ffcccc">            if (fk == fk1) then</a>
+  1319) <a name="l1319" style="background-color: #ffcccc">               lsize = mct_aVect_lsize(av)</a>
+  1320) <a name="l1320" style="background-color: #ffcccc">               call mct_aVect_init(avflds,  rList=flds,  lsize=lsize)</a>
+  1321) <a name="l1321" style="background-color: #ffcccc">               call mct_aVect_zero(avflds)</a>
+  1322) <a name="l1322" style="background-color: #ffcccc">            end if</a>
+  1323) <a name="l1323" style="background-color: #ffcccc">         end if</a>
+  1324) <a name="l1324" style="background-color: #ffcccc"></a>
+  1325) <a name="l1325" style="background-color: #ffcccc">         tbnds = real(ncnt(found), r8)</a>
+  1326) <a name="l1326" style="background-color: #ffcccc">!------- tcx nov 2011 tbnds of same values causes problems in ferret</a>
+  1327) <a name="l1327" style="background-color: #ffcccc">         if (tbnds(1) &gt;= tbnds(2)) then</a>
+  1328) <a name="l1328" style="background-color: #ffcccc">           call seq_io_write(hist_file(found), &amp;</a>
+  1329) <a name="l1329" style="background-color: #ffcccc">                             time_units='nstep', time_cal='nstep', time_val=real(ncnt(found), r8), &amp;</a>
+  1330) <a name="l1330" style="background-color: #ffcccc">                             nt=ncnt(found), whead=whead, wdata=wdata)</a>
+  1331) <a name="l1331" style="background-color: #ffcccc">         else</a>
+  1332) <a name="l1332" style="background-color: #ffcccc">           call seq_io_write(hist_file(found), &amp;</a>
+  1333) <a name="l1333" style="background-color: #ffcccc">                             time_units='nstep', time_cal='nstep', time_val=real(ncnt(found), r8), &amp;</a>
+  1334) <a name="l1334" style="background-color: #ffcccc">                             nt=ncnt(found), whead=whead, wdata=wdata, tbnds=tbnds)</a>
+  1335) <a name="l1335" style="background-color: #ffcccc">         endif</a>
+  1336) <a name="l1336" style="background-color: #ffcccc"></a>
+  1337) <a name="l1337" style="background-color: #ffcccc">         if (useavg) then</a>
+  1338) <a name="l1338" style="background-color: #ffcccc">            if (present(flds)) then</a>
+  1339) <a name="l1339" style="background-color: #ffcccc">               call mct_aVect_copy(aVin=avavg(found),  aVout=avflds)</a>
+  1340) <a name="l1340" style="background-color: #ffcccc">               call seq_io_write(hist_file(found),  gsmap,  avflds,  trim(aname),  &amp;</a>
+  1341) <a name="l1341" style="background-color: #ffcccc">                                 nx=nx,  ny=ny,  nt=ncnt(found),  whead=whead,  wdata=wdata,  &amp;</a>
+  1342) <a name="l1342" style="background-color: #ffcccc">                                 pre=trim(aname), tavg=.true., use_float=.true.)</a>
+  1343) <a name="l1343" style="background-color: #ffcccc">            else</a>
+  1344) <a name="l1344" style="background-color: #ffcccc">               call seq_io_write(hist_file(found),  gsmap,  avavg(found),  trim(aname),  &amp;</a>
+  1345) <a name="l1345" style="background-color: #ffcccc">                                 nx=nx,  ny=ny,  nt=ncnt(found),  whead=whead,  wdata=wdata,  &amp;</a>
+  1346) <a name="l1346" style="background-color: #ffcccc">                                 pre=trim(aname), tavg=.true.,  use_float=.true.)</a>
+  1347) <a name="l1347" style="background-color: #ffcccc">            end if</a>
+  1348) <a name="l1348" style="background-color: #ffcccc">         else if (present(flds)) then</a>
+  1349) <a name="l1349" style="background-color: #ffcccc">            call mct_aVect_copy(aVin=av,  aVout=avflds)</a>
+  1350) <a name="l1350" style="background-color: #ffcccc">            call seq_io_write(hist_file(found),  gsmap,  avflds,  trim(aname),  &amp;</a>
+  1351) <a name="l1351" style="background-color: #ffcccc">                              nx=nx, ny=ny, nt=ncnt(found), whead=whead, wdata=wdata, pre=trim(aname), &amp;</a>
+  1352) <a name="l1352" style="background-color: #ffcccc">                              use_float=.true.)</a>
+  1353) <a name="l1353" style="background-color: #ffcccc">         else</a>
+  1354) <a name="l1354" style="background-color: #ffcccc">            call seq_io_write(hist_file(found),  gsmap,  av,  trim(aname),  &amp;</a>
+  1355) <a name="l1355" style="background-color: #ffcccc">                              nx=nx, ny=ny, nt=ncnt(found), whead=whead, wdata=wdata, pre=trim(aname), &amp;</a>
+  1356) <a name="l1356" style="background-color: #ffcccc">                              use_float=.true.)</a>
+  1357) <a name="l1357" style="background-color: #ffcccc">         endif</a>
+  1358) <a name="l1358" style="background-color: #ffcccc">   </a>
+  1359) <a name="l1359" style="background-color: #ffcccc">         if (present(flds)) then</a>
+  1360) <a name="l1360" style="background-color: #ffcccc">            if (fk == 2) then</a>
+  1361) <a name="l1361" style="background-color: #ffcccc">               call mct_aVect_clean(avflds)</a>
+  1362) <a name="l1362" style="background-color: #ffcccc">            end if</a>
+  1363) <a name="l1363" style="background-color: #ffcccc">         end if</a>
+  1364) <a name="l1364" style="background-color: #ffcccc"></a>
+  1365) <a name="l1365" style="background-color: #ffcccc">         if (fk == 1) call seq_io_enddef(hist_file(found))</a>
+  1366) <a name="l1366" style="background-color: #ffcccc">         if (fk == 2) then</a>
+  1367) <a name="l1367" style="background-color: #ffcccc">            fwrite(found) = .false.</a>
+  1368) <a name="l1368" style="background-color: #ffcccc">            if (useavg) then</a>
+  1369) <a name="l1369" style="background-color: #ffcccc">               call mct_aVect_zero(avavg(found))</a>
+  1370) <a name="l1370" style="background-color: #ffcccc">               avcnt(found) = 0</a>
+  1371) <a name="l1371" style="background-color: #ffcccc">            endif</a>
+  1372) <a name="l1372" style="background-color: #ffcccc">         endif</a>
+  1373) <a name="l1373" style="background-color: #ffcccc">      enddo</a>
+  1374) <a name="l1374" style="background-color: #ffcccc"></a>
+  1375) <a name="l1375" style="background-color: #ffcccc">      call seq_io_close(hist_file(found))</a>
+  1376) <a name="l1376" style="background-color: #ffcccc">      if (drv_threading) call seq_comm_setnthreads(nthreads_GLOID)</a>
+  1377) <a name="l1377" style="background-color: #ffcccc"></a>
+  1378) <a name="l1378" style="background-color: #ffcccc">   endif   ! lwrite_now</a>
+  1379) <a name="l1379" style="background-color: #ffcccc"></a>
+  1380) <a name="l1380" style="background-color: #ffcccc">   endif   ! iamin_CPLID &lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;</a>
+  1381) <a name="l1381" style="background-color: #ffcccc"></a>
+  1382) <a name="l1382" style="background-color: #ffcccc">end subroutine seq_hist_spewav</a>
+  1383) <a name="l1383" style="background-color: #ffffff"></a>
+  1384) <a name="l1384" style="background-color: #ffffff">!===============================================================================</a>
+  1385) <a name="l1385" style="background-color: #ffffff"></a>
+  1386) <a name="l1386" style="background-color: #ffffff">end module seq_hist_mod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

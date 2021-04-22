@@ -1,0 +1,362 @@
+<html>
+<head>
+<title>Listing of mo_ps2str.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;mo_ps2str.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff"></a>
+     2) <a name="l2" style="background-color: #ffffff">      module mo_ps2str</a>
+     3) <a name="l3" style="background-color: #ffffff"></a>
+     4) <a name="l4" style="background-color: #ffffff">      use shr_kind_mod, only : r8 =&gt; shr_kind_r8</a>
+     5) <a name="l5" style="background-color: #ffffff"></a>
+     6) <a name="l6" style="background-color: #ffffff">      private</a>
+     7) <a name="l7" style="background-color: #ffffff">      public :: ps2str</a>
+     8) <a name="l8" style="background-color: #ffffff"></a>
+     9) <a name="l9" style="background-color: #ffffff">      contains</a>
+    10) <a name="l10" style="background-color: #ffffff"></a>
+    11) <a name="l11" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">ps2str( nw, zen, rsfc, tauu, omu, &amp;</a>
+    12) <a name="l12" style="background-color: #ffcccc">                         gu, dsdh, nid, radfld )</a>
+    13) <a name="l13" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+    14) <a name="l14" style="background-color: #ffcccc">!   purpose:</a>
+    15) <a name="l15" style="background-color: #ffcccc">!   solve two-stream equations for multiple layers.  the subroutine is based</a>
+    16) <a name="l16" style="background-color: #ffcccc">!   on equations from:  toon et al., j.geophys.res., v94 (d13), nov 20, 1989.</a>
+    17) <a name="l17" style="background-color: #ffcccc">!   it contains 9 two-stream methods to choose from.  a pseudo-spherical</a>
+    18) <a name="l18" style="background-color: #ffcccc">!   correction has also been added.</a>
+    19) <a name="l19" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+    20) <a name="l20" style="background-color: #ffcccc">!   parameters:</a>
+    21) <a name="l21" style="background-color: #ffcccc">!   nlevel  - integer, number of specified altitude levels in the working (i)</a>
+    22) <a name="l22" style="background-color: #ffcccc">!             grid</a>
+    23) <a name="l23" style="background-color: #ffcccc">!   zen     - real(r8), solar zenith angle (degrees)                          (i)</a>
+    24) <a name="l24" style="background-color: #ffcccc">!   rsfc    - real(r8), surface albedo at current wavelength                  (i)</a>
+    25) <a name="l25" style="background-color: #ffcccc">!   tauu    - real(r8), unscaled optical depth of each layer                  (i)</a>
+    26) <a name="l26" style="background-color: #ffcccc">!   omu     - real(r8), unscaled single scattering albedo of each layer       (i)</a>
+    27) <a name="l27" style="background-color: #ffcccc">!   gu      - real(r8), unscaled asymmetry parameter of each layer            (i)</a>
+    28) <a name="l28" style="background-color: #ffcccc">!   dsdh    - real(r8), slant path of direct beam through each layer crossed  (i)</a>
+    29) <a name="l29" style="background-color: #ffcccc">!             when travelling from the top of the atmosphere to layer i;</a>
+    30) <a name="l30" style="background-color: #ffcccc">!             dsdh(i,j), i = 0..nz-1, j = 1..nz-1</a>
+    31) <a name="l31" style="background-color: #ffcccc">!   nid     - integer, number of layers crossed by the direct beam when   (i)</a>
+    32) <a name="l32" style="background-color: #ffcccc">!             travelling from the top of the atmosphere to layer i;</a>
+    33) <a name="l33" style="background-color: #ffcccc">!             nid(i), i = 0..nz-1</a>
+    34) <a name="l34" style="background-color: #ffcccc">!   delta   - logical, switch to use delta-scaling                        (i)</a>
+    35) <a name="l35" style="background-color: #ffcccc">!             .true. -&gt; apply delta-scaling</a>
+    36) <a name="l36" style="background-color: #ffcccc">!             .false.-&gt; do not apply delta-scaling</a>
+    37) <a name="l37" style="background-color: #ffcccc">!   fdr     - real(r8), contribution of the direct component to the total     (o)</a>
+    38) <a name="l38" style="background-color: #ffcccc">!             actinic flux at each altitude level</a>
+    39) <a name="l39" style="background-color: #ffcccc">!   fup     - real(r8), contribution of the diffuse upwelling component to    (o)</a>
+    40) <a name="l40" style="background-color: #ffcccc">!             the total actinic flux at each altitude level</a>
+    41) <a name="l41" style="background-color: #ffcccc">!   fdn     - real(r8), contribution of the diffuse downwelling component to  (o)</a>
+    42) <a name="l42" style="background-color: #ffcccc">!             the total actinic flux at each altitude level</a>
+    43) <a name="l43" style="background-color: #ffcccc">!   edr     - real(r8), contribution of the direct component to the total     (o)</a>
+    44) <a name="l44" style="background-color: #ffcccc">!             spectral irradiance at each altitude level</a>
+    45) <a name="l45" style="background-color: #ffcccc">!   eup     - real(r8), contribution of the diffuse upwelling component to    (o)</a>
+    46) <a name="l46" style="background-color: #ffcccc">!             the total spectral irradiance at each altitude level</a>
+    47) <a name="l47" style="background-color: #ffcccc">!   edn     - real(r8), contribution of the diffuse downwelling component to  (o)</a>
+    48) <a name="l48" style="background-color: #ffcccc">!             the total spectral irradiance at each altitude level</a>
+    49) <a name="l49" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+    50) <a name="l50" style="background-color: #ffcccc"></a>
+    51) <a name="l51" style="background-color: #ffcccc">      use mo_params,    only : smallest, largest</a>
+    52) <a name="l52" style="background-color: #ffcccc">      use mo_constants, only : d2r</a>
+    53) <a name="l53" style="background-color: #ffcccc">      use ppgrid,       only : pver, pverp</a>
+    54) <a name="l54" style="background-color: #ffcccc">      use mo_trislv,    only : tridec, trislv</a>
+    55) <a name="l55" style="background-color: #ffcccc"></a>
+    56) <a name="l56" style="background-color: #ffcccc">      implicit none</a>
+    57) <a name="l57" style="background-color: #ffcccc"></a>
+    58) <a name="l58" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+    59) <a name="l59" style="background-color: #ffcccc">!	... dummy arguments</a>
+    60) <a name="l60" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+    61) <a name="l61" style="background-color: #ffcccc">      integer, intent(in)     :: nw</a>
+    62) <a name="l62" style="background-color: #ffcccc">      integer, intent(in)     :: nid(0:pver)</a>
+    63) <a name="l63" style="background-color: #ffcccc">      real(r8), intent(in)    :: zen</a>
+    64) <a name="l64" style="background-color: #ffcccc">      real(r8), intent(in)    :: rsfc(nw)</a>
+    65) <a name="l65" style="background-color: #ffcccc">      real(r8), intent(in)    :: tauu(pver,nw)</a>
+    66) <a name="l66" style="background-color: #ffcccc">      real(r8), intent(in)    :: omu(pver,nw)</a>
+    67) <a name="l67" style="background-color: #ffcccc">      real(r8), intent(in)    :: gu(pver,nw)</a>
+    68) <a name="l68" style="background-color: #ffcccc">      real(r8), intent(in)    :: dsdh(0:pver,pver)</a>
+    69) <a name="l69" style="background-color: #ffcccc">      real(r8), intent(out)   :: radfld(pverp,nw)</a>
+    70) <a name="l70" style="background-color: #ffcccc"></a>
+    71) <a name="l71" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+    72) <a name="l72" style="background-color: #ffcccc">!	... local variables</a>
+    73) <a name="l73" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+    74) <a name="l74" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+    75) <a name="l75" style="background-color: #ffcccc">! 	... mu = cosine of solar zenith angle</a>
+    76) <a name="l76" style="background-color: #ffcccc">!           rsfc = surface albedo</a>
+    77) <a name="l77" style="background-color: #ffcccc">!           tauu =  unscaled optical depth of each layer</a>
+    78) <a name="l78" style="background-color: #ffcccc">!           omu  =  unscaled single scattering albedo</a>
+    79) <a name="l79" style="background-color: #ffcccc">!           gu   =  unscaled asymmetry factor</a>
+    80) <a name="l80" style="background-color: #ffcccc">!           klev = max dimension of number of layers in atmosphere</a>
+    81) <a name="l81" style="background-color: #ffcccc">!           nlayer = number of layers in the atmosphere</a>
+    82) <a name="l82" style="background-color: #ffcccc">!           nlevel = nlayer + 1 = number of levels</a>
+    83) <a name="l83" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+    84) <a name="l84" style="background-color: #ffcccc">      integer, parameter  :: mrows = 2*pver</a>
+    85) <a name="l85" style="background-color: #ffcccc">      integer, parameter  :: pverm = pver - 1</a>
+    86) <a name="l86" style="background-color: #ffcccc">      real(r8), parameter :: eps = 1.e-3_r8</a>
+    87) <a name="l87" style="background-color: #ffcccc">      real(r8), parameter :: pifs = 1._r8</a>
+    88) <a name="l88" style="background-color: #ffcccc">      real(r8), parameter :: fdn0 = 0._r8</a>
+    89) <a name="l89" style="background-color: #ffcccc"></a>
+    90) <a name="l90" style="background-color: #ffcccc">      integer :: row</a>
+    91) <a name="l91" style="background-color: #ffcccc">      integer :: lev</a>
+    92) <a name="l92" style="background-color: #ffcccc">      integer :: i, ip1, wn</a>
+    93) <a name="l93" style="background-color: #ffcccc">      integer :: j, jl, ju</a>
+    94) <a name="l94" style="background-color: #ffcccc"></a>
+    95) <a name="l95" style="background-color: #ffcccc">      real(r8) :: precis, wrk</a>
+    96) <a name="l96" style="background-color: #ffcccc">      real(r8) :: tempg</a>
+    97) <a name="l97" style="background-color: #ffcccc">      real(r8) :: mu, suma</a>
+    98) <a name="l98" style="background-color: #ffcccc">      real(r8) :: g, om</a>
+    99) <a name="l99" style="background-color: #ffcccc">      real(r8) :: gam1, gam2, gam3, gam4</a>
+   100) <a name="l100" style="background-color: #ffcccc">      real(r8), dimension(pver)    :: f, gi, omi</a>
+   101) <a name="l101" style="background-color: #ffcccc">      real(r8), dimension(0:pverp) :: tauc, mu2</a>
+   102) <a name="l102" style="background-color: #ffcccc">      real(r8), dimension(pver)    :: lam, taun, bgam</a>
+   103) <a name="l103" style="background-color: #ffcccc">      real(r8), dimension(pver)    :: cdn</a>
+   104) <a name="l104" style="background-color: #ffcccc">      real(r8), dimension(0:pverp,nw) :: tausla</a>
+   105) <a name="l105" style="background-color: #ffcccc">      real(r8), dimension(pver,nw)  :: cup, cuptn, cdntn</a>
+   106) <a name="l106" style="background-color: #ffcccc">      real(r8), dimension(pver,nw)  :: e1, e2, e3, e4</a>
+   107) <a name="l107" style="background-color: #ffcccc">      real(r8), dimension(mrows)    :: a, b, d, e</a>
+   108) <a name="l108" style="background-color: #ffcccc">      real(r8), dimension(nw,mrows) :: sub, main, super, y</a>
+   109) <a name="l109" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   110) <a name="l110" style="background-color: #ffcccc">! 	... for calculations of associated legendre polynomials for gama1,2,3,4</a>
+   111) <a name="l111" style="background-color: #ffcccc">!           in delta-function, modified quadrature, hemispheric constant,</a>
+   112) <a name="l112" style="background-color: #ffcccc">!           hybrid modified eddington-delta function metods, p633,table1.</a>
+   113) <a name="l113" style="background-color: #ffcccc">!           w.e.meador and w.r.weaver, gas,1980,v37,p.630</a>
+   114) <a name="l114" style="background-color: #ffcccc">!           w.j.wiscombe and g.w. grams, gas,1976,v33,p2440, </a>
+   115) <a name="l115" style="background-color: #ffcccc">!           uncomment the following two lines and the appropriate statements</a>
+   116) <a name="l116" style="background-color: #ffcccc">!           further down.</a>
+   117) <a name="l117" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   118) <a name="l118" style="background-color: #ffcccc">      real(r8) :: expon, expon0, expon1, divisr, temp, up, dn</a>
+   119) <a name="l119" style="background-color: #ffcccc">      real(r8) :: ssfc</a>
+   120) <a name="l120" style="background-color: #ffcccc"></a>
+   121) <a name="l121" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   122) <a name="l122" style="background-color: #ffcccc">! 	... initial conditions:  pi*solar flux = 1;  diffuse incidence = 0</a>
+   123) <a name="l123" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   124) <a name="l124" style="background-color: #ffcccc">      precis = epsilon( precis )</a>
+   125) <a name="l125" style="background-color: #ffcccc"></a>
+   126) <a name="l126" style="background-color: #ffcccc">      mu = cos( zen*d2r )</a>
+   127) <a name="l127" style="background-color: #ffcccc">wave_loop : &amp;</a>
+   128) <a name="l128" style="background-color: #ffcccc">      do wn = 1,nw</a>
+   129) <a name="l129" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   130) <a name="l130" style="background-color: #ffcccc">!	... compute coefficients for each layer:</a>
+   131) <a name="l131" style="background-color: #ffcccc">!           gam1 - gam4 = 2-stream coefficients, different for different approximations</a>
+   132) <a name="l132" style="background-color: #ffcccc">!           expon0 = calculation of e when tau is zero</a>
+   133) <a name="l133" style="background-color: #ffcccc">!           expon1 = calculation of e when tau is taun</a>
+   134) <a name="l134" style="background-color: #ffcccc">!           cup and cdn = calculation when tau is zero</a>
+   135) <a name="l135" style="background-color: #ffcccc">!           cuptn and cdntn = calc. when tau is taun</a>
+   136) <a name="l136" style="background-color: #ffcccc">!           divisr = prevents division by zero</a>
+   137) <a name="l137" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   138) <a name="l138" style="background-color: #ffcccc">         tauc(0:pverp)      = 0._r8</a>
+   139) <a name="l139" style="background-color: #ffcccc">         tausla(0:pverp,wn) = 0._r8</a>
+   140) <a name="l140" style="background-color: #ffcccc">         mu2(0:pverp)       = sqrt( smallest )</a>
+   141) <a name="l141" style="background-color: #ffcccc"></a>
+   142) <a name="l142" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   143) <a name="l143" style="background-color: #ffcccc">! 	... delta-scaling. have to be done for delta-eddington approximation, </a>
+   144) <a name="l144" style="background-color: #ffcccc">!           delta discrete ordinate, practical improved flux method, delta function,</a>
+   145) <a name="l145" style="background-color: #ffcccc">!           and hybrid modified eddington-delta function methods approximations</a>
+   146) <a name="l146" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   147) <a name="l147" style="background-color: #ffcccc">         f(1:pver)    = gu(:,wn)*gu(:,wn)</a>
+   148) <a name="l148" style="background-color: #ffcccc">         gi(1:pver)   = (gu(:,wn) - f(1:pver))/(1._r8 - f(1:pver))</a>
+   149) <a name="l149" style="background-color: #ffcccc">         omi(1:pver)  = (1._r8 - f(1:pver))*omu(1:pver,wn)/(1._r8 - omu(1:pver,wn)*f(1:pver))       </a>
+   150) <a name="l150" style="background-color: #ffcccc">         taun(1:pver) = (1._r8 - omu(1:pver,wn)*f(1:pver))*tauu(1:pver,wn)</a>
+   151) <a name="l151" style="background-color: #ffcccc"></a>
+   152) <a name="l152" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   153) <a name="l153" style="background-color: #ffcccc">! 	... calculate slant optical depth at the top of the atmosphere when zen&gt;90.</a>
+   154) <a name="l154" style="background-color: #ffcccc">!           in this case, higher altitude of the top layer is recommended which can </a>
+   155) <a name="l155" style="background-color: #ffcccc">!           be easily changed in gridz.f.</a>
+   156) <a name="l156" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   157) <a name="l157" style="background-color: #ffcccc">         if( zen &gt; 90._r8 ) then</a>
+   158) <a name="l158" style="background-color: #ffcccc">            if( nid(0) &lt; 0 ) then</a>
+   159) <a name="l159" style="background-color: #ffcccc">               tausla(0,wn) = largest</a>
+   160) <a name="l160" style="background-color: #ffcccc">            else</a>
+   161) <a name="l161" style="background-color: #ffcccc">	       ju = nid(0)</a>
+   162) <a name="l162" style="background-color: #ffcccc">               tausla(0,wn) = 2._r8*dot_product( taun(1:ju),dsdh(0,1:ju) )</a>
+   163) <a name="l163" style="background-color: #ffcccc">            end if</a>
+   164) <a name="l164" style="background-color: #ffcccc">         end if</a>
+   165) <a name="l165" style="background-color: #ffcccc">level_loop : &amp;  </a>
+   166) <a name="l166" style="background-color: #ffcccc">         do i = 1,pver</a>
+   167) <a name="l167" style="background-color: #ffcccc">            g = gi(i)</a>
+   168) <a name="l168" style="background-color: #ffcccc">            om = omi(i)</a>
+   169) <a name="l169" style="background-color: #ffcccc">            tauc(i) = tauc(i-1) + taun(i)</a>
+   170) <a name="l170" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   171) <a name="l171" style="background-color: #ffcccc">! 	... stay away from 1 by precision.  for g, also stay away from -1</a>
+   172) <a name="l172" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   173) <a name="l173" style="background-color: #ffcccc">            tempg = min( abs(g),1._r8 - precis )</a>
+   174) <a name="l174" style="background-color: #ffcccc">            g     = sign( tempg,g )</a>
+   175) <a name="l175" style="background-color: #ffcccc">            om    = min( om,1._r8 - precis )</a>
+   176) <a name="l176" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   177) <a name="l177" style="background-color: #ffcccc">! 	... calculate slant optical depth</a>
+   178) <a name="l178" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   179) <a name="l179" style="background-color: #ffcccc">            if( nid(i) &lt; 0 ) then</a>
+   180) <a name="l180" style="background-color: #ffcccc">               tausla(i,wn) = largest</a>
+   181) <a name="l181" style="background-color: #ffcccc">            else</a>
+   182) <a name="l182" style="background-color: #ffcccc">               ju = min( nid(i),i )</a>
+   183) <a name="l183" style="background-color: #ffcccc">               suma = dot_product( taun(1:ju),dsdh(i,1:ju) )</a>
+   184) <a name="l184" style="background-color: #ffcccc">               jl = min( nid(i),i ) + 1</a>
+   185) <a name="l185" style="background-color: #ffcccc">               tausla(i,wn) = suma + 2._r8*dot_product( taun(jl:nid(i)),dsdh(i,jl:nid(i)) )</a>
+   186) <a name="l186" style="background-color: #ffcccc">               if( tausla(i,wn) == tausla(i-1,wn) ) then</a>
+   187) <a name="l187" style="background-color: #ffcccc">                 mu2(i) = sqrt( largest )</a>
+   188) <a name="l188" style="background-color: #ffcccc">               else</a>
+   189) <a name="l189" style="background-color: #ffcccc">                 mu2(i) = (tauc(i) - tauc(i-1))/(tausla(i,wn) - tausla(i-1,wn))</a>
+   190) <a name="l190" style="background-color: #ffcccc">                 mu2(i) = sign( max( abs(mu2(i)),sqrt(smallest) ),mu2(i) )</a>
+   191) <a name="l191" style="background-color: #ffcccc">               end if</a>
+   192) <a name="l192" style="background-color: #ffcccc">            end if</a>
+   193) <a name="l193" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   194) <a name="l194" style="background-color: #ffcccc">!	... the following gamma equations are from pg 16,289, table 1</a>
+   195) <a name="l195" style="background-color: #ffcccc">!           eddington approximation(joseph et al., 1976, jas, 33, 2452):</a>
+   196) <a name="l196" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   197) <a name="l197" style="background-color: #ffcccc">            gam1 =  .25_r8*(7._r8 - om*(4._r8 + 3._r8*g))</a>
+   198) <a name="l198" style="background-color: #ffcccc">            gam2 = -.25_r8*(1._r8 - om*(4._r8 - 3._r8*g))</a>
+   199) <a name="l199" style="background-color: #ffcccc">            gam3 = .25_r8*(2._r8 - 3._r8*g*mu)</a>
+   200) <a name="l200" style="background-color: #ffcccc">            gam4 = 1._r8 - gam3</a>
+   201) <a name="l201" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   202) <a name="l202" style="background-color: #ffcccc">! 	... lambda = pg 16,290 equation 21</a>
+   203) <a name="l203" style="background-color: #ffcccc">!           big gamma = pg 16,290 equation 22</a>
+   204) <a name="l204" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   205) <a name="l205" style="background-color: #ffcccc">            lam(i) = sqrt( gam1*gam1 - gam2*gam2 )</a>
+   206) <a name="l206" style="background-color: #ffcccc">            bgam(i) = (gam1 - lam(i))/gam2</a>
+   207) <a name="l207" style="background-color: #ffcccc">	    wrk = lam(i)*taun(i)</a>
+   208) <a name="l208" style="background-color: #ffcccc">	    if( wrk &lt; 500._r8 ) then</a>
+   209) <a name="l209" style="background-color: #ffcccc">               expon = exp( -wrk )</a>
+   210) <a name="l210" style="background-color: #ffcccc">	    else</a>
+   211) <a name="l211" style="background-color: #ffcccc">               expon = 0._r8</a>
+   212) <a name="l212" style="background-color: #ffcccc">	    end if</a>
+   213) <a name="l213" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   214) <a name="l214" style="background-color: #ffcccc">! 	... e1 - e4 = pg 16,292 equation 44</a>
+   215) <a name="l215" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   216) <a name="l216" style="background-color: #ffcccc">            e1(i,wn) = 1._r8 + bgam(i)*expon</a>
+   217) <a name="l217" style="background-color: #ffcccc">            e2(i,wn) = 1._r8 - bgam(i)*expon</a>
+   218) <a name="l218" style="background-color: #ffcccc">            e3(i,wn) = bgam(i) + expon</a>
+   219) <a name="l219" style="background-color: #ffcccc">            e4(i,wn) = bgam(i) - expon</a>
+   220) <a name="l220" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   221) <a name="l221" style="background-color: #ffcccc">! 	... the following sets up for the c equations 23, and 24</a>
+   222) <a name="l222" style="background-color: #ffcccc">!           found on page 16,290</a>
+   223) <a name="l223" style="background-color: #ffcccc">!           prevent division by zero (if lambda=1/mu, shift 1/mu^2 by eps = 1.e-3</a>
+   224) <a name="l224" style="background-color: #ffcccc">!           which is approx equiv to shifting mu by 0.5*eps* (mu)**3</a>
+   225) <a name="l225" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   226) <a name="l226" style="background-color: #ffcccc">	    if( tausla(i-1,wn) &lt; 500._r8 ) then</a>
+   227) <a name="l227" style="background-color: #ffcccc">               expon0 = exp( -tausla(i-1,wn) )</a>
+   228) <a name="l228" style="background-color: #ffcccc">	    else</a>
+   229) <a name="l229" style="background-color: #ffcccc">               expon0 = 0._r8</a>
+   230) <a name="l230" style="background-color: #ffcccc">	    end if</a>
+   231) <a name="l231" style="background-color: #ffcccc">	    if( tausla(i,wn) &lt; 500._r8 ) then</a>
+   232) <a name="l232" style="background-color: #ffcccc">               expon1 = exp( -tausla(i,wn) )</a>
+   233) <a name="l233" style="background-color: #ffcccc">	    else</a>
+   234) <a name="l234" style="background-color: #ffcccc">               expon1 = 0._r8</a>
+   235) <a name="l235" style="background-color: #ffcccc">	    end if</a>
+   236) <a name="l236" style="background-color: #ffcccc">            divisr = lam(i)*lam(i) - 1._r8/(mu2(i)*mu2(i))</a>
+   237) <a name="l237" style="background-color: #ffcccc">            temp = max( eps,abs(divisr) )</a>
+   238) <a name="l238" style="background-color: #ffcccc">            divisr = 1._r8/sign( temp,divisr )</a>
+   239) <a name="l239" style="background-color: #ffcccc">            up = om*pifs*((gam1 - 1._r8/mu2(i))*gam3 + gam4*gam2)*divisr</a>
+   240) <a name="l240" style="background-color: #ffcccc">            dn = om*pifs*((gam1 + 1._r8/mu2(i))*gam4 + gam2*gam3)*divisr</a>
+   241) <a name="l241" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   242) <a name="l242" style="background-color: #ffcccc">! 	... cup and cdn are when tau is equal to zero</a>
+   243) <a name="l243" style="background-color: #ffcccc">!           cuptn and cdntn are when tau is equal to taun</a>
+   244) <a name="l244" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   245) <a name="l245" style="background-color: #ffcccc">            cup(i,wn) = up*expon0</a>
+   246) <a name="l246" style="background-color: #ffcccc">            cdn(i)    = dn*expon0</a>
+   247) <a name="l247" style="background-color: #ffcccc">            cuptn(i,wn) = up*expon1</a>
+   248) <a name="l248" style="background-color: #ffcccc">            cdntn(i,wn) = dn*expon1</a>
+   249) <a name="l249" style="background-color: #ffcccc">         end do level_loop</a>
+   250) <a name="l250" style="background-color: #ffcccc"></a>
+   251) <a name="l251" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   252) <a name="l252" style="background-color: #ffcccc">!	... set up matrix</a>
+   253) <a name="l253" style="background-color: #ffcccc">!           ssfc = pg 16,292 equation 37  where pi fs is one (unity).</a>
+   254) <a name="l254" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   255) <a name="l255" style="background-color: #ffcccc">	if( tausla(pver,wn) &lt; 500._r8 ) then</a>
+   256) <a name="l256" style="background-color: #ffcccc">           ssfc = rsfc(wn)*mu*exp( -tausla(pver,wn) )*pifs</a>
+   257) <a name="l257" style="background-color: #ffcccc">	else</a>
+   258) <a name="l258" style="background-color: #ffcccc">           ssfc = 0._r8</a>
+   259) <a name="l259" style="background-color: #ffcccc">	end if</a>
+   260) <a name="l260" style="background-color: #ffcccc"></a>
+   261) <a name="l261" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   262) <a name="l262" style="background-color: #ffcccc">! 	... the following are from pg 16,292  equations 39 - 43.</a>
+   263) <a name="l263" style="background-color: #ffcccc">!           set up first row of matrix:</a>
+   264) <a name="l264" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   265) <a name="l265" style="background-color: #ffcccc">        a(1) = 0._r8</a>
+   266) <a name="l266" style="background-color: #ffcccc">        b(1) = e1(1,wn)</a>
+   267) <a name="l267" style="background-color: #ffcccc">        d(1) = -e2(1,wn)</a>
+   268) <a name="l268" style="background-color: #ffcccc">        e(1) = fdn0 - cdn(1)</a>
+   269) <a name="l269" style="background-color: #ffcccc"></a>
+   270) <a name="l270" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   271) <a name="l271" style="background-color: #ffcccc">! 	... set up odd rows 3 thru (mrows - 1):</a>
+   272) <a name="l272" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   273) <a name="l273" style="background-color: #ffcccc">        a(3:mrows-1:2) = e2(1:pverm,wn)*e3(1:pverm,wn) - e4(1:pverm,wn)*e1(1:pverm,wn)</a>
+   274) <a name="l274" style="background-color: #ffcccc">        b(3:mrows-1:2) = e1(1:pverm,wn)*e1(2:pver,wn) - e3(1:pverm,wn)*e3(2:pver,wn)</a>
+   275) <a name="l275" style="background-color: #ffcccc">        d(3:mrows-1:2) = e3(1:pverm,wn)*e4(2:pver,wn) - e1(1:pverm,wn)*e2(2:pver,wn)</a>
+   276) <a name="l276" style="background-color: #ffcccc">        e(3:mrows-1:2) = e3(1:pverm,wn)*(cup(2:pver,wn) - cuptn(1:pverm,wn)) + e1(1:pverm,wn)*(cdntn(1:pverm,wn) - cdn(2:pver))</a>
+   277) <a name="l277" style="background-color: #ffcccc"></a>
+   278) <a name="l278" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   279) <a name="l279" style="background-color: #ffcccc">! 	... set up even rows 2 thru (mrows - 2): </a>
+   280) <a name="l280" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   281) <a name="l281" style="background-color: #ffcccc">        a(2:mrows-2:2) = e2(2:pver,wn)*e1(1:pverm,wn) - e3(1:pverm,wn)*e4(2:pver,wn)</a>
+   282) <a name="l282" style="background-color: #ffcccc">        b(2:mrows-2:2) = e2(1:pverm,wn)*e2(2:pver,wn) - e4(1:pverm,wn)*e4(2:pver,wn)</a>
+   283) <a name="l283" style="background-color: #ffcccc">        d(2:mrows-2:2) = e1(2:pver,wn)*e4(2:pver,wn) - e2(2:pver,wn)*e3(2:pver,wn)</a>
+   284) <a name="l284" style="background-color: #ffcccc">        e(2:mrows-2:2) = (cup(2:pver,wn) - cuptn(1:pverm,wn))*e2(2:pver,wn) - (cdn(2:pver) - cdntn(1:pverm,wn))*e4(2:pver,wn)</a>
+   285) <a name="l285" style="background-color: #ffcccc"></a>
+   286) <a name="l286" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   287) <a name="l287" style="background-color: #ffcccc">! 	... set up last row of matrix at mrows:</a>
+   288) <a name="l288" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   289) <a name="l289" style="background-color: #ffcccc">        a(mrows) = e1(pver,wn) - rsfc(wn)*e3(pver,wn)</a>
+   290) <a name="l290" style="background-color: #ffcccc">        b(mrows) = e2(pver,wn) - rsfc(wn)*e4(pver,wn)</a>
+   291) <a name="l291" style="background-color: #ffcccc">        d(mrows) = 0._r8</a>
+   292) <a name="l292" style="background-color: #ffcccc">        e(mrows) = ssfc - cuptn(pver,wn) + rsfc(wn)*cdntn(pver,wn)</a>
+   293) <a name="l293" style="background-color: #ffcccc"></a>
+   294) <a name="l294" style="background-color: #ffcccc">	sub(wn,1:mrows)   = a(1:mrows)</a>
+   295) <a name="l295" style="background-color: #ffcccc">	main(wn,1:mrows)  = b(1:mrows)</a>
+   296) <a name="l296" style="background-color: #ffcccc">	super(wn,1:mrows) = d(1:mrows)</a>
+   297) <a name="l297" style="background-color: #ffcccc">	y(wn,1:mrows)     = e(1:mrows)</a>
+   298) <a name="l298" style="background-color: #ffcccc">      end do wave_loop</a>
+   299) <a name="l299" style="background-color: #ffcccc"></a>
+   300) <a name="l300" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   301) <a name="l301" style="background-color: #ffcccc">! 	... solve the system</a>
+   302) <a name="l302" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   303) <a name="l303" style="background-color: #ffcccc">      call tridec( nw, mrows, sub, main, super )</a>
+   304) <a name="l304" style="background-color: #ffcccc">      call trislv( nw, mrows, sub, main, super, y )</a>
+   305) <a name="l305" style="background-color: #ffcccc"></a>
+   306) <a name="l306" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   307) <a name="l307" style="background-color: #ffcccc">!	... unfold solution of matrix, compute output fluxes</a>
+   308) <a name="l308" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   309) <a name="l309" style="background-color: #ffcccc">      do wn = 1,nw</a>
+   310) <a name="l310" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   311) <a name="l311" style="background-color: #ffcccc">! 	... the following equations are from pg 16,291  equations 31 &amp; 32</a>
+   312) <a name="l312" style="background-color: #ffcccc">!-----------------------------------------------------------------------------</a>
+   313) <a name="l313" style="background-color: #ffcccc">	 e(:mrows) = y(wn,:mrows)</a>
+   314) <a name="l314" style="background-color: #ffcccc">	 if( tausla(0,wn) &lt; 500._r8 ) then</a>
+   315) <a name="l315" style="background-color: #ffcccc">            radfld(1,wn) = 2._r8*(fdn0 +  e(1)*e3(1,wn) - e(2)*e4(1,wn) + cup(1,wn)) + exp( -tausla(0,wn) )</a>
+   316) <a name="l316" style="background-color: #ffcccc">	 else</a>
+   317) <a name="l317" style="background-color: #ffcccc">            radfld(1,wn) = 2._r8*(fdn0 +  e(1)*e3(1,wn) - e(2)*e4(1,wn) + cup(1,wn))</a>
+   318) <a name="l318" style="background-color: #ffcccc">	 end if</a>
+   319) <a name="l319" style="background-color: #ffcccc">	 where( tausla(1:pver,wn) &lt; 500._r8 )</a>
+   320) <a name="l320" style="background-color: #ffcccc">	    cdn(1:pver) = exp( -tausla(1:pver,wn) )</a>
+   321) <a name="l321" style="background-color: #ffcccc">	 elsewhere</a>
+   322) <a name="l322" style="background-color: #ffcccc">	    cdn(1:pver) = 0._r8</a>
+   323) <a name="l323" style="background-color: #ffcccc">	 endwhere</a>
+   324) <a name="l324" style="background-color: #ffcccc">         radfld(2:pverp,wn) = 2._r8*(e(1:mrows-1:2)*(e3(1:pver,wn) + e1(1:pver,wn)) &amp;</a>
+   325) <a name="l325" style="background-color: #ffcccc">                            + e(2:mrows:2)*(e4(1:pver,wn) + e2(1:pver,wn))       &amp;</a>
+   326) <a name="l326" style="background-color: #ffcccc">                            + cdntn(1:pver,wn) + cuptn(1:pver,wn)) + cdn(1:pver)</a>
+   327) <a name="l327" style="background-color: #ffcccc">      end do</a>
+   328) <a name="l328" style="background-color: #ffcccc"></a>
+   329) <a name="l329" style="background-color: #ffcccc">      end subroutine ps2str</a>
+   330) <a name="l330" style="background-color: #ffffff"></a>
+   331) <a name="l331" style="background-color: #ffffff">      end module mo_ps2str</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

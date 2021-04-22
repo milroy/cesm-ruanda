@@ -1,0 +1,183 @@
+<html>
+<head>
+<title>Listing of rad_solar_var.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;rad_solar_var.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 79.01&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+     2) <a name="l2" style="background-color: #ffffff">! This module uses the Lean solar irradiance data to provide a solar cycle</a>
+     3) <a name="l3" style="background-color: #ffffff">! scaling factor used in heating rate calculations </a>
+     4) <a name="l4" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+     5) <a name="l5" style="background-color: #ffffff">module rad_solar_var</a>
+     6) <a name="l6" style="background-color: #ffffff"></a>
+     7) <a name="l7" style="background-color: #ffffff">  use shr_kind_mod , only : r8 =&gt; shr_kind_r8</a>
+     8) <a name="l8" style="background-color: #ffffff">  use solar_data,    only : sol_irrad, we, nbins, has_spectrum, sol_tsi</a>
+     9) <a name="l9" style="background-color: #ffffff">  use solar_data,    only : do_spctrl_scaling</a>
+    10) <a name="l10" style="background-color: #ffffff">  use abortutils,    only : endrun</a>
+    11) <a name="l11" style="background-color: #ffffff"></a>
+    12) <a name="l12" style="background-color: #ffffff">  implicit none</a>
+    13) <a name="l13" style="background-color: #ffffff">  save</a>
+    14) <a name="l14" style="background-color: #ffffff"></a>
+    15) <a name="l15" style="background-color: #ffffff">  private</a>
+    16) <a name="l16" style="background-color: #ffffff">  public :: rad_solar_var_init</a>
+    17) <a name="l17" style="background-color: #ffffff">  public :: get_variability</a>
+    18) <a name="l18" style="background-color: #ffffff"></a>
+    19) <a name="l19" style="background-color: #ffffff">  real(r8), allocatable :: ref_band_irrad(:)  ! scaling will be relative to ref_band_irrad in each band</a>
+    20) <a name="l20" style="background-color: #ffffff">  real(r8), allocatable :: irrad(:)           ! solar irradiance at model timestep in each band</a>
+    21) <a name="l21" style="background-color: #ffffff">  real(r8)              :: tsi_ref            ! total solar irradiance assumed by rrtmg                                                 </a>
+    22) <a name="l22" style="background-color: #ffffff"></a>
+    23) <a name="l23" style="background-color: #ffffff">  real(r8), allocatable :: radbinmax(:)</a>
+    24) <a name="l24" style="background-color: #ffffff">  real(r8), allocatable :: radbinmin(:)</a>
+    25) <a name="l25" style="background-color: #ffffff">  integer :: nradbins</a>
+    26) <a name="l26" style="background-color: #ffffff">contains</a>
+    27) <a name="l27" style="background-color: #ffffff"></a>
+    28) <a name="l28" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+    29) <a name="l29" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+    30) <a name="l30" style="background-color: #ffffff">  subroutine rad_solar_var_init( )</a>
+    31) <a name="l31" style="background-color: #ffffff">    use radconstants,  only : get_number_sw_bands</a>
+    32) <a name="l32" style="background-color: #ffffff">    use radconstants,  only : get_sw_spectral_boundaries</a>
+    33) <a name="l33" style="background-color: #ffffff">    use radconstants,  only : get_ref_solar_band_irrad</a>
+    34) <a name="l34" style="background-color: #ffffff">    use radconstants,  only : get_ref_total_solar_irrad</a>
+    35) <a name="l35" style="background-color: #ffffff"></a>
+    36) <a name="l36" style="background-color: #ffffff">    integer :: i</a>
+    37) <a name="l37" style="background-color: #ffffff">    integer :: ierr</a>
+    38) <a name="l38" style="background-color: #ffffff">    integer :: yr, mon, tod</a>
+    39) <a name="l39" style="background-color: #ffffff">    integer :: radmax_loc</a>
+    40) <a name="l40" style="background-color: #ffffff"></a>
+    41) <a name="l41" style="background-color: #ffffff"></a>
+    42) <a name="l42" style="background-color: #ffffff">    call get_number_sw_bands(nradbins)</a>
+    43) <a name="l43" style="background-color: #ffffff"></a>
+    44) <a name="l44" style="background-color: #ffffff">    if ( do_spctrl_scaling ) then</a>
+    45) <a name="l45" style="background-color: #ffffff"></a>
+    46) <a name="l46" style="background-color: #ffffff">       if ( .not.has_spectrum ) then</a>
+    47) <a name="l47" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">endrun('rad_solar_var_init: solar input file must have irradiance spectrum')</a>
+    48) <a name="l48" style="background-color: #ffff99">       endif</a>
+    49) <a name="l49" style="background-color: #ffff99"></a>
+    50) <a name="l50" style="background-color: #fafad2">       allocate (radbinmax(nradbins),stat=ierr)</a>
+    51) <a name="l51" style="background-color: #fafad2">       if (ierr /= 0) then</a>
+    52) <a name="l52" style="background-color: #fafad2">          call </a><a style="background-color: #ffff99">endrun('rad_solar_var_init: Error allocating space for radbinmax')</a>
+    53) <a name="l53" style="background-color: #ffff99">       end if</a>
+    54) <a name="l54" style="background-color: #ffff99"></a>
+    55) <a name="l55" style="background-color: #fafad2">       allocate (radbinmin(nradbins),stat=ierr)</a>
+    56) <a name="l56" style="background-color: #fafad2">       if (ierr /= 0) then</a>
+    57) <a name="l57" style="background-color: #fafad2">          call </a><a style="background-color: #ffff99">endrun('rad_solar_var_init: Error allocating space for radbinmin')</a>
+    58) <a name="l58" style="background-color: #ffff99">       end if</a>
+    59) <a name="l59" style="background-color: #ffff99"></a>
+    60) <a name="l60" style="background-color: #fafad2">       allocate (ref_band_irrad(nradbins), stat=ierr)</a>
+    61) <a name="l61" style="background-color: #fafad2">       if (ierr /= 0) then</a>
+    62) <a name="l62" style="background-color: #fafad2">          call </a><a style="background-color: #ffff99">endrun('rad_solar_var_init: Error allocating space for ref_band_irrad')</a>
+    63) <a name="l63" style="background-color: #ffff99">       end if</a>
+    64) <a name="l64" style="background-color: #ffff99"></a>
+    65) <a name="l65" style="background-color: #fafad2">       allocate (irrad(nradbins), stat=ierr)</a>
+    66) <a name="l66" style="background-color: #fafad2">       if (ierr /= 0) then</a>
+    67) <a name="l67" style="background-color: #fafad2">          call </a><a style="background-color: #ffff99">endrun('rad_solar_var_init: Error allocating space for irrad')</a>
+    68) <a name="l68" style="background-color: #ffff99">       end if</a>
+    69) <a name="l69" style="background-color: #ffff99"></a>
+    70) <a name="l70" style="background-color: #ffff99">       call </a><a style="background-color: #ffffff">get_sw_spectral_boundaries(radbinmin, radbinmax, 'nm')</a>
+    71) <a name="l71" style="background-color: #ffffff"></a>
+    72) <a name="l72" style="background-color: #ffffff">       ! Make sure that the far-IR is included, even if RRTMG does not</a>
+    73) <a name="l73" style="background-color: #ffffff">       ! extend that far down. 10^5 nm corresponds to a wavenumber of</a>
+    74) <a name="l74" style="background-color: #ffffff">       ! 100 cm^-1.</a>
+    75) <a name="l75" style="background-color: #ffffff">       radmax_loc = maxloc(radbinmax,1)</a>
+    76) <a name="l76" style="background-color: #ffffff">       radbinmax(radmax_loc) = max(100000._r8,radbinmax(radmax_loc))</a>
+    77) <a name="l77" style="background-color: #ffffff"></a>
+    78) <a name="l78" style="background-color: #ffffff">       ! for rrtmg, reference spectrum from rrtmg</a>
+    79) <a name="l79" style="background-color: #ffffff">       call get_ref_solar_band_irrad( ref_band_irrad )</a>
+    80) <a name="l80" style="background-color: #ffffff"></a>
+    81) <a name="l81" style="background-color: #ffffff">    else</a>
+    82) <a name="l82" style="background-color: #ffffff"></a>
+    83) <a name="l83" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">get_ref_total_solar_irrad(tsi_ref)</a>
+    84) <a name="l84" style="background-color: #ffff99"></a>
+    85) <a name="l85" style="background-color: #ffff99">    endif</a>
+    86) <a name="l86" style="background-color: #ffff99"></a>
+    87) <a name="l87" style="background-color: #ffffff">  endsubroutine rad_solar_var_init</a>
+    88) <a name="l88" style="background-color: #ffffff"></a>
+    89) <a name="l89" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+    90) <a name="l90" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+    91) <a name="l91" style="background-color: #ffffff">  subroutine get_variability( sfac )</a>
+    92) <a name="l92" style="background-color: #ffffff"></a>
+    93) <a name="l93" style="background-color: #ffffff">    real(r8), intent(out) :: sfac(nradbins)       ! scaling factors for CAM heating</a>
+    94) <a name="l94" style="background-color: #ffffff"></a>
+    95) <a name="l95" style="background-color: #ffffff">    integer :: yr, mon, day, tod</a>
+    96) <a name="l96" style="background-color: #ffffff"></a>
+    97) <a name="l97" style="background-color: #ffffff">    if ( do_spctrl_scaling ) then</a>
+    98) <a name="l98" style="background-color: #ffffff"></a>
+    99) <a name="l99" style="background-color: #ffffff">      call integrate_spectrum( nbins, nradbins, we, radbinmin, radbinmax, sol_irrad, irrad)</a>
+   100) <a name="l100" style="background-color: #ffffff"></a>
+   101) <a name="l101" style="background-color: #ffffff">      sfac(:nradbins) = irrad(:nradbins)/ref_band_irrad(:nradbins)</a>
+   102) <a name="l102" style="background-color: #ffffff"></a>
+   103) <a name="l103" style="background-color: #ffffff">    else</a>
+   104) <a name="l104" style="background-color: #ffffff"></a>
+   105) <a name="l105" style="background-color: #ffff99">       sfac(:nradbins) = sol_tsi/tsi_ref</a>
+   106) <a name="l106" style="background-color: #ffff99"></a>
+   107) <a name="l107" style="background-color: #ffff99">    endif</a>
+   108) <a name="l108" style="background-color: #ffff99"></a>
+   109) <a name="l109" style="background-color: #ffffff">  endsubroutine get_variability</a>
+   110) <a name="l110" style="background-color: #ffffff"></a>
+   111) <a name="l111" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   112) <a name="l112" style="background-color: #ffffff">! private method.........</a>
+   113) <a name="l113" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   114) <a name="l114" style="background-color: #ffffff"></a>
+   115) <a name="l115" style="background-color: #ffffff">  subroutine integrate_spectrum( nsrc, ntrg, src_x, min_trg, max_trg, src, trg )</a>
+   116) <a name="l116" style="background-color: #ffffff"></a>
+   117) <a name="l117" style="background-color: #ffffff">    use mo_util, only : rebin</a>
+   118) <a name="l118" style="background-color: #ffffff"></a>
+   119) <a name="l119" style="background-color: #ffffff">    implicit none</a>
+   120) <a name="l120" style="background-color: #ffffff"></a>
+   121) <a name="l121" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+   122) <a name="l122" style="background-color: #ffffff">    !	... dummy arguments</a>
+   123) <a name="l123" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+   124) <a name="l124" style="background-color: #ffffff">    integer,  intent(in)  :: nsrc                  ! dimension source array</a>
+   125) <a name="l125" style="background-color: #ffffff">    integer,  intent(in)  :: ntrg                  ! dimension target array</a>
+   126) <a name="l126" style="background-color: #ffffff">    real(r8), intent(in)  :: src_x(nsrc+1)         ! source coordinates</a>
+   127) <a name="l127" style="background-color: #ffffff">    real(r8), intent(in)  :: max_trg(ntrg)         ! target coordinates</a>
+   128) <a name="l128" style="background-color: #ffffff">    real(r8), intent(in)  :: min_trg(ntrg)         ! target coordinates</a>
+   129) <a name="l129" style="background-color: #ffffff">    real(r8), intent(in)  :: src(nsrc)             ! source array</a>
+   130) <a name="l130" style="background-color: #ffffff">    real(r8), intent(out) :: trg(ntrg)             ! target array</a>
+   131) <a name="l131" style="background-color: #ffffff"> </a>
+   132) <a name="l132" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+   133) <a name="l133" style="background-color: #ffffff">    !	... local variables</a>
+   134) <a name="l134" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+   135) <a name="l135" style="background-color: #ffffff">    real(r8) :: trg_x(2), targ(1)         ! target coordinates</a>
+   136) <a name="l136" style="background-color: #ffffff">    integer  :: i</a>
+   137) <a name="l137" style="background-color: #ffffff"></a>
+   138) <a name="l138" style="background-color: #ffffff">    do i = 1, ntrg</a>
+   139) <a name="l139" style="background-color: #ffffff"></a>
+   140) <a name="l140" style="background-color: #ffffff">       trg_x(1) = min_trg(i)</a>
+   141) <a name="l141" style="background-color: #ffffff">       trg_x(2) = max_trg(i)</a>
+   142) <a name="l142" style="background-color: #ffffff"></a>
+   143) <a name="l143" style="background-color: #ffffff">       call rebin( nsrc, 1, src_x, trg_x, src(1:nsrc), targ(:) )</a>
+   144) <a name="l144" style="background-color: #ffffff">       ! W/m2/nm --&gt; W/m2</a>
+   145) <a name="l145" style="background-color: #ffffff">       trg( i ) = targ(1)*(trg_x(2)-trg_x(1))</a>
+   146) <a name="l146" style="background-color: #ffffff"></a>
+   147) <a name="l147" style="background-color: #ffffff">    enddo</a>
+   148) <a name="l148" style="background-color: #ffffff"></a>
+   149) <a name="l149" style="background-color: #ffffff"></a>
+   150) <a name="l150" style="background-color: #ffffff">  end subroutine integrate_spectrum</a>
+   151) <a name="l151" style="background-color: #ffffff"></a>
+   152) <a name="l152" style="background-color: #ffffff">endmodule rad_solar_var</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

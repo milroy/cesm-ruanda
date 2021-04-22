@@ -1,0 +1,215 @@
+<html>
+<head>
+<title>Listing of gw_front.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;gw_front.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module gw_front</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!</a>
+     4) <a name="l4" style="background-color: #ffffff">! This module handles gravity waves from frontal sources, and was extracted</a>
+     5) <a name="l5" style="background-color: #ffffff">! from gw_drag in May 2013.</a>
+     6) <a name="l6" style="background-color: #ffffff">!</a>
+     7) <a name="l7" style="background-color: #ffffff"></a>
+     8) <a name="l8" style="background-color: #ffffff">use gw_utils, only: r8</a>
+     9) <a name="l9" style="background-color: #ffffff">use gw_common, only: pver, pgwv, cref</a>
+    10) <a name="l10" style="background-color: #ffffff"></a>
+    11) <a name="l11" style="background-color: #ffffff">implicit none</a>
+    12) <a name="l12" style="background-color: #ffffff">private</a>
+    13) <a name="l13" style="background-color: #ffffff">save</a>
+    14) <a name="l14" style="background-color: #ffffff"></a>
+    15) <a name="l15" style="background-color: #ffffff">public :: gw_front_init</a>
+    16) <a name="l16" style="background-color: #ffffff">public :: gw_cm_src</a>
+    17) <a name="l17" style="background-color: #ffffff"></a>
+    18) <a name="l18" style="background-color: #ffffff">! Tuneable settings.</a>
+    19) <a name="l19" style="background-color: #ffffff"></a>
+    20) <a name="l20" style="background-color: #ffffff">! Frontogenesis function critical threshold.</a>
+    21) <a name="l21" style="background-color: #ffffff">real(r8) :: frontgfc = huge(1._r8)</a>
+    22) <a name="l22" style="background-color: #ffffff"></a>
+    23) <a name="l23" style="background-color: #ffffff">! Level at which to check the frontogenesis function to determine when</a>
+    24) <a name="l24" style="background-color: #ffffff">! waves will be launched.</a>
+    25) <a name="l25" style="background-color: #ffffff">integer :: kfront = 0</a>
+    26) <a name="l26" style="background-color: #ffffff"></a>
+    27) <a name="l27" style="background-color: #ffffff">! Average value of gaussian over gravity wave spectrum bins, multiplied by</a>
+    28) <a name="l28" style="background-color: #ffffff">! background source strength (taubgnd).</a>
+    29) <a name="l29" style="background-color: #ffffff">real(r8), allocatable :: fav(:)</a>
+    30) <a name="l30" style="background-color: #ffffff"></a>
+    31) <a name="l31" style="background-color: #ffffff">contains</a>
+    32) <a name="l32" style="background-color: #ffffff"></a>
+    33) <a name="l33" style="background-color: #ffffff">! Initialize module parameters.</a>
+    34) <a name="l34" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">gw_front_init(taubgnd, frontgfc_in, kfront_in, errstring)</a>
+    35) <a name="l35" style="background-color: #ffcccc">  use gw_common, only: dc</a>
+    36) <a name="l36" style="background-color: #ffcccc"></a>
+    37) <a name="l37" style="background-color: #ffcccc">  ! The following are used to set the module data.</a>
+    38) <a name="l38" style="background-color: #ffcccc">  real(r8), intent(in) :: taubgnd</a>
+    39) <a name="l39" style="background-color: #ffcccc">  real(r8), intent(in) :: frontgfc_in</a>
+    40) <a name="l40" style="background-color: #ffcccc">  integer, intent(in) :: kfront_in</a>
+    41) <a name="l41" style="background-color: #ffcccc">  ! Report any errors from this routine.</a>
+    42) <a name="l42" style="background-color: #ffcccc">  character(len=*), intent(out) :: errstring</a>
+    43) <a name="l43" style="background-color: #ffcccc"></a>
+    44) <a name="l44" style="background-color: #ffcccc">  ! Parameters to calculate fav (average value of gaussian over bin).</a>
+    45) <a name="l45" style="background-color: #ffcccc"></a>
+    46) <a name="l46" style="background-color: #ffcccc">  ! Integration interval to get bin average.</a>
+    47) <a name="l47" style="background-color: #ffcccc">  real(r8), parameter :: dca  = 0.1_r8</a>
+    48) <a name="l48" style="background-color: #ffcccc">  ! Width of gaussian in phase speed.</a>
+    49) <a name="l49" style="background-color: #ffcccc">  real(r8), parameter :: c0   = 30._r8</a>
+    50) <a name="l50" style="background-color: #ffcccc"></a>
+    51) <a name="l51" style="background-color: #ffcccc">  ! Integration bounds and indices.</a>
+    52) <a name="l52" style="background-color: #ffcccc">  integer :: l, n</a>
+    53) <a name="l53" style="background-color: #ffcccc">  real(r8) :: cmn, cmx</a>
+    54) <a name="l54" style="background-color: #ffcccc"></a>
+    55) <a name="l55" style="background-color: #ffcccc">  integer :: ierr</a>
+    56) <a name="l56" style="background-color: #ffcccc"></a>
+    57) <a name="l57" style="background-color: #ffcccc">  errstring = &quot;&quot;</a>
+    58) <a name="l58" style="background-color: #ffcccc"></a>
+    59) <a name="l59" style="background-color: #ffcccc">  frontgfc = frontgfc_in</a>
+    60) <a name="l60" style="background-color: #ffcccc">  kfront = kfront_in</a>
+    61) <a name="l61" style="background-color: #ffcccc"></a>
+    62) <a name="l62" style="background-color: #ffcccc">  ! Allocate and calculate fav.</a>
+    63) <a name="l63" style="background-color: #ffcccc">  allocate(fav(-pgwv:pgwv), stat=ierr, errmsg=errstring)</a>
+    64) <a name="l64" style="background-color: #ffcccc">  if (ierr /= 0) return</a>
+    65) <a name="l65" style="background-color: #ffcccc"></a>
+    66) <a name="l66" style="background-color: #ffcccc">  if (pgwv &gt; 0) then</a>
+    67) <a name="l67" style="background-color: #ffcccc">     do l = -pgwv,pgwv</a>
+    68) <a name="l68" style="background-color: #ffcccc">        ! Lower bound of bin.</a>
+    69) <a name="l69" style="background-color: #ffcccc">        cmn = cref(l) - 0.5_r8*dc</a>
+    70) <a name="l70" style="background-color: #ffcccc">        cmx = cref(l) + 0.5_r8*dc</a>
+    71) <a name="l71" style="background-color: #ffcccc">        ! Loop over integration intervals in bin.</a>
+    72) <a name="l72" style="background-color: #ffcccc">        fav(l) = 0.5_r8 * dca * (exp(-(cmn/c0)**2) + exp(-(cmx/c0)**2))</a>
+    73) <a name="l73" style="background-color: #ffcccc">        do n = 1,nint(dc/dca)-1</a>
+    74) <a name="l74" style="background-color: #ffcccc">           fav(l) = fav(l) + dca * exp(-((cmn+n*dca)/c0)**2)</a>
+    75) <a name="l75" style="background-color: #ffcccc">        end do</a>
+    76) <a name="l76" style="background-color: #ffcccc">     end do</a>
+    77) <a name="l77" style="background-color: #ffcccc">     fav = fav/dc</a>
+    78) <a name="l78" style="background-color: #ffcccc">  else</a>
+    79) <a name="l79" style="background-color: #ffcccc">     fav(0) = 1._r8</a>
+    80) <a name="l80" style="background-color: #ffcccc">  end if</a>
+    81) <a name="l81" style="background-color: #ffcccc"></a>
+    82) <a name="l82" style="background-color: #ffcccc">  ! Multiply by source strength.</a>
+    83) <a name="l83" style="background-color: #ffcccc">  fav = taubgnd * fav</a>
+    84) <a name="l84" style="background-color: #ffcccc">  ! Prohibit wavenumber 0.</a>
+    85) <a name="l85" style="background-color: #ffcccc">  fav(0) = 0._r8</a>
+    86) <a name="l86" style="background-color: #ffcccc"></a>
+    87) <a name="l87" style="background-color: #ffcccc">end subroutine gw_front_init</a>
+    88) <a name="l88" style="background-color: #ffffff"></a>
+    89) <a name="l89" style="background-color: #ffffff">!==========================================================================</a>
+    90) <a name="l90" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">gw_cm_src(ncol, ngwv, kbot, u, v, frontgf, &amp;</a>
+    91) <a name="l91" style="background-color: #ffcccc">     src_level, tend_level, tau, ubm, ubi, xv, yv, c)</a>
+    92) <a name="l92" style="background-color: #ffcccc">  use gw_utils, only: get_unit_vector, dot_2d, midpoint_interp</a>
+    93) <a name="l93" style="background-color: #ffcccc">  !-----------------------------------------------------------------------</a>
+    94) <a name="l94" style="background-color: #ffcccc">  ! Driver for multiple gravity wave drag parameterization.</a>
+    95) <a name="l95" style="background-color: #ffcccc">  !</a>
+    96) <a name="l96" style="background-color: #ffcccc">  ! The parameterization is assumed to operate only where water vapor</a>
+    97) <a name="l97" style="background-color: #ffcccc">  ! concentrations are negligible in determining the density.</a>
+    98) <a name="l98" style="background-color: #ffcccc">  !-----------------------------------------------------------------------</a>
+    99) <a name="l99" style="background-color: #ffcccc"></a>
+   100) <a name="l100" style="background-color: #ffcccc">  !------------------------------Arguments--------------------------------</a>
+   101) <a name="l101" style="background-color: #ffcccc">  ! Column and gravity wave spectrum dimensions.</a>
+   102) <a name="l102" style="background-color: #ffcccc">  integer, intent(in) :: ncol, ngwv</a>
+   103) <a name="l103" style="background-color: #ffcccc"></a>
+   104) <a name="l104" style="background-color: #ffcccc">  ! Index of source interface.</a>
+   105) <a name="l105" style="background-color: #ffcccc">  integer, intent(in) :: kbot</a>
+   106) <a name="l106" style="background-color: #ffcccc"></a>
+   107) <a name="l107" style="background-color: #ffcccc">  ! Midpoint zonal/meridional winds.</a>
+   108) <a name="l108" style="background-color: #ffcccc">  real(r8), intent(in) :: u(ncol,pver), v(ncol,pver)</a>
+   109) <a name="l109" style="background-color: #ffcccc">  ! Frontogenesis function.</a>
+   110) <a name="l110" style="background-color: #ffcccc">  real(r8), intent(in) :: frontgf(:,:)</a>
+   111) <a name="l111" style="background-color: #ffcccc"></a>
+   112) <a name="l112" style="background-color: #ffcccc">  ! Indices of top gravity wave source level and lowest level where wind</a>
+   113) <a name="l113" style="background-color: #ffcccc">  ! tendencies are allowed.</a>
+   114) <a name="l114" style="background-color: #ffcccc">  integer, intent(out) :: src_level(ncol)</a>
+   115) <a name="l115" style="background-color: #ffcccc">  integer, intent(out) :: tend_level(ncol)</a>
+   116) <a name="l116" style="background-color: #ffcccc"></a>
+   117) <a name="l117" style="background-color: #ffcccc">  ! Wave Reynolds stress.</a>
+   118) <a name="l118" style="background-color: #ffcccc">  real(r8), intent(out) :: tau(ncol,-pgwv:pgwv,0:pver)</a>
+   119) <a name="l119" style="background-color: #ffcccc">  ! Projection of wind at midpoints and interfaces.</a>
+   120) <a name="l120" style="background-color: #ffcccc">  real(r8), intent(out) :: ubm(ncol,pver), ubi(ncol,0:pver)</a>
+   121) <a name="l121" style="background-color: #ffcccc">  ! Unit vectors of source wind (zonal and meridional components).</a>
+   122) <a name="l122" style="background-color: #ffcccc">  real(r8), intent(out) :: xv(ncol), yv(ncol)</a>
+   123) <a name="l123" style="background-color: #ffcccc">  ! Phase speeds.</a>
+   124) <a name="l124" style="background-color: #ffcccc">  real(r8), intent(out) :: c(ncol,-pgwv:pgwv)</a>
+   125) <a name="l125" style="background-color: #ffcccc"></a>
+   126) <a name="l126" style="background-color: #ffcccc">  !---------------------------Local Storage-------------------------------</a>
+   127) <a name="l127" style="background-color: #ffcccc">  ! Column and wavenumber indices.</a>
+   128) <a name="l128" style="background-color: #ffcccc">  integer :: k, l</a>
+   129) <a name="l129" style="background-color: #ffcccc"></a>
+   130) <a name="l130" style="background-color: #ffcccc">  ! Whether or not to launch waves in this column.</a>
+   131) <a name="l131" style="background-color: #ffcccc">  logical :: launch_wave(ncol)</a>
+   132) <a name="l132" style="background-color: #ffcccc"></a>
+   133) <a name="l133" style="background-color: #ffcccc">  ! Zonal/meridional wind averaged over source region.</a>
+   134) <a name="l134" style="background-color: #ffcccc">  real(r8) :: usrc(ncol), vsrc(ncol)</a>
+   135) <a name="l135" style="background-color: #ffcccc"></a>
+   136) <a name="l136" style="background-color: #ffcccc">  !------------------------------------------------------------------------</a>
+   137) <a name="l137" style="background-color: #ffcccc">  ! Determine the source layer wind and unit vectors, then project winds.</a>
+   138) <a name="l138" style="background-color: #ffcccc">  !------------------------------------------------------------------------</a>
+   139) <a name="l139" style="background-color: #ffcccc"></a>
+   140) <a name="l140" style="background-color: #ffcccc">  ! Just use the source level interface values for the source wind speed</a>
+   141) <a name="l141" style="background-color: #ffcccc">  ! and direction (unit vector).</a>
+   142) <a name="l142" style="background-color: #ffcccc">  src_level = kbot</a>
+   143) <a name="l143" style="background-color: #ffcccc">  tend_level = kbot</a>
+   144) <a name="l144" style="background-color: #ffcccc">  usrc = 0.5_r8*(u(:,kbot+1)+u(:,kbot))</a>
+   145) <a name="l145" style="background-color: #ffcccc">  vsrc = 0.5_r8*(v(:,kbot+1)+v(:,kbot))</a>
+   146) <a name="l146" style="background-color: #ffcccc"></a>
+   147) <a name="l147" style="background-color: #ffcccc">  ! Get the unit vector components and magnitude at the surface.</a>
+   148) <a name="l148" style="background-color: #ffcccc">  call get_unit_vector(usrc, vsrc, xv, yv, ubi(:,kbot))</a>
+   149) <a name="l149" style="background-color: #ffcccc"></a>
+   150) <a name="l150" style="background-color: #ffcccc">  ! Project the local wind at midpoints onto the source wind.</a>
+   151) <a name="l151" style="background-color: #ffcccc">  do k = 1, kbot</a>
+   152) <a name="l152" style="background-color: #ffcccc">     ubm(:,k) = dot_2d(u(:,k), v(:,k), xv, yv)</a>
+   153) <a name="l153" style="background-color: #ffcccc">  end do</a>
+   154) <a name="l154" style="background-color: #ffcccc"></a>
+   155) <a name="l155" style="background-color: #ffcccc">  ! Compute the interface wind projection by averaging the midpoint winds.</a>
+   156) <a name="l156" style="background-color: #ffcccc">  ! Use the top level wind at the top interface.</a>
+   157) <a name="l157" style="background-color: #ffcccc">  ubi(:,0) = ubm(:,1)</a>
+   158) <a name="l158" style="background-color: #ffcccc"></a>
+   159) <a name="l159" style="background-color: #ffcccc">  ubi(:,1:kbot-1) = midpoint_interp(ubm(:,1:kbot))</a>
+   160) <a name="l160" style="background-color: #ffcccc"></a>
+   161) <a name="l161" style="background-color: #ffcccc">  !-----------------------------------------------------------------------</a>
+   162) <a name="l162" style="background-color: #ffcccc">  ! Gravity wave sources</a>
+   163) <a name="l163" style="background-color: #ffcccc">  !-----------------------------------------------------------------------</a>
+   164) <a name="l164" style="background-color: #ffcccc"></a>
+   165) <a name="l165" style="background-color: #ffcccc">  tau = 0._r8</a>
+   166) <a name="l166" style="background-color: #ffcccc"></a>
+   167) <a name="l167" style="background-color: #ffcccc">  ! GW generation depends on frontogenesis at specified level (may be below</a>
+   168) <a name="l168" style="background-color: #ffcccc">  ! actual source level).</a>
+   169) <a name="l169" style="background-color: #ffcccc">  launch_wave = (frontgf(:ncol,kfront) &gt; frontgfc)</a>
+   170) <a name="l170" style="background-color: #ffcccc"></a>
+   171) <a name="l171" style="background-color: #ffcccc">  do l = 0, ngwv</a>
+   172) <a name="l172" style="background-color: #ffcccc">     where (launch_wave)</a>
+   173) <a name="l173" style="background-color: #ffcccc">        tau(:,l,kbot) = fav(l)</a>
+   174) <a name="l174" style="background-color: #ffcccc">        tau(:,-l,kbot) = fav(l)</a>
+   175) <a name="l175" style="background-color: #ffcccc">     end where</a>
+   176) <a name="l176" style="background-color: #ffcccc">  end do</a>
+   177) <a name="l177" style="background-color: #ffcccc"></a>
+   178) <a name="l178" style="background-color: #ffcccc">  ! Set phase speeds as reference speeds plus the wind speed at the source</a>
+   179) <a name="l179" style="background-color: #ffcccc">  ! level.</a>
+   180) <a name="l180" style="background-color: #ffcccc">  c = spread(cref, 1, ncol) + spread(abs(ubi(:,kbot)),2,2*ngwv+1)</a>
+   181) <a name="l181" style="background-color: #ffcccc"></a>
+   182) <a name="l182" style="background-color: #ffcccc">end subroutine gw_cm_src</a>
+   183) <a name="l183" style="background-color: #ffffff"></a>
+   184) <a name="l184" style="background-color: #ffffff">end module gw_front</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

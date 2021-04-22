@@ -1,0 +1,859 @@
+<html>
+<head>
+<title>Listing of iniTimeConst.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;iniTimeConst.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 82.16&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     2) <a name="l2" style="background-color: #ffffff">!BOP</a>
+     3) <a name="l3" style="background-color: #ffffff">!</a>
+     4) <a name="l4" style="background-color: #ffffff">! !ROUTINE: iniTimeConst</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !INTERFACE:</a>
+     7) <a name="l7" style="background-color: #ffffff">subroutine iniTimeConst</a>
+     8) <a name="l8" style="background-color: #ffffff">!</a>
+     9) <a name="l9" style="background-color: #ffffff">! !DESCRIPTION:</a>
+    10) <a name="l10" style="background-color: #ffffff">! Initialize time invariant clm variables</a>
+    11) <a name="l11" style="background-color: #ffffff">! 1) removed references to shallow lake - since it is not used</a>
+    12) <a name="l12" style="background-color: #ffffff">! 2) ***Make z, zi and dz allocatable depending on if you</a>
+    13) <a name="l13" style="background-color: #ffffff">!    have lake or soil</a>
+    14) <a name="l14" style="background-color: #ffffff">! 3) rootfr only initialized for soil points</a>
+    15) <a name="l15" style="background-color: #ffffff">!</a>
+    16) <a name="l16" style="background-color: #ffffff">! !USES:</a>
+    17) <a name="l17" style="background-color: #ffffff">  use shr_kind_mod, only : r8 =&gt; shr_kind_r8</a>
+    18) <a name="l18" style="background-color: #ffffff">  use clmtype</a>
+    19) <a name="l19" style="background-color: #ffffff">  use decompMod   , only : get_proc_bounds, get_proc_global</a>
+    20) <a name="l20" style="background-color: #ffffff">  use decompMod   , only : gsMap_lnd_gdc2glo</a>
+    21) <a name="l21" style="background-color: #ffffff">  use clm_atmlnd  , only : clm_a2l</a>
+    22) <a name="l22" style="background-color: #ffffff">  use clm_varpar  , only : nlevsoi, nlevgrnd, nlevlak, numpft, numrad, nlevurb</a>
+    23) <a name="l23" style="background-color: #ffffff">  use clm_varcon  , only : istice, istdlak, istwet, isturb, istice_mec,  &amp;</a>
+    24) <a name="l24" style="background-color: #ffffff">                           icol_roof, icol_sunwall, icol_shadewall, icol_road_perv, icol_road_imperv, &amp;</a>
+    25) <a name="l25" style="background-color: #ffffff">                           zlak, dzlak, zsoi, dzsoi, zisoi, spval, &amp;</a>
+    26) <a name="l26" style="background-color: #ffffff">                           albsat, albdry, secspday</a>
+    27) <a name="l27" style="background-color: #ffffff">  use clm_varctl  , only : fsurdat,scmlon,scmlat,single_column, iulog, use_cn, use_cndv</a>
+    28) <a name="l28" style="background-color: #ffffff">  use pftvarcon   , only : noveg, ntree, roota_par, rootb_par,  &amp;</a>
+    29) <a name="l29" style="background-color: #ffffff">                           smpso, smpsc, fnitr, nbrdlf_dcd_brl_shrub, &amp;</a>
+    30) <a name="l30" style="background-color: #ffffff">                           z0mr, displar, dleaf, rhol, rhos, taul, taus, xl, &amp;</a>
+    31) <a name="l31" style="background-color: #ffffff">                           qe25, mp, c3psn, slatop, dsladlai, leafcn, flnr, woody, &amp;</a>
+    32) <a name="l32" style="background-color: #ffffff">                           lflitcn, frootcn, livewdcn, deadwdcn, froot_leaf, stem_leaf, croot_stem, &amp;</a>
+    33) <a name="l33" style="background-color: #ffffff">                           flivewd, fcur, lf_flab, lf_fcel, lf_flig, fr_flab, fr_fcel, fr_flig, &amp;</a>
+    34) <a name="l34" style="background-color: #ffffff">                           leaf_long, evergreen, stress_decid, season_decid, &amp;</a>
+    35) <a name="l35" style="background-color: #ffffff">                           resist, pftpar20, pftpar28, pftpar29, pftpar30, pftpar31, &amp;</a>
+    36) <a name="l36" style="background-color: #ffffff">                           allom1s, allom2s, &amp;</a>
+    37) <a name="l37" style="background-color: #ffffff">                           allom1 , allom2 , allom3  , reinickerp, dwood</a>
+    38) <a name="l38" style="background-color: #ffffff">  use pftvarcon       , only : graincn</a>
+    39) <a name="l39" style="background-color: #ffffff">  use clm_time_manager, only : get_step_size</a>
+    40) <a name="l40" style="background-color: #ffffff">  use abortutils      , only : endrun</a>
+    41) <a name="l41" style="background-color: #ffffff">  use fileutils       , only : getfil</a>
+    42) <a name="l42" style="background-color: #ffffff">  use organicFileMod  , only : organicrd </a>
+    43) <a name="l43" style="background-color: #ffffff">  use spmdMod         , only : mpicom, MPI_INTEGER, masterproc</a>
+    44) <a name="l44" style="background-color: #ffffff">  use clm_varctl      , only : fsnowoptics, fsnowaging</a>
+    45) <a name="l45" style="background-color: #ffffff">  use SNICARMod       , only : SnowAge_init, SnowOptics_init</a>
+    46) <a name="l46" style="background-color: #ffffff">  use shr_scam_mod    , only : shr_scam_getCloseLatLon</a>
+    47) <a name="l47" style="background-color: #ffffff">  use ncdio_pio       , only : file_desc_t, ncd_io, ncd_pio_openfile, ncd_pio_closefile</a>
+    48) <a name="l48" style="background-color: #ffffff"></a>
+    49) <a name="l49" style="background-color: #ffffff">!</a>
+    50) <a name="l50" style="background-color: #ffffff">! !ARGUMENTS:</a>
+    51) <a name="l51" style="background-color: #ffffff">  implicit none</a>
+    52) <a name="l52" style="background-color: #ffffff">!</a>
+    53) <a name="l53" style="background-color: #ffffff">! !CALLED FROM:</a>
+    54) <a name="l54" style="background-color: #ffffff">! subroutine initialize in module initializeMod.</a>
+    55) <a name="l55" style="background-color: #ffffff">!</a>
+    56) <a name="l56" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    57) <a name="l57" style="background-color: #ffffff">! Created by Gordon Bonan.</a>
+    58) <a name="l58" style="background-color: #ffffff">! Updated to clm2.1 data structrues by Mariana Vertenstein</a>
+    59) <a name="l59" style="background-color: #ffffff">! 4/26/05, Peter Thornton: Eliminated exponential decrease in saturated hydraulic</a>
+    60) <a name="l60" style="background-color: #ffffff">!   conductivity (hksat) with depth. </a>
+    61) <a name="l61" style="background-color: #ffffff">! Updated: Colette L. Heald (05/06) reading in VOC emission factors</a>
+    62) <a name="l62" style="background-color: #ffffff">! 27 February 2008: Keith Oleson; Qing Liu (2004) saturated hydraulic conductivity </a>
+    63) <a name="l63" style="background-color: #ffffff">! and matric potential</a>
+    64) <a name="l64" style="background-color: #ffffff">! 29 February 2008: David Lawrence; modified soil thermal and hydraulic properties to</a>
+    65) <a name="l65" style="background-color: #ffffff">! account for organic matter</a>
+    66) <a name="l66" style="background-color: #ffffff">! 18 March 2008: David Lawrence; nlevgrnd changes</a>
+    67) <a name="l67" style="background-color: #ffffff">! 03/28/08 Mark Flanner, read in netcdf files for SNICAR parameters</a>
+    68) <a name="l68" style="background-color: #ffffff">!</a>
+    69) <a name="l69" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+    70) <a name="l70" style="background-color: #ffffff">!</a>
+    71) <a name="l71" style="background-color: #ffffff">! local pointers to implicit in arguments</a>
+    72) <a name="l72" style="background-color: #ffffff">!</a>
+    73) <a name="l73" style="background-color: #ffffff">  integer , pointer :: ivt(:)             !  vegetation type index</a>
+    74) <a name="l74" style="background-color: #ffffff">  integer , pointer :: pcolumn(:)         ! column index of corresponding pft</a>
+    75) <a name="l75" style="background-color: #ffffff">  integer , pointer :: pgridcell(:)       ! gridcell index of corresponding pft</a>
+    76) <a name="l76" style="background-color: #ffffff">  integer , pointer :: clandunit(:)       ! landunit index of column</a>
+    77) <a name="l77" style="background-color: #ffffff">  integer , pointer :: cgridcell(:)       ! gridcell index of column</a>
+    78) <a name="l78" style="background-color: #ffffff">  integer , pointer :: ctype(:)           ! column type index</a>
+    79) <a name="l79" style="background-color: #ffffff">  integer , pointer :: ltype(:)           ! landunit type index</a>
+    80) <a name="l80" style="background-color: #ffffff">  real(r8), pointer :: thick_wall(:)      ! total thickness of urban wall</a>
+    81) <a name="l81" style="background-color: #ffffff">  real(r8), pointer :: thick_roof(:)      ! total thickness of urban roof</a>
+    82) <a name="l82" style="background-color: #ffffff">  real(r8), pointer :: lat(:)             ! gridcell latitude (radians)</a>
+    83) <a name="l83" style="background-color: #ffffff">!</a>
+    84) <a name="l84" style="background-color: #ffffff">! local pointers to implicit out arguments</a>
+    85) <a name="l85" style="background-color: #ffffff">!</a>
+    86) <a name="l86" style="background-color: #ffffff">  real(r8), pointer :: z(:,:)             ! layer depth (m)</a>
+    87) <a name="l87" style="background-color: #ffffff">  real(r8), pointer :: zi(:,:)            ! interface level below a &quot;z&quot; level (m)</a>
+    88) <a name="l88" style="background-color: #ffffff">  real(r8), pointer :: dz(:,:)            ! layer thickness depth (m)</a>
+    89) <a name="l89" style="background-color: #ffffff">  real(r8), pointer :: rootfr(:,:)        ! fraction of roots in each soil layer</a>
+    90) <a name="l90" style="background-color: #ffffff">  real(r8), pointer :: rootfr_road_perv(:,:) ! fraction of roots in each soil layer for urban pervious road</a>
+    91) <a name="l91" style="background-color: #ffffff">  real(r8), pointer :: rresis(:,:)        !root resistance by layer (0-1)  (nlevgrnd)	</a>
+    92) <a name="l92" style="background-color: #ffffff">  real(r8), pointer :: dewmx(:)           ! maximum allowed dew [mm]</a>
+    93) <a name="l93" style="background-color: #ffffff">  real(r8), pointer :: bsw(:,:)           ! Clapp and Hornberger &quot;b&quot; (nlevgrnd)  </a>
+    94) <a name="l94" style="background-color: #ffffff">  real(r8), pointer :: bsw2(:,:)          ! Clapp and Hornberger &quot;b&quot; for CN code</a>
+    95) <a name="l95" style="background-color: #ffffff">  real(r8), pointer :: psisat(:,:)        ! soil water potential at saturation for CN code (MPa)</a>
+    96) <a name="l96" style="background-color: #ffffff">  real(r8), pointer :: vwcsat(:,:)        ! volumetric water content at saturation for CN code (m3/m3)</a>
+    97) <a name="l97" style="background-color: #ffffff">  real(r8), pointer :: watsat(:,:)        ! volumetric soil water at saturation (porosity) (nlevgrnd) </a>
+    98) <a name="l98" style="background-color: #ffffff">  real(r8), pointer :: watfc(:,:)         ! volumetric soil water at field capacity (nlevsoi)</a>
+    99) <a name="l99" style="background-color: #ffffff">  real(r8), pointer :: watdry(:,:)        ! btran parameter for btran=0</a>
+   100) <a name="l100" style="background-color: #ffffff">  real(r8), pointer :: watopt(:,:)        ! btran parameter for btran = 1</a>
+   101) <a name="l101" style="background-color: #ffffff">  real(r8), pointer :: hksat(:,:)         ! hydraulic conductivity at saturation (mm H2O /s) (nlevgrnd) </a>
+   102) <a name="l102" style="background-color: #ffffff">  real(r8), pointer :: sucsat(:,:)        ! minimum soil suction (mm) (nlevgrnd) </a>
+   103) <a name="l103" style="background-color: #ffffff">  real(r8), pointer :: csol(:,:)          ! heat capacity, soil solids (J/m**3/Kelvin) (nlevgrnd) </a>
+   104) <a name="l104" style="background-color: #ffffff">  real(r8), pointer :: tkmg(:,:)          ! thermal conductivity, soil minerals  [W/m-K] (new) (nlevgrnd) </a>
+   105) <a name="l105" style="background-color: #ffffff">  real(r8), pointer :: tkdry(:,:)         ! thermal conductivity, dry soil (W/m/Kelvin) (nlevgrnd) </a>
+   106) <a name="l106" style="background-color: #ffffff">  real(r8), pointer :: tksatu(:,:)        ! thermal conductivity, saturated soil [W/m-K] (new) (nlevgrnd) </a>
+   107) <a name="l107" style="background-color: #ffffff">  real(r8), pointer :: wtfact(:)          ! maximum saturated fraction for a gridcell</a>
+   108) <a name="l108" style="background-color: #ffffff">  real(r8), pointer :: smpmin(:)          ! restriction for min of soil potential (mm) (new)</a>
+   109) <a name="l109" style="background-color: #ffffff">  real(r8), pointer :: hkdepth(:)         ! decay factor (m)</a>
+   110) <a name="l110" style="background-color: #ffffff">  integer , pointer :: isoicol(:)         ! soil color class</a>
+   111) <a name="l111" style="background-color: #ffffff">  real(r8), pointer :: gwc_thr(:)         ! threshold soil moisture based on clay content</a>
+   112) <a name="l112" style="background-color: #ffffff">  real(r8), pointer :: mss_frc_cly_vld(:) ! [frc] Mass fraction clay limited to 0.20</a>
+   113) <a name="l113" style="background-color: #ffffff">  real(r8), pointer :: efisop(:,:)        ! emission factors for isoprene (ug isoprene m-2 h-1)</a>
+   114) <a name="l114" style="background-color: #ffffff">  real(r8), pointer :: max_dayl(:)        ! maximum daylength (s)</a>
+   115) <a name="l115" style="background-color: #ffffff">  real(r8), pointer :: sandfrac(:)</a>
+   116) <a name="l116" style="background-color: #ffffff">  real(r8), pointer :: clayfrac(:)</a>
+   117) <a name="l117" style="background-color: #ffffff">!</a>
+   118) <a name="l118" style="background-color: #ffffff">!</a>
+   119) <a name="l119" style="background-color: #ffffff">! !OTHER LOCAL VARIABLES:</a>
+   120) <a name="l120" style="background-color: #ffffff">!EOP</a>
+   121) <a name="l121" style="background-color: #ffffff">  type(file_desc_t)  :: ncid   ! netcdf id</a>
+   122) <a name="l122" style="background-color: #ffffff">  integer  :: n,j,ib,lev,bottom! indices</a>
+   123) <a name="l123" style="background-color: #ffffff">  integer  :: g,l,c,p          ! indices</a>
+   124) <a name="l124" style="background-color: #ffffff">  integer  :: m                ! vegetation type index</a>
+   125) <a name="l125" style="background-color: #ffffff">  real(r8) :: bd               ! bulk density of dry soil material [kg/m^3]</a>
+   126) <a name="l126" style="background-color: #ffffff">  real(r8) :: tkm              ! mineral conductivity</a>
+   127) <a name="l127" style="background-color: #ffffff">  real(r8) :: xksat            ! maximum hydraulic conductivity of soil [mm/s]</a>
+   128) <a name="l128" style="background-color: #ffffff">  real(r8) :: scalez = 0.025_r8   ! Soil layer thickness discretization (m)</a>
+   129) <a name="l129" style="background-color: #ffffff">  real(r8) :: clay,sand        ! temporaries</a>
+   130) <a name="l130" style="background-color: #ffffff">  real(r8) :: slope,intercept        ! temporary, for rooting distribution</a>
+   131) <a name="l131" style="background-color: #ffffff">  real(r8) :: temp, max_decl   ! temporary, for calculation of max_dayl</a>
+   132) <a name="l132" style="background-color: #ffffff">  integer  :: begp, endp       ! per-proc beginning and ending pft indices</a>
+   133) <a name="l133" style="background-color: #ffffff">  integer  :: begc, endc       ! per-proc beginning and ending column indices</a>
+   134) <a name="l134" style="background-color: #ffffff">  integer  :: begl, endl       ! per-proc beginning and ending landunit indices</a>
+   135) <a name="l135" style="background-color: #ffffff">  integer  :: begg, endg       ! per-proc gridcell ending gridcell indices</a>
+   136) <a name="l136" style="background-color: #ffffff">  integer  :: numg             ! total number of gridcells across all processors</a>
+   137) <a name="l137" style="background-color: #ffffff">  integer  :: numl             ! total number of landunits across all processors</a>
+   138) <a name="l138" style="background-color: #ffffff">  integer  :: numc             ! total number of columns across all processors</a>
+   139) <a name="l139" style="background-color: #ffffff">  integer  :: nump             ! total number of pfts across all processors</a>
+   140) <a name="l140" style="background-color: #ffffff"></a>
+   141) <a name="l141" style="background-color: #ffffff">  real(r8),pointer :: temp_ef(:)        ! read in - temporary EFs</a>
+   142) <a name="l142" style="background-color: #ffffff">  real(r8),pointer :: efisop2d(:,:)     ! read in - isoprene emission factors</a>
+   143) <a name="l143" style="background-color: #ffffff"></a>
+   144) <a name="l144" style="background-color: #ffffff">  real(r8),pointer :: arrayl(:)      ! generic global array</a>
+   145) <a name="l145" style="background-color: #ffffff">  integer ,pointer :: irrayg(:)      ! generic global array</a>
+   146) <a name="l146" style="background-color: #ffffff">  integer ,pointer :: soic2d(:)      ! read in - soil color</a>
+   147) <a name="l147" style="background-color: #ffffff">  real(r8),pointer :: sand3d(:,:)    ! read in - soil texture: percent sand</a>
+   148) <a name="l148" style="background-color: #ffffff">  real(r8),pointer :: clay3d(:,:)    ! read in - soil texture: percent clay</a>
+   149) <a name="l149" style="background-color: #ffffff">  real(r8),pointer :: organic3d(:,:) ! read in - organic matter: kg/m3</a>
+   150) <a name="l150" style="background-color: #ffffff">  real(r8),pointer :: gti(:)         ! read in - fmax</a>
+   151) <a name="l151" style="background-color: #ffffff">  real(r8) :: om_frac                ! organic matter fraction</a>
+   152) <a name="l152" style="background-color: #ffffff">  real(r8) :: om_watsat    = 0.9_r8  ! porosity of organic soil</a>
+   153) <a name="l153" style="background-color: #ffffff">  real(r8) :: om_hksat     = 0.1_r8  ! saturated hydraulic conductivity of organic soil [mm/s]</a>
+   154) <a name="l154" style="background-color: #ffffff">  real(r8) :: om_tkm       = 0.25_r8 ! thermal conductivity of organic soil (Farouki, 1986) [W/m/K]</a>
+   155) <a name="l155" style="background-color: #ffffff">  real(r8) :: om_sucsat    = 10.3_r8 ! saturated suction for organic matter (Letts, 2000)</a>
+   156) <a name="l156" style="background-color: #ffffff">  real(r8) :: om_csol      = 2.5_r8  ! heat capacity of peat soil *10^6 (J/K m3) (Farouki, 1986)</a>
+   157) <a name="l157" style="background-color: #ffffff">  real(r8) :: om_tkd       = 0.05_r8 ! thermal conductivity of dry organic soil (Farouki, 1981)</a>
+   158) <a name="l158" style="background-color: #ffffff">  real(r8) :: om_b         = 2.7_r8  ! Clapp Hornberger paramater for oragnic soil (Letts, 2000)</a>
+   159) <a name="l159" style="background-color: #ffffff">  real(r8) :: organic_max  = 130._r8 ! organic matter (kg/m3) where soil is assumed to act like peat </a>
+   160) <a name="l160" style="background-color: #ffffff">  real(r8) :: csol_bedrock = 2.0e6_r8 ! vol. heat capacity of granite/sandstone  J/(m3 K)(Shabbir, 2000)</a>
+   161) <a name="l161" style="background-color: #ffffff">  real(r8) :: pc           = 0.5_r8   ! percolation threshold</a>
+   162) <a name="l162" style="background-color: #ffffff">  real(r8) :: pcbeta       = 0.139_r8 ! percolation exponent</a>
+   163) <a name="l163" style="background-color: #ffffff">  real(r8) :: perc_frac               ! &quot;percolating&quot; fraction of organic soil</a>
+   164) <a name="l164" style="background-color: #ffffff">  real(r8) :: perc_norm               ! normalize to 1 when 100% organic soil</a>
+   165) <a name="l165" style="background-color: #ffffff">  real(r8) :: uncon_hksat             ! series conductivity of mineral/organic soil</a>
+   166) <a name="l166" style="background-color: #ffffff">  real(r8) :: uncon_frac              ! fraction of &quot;unconnected&quot; soil</a>
+   167) <a name="l167" style="background-color: #ffffff">  integer  :: varid                  ! netCDF id's</a>
+   168) <a name="l168" style="background-color: #ffffff">  integer  :: ret</a>
+   169) <a name="l169" style="background-color: #ffffff"></a>
+   170) <a name="l170" style="background-color: #ffffff">  integer  :: ier                                ! error status</a>
+   171) <a name="l171" style="background-color: #ffffff">  character(len=256) :: locfn                    ! local filename</a>
+   172) <a name="l172" style="background-color: #ffffff">  character(len= 32) :: subname = 'iniTimeConst' ! subroutine name</a>
+   173) <a name="l173" style="background-color: #ffffff">  integer :: mxsoil_color                        ! maximum number of soil color classes</a>
+   174) <a name="l174" style="background-color: #ffffff">  real(r8), allocatable :: zurb_wall(:,:)        ! wall (layer node depth)</a>
+   175) <a name="l175" style="background-color: #ffffff">  real(r8), allocatable :: zurb_roof(:,:)        ! roof (layer node depth)</a>
+   176) <a name="l176" style="background-color: #ffffff">  real(r8), allocatable :: dzurb_wall(:,:)       ! wall (layer thickness)</a>
+   177) <a name="l177" style="background-color: #ffffff">  real(r8), allocatable :: dzurb_roof(:,:)       ! roof (layer thickness)</a>
+   178) <a name="l178" style="background-color: #ffffff">  real(r8), allocatable :: ziurb_wall(:,:)       ! wall (layer interface)</a>
+   179) <a name="l179" style="background-color: #ffffff">  real(r8), allocatable :: ziurb_roof(:,:)       ! roof (layer interface)</a>
+   180) <a name="l180" style="background-color: #ffffff">  logical :: readvar </a>
+   181) <a name="l181" style="background-color: #ffffff">!------------------------------------------------------------------------</a>
+   182) <a name="l182" style="background-color: #ffffff"></a>
+   183) <a name="l183" style="background-color: #ffffff">  integer :: closelatidx,closelonidx</a>
+   184) <a name="l184" style="background-color: #ffffff">  real(r8):: closelat,closelon</a>
+   185) <a name="l185" style="background-color: #ffffff">  integer :: iostat</a>
+   186) <a name="l186" style="background-color: #ffffff"></a>
+   187) <a name="l187" style="background-color: #ffffff">!------------------------------------------------------------------------</a>
+   188) <a name="l188" style="background-color: #ffffff"></a>
+   189) <a name="l189" style="background-color: #ffffff">  if (masterproc) write(iulog,*) 'Attempting to initialize time invariant variables'</a>
+   190) <a name="l190" style="background-color: #ffffff"></a>
+   191) <a name="l191" style="background-color: #ffffff">  call get_proc_bounds(begg, endg, begl, endl, begc, endc, begp, endp)</a>
+   192) <a name="l192" style="background-color: #ffffff">  call get_proc_global(numg, numl, numc, nump)</a>
+   193) <a name="l193" style="background-color: #ffffff"></a>
+   194) <a name="l194" style="background-color: #fafad2">  allocate(soic2d(begg:endg), gti(begg:endg))</a>
+   195) <a name="l195" style="background-color: #fafad2">  allocate(sand3d(begg:endg,nlevsoi), clay3d(begg:endg,nlevsoi))</a>
+   196) <a name="l196" style="background-color: #fafad2">  allocate(organic3d(begg:endg,nlevsoi))</a>
+   197) <a name="l197" style="background-color: #fafad2"></a>
+   198) <a name="l198" style="background-color: #fafad2">  allocate(temp_ef(begg:endg),efisop2d(6,begg:endg))</a>
+   199) <a name="l199" style="background-color: #fafad2"></a>
+   200) <a name="l200" style="background-color: #ffffff">  efisop          =&gt; gve%efisop</a>
+   201) <a name="l201" style="background-color: #ffffff"></a>
+   202) <a name="l202" style="background-color: #ffffff">  ! Assign local pointers to derived subtypes components (gridcell-level)</a>
+   203) <a name="l203" style="background-color: #ffffff">  lat             =&gt; grc%lat</a>
+   204) <a name="l204" style="background-color: #ffffff">     </a>
+   205) <a name="l205" style="background-color: #ffffff">  ! Assign local pointers to derived subtypes components (landunit-level)</a>
+   206) <a name="l206" style="background-color: #ffffff"></a>
+   207) <a name="l207" style="background-color: #ffffff">  ltype               =&gt; lun%itype</a>
+   208) <a name="l208" style="background-color: #ffffff">  thick_wall          =&gt; lps%thick_wall</a>
+   209) <a name="l209" style="background-color: #ffffff">  thick_roof          =&gt; lps%thick_roof</a>
+   210) <a name="l210" style="background-color: #ffffff"></a>
+   211) <a name="l211" style="background-color: #ffffff">  ! Assign local pointers to derived subtypes components (column-level)</a>
+   212) <a name="l212" style="background-color: #ffffff"></a>
+   213) <a name="l213" style="background-color: #ffffff">  ctype           =&gt; col%itype</a>
+   214) <a name="l214" style="background-color: #ffffff">  clandunit       =&gt; col%landunit</a>
+   215) <a name="l215" style="background-color: #ffffff">  cgridcell       =&gt; col%gridcell</a>
+   216) <a name="l216" style="background-color: #ffffff">  z               =&gt; cps%z</a>
+   217) <a name="l217" style="background-color: #ffffff">  dz              =&gt; cps%dz</a>
+   218) <a name="l218" style="background-color: #ffffff">  zi              =&gt; cps%zi</a>
+   219) <a name="l219" style="background-color: #ffffff">  bsw             =&gt; cps%bsw</a>
+   220) <a name="l220" style="background-color: #ffffff">  bsw2            =&gt; cps%bsw2</a>
+   221) <a name="l221" style="background-color: #ffffff">  psisat          =&gt; cps%psisat</a>
+   222) <a name="l222" style="background-color: #ffffff">  vwcsat          =&gt; cps%vwcsat</a>
+   223) <a name="l223" style="background-color: #ffffff">  watsat          =&gt; cps%watsat</a>
+   224) <a name="l224" style="background-color: #ffffff">  watfc           =&gt; cps%watfc</a>
+   225) <a name="l225" style="background-color: #ffffff">  watdry          =&gt; cps%watdry  </a>
+   226) <a name="l226" style="background-color: #ffffff">  watopt          =&gt; cps%watopt  </a>
+   227) <a name="l227" style="background-color: #ffffff">  rootfr_road_perv =&gt; cps%rootfr_road_perv</a>
+   228) <a name="l228" style="background-color: #ffffff">  hksat           =&gt; cps%hksat</a>
+   229) <a name="l229" style="background-color: #ffffff">  sucsat          =&gt; cps%sucsat</a>
+   230) <a name="l230" style="background-color: #ffffff">  tkmg            =&gt; cps%tkmg</a>
+   231) <a name="l231" style="background-color: #ffffff">  tksatu          =&gt; cps%tksatu</a>
+   232) <a name="l232" style="background-color: #ffffff">  tkdry           =&gt; cps%tkdry</a>
+   233) <a name="l233" style="background-color: #ffffff">  csol            =&gt; cps%csol</a>
+   234) <a name="l234" style="background-color: #ffffff">  smpmin          =&gt; cps%smpmin</a>
+   235) <a name="l235" style="background-color: #ffffff">  hkdepth         =&gt; cps%hkdepth</a>
+   236) <a name="l236" style="background-color: #ffffff">  wtfact          =&gt; cps%wtfact</a>
+   237) <a name="l237" style="background-color: #ffffff">  isoicol         =&gt; cps%isoicol</a>
+   238) <a name="l238" style="background-color: #ffffff">  gwc_thr         =&gt; cps%gwc_thr</a>
+   239) <a name="l239" style="background-color: #ffffff">  mss_frc_cly_vld =&gt; cps%mss_frc_cly_vld</a>
+   240) <a name="l240" style="background-color: #ffffff">  max_dayl        =&gt; cps%max_dayl</a>
+   241) <a name="l241" style="background-color: #ffffff"></a>
+   242) <a name="l242" style="background-color: #ffffff">  ! Assign local pointers to derived subtypes components (pft-level)</a>
+   243) <a name="l243" style="background-color: #ffffff"></a>
+   244) <a name="l244" style="background-color: #ffffff">  ivt             =&gt; pft%itype</a>
+   245) <a name="l245" style="background-color: #ffffff">  pgridcell       =&gt; pft%gridcell</a>
+   246) <a name="l246" style="background-color: #ffffff">  pcolumn         =&gt; pft%column</a>
+   247) <a name="l247" style="background-color: #ffffff">  dewmx           =&gt; pps%dewmx</a>
+   248) <a name="l248" style="background-color: #ffffff">  rootfr          =&gt; pps%rootfr</a>
+   249) <a name="l249" style="background-color: #ffffff">  rresis          =&gt; pps%rresis</a>
+   250) <a name="l250" style="background-color: #ffffff">  sandfrac        =&gt; pps%sandfrac</a>
+   251) <a name="l251" style="background-color: #ffffff">  clayfrac        =&gt; pps%clayfrac</a>
+   252) <a name="l252" style="background-color: #ffffff"></a>
+   253) <a name="l253" style="background-color: #fafad2">  allocate(zurb_wall(begl:endl,nlevurb),    &amp;</a>
+   254) <a name="l254" style="background-color: #fafad2">           zurb_roof(begl:endl,nlevurb),    &amp;</a>
+   255) <a name="l255" style="background-color: #fafad2">           dzurb_wall(begl:endl,nlevurb),   &amp;</a>
+   256) <a name="l256" style="background-color: #fafad2">           dzurb_roof(begl:endl,nlevurb),   &amp;</a>
+   257) <a name="l257" style="background-color: #fafad2">           ziurb_wall(begl:endl,0:nlevurb), &amp;</a>
+   258) <a name="l258" style="background-color: #fafad2">           ziurb_roof(begl:endl,0:nlevurb), &amp;</a>
+   259) <a name="l259" style="background-color: #fafad2">           stat=ier)</a>
+   260) <a name="l260" style="background-color: #fafad2">  if (ier /= 0) then</a>
+   261) <a name="l261" style="background-color: #fafad2">     call </a><a style="background-color: #ffff99">endrun( 'iniTimeConst: allocation error for zurb_wall,zurb_roof,dzurb_wall,dzurb_roof,ziurb_wall,ziurb_roof' )</a>
+   262) <a name="l262" style="background-color: #ffff99">  end if</a>
+   263) <a name="l263" style="background-color: #ffff99"></a>
+   264) <a name="l264" style="background-color: #ffff99">  ! --------------------------------------------------------------------</a>
+   265) <a name="l265" style="background-color: #ffff99">  ! Read soil color, sand and clay from surface dataset </a>
+   266) <a name="l266" style="background-color: #ffff99">  ! --------------------------------------------------------------------</a>
+   267) <a name="l267" style="background-color: #ffff99"></a>
+   268) <a name="l268" style="background-color: #ffffff">  if (masterproc) then</a>
+   269) <a name="l269" style="background-color: #ffffff">     write(iulog,*) 'Attempting to read soil color, sand and clay boundary data .....'</a>
+   270) <a name="l270" style="background-color: #ffffff">  end if</a>
+   271) <a name="l271" style="background-color: #ffffff"></a>
+   272) <a name="l272" style="background-color: #ffffff">  call getfil (fsurdat, locfn, 0)</a>
+   273) <a name="l273" style="background-color: #ffffff">  call ncd_pio_openfile (ncid, locfn, 0)</a>
+   274) <a name="l274" style="background-color: #ffffff"></a>
+   275) <a name="l275" style="background-color: #ffffff">  ! Determine number of soil color classes - if number of soil color classes is not</a>
+   276) <a name="l276" style="background-color: #ffffff">  ! on input dataset set it to 8</a>
+   277) <a name="l277" style="background-color: #ffffff"></a>
+   278) <a name="l278" style="background-color: #ffffff">  if (single_column) then</a>
+   279) <a name="l279" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">shr_scam_getCloseLatLon(locfn,scmlat,scmlon,closelat,closelon,closelatidx,closelonidx)</a>
+   280) <a name="l280" style="background-color: #ffff99">  end if</a>
+   281) <a name="l281" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">ncd_io(ncid=ncid, varname='mxsoil_color', flag='read', data=mxsoil_color, &amp;</a>
+   282) <a name="l282" style="background-color: #ffffff">              readvar=readvar)</a>
+   283) <a name="l283" style="background-color: #ffffff">  if ( .not. readvar ) </a><a style="background-color: #ffff99">mxsoil_color = 8  </a>
+   284) <a name="l284" style="background-color: #ffff99"></a>
+   285) <a name="l285" style="background-color: #ffff99">  ! Read fmax</a>
+   286) <a name="l286" style="background-color: #ffff99"></a>
+   287) <a name="l287" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">ncd_io(ncid=ncid, varname='FMAX', flag='read', data=gti, dim1name=grlnd, readvar=readvar)</a>
+   288) <a name="l288" style="background-color: #ffffff">  if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: FMAX NOT on surfdata file') </a>
+   289) <a name="l289" style="background-color: #ffff99"></a>
+   290) <a name="l290" style="background-color: #ffff99">  ! Read in soil color, sand and clay fraction</a>
+   291) <a name="l291" style="background-color: #ffff99"></a>
+   292) <a name="l292" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">ncd_io(ncid=ncid, varname='SOIL_COLOR', flag='read', data=soic2d, dim1name=grlnd, readvar=readvar)</a>
+   293) <a name="l293" style="background-color: #ffffff">  if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: SOIL_COLOR NOT on surfdata file' ) </a>
+   294) <a name="l294" style="background-color: #ffff99"></a>
+   295) <a name="l295" style="background-color: #ffff99">  ! Read in emission factors</a>
+   296) <a name="l296" style="background-color: #ffff99"></a>
+   297) <a name="l297" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">ncd_io(ncid=ncid, varname='EF1_BTR', flag='read', data=temp_ef, dim1name=grlnd, readvar=readvar)</a>
+   298) <a name="l298" style="background-color: #ffffff">  if (.not. readvar) </a><a style="background-color: #ffff99">call endrun('iniTimeConst: errror reading EF1_BTR')</a>
+   299) <a name="l299" style="background-color: #ffffff">  efisop2d(1,:)=temp_ef(:)</a>
+   300) <a name="l300" style="background-color: #ffffff"></a>
+   301) <a name="l301" style="background-color: #ffffff">  call ncd_io(ncid=ncid, varname='EF1_FET', flag='read', data=temp_ef, dim1name=grlnd, readvar=readvar)</a>
+   302) <a name="l302" style="background-color: #ffffff">  if (.not. readvar) </a><a style="background-color: #ffff99">call endrun('iniTimeConst: errror reading EF1_FET')</a>
+   303) <a name="l303" style="background-color: #ffffff">  efisop2d(2,:)=temp_ef(:)</a>
+   304) <a name="l304" style="background-color: #ffffff"></a>
+   305) <a name="l305" style="background-color: #ffffff">  call ncd_io(ncid=ncid, varname='EF1_FDT', flag='read', data=temp_ef, dim1name=grlnd, readvar=readvar)</a>
+   306) <a name="l306" style="background-color: #ffffff">  if (.not. readvar) </a><a style="background-color: #ffff99">call endrun('iniTimeConst: errror reading EF1_FDT')</a>
+   307) <a name="l307" style="background-color: #ffffff">  efisop2d(3,:)=temp_ef(:)</a>
+   308) <a name="l308" style="background-color: #ffffff"></a>
+   309) <a name="l309" style="background-color: #ffffff">  call ncd_io(ncid=ncid, varname='EF1_SHR', flag='read', data=temp_ef, dim1name=grlnd, readvar=readvar)</a>
+   310) <a name="l310" style="background-color: #ffffff">  if (.not. readvar) </a><a style="background-color: #ffff99">call endrun('iniTimeConst: errror reading EF1_SHR')</a>
+   311) <a name="l311" style="background-color: #ffffff">  efisop2d(4,:)=temp_ef(:)</a>
+   312) <a name="l312" style="background-color: #ffffff"></a>
+   313) <a name="l313" style="background-color: #ffffff">  call ncd_io(ncid=ncid, varname='EF1_GRS', flag='read', data=temp_ef, dim1name=grlnd, readvar=readvar)</a>
+   314) <a name="l314" style="background-color: #ffffff">  if (.not. readvar) </a><a style="background-color: #ffff99">call endrun('iniTimeConst: errror reading EF1_GRS')</a>
+   315) <a name="l315" style="background-color: #ffffff">  efisop2d(5,:)=temp_ef(:)</a>
+   316) <a name="l316" style="background-color: #ffffff"></a>
+   317) <a name="l317" style="background-color: #ffffff">  call ncd_io(ncid=ncid, varname='EF1_CRP', flag='read', data=temp_ef, dim1name=grlnd, readvar=readvar)</a>
+   318) <a name="l318" style="background-color: #ffffff">  if (.not. readvar) </a><a style="background-color: #ffff99">call endrun('iniTimeConst: errror reading EF1_CRP')</a>
+   319) <a name="l319" style="background-color: #ffffff">  efisop2d(6,:)=temp_ef(:)</a>
+   320) <a name="l320" style="background-color: #ffffff"></a>
+   321) <a name="l321" style="background-color: #ffffff">  call ncd_io(ncid=ncid, varname='PCT_SAND', flag='read', data=sand3d, dim1name=grlnd, readvar=readvar)</a>
+   322) <a name="l322" style="background-color: #ffffff">  if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: PCT_SAND NOT on surfdata file' ) </a>
+   323) <a name="l323" style="background-color: #ffff99"></a>
+   324) <a name="l324" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">ncd_io(ncid=ncid, varname='PCT_CLAY', flag='read', data=clay3d, dim1name=grlnd, readvar=readvar)</a>
+   325) <a name="l325" style="background-color: #ffffff">  if (.not. readvar) </a><a style="background-color: #ffff99">call endrun( trim(subname)//' ERROR: PCT_CLAY NOT on surfdata file' ) </a>
+   326) <a name="l326" style="background-color: #ffff99"></a>
+   327) <a name="l327" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">ncd_pio_closefile(ncid)</a>
+   328) <a name="l328" style="background-color: #ffffff"></a>
+   329) <a name="l329" style="background-color: #ffffff">  if (masterproc) then</a>
+   330) <a name="l330" style="background-color: #ffffff">     write(iulog,*) 'Successfully read fmax, soil color, sand and clay boundary data'</a>
+   331) <a name="l331" style="background-color: #ffffff">     write(iulog,*)</a>
+   332) <a name="l332" style="background-color: #ffffff">  endif</a>
+   333) <a name="l333" style="background-color: #ffffff"></a>
+   334) <a name="l334" style="background-color: #ffffff">  ! Determine saturated and dry soil albedos for n color classes and </a>
+   335) <a name="l335" style="background-color: #ffffff">  ! numrad wavebands (1=vis, 2=nir)</a>
+   336) <a name="l336" style="background-color: #ffffff"></a>
+   337) <a name="l337" style="background-color: #fafad2">  allocate(albsat(mxsoil_color,numrad), albdry(mxsoil_color,numrad), stat=ier)</a>
+   338) <a name="l338" style="background-color: #fafad2">  if (ier /= 0) then</a>
+   339) <a name="l339" style="background-color: #ffff99">     write(iulog,*)'iniTimeConst: allocation error for albsat, albdry'</a>
+   340) <a name="l340" style="background-color: #ffff99">     call endrun()</a>
+   341) <a name="l341" style="background-color: #ffff99">  end if</a>
+   342) <a name="l342" style="background-color: #ffff99"></a>
+   343) <a name="l343" style="background-color: #ffffff">  if (mxsoil_color == 8) then</a>
+   344) <a name="l344" style="background-color: #ffff99">     albsat(1:8,1) = (/0.12_r8,0.11_r8,0.10_r8,0.09_r8,0.08_r8,0.07_r8,0.06_r8,0.05_r8/)</a>
+   345) <a name="l345" style="background-color: #ffff99">     albsat(1:8,2) = (/0.24_r8,0.22_r8,0.20_r8,0.18_r8,0.16_r8,0.14_r8,0.12_r8,0.10_r8/)</a>
+   346) <a name="l346" style="background-color: #ffff99">     albdry(1:8,1) = (/0.24_r8,0.22_r8,0.20_r8,0.18_r8,0.16_r8,0.14_r8,0.12_r8,0.10_r8/)</a>
+   347) <a name="l347" style="background-color: #ffff99">     albdry(1:8,2) = (/0.48_r8,0.44_r8,0.40_r8,0.36_r8,0.32_r8,0.28_r8,0.24_r8,0.20_r8/)</a>
+   348) <a name="l348" style="background-color: #ffff99">  else if (mxsoil_color == 20) then</a>
+   349) <a name="l349" style="background-color: #ffffff">     albsat(1:20,1) = (/0.25_r8,0.23_r8,0.21_r8,0.20_r8,0.19_r8,0.18_r8,0.17_r8,0.16_r8,&amp;</a>
+   350) <a name="l350" style="background-color: #ffffff">                        0.15_r8,0.14_r8,0.13_r8,0.12_r8,0.11_r8,0.10_r8,0.09_r8,0.08_r8,0.07_r8,0.06_r8,0.05_r8,0.04_r8/)</a>
+   351) <a name="l351" style="background-color: #ffffff">     albsat(1:20,2) = (/0.50_r8,0.46_r8,0.42_r8,0.40_r8,0.38_r8,0.36_r8,0.34_r8,0.32_r8,&amp;</a>
+   352) <a name="l352" style="background-color: #ffffff">                        0.30_r8,0.28_r8,0.26_r8,0.24_r8,0.22_r8,0.20_r8,0.18_r8,0.16_r8,0.14_r8,0.12_r8,0.10_r8,0.08_r8/)</a>
+   353) <a name="l353" style="background-color: #ffffff">     albdry(1:20,1) = (/0.36_r8,0.34_r8,0.32_r8,0.31_r8,0.30_r8,0.29_r8,0.28_r8,0.27_r8,&amp;</a>
+   354) <a name="l354" style="background-color: #ffffff">                        0.26_r8,0.25_r8,0.24_r8,0.23_r8,0.22_r8,0.20_r8,0.18_r8,0.16_r8,0.14_r8,0.12_r8,0.10_r8,0.08_r8/)</a>
+   355) <a name="l355" style="background-color: #ffffff">     albdry(1:20,2) = (/0.61_r8,0.57_r8,0.53_r8,0.51_r8,0.49_r8,0.48_r8,0.45_r8,0.43_r8,&amp;</a>
+   356) <a name="l356" style="background-color: #ffffff">                        0.41_r8,0.39_r8,0.37_r8,0.35_r8,0.33_r8,0.31_r8,0.29_r8,0.27_r8,0.25_r8,0.23_r8,0.21_r8,0.16_r8/)</a>
+   357) <a name="l357" style="background-color: #ffffff">  else</a>
+   358) <a name="l358" style="background-color: #ffff99">     write(iulog,*)'maximum color class = ',mxsoil_color,' is not supported'</a>
+   359) <a name="l359" style="background-color: #ffff99">     call endrun</a>
+   360) <a name="l360" style="background-color: #ffff99">  end if</a>
+   361) <a name="l361" style="background-color: #ffff99">  </a>
+   362) <a name="l362" style="background-color: #ffffff">  do p = begp,endp</a>
+   363) <a name="l363" style="background-color: #ffffff">     g = pgridcell(p)</a>
+   364) <a name="l364" style="background-color: #ffffff">     sandfrac(p) = sand3d(g,1)/100.0_r8</a>
+   365) <a name="l365" style="background-color: #ffffff">     clayfrac(p) = clay3d(g,1)/100.0_r8</a>
+   366) <a name="l366" style="background-color: #ffffff">  end do</a>
+   367) <a name="l367" style="background-color: #ffffff"></a>
+   368) <a name="l368" style="background-color: #ffffff">  ! --------------------------------------------------------------------</a>
+   369) <a name="l369" style="background-color: #ffffff">  ! If a organic matter dataset has been specified, read it</a>
+   370) <a name="l370" style="background-color: #ffffff">  ! --------------------------------------------------------------------</a>
+   371) <a name="l371" style="background-color: #ffffff"></a>
+   372) <a name="l372" style="background-color: #ffffff">  call organicrd(organic3d)</a>
+   373) <a name="l373" style="background-color: #ffffff"></a>
+   374) <a name="l374" style="background-color: #ffffff">  ! --------------------------------------------------------------------</a>
+   375) <a name="l375" style="background-color: #ffffff">  ! Initialize time constant arrays of ecophysiological constants and</a>
+   376) <a name="l376" style="background-color: #ffffff">  ! arrays of dgvm ecophysiological constants</a>
+   377) <a name="l377" style="background-color: #ffffff">  ! --------------------------------------------------------------------</a>
+   378) <a name="l378" style="background-color: #ffffff"></a>
+   379) <a name="l379" style="background-color: #ffffff">   do m = 0,numpft</a>
+   380) <a name="l380" style="background-color: #ffffff">      if (m &lt;= ntree) then</a>
+   381) <a name="l381" style="background-color: #ffffff">         pftcon%tree(m) = 1</a>
+   382) <a name="l382" style="background-color: #ffffff">      else</a>
+   383) <a name="l383" style="background-color: #ffffff">         pftcon%tree(m) = 0</a>
+   384) <a name="l384" style="background-color: #ffffff">      end if</a>
+   385) <a name="l385" style="background-color: #ffffff">      pftcon%z0mr(m) = z0mr(m)</a>
+   386) <a name="l386" style="background-color: #ffffff">      pftcon%displar(m) = displar(m)</a>
+   387) <a name="l387" style="background-color: #ffffff">      pftcon%dleaf(m) = dleaf(m)</a>
+   388) <a name="l388" style="background-color: #ffffff">      pftcon%xl(m) = xl(m)</a>
+   389) <a name="l389" style="background-color: #ffffff">      do ib = 1,numrad</a>
+   390) <a name="l390" style="background-color: #ffffff">         pftcon%rhol(m,ib) = rhol(m,ib)</a>
+   391) <a name="l391" style="background-color: #ffffff">         pftcon%rhos(m,ib) = rhos(m,ib)</a>
+   392) <a name="l392" style="background-color: #ffffff">         pftcon%taul(m,ib) = taul(m,ib)</a>
+   393) <a name="l393" style="background-color: #ffffff">         pftcon%taus(m,ib) = taus(m,ib)</a>
+   394) <a name="l394" style="background-color: #ffffff">      end do</a>
+   395) <a name="l395" style="background-color: #ffffff">      pftcon%qe25(m) = qe25(m)</a>
+   396) <a name="l396" style="background-color: #ffffff">      pftcon%mp(m) = mp(m)</a>
+   397) <a name="l397" style="background-color: #ffffff">      pftcon%c3psn(m) = c3psn(m)</a>
+   398) <a name="l398" style="background-color: #ffffff">      pftcon%slatop(m) = slatop(m)</a>
+   399) <a name="l399" style="background-color: #ffffff">      pftcon%dsladlai(m) = dsladlai(m)</a>
+   400) <a name="l400" style="background-color: #ffffff">      pftcon%leafcn(m) = leafcn(m)</a>
+   401) <a name="l401" style="background-color: #ffffff">      pftcon%flnr(m) = flnr(m)</a>
+   402) <a name="l402" style="background-color: #ffffff">      pftcon%smpso(m) = smpso(m)</a>
+   403) <a name="l403" style="background-color: #ffffff">      pftcon%smpsc(m) = smpsc(m)</a>
+   404) <a name="l404" style="background-color: #ffffff">      pftcon%fnitr(m) = fnitr(m)</a>
+   405) <a name="l405" style="background-color: #ffffff">      pftcon%woody(m) = woody(m)</a>
+   406) <a name="l406" style="background-color: #ffffff">      pftcon%lflitcn(m) = lflitcn(m)</a>
+   407) <a name="l407" style="background-color: #ffffff">      pftcon%frootcn(m) = frootcn(m)</a>
+   408) <a name="l408" style="background-color: #ffffff">      pftcon%livewdcn(m) = livewdcn(m)</a>
+   409) <a name="l409" style="background-color: #ffffff">      pftcon%deadwdcn(m) = deadwdcn(m)</a>
+   410) <a name="l410" style="background-color: #ffffff">      pftcon%graincn(m) = graincn(m)</a>
+   411) <a name="l411" style="background-color: #ffffff">      pftcon%froot_leaf(m) = froot_leaf(m)</a>
+   412) <a name="l412" style="background-color: #ffffff">      pftcon%stem_leaf(m) = stem_leaf(m)</a>
+   413) <a name="l413" style="background-color: #ffffff">      pftcon%croot_stem(m) = croot_stem(m)</a>
+   414) <a name="l414" style="background-color: #ffffff">      pftcon%flivewd(m) = flivewd(m)</a>
+   415) <a name="l415" style="background-color: #ffffff">      pftcon%fcur(m) = fcur(m)</a>
+   416) <a name="l416" style="background-color: #ffffff">      pftcon%lf_flab(m) = lf_flab(m)</a>
+   417) <a name="l417" style="background-color: #ffffff">      pftcon%lf_fcel(m) = lf_fcel(m)</a>
+   418) <a name="l418" style="background-color: #ffffff">      pftcon%lf_flig(m) = lf_flig(m)</a>
+   419) <a name="l419" style="background-color: #ffffff">      pftcon%fr_flab(m) = fr_flab(m)</a>
+   420) <a name="l420" style="background-color: #ffffff">      pftcon%fr_fcel(m) = fr_fcel(m)</a>
+   421) <a name="l421" style="background-color: #ffffff">      pftcon%fr_flig(m) = fr_flig(m)</a>
+   422) <a name="l422" style="background-color: #ffffff">      pftcon%leaf_long(m) = leaf_long(m)</a>
+   423) <a name="l423" style="background-color: #ffffff">      pftcon%evergreen(m) = evergreen(m)</a>
+   424) <a name="l424" style="background-color: #ffffff">      pftcon%stress_decid(m) = stress_decid(m)</a>
+   425) <a name="l425" style="background-color: #ffffff">      pftcon%season_decid(m) = season_decid(m)</a>
+   426) <a name="l426" style="background-color: #ffffff">      pftcon%resist(m) = resist(m)</a>
+   427) <a name="l427" style="background-color: #ffffff">      pftcon%dwood(m) = dwood</a>
+   428) <a name="l428" style="background-color: #ffffff">   end do</a>
+   429) <a name="l429" style="background-color: #ffffff"></a>
+   430) <a name="l430" style="background-color: #ffffff">   if (use_cndv) then</a>
+   431) <a name="l431" style="background-color: #ffff99">      do m = 0,numpft</a>
+   432) <a name="l432" style="background-color: #ffff99">         dgv_pftcon%crownarea_max(m) = pftpar20(m)</a>
+   433) <a name="l433" style="background-color: #ffff99">         dgv_pftcon%tcmin(m) = pftpar28(m)</a>
+   434) <a name="l434" style="background-color: #ffff99">         dgv_pftcon%tcmax(m) = pftpar29(m)</a>
+   435) <a name="l435" style="background-color: #ffff99">         dgv_pftcon%gddmin(m) = pftpar30(m)</a>
+   436) <a name="l436" style="background-color: #ffff99">         dgv_pftcon%twmax(m) = pftpar31(m)</a>
+   437) <a name="l437" style="background-color: #ffff99">         dgv_pftcon%reinickerp(m) = reinickerp</a>
+   438) <a name="l438" style="background-color: #ffff99">         dgv_pftcon%allom1(m) = allom1</a>
+   439) <a name="l439" style="background-color: #ffff99">         dgv_pftcon%allom2(m) = allom2</a>
+   440) <a name="l440" style="background-color: #ffff99">         dgv_pftcon%allom3(m) = allom3</a>
+   441) <a name="l441" style="background-color: #ffff99">         ! modification for shrubs by X.D.Z</a>
+   442) <a name="l442" style="background-color: #ffff99">         if (m &gt; ntree .and. m &lt;= nbrdlf_dcd_brl_shrub ) then </a>
+   443) <a name="l443" style="background-color: #ffff99">            dgv_pftcon%allom1(m) = allom1s</a>
+   444) <a name="l444" style="background-color: #ffff99">            dgv_pftcon%allom2(m) = allom2s</a>
+   445) <a name="l445" style="background-color: #ffff99">         end if</a>
+   446) <a name="l446" style="background-color: #ffff99">      end do</a>
+   447) <a name="l447" style="background-color: #ffff99">   end if</a>
+   448) <a name="l448" style="background-color: #ffff99"></a>
+   449) <a name="l449" style="background-color: #ffff99">   ! --------------------------------------------------------------------</a>
+   450) <a name="l450" style="background-color: #ffff99">   ! Define layer structure for soil, lakes, urban walls and roof </a>
+   451) <a name="l451" style="background-color: #ffff99">   ! Vertical profile of snow is not initialized here </a>
+   452) <a name="l452" style="background-color: #ffff99">   ! --------------------------------------------------------------------</a>
+   453) <a name="l453" style="background-color: #ffff99"></a>
+   454) <a name="l454" style="background-color: #ffff99">   ! Lake layers (assumed same for all lake patches)</a>
+   455) <a name="l455" style="background-color: #ffff99"></a>
+   456) <a name="l456" style="background-color: #ffffff">   dzlak(1) = 0.1_r8</a>
+   457) <a name="l457" style="background-color: #ffffff">   dzlak(2) = 1._r8</a>
+   458) <a name="l458" style="background-color: #ffffff">   dzlak(3) = 2._r8</a>
+   459) <a name="l459" style="background-color: #ffffff">   dzlak(4) = 3._r8</a>
+   460) <a name="l460" style="background-color: #ffffff">   dzlak(5) = 4._r8</a>
+   461) <a name="l461" style="background-color: #ffffff">   dzlak(6) = 5._r8</a>
+   462) <a name="l462" style="background-color: #ffffff">   dzlak(7) = 7._r8</a>
+   463) <a name="l463" style="background-color: #ffffff">   dzlak(8) = 7._r8</a>
+   464) <a name="l464" style="background-color: #ffffff">   dzlak(9) = 10.45_r8</a>
+   465) <a name="l465" style="background-color: #ffffff">   dzlak(10)= 10.45_r8</a>
+   466) <a name="l466" style="background-color: #ffffff"></a>
+   467) <a name="l467" style="background-color: #ffffff">   zlak(1) =  0.05_r8</a>
+   468) <a name="l468" style="background-color: #ffffff">   zlak(2) =  0.6_r8</a>
+   469) <a name="l469" style="background-color: #ffffff">   zlak(3) =  2.1_r8</a>
+   470) <a name="l470" style="background-color: #ffffff">   zlak(4) =  4.6_r8</a>
+   471) <a name="l471" style="background-color: #ffffff">   zlak(5) =  8.1_r8</a>
+   472) <a name="l472" style="background-color: #ffffff">   zlak(6) = 12.6_r8</a>
+   473) <a name="l473" style="background-color: #ffffff">   zlak(7) = 18.6_r8</a>
+   474) <a name="l474" style="background-color: #ffffff">   zlak(8) = 25.6_r8</a>
+   475) <a name="l475" style="background-color: #ffffff">   zlak(9) = 34.325_r8</a>
+   476) <a name="l476" style="background-color: #ffffff">   zlak(10)= 44.775_r8</a>
+   477) <a name="l477" style="background-color: #ffffff"></a>
+   478) <a name="l478" style="background-color: #ffffff">   ! Soil layers and interfaces (assumed same for all non-lake patches)</a>
+   479) <a name="l479" style="background-color: #ffffff">   ! &quot;0&quot; refers to soil surface and &quot;nlevsoi&quot; refers to the bottom of model soil</a>
+   480) <a name="l480" style="background-color: #ffffff"></a>
+   481) <a name="l481" style="background-color: #ffffff">   do j = 1, nlevgrnd</a>
+   482) <a name="l482" style="background-color: #ffffff">      zsoi(j) = scalez*(exp(0.5_r8*(j-0.5_r8))-1._r8)    !node depths</a>
+   483) <a name="l483" style="background-color: #ffffff">   enddo</a>
+   484) <a name="l484" style="background-color: #ffffff"></a>
+   485) <a name="l485" style="background-color: #ffffff">   dzsoi(1) = 0.5_r8*(zsoi(1)+zsoi(2))             !thickness b/n two interfaces</a>
+   486) <a name="l486" style="background-color: #ffffff">   do j = 2,nlevgrnd-1</a>
+   487) <a name="l487" style="background-color: #ffffff">      dzsoi(j)= 0.5_r8*(zsoi(j+1)-zsoi(j-1))</a>
+   488) <a name="l488" style="background-color: #ffffff">   enddo</a>
+   489) <a name="l489" style="background-color: #ffffff">   dzsoi(nlevgrnd) = zsoi(nlevgrnd)-zsoi(nlevgrnd-1)</a>
+   490) <a name="l490" style="background-color: #ffffff"></a>
+   491) <a name="l491" style="background-color: #ffffff">   zisoi(0) = 0._r8</a>
+   492) <a name="l492" style="background-color: #ffffff">   do j = 1, nlevgrnd-1</a>
+   493) <a name="l493" style="background-color: #ffffff">      zisoi(j) = 0.5_r8*(zsoi(j)+zsoi(j+1))         !interface depths</a>
+   494) <a name="l494" style="background-color: #ffffff">   enddo</a>
+   495) <a name="l495" style="background-color: #ffffff">   zisoi(nlevgrnd) = zsoi(nlevgrnd) + 0.5_r8*dzsoi(nlevgrnd)</a>
+   496) <a name="l496" style="background-color: #ffffff"></a>
+   497) <a name="l497" style="background-color: #ffffff">   ! Column level initialization for urban wall and roof layers and interfaces</a>
+   498) <a name="l498" style="background-color: #ffffff">   do l = begl, endl</a>
+   499) <a name="l499" style="background-color: #ffffff"></a>
+   500) <a name="l500" style="background-color: #ffffff">   ! &quot;0&quot; refers to urban wall/roof surface and &quot;nlevsoi&quot; refers to urban wall/roof bottom</a>
+   501) <a name="l501" style="background-color: #ffffff">    if (ltype(l)==isturb) then</a>
+   502) <a name="l502" style="background-color: #ffffff">   </a>
+   503) <a name="l503" style="background-color: #ffffff">      do j = 1, nlevurb</a>
+   504) <a name="l504" style="background-color: #ffffff">        zurb_wall(l,j) = (j-0.5)*(thick_wall(l)/float(nlevurb))  !node depths</a>
+   505) <a name="l505" style="background-color: #ffffff">      end do</a>
+   506) <a name="l506" style="background-color: #ffffff">      do j = 1, nlevurb</a>
+   507) <a name="l507" style="background-color: #ffffff">        zurb_roof(l,j) = (j-0.5)*(thick_roof(l)/float(nlevurb))  !node depths</a>
+   508) <a name="l508" style="background-color: #ffffff">      end do</a>
+   509) <a name="l509" style="background-color: #ffffff"></a>
+   510) <a name="l510" style="background-color: #ffffff">      dzurb_wall(l,1) = 0.5*(zurb_wall(l,1)+zurb_wall(l,2))    !thickness b/n two interfaces</a>
+   511) <a name="l511" style="background-color: #ffffff">      do j = 2,nlevurb-1</a>
+   512) <a name="l512" style="background-color: #ffffff">        dzurb_wall(l,j)= 0.5*(zurb_wall(l,j+1)-zurb_wall(l,j-1)) </a>
+   513) <a name="l513" style="background-color: #ffffff">      enddo</a>
+   514) <a name="l514" style="background-color: #ffffff">      dzurb_wall(l,nlevurb) = zurb_wall(l,nlevurb)-zurb_wall(l,nlevurb-1)</a>
+   515) <a name="l515" style="background-color: #ffffff"></a>
+   516) <a name="l516" style="background-color: #ffffff">      dzurb_roof(l,1) = 0.5*(zurb_roof(l,1)+zurb_roof(l,2))    !thickness b/n two interfaces</a>
+   517) <a name="l517" style="background-color: #ffffff">      do j = 2,nlevurb-1</a>
+   518) <a name="l518" style="background-color: #ffffff">        dzurb_roof(l,j)= 0.5*(zurb_roof(l,j+1)-zurb_roof(l,j-1)) </a>
+   519) <a name="l519" style="background-color: #ffffff">      enddo</a>
+   520) <a name="l520" style="background-color: #ffffff">      dzurb_roof(l,nlevurb) = zurb_roof(l,nlevurb)-zurb_roof(l,nlevurb-1)</a>
+   521) <a name="l521" style="background-color: #ffffff"></a>
+   522) <a name="l522" style="background-color: #ffffff">      ziurb_wall(l,0) = 0.</a>
+   523) <a name="l523" style="background-color: #ffffff">      do j = 1, nlevurb-1</a>
+   524) <a name="l524" style="background-color: #ffffff">        ziurb_wall(l,j) = 0.5*(zurb_wall(l,j)+zurb_wall(l,j+1))          !interface depths</a>
+   525) <a name="l525" style="background-color: #ffffff">      enddo</a>
+   526) <a name="l526" style="background-color: #ffffff">      ziurb_wall(l,nlevurb) = zurb_wall(l,nlevurb) + 0.5*dzurb_wall(l,nlevurb)</a>
+   527) <a name="l527" style="background-color: #ffffff"></a>
+   528) <a name="l528" style="background-color: #ffffff">      ziurb_roof(l,0) = 0.</a>
+   529) <a name="l529" style="background-color: #ffffff">      do j = 1, nlevurb-1</a>
+   530) <a name="l530" style="background-color: #ffffff">        ziurb_roof(l,j) = 0.5*(zurb_roof(l,j)+zurb_roof(l,j+1))          !interface depths</a>
+   531) <a name="l531" style="background-color: #ffffff">      enddo</a>
+   532) <a name="l532" style="background-color: #ffffff">      ziurb_roof(l,nlevurb) = zurb_roof(l,nlevurb) + 0.5*dzurb_roof(l,nlevurb)</a>
+   533) <a name="l533" style="background-color: #ffffff">    end if</a>
+   534) <a name="l534" style="background-color: #ffffff">   end do</a>
+   535) <a name="l535" style="background-color: #ffffff"></a>
+   536) <a name="l536" style="background-color: #ffffff">   ! Grid level initialization</a>
+   537) <a name="l537" style="background-color: #ffffff">   do g = begg, endg</a>
+   538) <a name="l538" style="background-color: #ffffff"></a>
+   539) <a name="l539" style="background-color: #ffffff">      ! VOC emission factors</a>
+   540) <a name="l540" style="background-color: #ffffff">      ! Set gridcell and landunit indices</a>
+   541) <a name="l541" style="background-color: #ffffff">      efisop(:,g)=efisop2d(:,g)</a>
+   542) <a name="l542" style="background-color: #ffffff"></a>
+   543) <a name="l543" style="background-color: #ffffff">   end do</a>
+   544) <a name="l544" style="background-color: #ffffff"></a>
+   545) <a name="l545" style="background-color: #ffffff"></a>
+   546) <a name="l546" style="background-color: #ffffff">   ! --------------------------------------------------------------------</a>
+   547) <a name="l547" style="background-color: #ffffff">   ! Initialize soil and lake levels</a>
+   548) <a name="l548" style="background-color: #ffffff">   ! Initialize soil color, thermal and hydraulic properties</a>
+   549) <a name="l549" style="background-color: #ffffff">   ! --------------------------------------------------------------------</a>
+   550) <a name="l550" style="background-color: #ffffff"></a>
+   551) <a name="l551" style="background-color: #ffffff">   ! Column level initialization</a>
+   552) <a name="l552" style="background-color: #ffffff">   do c = begc, endc</a>
+   553) <a name="l553" style="background-color: #ffffff"></a>
+   554) <a name="l554" style="background-color: #ffffff">      ! Set gridcell and landunit indices</a>
+   555) <a name="l555" style="background-color: #ffffff">      g = cgridcell(c)</a>
+   556) <a name="l556" style="background-color: #ffffff">      l = clandunit(c)</a>
+   557) <a name="l557" style="background-color: #ffffff">      </a>
+   558) <a name="l558" style="background-color: #ffffff">      ! initialize maximum daylength, based on latitude and maximum declination</a>
+   559) <a name="l559" style="background-color: #ffffff">      ! maximum declination hardwired for present-day orbital parameters, </a>
+   560) <a name="l560" style="background-color: #ffffff">      ! +/- 23.4667 degrees = +/- 0.409571 radians, use negative value for S. Hem</a>
+   561) <a name="l561" style="background-color: #ffffff">      max_decl = 0.409571</a>
+   562) <a name="l562" style="background-color: #ffffff">      if (lat(g) .lt. 0._r8) max_decl = -max_decl</a>
+   563) <a name="l563" style="background-color: #ffffff">      temp = -(sin(lat(g))*sin(max_decl))/(cos(lat(g)) * cos(max_decl))</a>
+   564) <a name="l564" style="background-color: #ffffff">      temp = min(1._r8,max(-1._r8,temp))</a>
+   565) <a name="l565" style="background-color: #ffffff">      max_dayl(c) = 2.0_r8 * 13750.9871_r8 * acos(temp)</a>
+   566) <a name="l566" style="background-color: #ffffff"></a>
+   567) <a name="l567" style="background-color: #ffffff">      ! Initialize restriction for min of soil potential (mm)</a>
+   568) <a name="l568" style="background-color: #ffffff">      smpmin(c) = -1.e8_r8</a>
+   569) <a name="l569" style="background-color: #ffffff"></a>
+   570) <a name="l570" style="background-color: #ffffff">      ! Decay factor (m)</a>
+   571) <a name="l571" style="background-color: #ffffff">      hkdepth(c) = 1._r8/2.5_r8</a>
+   572) <a name="l572" style="background-color: #ffffff"></a>
+   573) <a name="l573" style="background-color: #ffffff">      ! Maximum saturated fraction</a>
+   574) <a name="l574" style="background-color: #ffffff">      wtfact(c) = gti(g)</a>
+   575) <a name="l575" style="background-color: #ffffff"></a>
+   576) <a name="l576" style="background-color: #ffffff">      ! Soil color</a>
+   577) <a name="l577" style="background-color: #ffffff">      isoicol(c) = soic2d(g)</a>
+   578) <a name="l578" style="background-color: #ffffff"></a>
+   579) <a name="l579" style="background-color: #ffffff">      ! Soil hydraulic and thermal properties</a>
+   580) <a name="l580" style="background-color: #ffffff">        ! Note that urban roof, sunwall and shadewall thermal properties used to </a>
+   581) <a name="l581" style="background-color: #ffffff">        ! derive thermal conductivity and heat capacity are set to special </a>
+   582) <a name="l582" style="background-color: #ffffff">        ! value because thermal conductivity and heat capacity for urban </a>
+   583) <a name="l583" style="background-color: #ffffff">        ! roof, sunwall and shadewall are prescribed in SoilThermProp.F90 in </a>
+   584) <a name="l584" style="background-color: #ffffff">        ! SoilTemperatureMod.F90</a>
+   585) <a name="l585" style="background-color: #ffffff">      if (ltype(l)==istdlak .or. ltype(l)==istwet .or. ltype(l)==istice .or. ltype(l)==istice_mec) then</a>
+   586) <a name="l586" style="background-color: #ffffff">         do lev = 1,nlevgrnd</a>
+   587) <a name="l587" style="background-color: #ffffff">            bsw(c,lev)    = spval</a>
+   588) <a name="l588" style="background-color: #ffffff">            bsw2(c,lev)   = spval</a>
+   589) <a name="l589" style="background-color: #ffffff">            psisat(c,lev) = spval</a>
+   590) <a name="l590" style="background-color: #ffffff">            vwcsat(c,lev) = spval</a>
+   591) <a name="l591" style="background-color: #ffffff">            watsat(c,lev) = spval</a>
+   592) <a name="l592" style="background-color: #ffffff">            watfc(c,lev)  = spval</a>
+   593) <a name="l593" style="background-color: #ffffff">            hksat(c,lev)  = spval</a>
+   594) <a name="l594" style="background-color: #ffffff">            sucsat(c,lev) = spval</a>
+   595) <a name="l595" style="background-color: #ffffff">            tkmg(c,lev)   = spval</a>
+   596) <a name="l596" style="background-color: #ffffff">            tksatu(c,lev) = spval</a>
+   597) <a name="l597" style="background-color: #ffffff">            tkdry(c,lev)  = spval</a>
+   598) <a name="l598" style="background-color: #ffffff">            if (ltype(l)==istwet .and. lev &gt; nlevsoi) then</a>
+   599) <a name="l599" style="background-color: #ffffff">               csol(c,lev) = csol_bedrock</a>
+   600) <a name="l600" style="background-color: #ffffff">            else</a>
+   601) <a name="l601" style="background-color: #ffffff">               csol(c,lev)= spval</a>
+   602) <a name="l602" style="background-color: #ffffff">            endif</a>
+   603) <a name="l603" style="background-color: #ffffff">            watdry(c,lev) = spval </a>
+   604) <a name="l604" style="background-color: #ffffff">            watopt(c,lev) = spval </a>
+   605) <a name="l605" style="background-color: #ffffff">         end do</a>
+   606) <a name="l606" style="background-color: #ffffff">      else if (ltype(l)==isturb .and. (ctype(c) /= icol_road_perv) .and. (ctype(c) /= icol_road_imperv) )then</a>
+   607) <a name="l607" style="background-color: #ffffff">         ! Urban Roof, sunwall, shadewall properties set to special value</a>
+   608) <a name="l608" style="background-color: #ffffff">         do lev = 1,nlevurb</a>
+   609) <a name="l609" style="background-color: #ffffff">            watsat(c,lev) = spval</a>
+   610) <a name="l610" style="background-color: #ffffff">            watfc(c,lev)  = spval</a>
+   611) <a name="l611" style="background-color: #ffffff">            bsw(c,lev)    = spval</a>
+   612) <a name="l612" style="background-color: #ffffff">            bsw2(c,lev)   = spval</a>
+   613) <a name="l613" style="background-color: #ffffff">            psisat(c,lev) = spval</a>
+   614) <a name="l614" style="background-color: #ffffff">            vwcsat(c,lev) = spval</a>
+   615) <a name="l615" style="background-color: #ffffff">            hksat(c,lev)  = spval</a>
+   616) <a name="l616" style="background-color: #ffffff">            sucsat(c,lev) = spval</a>
+   617) <a name="l617" style="background-color: #ffffff">            tkmg(c,lev)   = spval</a>
+   618) <a name="l618" style="background-color: #ffffff">            tksatu(c,lev) = spval</a>
+   619) <a name="l619" style="background-color: #ffffff">            tkdry(c,lev)  = spval</a>
+   620) <a name="l620" style="background-color: #ffffff">            csol(c,lev)   = spval</a>
+   621) <a name="l621" style="background-color: #ffffff">            watdry(c,lev) = spval </a>
+   622) <a name="l622" style="background-color: #ffffff">            watopt(c,lev) = spval </a>
+   623) <a name="l623" style="background-color: #ffffff">         end do</a>
+   624) <a name="l624" style="background-color: #ffffff">      else  ! soil columns of both urban and non-urban types</a>
+   625) <a name="l625" style="background-color: #ffffff">         do lev = 1,nlevgrnd</a>
+   626) <a name="l626" style="background-color: #ffffff">            ! duplicate clay and sand values from 10th soil layer</a>
+   627) <a name="l627" style="background-color: #ffffff">            if (lev .le. nlevsoi) then</a>
+   628) <a name="l628" style="background-color: #ffffff">               clay    = clay3d(g,lev)</a>
+   629) <a name="l629" style="background-color: #ffffff">               sand    = sand3d(g,lev)</a>
+   630) <a name="l630" style="background-color: #ffffff">               om_frac = (organic3d(g,lev)/organic_max)**2._r8</a>
+   631) <a name="l631" style="background-color: #ffffff">            else</a>
+   632) <a name="l632" style="background-color: #ffffff">               clay    = clay3d(g,nlevsoi)</a>
+   633) <a name="l633" style="background-color: #ffffff">               sand    = sand3d(g,nlevsoi)</a>
+   634) <a name="l634" style="background-color: #ffffff">               om_frac = 0._r8</a>
+   635) <a name="l635" style="background-color: #ffffff">            endif</a>
+   636) <a name="l636" style="background-color: #ffffff">            ! No organic matter for urban</a>
+   637) <a name="l637" style="background-color: #ffffff">            if (ltype(l)==isturb) then</a>
+   638) <a name="l638" style="background-color: #ffffff">              om_frac = 0._r8</a>
+   639) <a name="l639" style="background-color: #ffffff">            end if</a>
+   640) <a name="l640" style="background-color: #ffffff">            ! Note that the following properties are overwritten for urban impervious road </a>
+   641) <a name="l641" style="background-color: #ffffff">            ! layers that are not soil in SoilThermProp.F90 within SoilTemperatureMod.F90</a>
+   642) <a name="l642" style="background-color: #ffffff">            watsat(c,lev) = 0.489_r8 - 0.00126_r8*sand</a>
+   643) <a name="l643" style="background-color: #ffffff">            bsw(c,lev)    = 2.91 + 0.159*clay</a>
+   644) <a name="l644" style="background-color: #ffffff">            sucsat(c,lev) = 10._r8 * ( 10._r8**(1.88_r8-0.0131_r8*sand) )</a>
+   645) <a name="l645" style="background-color: #ffffff">            bd            = (1._r8-watsat(c,lev))*2.7e3_r8 </a>
+   646) <a name="l646" style="background-color: #ffffff">            watsat(c,lev) = (1._r8 - om_frac)*watsat(c,lev) + om_watsat*om_frac</a>
+   647) <a name="l647" style="background-color: #ffffff">            tkm           = (1._r8-om_frac)*(8.80_r8*sand+2.92_r8*clay)/(sand+clay)+om_tkm*om_frac ! W/(m K)</a>
+   648) <a name="l648" style="background-color: #ffffff">            bsw(c,lev)    = (1._r8-om_frac)*(2.91_r8 + 0.159_r8*clay) + om_frac*om_b   </a>
+   649) <a name="l649" style="background-color: #ffffff">            bsw2(c,lev)   = -(3.10_r8 + 0.157_r8*clay - 0.003_r8*sand)</a>
+   650) <a name="l650" style="background-color: #ffffff">            psisat(c,lev) = -(exp((1.54_r8 - 0.0095_r8*sand + 0.0063_r8*(100.0_r8-sand-clay))*log(10.0_r8))*9.8e-5_r8)</a>
+   651) <a name="l651" style="background-color: #ffffff">            vwcsat(c,lev) = (50.5_r8 - 0.142_r8*sand - 0.037_r8*clay)/100.0_r8</a>
+   652) <a name="l652" style="background-color: #ffffff">            sucsat(c,lev) = (1._r8-om_frac)*sucsat(c,lev) + om_sucsat*om_frac  </a>
+   653) <a name="l653" style="background-color: #ffffff">            xksat         = 0.0070556 *( 10.**(-0.884+0.0153*sand) ) ! mm/s</a>
+   654) <a name="l654" style="background-color: #ffffff"></a>
+   655) <a name="l655" style="background-color: #ffffff">            ! perc_frac is zero unless perf_frac greater than percolation threshold</a>
+   656) <a name="l656" style="background-color: #ffffff">            if (om_frac &gt; pc) then</a>
+   657) <a name="l657" style="background-color: #ffffff">               perc_norm=(1._r8 - pc)**(-pcbeta)</a>
+   658) <a name="l658" style="background-color: #ffffff">               perc_frac=perc_norm*(om_frac - pc)**pcbeta</a>
+   659) <a name="l659" style="background-color: #ffffff">            else</a>
+   660) <a name="l660" style="background-color: #ffffff">               perc_frac=0._r8</a>
+   661) <a name="l661" style="background-color: #ffffff">            endif</a>
+   662) <a name="l662" style="background-color: #ffffff">            ! uncon_frac is fraction of mineral soil plus fraction of &quot;nonpercolating&quot; organic soil</a>
+   663) <a name="l663" style="background-color: #ffffff">            uncon_frac=(1._r8-om_frac)+(1._r8-perc_frac)*om_frac</a>
+   664) <a name="l664" style="background-color: #ffffff">            ! uncon_hksat is series addition of mineral/organic conductivites</a>
+   665) <a name="l665" style="background-color: #ffffff">            if (om_frac .lt. 1._r8) then</a>
+   666) <a name="l666" style="background-color: #ffffff">              uncon_hksat=uncon_frac/((1._r8-om_frac)/xksat &amp;</a>
+   667) <a name="l667" style="background-color: #ffffff">                   +((1._r8-perc_frac)*om_frac)/om_hksat)</a>
+   668) <a name="l668" style="background-color: #ffffff">            else</a>
+   669) <a name="l669" style="background-color: #ffffff">              uncon_hksat = 0._r8</a>
+   670) <a name="l670" style="background-color: #ffffff">            end if</a>
+   671) <a name="l671" style="background-color: #ffffff">            hksat(c,lev)  = uncon_frac*uncon_hksat + (perc_frac*om_frac)*om_hksat</a>
+   672) <a name="l672" style="background-color: #ffffff"></a>
+   673) <a name="l673" style="background-color: #ffffff">            tkmg(c,lev)   = tkm ** (1._r8- watsat(c,lev))           </a>
+   674) <a name="l674" style="background-color: #ffffff">            tksatu(c,lev) = tkmg(c,lev)*0.57_r8**watsat(c,lev)</a>
+   675) <a name="l675" style="background-color: #ffffff">            tkdry(c,lev)  = ((0.135_r8*bd + 64.7_r8) / (2.7e3_r8 - 0.947_r8*bd))*(1._r8-om_frac) + &amp;</a>
+   676) <a name="l676" style="background-color: #ffffff">                            om_tkd*om_frac  </a>
+   677) <a name="l677" style="background-color: #ffffff">            csol(c,lev)   = ((1._r8-om_frac)*(2.128_r8*sand+2.385_r8*clay) / (sand+clay) +   &amp;</a>
+   678) <a name="l678" style="background-color: #ffffff">                           om_csol*om_frac)*1.e6_r8  ! J/(m3 K)  </a>
+   679) <a name="l679" style="background-color: #ffffff">            if (lev .gt. nlevsoi) then</a>
+   680) <a name="l680" style="background-color: #ffffff">               csol(c,lev) = csol_bedrock</a>
+   681) <a name="l681" style="background-color: #ffffff">            endif</a>
+   682) <a name="l682" style="background-color: #ffffff">            watdry(c,lev) = watsat(c,lev) * (316230._r8/sucsat(c,lev)) ** (-1._r8/bsw(c,lev)) </a>
+   683) <a name="l683" style="background-color: #ffffff">            watopt(c,lev) = watsat(c,lev) * (158490._r8/sucsat(c,lev)) ** (-1._r8/bsw(c,lev)) </a>
+   684) <a name="l684" style="background-color: #ffffff">            !! added by K.Sakaguchi for beta from Lee and Pielke, 1992</a>
+   685) <a name="l685" style="background-color: #ffffff">            ! water content at field capacity, defined as hk = 0.1 mm/day</a>
+   686) <a name="l686" style="background-color: #ffffff">            ! used eqn (7.70) in CLM3 technote with k = 0.1 (mm/day) / secspday (day/sec)</a>
+   687) <a name="l687" style="background-color: #ffffff">            watfc(c,lev) = watsat(c,lev) * (0.1_r8 / (hksat(c,lev)*secspday))**(1._r8/(2._r8*bsw(c,lev)+3._r8))</a>
+   688) <a name="l688" style="background-color: #ffffff">         end do</a>
+   689) <a name="l689" style="background-color: #ffffff">         !</a>
+   690) <a name="l690" style="background-color: #ffffff">         ! Urban pervious and impervious road</a>
+   691) <a name="l691" style="background-color: #ffffff">         !</a>
+   692) <a name="l692" style="background-color: #ffffff">         ! Impervious road layers -- same as above except set watdry and watopt as missing</a>
+   693) <a name="l693" style="background-color: #ffffff">         if (ctype(c) == icol_road_imperv) then</a>
+   694) <a name="l694" style="background-color: #ffffff">            do lev = 1,nlevgrnd</a>
+   695) <a name="l695" style="background-color: #ffffff">               watdry(c,lev) = spval </a>
+   696) <a name="l696" style="background-color: #ffffff">               watopt(c,lev) = spval </a>
+   697) <a name="l697" style="background-color: #ffffff">            end do</a>
+   698) <a name="l698" style="background-color: #ffffff">         ! pervious road layers -- same as above except also set rootfr_road_perv</a>
+   699) <a name="l699" style="background-color: #ffffff">         ! Currently, pervious road has same properties as soil</a>
+   700) <a name="l700" style="background-color: #ffffff">         else if (ctype(c) == icol_road_perv) then </a>
+   701) <a name="l701" style="background-color: #ffffff">            do lev = 1, nlevgrnd</a>
+   702) <a name="l702" style="background-color: #ffffff">               rootfr_road_perv(c,lev) = 0._r8</a>
+   703) <a name="l703" style="background-color: #ffffff">            enddo</a>
+   704) <a name="l704" style="background-color: #ffffff">            do lev = 1,nlevsoi</a>
+   705) <a name="l705" style="background-color: #ffffff">               rootfr_road_perv(c,lev) = 0.1_r8  ! uniform profile</a>
+   706) <a name="l706" style="background-color: #ffffff">            end do</a>
+   707) <a name="l707" style="background-color: #ffffff">         end if</a>
+   708) <a name="l708" style="background-color: #ffffff">      endif</a>
+   709) <a name="l709" style="background-color: #ffffff"></a>
+   710) <a name="l710" style="background-color: #ffffff">      ! Define lake or non-lake levels, layers and interfaces</a>
+   711) <a name="l711" style="background-color: #ffffff">      if (ltype(l) == istdlak) then</a>
+   712) <a name="l712" style="background-color: #ffffff">         z(c,1:nlevlak)  = zlak(1:nlevlak)</a>
+   713) <a name="l713" style="background-color: #ffffff">         dz(c,1:nlevlak) = dzlak(1:nlevlak)</a>
+   714) <a name="l714" style="background-color: #ffffff">      else if (ltype(l) == isturb) then</a>
+   715) <a name="l715" style="background-color: #ffffff">         if (ctype(c)==icol_sunwall .or. ctype(c)==icol_shadewall) then</a>
+   716) <a name="l716" style="background-color: #ffffff">            z(c,1:nlevurb)  = zurb_wall(l,1:nlevurb)</a>
+   717) <a name="l717" style="background-color: #ffffff">            zi(c,0:nlevurb) = ziurb_wall(l,0:nlevurb)</a>
+   718) <a name="l718" style="background-color: #ffffff">            dz(c,1:nlevurb) = dzurb_wall(l,1:nlevurb)</a>
+   719) <a name="l719" style="background-color: #ffffff">         else if (ctype(c)==icol_roof) then</a>
+   720) <a name="l720" style="background-color: #ffffff">            z(c,1:nlevurb)  = zurb_roof(l,1:nlevurb)</a>
+   721) <a name="l721" style="background-color: #ffffff">            zi(c,0:nlevurb) = ziurb_roof(l,0:nlevurb)</a>
+   722) <a name="l722" style="background-color: #ffffff">            dz(c,1:nlevurb) = dzurb_roof(l,1:nlevurb)</a>
+   723) <a name="l723" style="background-color: #ffffff">         else</a>
+   724) <a name="l724" style="background-color: #ffffff">            z(c,1:nlevurb)  = zsoi(1:nlevurb)</a>
+   725) <a name="l725" style="background-color: #ffffff">            zi(c,0:nlevurb) = zisoi(0:nlevurb)</a>
+   726) <a name="l726" style="background-color: #ffffff">            dz(c,1:nlevurb) = dzsoi(1:nlevurb)</a>
+   727) <a name="l727" style="background-color: #ffffff">         end if</a>
+   728) <a name="l728" style="background-color: #ffffff">      else</a>
+   729) <a name="l729" style="background-color: #ffffff">         z(c,1:nlevgrnd)  = zsoi(1:nlevgrnd)</a>
+   730) <a name="l730" style="background-color: #ffffff">         zi(c,0:nlevgrnd) = zisoi(0:nlevgrnd)</a>
+   731) <a name="l731" style="background-color: #ffffff">         dz(c,1:nlevgrnd) = dzsoi(1:nlevgrnd)</a>
+   732) <a name="l732" style="background-color: #ffffff">      end if</a>
+   733) <a name="l733" style="background-color: #ffffff"></a>
+   734) <a name="l734" style="background-color: #ffffff">      ! Initialize terms needed for dust model</a>
+   735) <a name="l735" style="background-color: #ffffff">      clay = clay3d(g,1)</a>
+   736) <a name="l736" style="background-color: #ffffff">      gwc_thr(c) = 0.17_r8 + 0.14_r8*clay*0.01_r8</a>
+   737) <a name="l737" style="background-color: #ffffff">      mss_frc_cly_vld(c) = min(clay*0.01_r8, 0.20_r8)</a>
+   738) <a name="l738" style="background-color: #ffffff"></a>
+   739) <a name="l739" style="background-color: #ffffff">   end do</a>
+   740) <a name="l740" style="background-color: #ffffff"></a>
+   741) <a name="l741" style="background-color: #ffffff">   ! pft level initialization</a>
+   742) <a name="l742" style="background-color: #ffffff">   do p = begp, endp</a>
+   743) <a name="l743" style="background-color: #ffffff"></a>
+   744) <a name="l744" style="background-color: #ffffff">      ! Initialize maximum allowed dew</a>
+   745) <a name="l745" style="background-color: #ffffff"></a>
+   746) <a name="l746" style="background-color: #ffffff">      dewmx(p)  = 0.1_r8</a>
+   747) <a name="l747" style="background-color: #ffffff"></a>
+   748) <a name="l748" style="background-color: #ffffff">      ! Initialize root fraction (computing from surface, d is depth in meter):</a>
+   749) <a name="l749" style="background-color: #ffffff">      ! Y = 1 -1/2 (exp(-ad)+exp(-bd) under the constraint that</a>
+   750) <a name="l750" style="background-color: #ffffff">      ! Y(d =0.1m) = 1-beta^(10 cm) and Y(d=d_obs)=0.99 with</a>
+   751) <a name="l751" style="background-color: #ffffff">      ! beta &amp; d_obs given in Zeng et al. (1998).</a>
+   752) <a name="l752" style="background-color: #ffffff"></a>
+   753) <a name="l753" style="background-color: #ffffff">      c = pcolumn(p)</a>
+   754) <a name="l754" style="background-color: #ffffff">      if (ivt(p) /= noveg) then</a>
+   755) <a name="l755" style="background-color: #ffffff">         do lev = 1, nlevgrnd</a>
+   756) <a name="l756" style="background-color: #ffffff">            rootfr(p,lev) = 0._r8</a>
+   757) <a name="l757" style="background-color: #ffffff">         enddo</a>
+   758) <a name="l758" style="background-color: #ffffff">         do lev = 1, nlevsoi-1</a>
+   759) <a name="l759" style="background-color: #ffffff">            rootfr(p,lev) = .5_r8*( exp(-roota_par(ivt(p)) * zi(c,lev-1))  &amp;</a>
+   760) <a name="l760" style="background-color: #ffffff">                               + exp(-rootb_par(ivt(p)) * zi(c,lev-1))  &amp;</a>
+   761) <a name="l761" style="background-color: #ffffff">                               - exp(-roota_par(ivt(p)) * zi(c,lev  ))  &amp;</a>
+   762) <a name="l762" style="background-color: #ffffff">                               - exp(-rootb_par(ivt(p)) * zi(c,lev  )) )</a>
+   763) <a name="l763" style="background-color: #ffffff">         end do</a>
+   764) <a name="l764" style="background-color: #ffffff">         rootfr(p,nlevsoi) = .5_r8*( exp(-roota_par(ivt(p)) * zi(c,nlevsoi-1))  &amp;</a>
+   765) <a name="l765" style="background-color: #ffffff">                                + exp(-rootb_par(ivt(p)) * zi(c,nlevsoi-1)) )</a>
+   766) <a name="l766" style="background-color: #ffffff">         rootfr(p,nlevsoi+1:nlevgrnd) =  0.0_r8</a>
+   767) <a name="l767" style="background-color: #ffffff"></a>
+   768) <a name="l768" style="background-color: #ffffff">!if (use_cn) then</a>
+   769) <a name="l769" style="background-color: #ffffff">!        ! replacing the exponential rooting distribution</a>
+   770) <a name="l770" style="background-color: #ffffff">!        ! with a linear decrease, going to zero at the bottom of the lowest</a>
+   771) <a name="l771" style="background-color: #ffffff">!        ! soil layer for woody pfts, but going to zero at the bottom of</a>
+   772) <a name="l772" style="background-color: #ffffff">!        ! layer 8 for non-woody pfts.  This corresponds to 3.43 m for woody</a>
+   773) <a name="l773" style="background-color: #ffffff">!        ! bottom, vs 1.38 m for non-woody bottom.</a>
+   774) <a name="l774" style="background-color: #ffffff">!        if (woody(ivt(p)) == 1) then</a>
+   775) <a name="l775" style="background-color: #ffffff">!           bottom = nlevsoi</a>
+   776) <a name="l776" style="background-color: #ffffff">!           slope = -2._r8/(zi(c,bottom)*zi(c,bottom))</a>
+   777) <a name="l777" style="background-color: #ffffff">!           intercept   = 2._r8/zi(c,bottom)</a>
+   778) <a name="l778" style="background-color: #ffffff">!           do lev = 1, bottom</a>
+   779) <a name="l779" style="background-color: #ffffff">!              rootfr(p,lev) = dz(c,lev) * 0.5_r8 * ((intercept+slope*zi(c,lev-1)) + (intercept+slope*zi(c,lev)))</a>
+   780) <a name="l780" style="background-color: #ffffff">!           end do</a>
+   781) <a name="l781" style="background-color: #ffffff">!           if (bottom &lt; nlevsoi) then</a>
+   782) <a name="l782" style="background-color: #ffffff">!              do lev=bottom+1,nlevgrnd</a>
+   783) <a name="l783" style="background-color: #ffffff">!                 rootfr(p,lev) = 0._r8</a>
+   784) <a name="l784" style="background-color: #ffffff">!              end do</a>
+   785) <a name="l785" style="background-color: #ffffff">!           end if</a>
+   786) <a name="l786" style="background-color: #ffffff">!        else</a>
+   787) <a name="l787" style="background-color: #ffffff">!           bottom = 8</a>
+   788) <a name="l788" style="background-color: #ffffff">!           slope = -2._r8/(zi(c,bottom)*zi(c,bottom))</a>
+   789) <a name="l789" style="background-color: #ffffff">!           intercept   = 2._r8/zi(c,bottom)</a>
+   790) <a name="l790" style="background-color: #ffffff">!           do lev=1,bottom</a>
+   791) <a name="l791" style="background-color: #ffffff">!              rootfr(p,lev) = dz(c,lev) * 0.5_r8 * ((intercept+slope*zi(c,lev-1)) + (intercept+slope*zi(c,lev)))</a>
+   792) <a name="l792" style="background-color: #ffffff">!           end do</a>
+   793) <a name="l793" style="background-color: #ffffff">!           if (bottom &lt; nlevsoi) then</a>
+   794) <a name="l794" style="background-color: #ffffff">!              do lev=bottom+1,nlevgrnd</a>
+   795) <a name="l795" style="background-color: #ffffff">!                 rootfr(p,lev) = 0._r8</a>
+   796) <a name="l796" style="background-color: #ffffff">!              end do</a>
+   797) <a name="l797" style="background-color: #ffffff">!           end if</a>
+   798) <a name="l798" style="background-color: #ffffff">!        end if</a>
+   799) <a name="l799" style="background-color: #ffffff">! endif</a>
+   800) <a name="l800" style="background-color: #ffffff">      else</a>
+   801) <a name="l801" style="background-color: #ffffff">         rootfr(p,1:nlevsoi) = 0._r8</a>
+   802) <a name="l802" style="background-color: #ffffff">      endif</a>
+   803) <a name="l803" style="background-color: #ffffff">      </a>
+   804) <a name="l804" style="background-color: #ffffff">      ! initialize rresis, for use in ecosystemdyn</a>
+   805) <a name="l805" style="background-color: #ffffff">      do lev = 1,nlevgrnd</a>
+   806) <a name="l806" style="background-color: #ffffff">         rresis(p,lev) = 0._r8</a>
+   807) <a name="l807" style="background-color: #ffffff">      end do</a>
+   808) <a name="l808" style="background-color: #ffffff"></a>
+   809) <a name="l809" style="background-color: #ffffff">   end do ! end pft level initialization</a>
+   810) <a name="l810" style="background-color: #ffffff">   </a>
+   811) <a name="l811" style="background-color: #ffffff">   if (use_cn) then</a>
+   812) <a name="l812" style="background-color: #ffffff">      ! initialize the CN variables for special landunits, including lake points</a>
+   813) <a name="l813" style="background-color: #ffffff">      call </a><a style="background-color: #ffff99">CNiniSpecial()</a>
+   814) <a name="l814" style="background-color: #ffff99">   end if</a>
+   815) <a name="l815" style="background-color: #ffff99"></a>
+   816) <a name="l816" style="background-color: #ffffff">   deallocate(soic2d,sand3d,clay3d,gti,organic3d)</a>
+   817) <a name="l817" style="background-color: #ffffff">   deallocate(temp_ef,efisop2d)</a>
+   818) <a name="l818" style="background-color: #ffffff">   deallocate(zurb_wall, zurb_roof, dzurb_wall, dzurb_roof, ziurb_wall, ziurb_roof)</a>
+   819) <a name="l819" style="background-color: #ffffff"></a>
+   820) <a name="l820" style="background-color: #ffffff"></a>
+   821) <a name="l821" style="background-color: #ffffff">   ! Initialize SNICAR optical and aging parameters:</a>
+   822) <a name="l822" style="background-color: #ffffff">   call SnowOptics_init( )</a>
+   823) <a name="l823" style="background-color: #ffffff"></a>
+   824) <a name="l824" style="background-color: #ffffff">   call SnowAge_init( )</a>
+   825) <a name="l825" style="background-color: #ffffff"></a>
+   826) <a name="l826" style="background-color: #ffffff">   if (masterproc) write(iulog,*) 'Successfully initialized time invariant variables'</a>
+   827) <a name="l827" style="background-color: #ffffff"></a>
+   828) <a name="l828" style="background-color: #fafad2">end subroutine iniTimeConst</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

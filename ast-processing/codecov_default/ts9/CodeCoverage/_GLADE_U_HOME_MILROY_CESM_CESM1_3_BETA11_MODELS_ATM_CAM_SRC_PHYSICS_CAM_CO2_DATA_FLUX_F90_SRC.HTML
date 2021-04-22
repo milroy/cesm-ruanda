@@ -1,0 +1,439 @@
+<html>
+<head>
+<title>Listing of co2_data_flux.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;co2_data_flux.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff"></a>
+     2) <a name="l2" style="background-color: #ffffff">module co2_data_flux</a>
+     3) <a name="l3" style="background-color: #ffffff"></a>
+     4) <a name="l4" style="background-color: #ffffff">!------------------------------------------------------------------------------------------------</a>
+     5) <a name="l5" style="background-color: #ffffff">! for data reading and interpolation                                           </a>
+     6) <a name="l6" style="background-color: #ffffff">!------------------------------------------------------------------------------------------------</a>
+     7) <a name="l7" style="background-color: #ffffff"></a>
+     8) <a name="l8" style="background-color: #ffffff">  use shr_kind_mod,   only : r8 =&gt; shr_kind_r8</a>
+     9) <a name="l9" style="background-color: #ffffff">  use spmd_utils,     only : masterproc</a>
+    10) <a name="l10" style="background-color: #ffffff">  use ppgrid,         only : begchunk, endchunk, pcols</a>
+    11) <a name="l11" style="background-color: #ffffff">  use phys_grid,      only : scatter_field_to_chunk, get_ncols_p</a>
+    12) <a name="l12" style="background-color: #ffffff">  use error_messages, only : alloc_err, handle_ncerr, handle_err</a>
+    13) <a name="l13" style="background-color: #ffffff">  use abortutils,     only : endrun</a>
+    14) <a name="l14" style="background-color: #ffffff">  use netcdf</a>
+    15) <a name="l15" style="background-color: #ffffff">  use error_messages, only : handle_ncerr  </a>
+    16) <a name="l16" style="background-color: #ffffff">  use cam_logfile,    only : iulog</a>
+    17) <a name="l17" style="background-color: #ffffff">  </a>
+    18) <a name="l18" style="background-color: #ffffff">#if ( defined SPMD )</a>
+    19) <a name="l19" style="background-color: #ffffff">  use mpishorthand, only: mpicom, mpiint, mpir8</a>
+    20) <a name="l20" style="background-color: #ffffff">#endif</a>
+    21) <a name="l21" style="background-color: #ffffff"></a>
+    22) <a name="l22" style="background-color: #ffffff">  implicit none</a>
+    23) <a name="l23" style="background-color: #ffffff"></a>
+    24) <a name="l24" style="background-color: #ffffff">! public data</a>
+    25) <a name="l25" style="background-color: #ffffff"></a>
+    26) <a name="l26" style="background-color: #ffffff">! public type</a>
+    27) <a name="l27" style="background-color: #ffffff"></a>
+    28) <a name="l28" style="background-color: #ffffff">  public read_interp</a>
+    29) <a name="l29" style="background-color: #ffffff"></a>
+    30) <a name="l30" style="background-color: #ffffff">! public interface</a>
+    31) <a name="l31" style="background-color: #ffffff"></a>
+    32) <a name="l32" style="background-color: #ffffff">  public read_data_flux</a>
+    33) <a name="l33" style="background-color: #ffffff">  public interp_time_flux</a>
+    34) <a name="l34" style="background-color: #ffffff"></a>
+    35) <a name="l35" style="background-color: #ffffff">! private data</a>
+    36) <a name="l36" style="background-color: #ffffff"></a>
+    37) <a name="l37" style="background-color: #ffffff">  private</a>
+    38) <a name="l38" style="background-color: #ffffff">!  integer,  parameter :: totsz=2000           ! number greater than data time sample</a>
+    39) <a name="l39" style="background-color: #ffffff">  real(r8), parameter :: daysperyear = 365.0_r8  ! Number of days in a year         </a>
+    40) <a name="l40" style="background-color: #ffffff">  integer :: lonsiz  ! size of longitude dimension, dataset is 2d(lat,lon), in CAM grid</a>
+    41) <a name="l41" style="background-color: #ffffff">  integer :: latsiz  ! size of latitude dimension</a>
+    42) <a name="l42" style="background-color: #ffffff"> </a>
+    43) <a name="l43" style="background-color: #ffffff">!--------------------------------------------------------------------------------------------------</a>
+    44) <a name="l44" style="background-color: #ffffff">TYPE :: read_interp          </a>
+    45) <a name="l45" style="background-color: #ffffff">      </a>
+    46) <a name="l46" style="background-color: #ffffff">  real(r8), pointer, dimension(:,:)   :: co2flx</a>
+    47) <a name="l47" style="background-color: #ffffff">                       ! Interpolated output (pcols,begchunk:endchunk)</a>
+    48) <a name="l48" style="background-color: #ffffff">  real(r8), pointer, dimension(:,:,:) :: co2bdy</a>
+    49) <a name="l49" style="background-color: #ffffff">                       ! bracketing data     (pcols,begchunk:endchunk,2)</a>
+    50) <a name="l50" style="background-color: #ffffff">  real(r8) :: cdayfm   ! Calendar day for prv. month read in</a>
+    51) <a name="l51" style="background-color: #ffffff">  real(r8) :: cdayfp   ! Calendar day for nxt. month read in</a>
+    52) <a name="l52" style="background-color: #ffffff">  integer :: nm_f      ! Array indices for prv. month data</a>
+    53) <a name="l53" style="background-color: #ffffff">  integer :: np_f      ! Array indices for nxt. month data</a>
+    54) <a name="l54" style="background-color: #ffffff">  integer :: np1_f     ! current forward time index of dataset</a>
+    55) <a name="l55" style="background-color: #ffffff">  integer :: timesz    ! size of time dimension on dataset</a>
+    56) <a name="l56" style="background-color: #ffffff">  integer, pointer :: date_f(:)      ! Date on dataset (YYYYMMDD)</a>
+    57) <a name="l57" style="background-color: #ffffff">  integer, pointer :: sec_f(:)       ! seconds of date on dataset (0-86399) </a>
+    58) <a name="l58" style="background-color: #ffffff">  character(len=256) :: locfn   ! dataset name</a>
+    59) <a name="l59" style="background-color: #ffffff">  integer :: ncid_f             ! netcdf id for dataset       </a>
+    60) <a name="l60" style="background-color: #ffffff">  integer :: fluxid             ! netcdf id for dataset flux      </a>
+    61) <a name="l61" style="background-color: #ffffff">  real(r8), pointer :: xvar(:,:,:) ! work space for dataset  </a>
+    62) <a name="l62" style="background-color: #ffffff"> </a>
+    63) <a name="l63" style="background-color: #ffffff">END TYPE read_interp</a>
+    64) <a name="l64" style="background-color: #ffffff">!-------------------------------------------------------------------------------------------------</a>
+    65) <a name="l65" style="background-color: #ffffff">                       </a>
+    66) <a name="l66" style="background-color: #ffffff">contains</a>
+    67) <a name="l67" style="background-color: #ffffff"> </a>
+    68) <a name="l68" style="background-color: #ffffff">!===============================================================================</a>
+    69) <a name="l69" style="background-color: #ffffff"></a>
+    70) <a name="l70" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">read_data_flux (input_file, xin)</a>
+    71) <a name="l71" style="background-color: #ffcccc"> </a>
+    72) <a name="l72" style="background-color: #ffcccc">!-------------------------------------------------------------------------------              </a>
+    73) <a name="l73" style="background-color: #ffcccc">! Do initial read of time-varying 2d(lat,lon NetCDF dataset, </a>
+    74) <a name="l74" style="background-color: #ffcccc">! reading two data bracketing current timestep</a>
+    75) <a name="l75" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+    76) <a name="l76" style="background-color: #ffcccc"> </a>
+    77) <a name="l77" style="background-color: #ffcccc">  use time_manager, only : get_curr_date, get_curr_calday, &amp;</a>
+    78) <a name="l78" style="background-color: #ffcccc">                           is_perpetual, get_perp_date, get_step_size, is_first_step</a>
+    79) <a name="l79" style="background-color: #ffcccc">  use ioFileMod,    only : getfil</a>
+    80) <a name="l80" style="background-color: #ffcccc"></a>
+    81) <a name="l81" style="background-color: #ffcccc">  implicit none</a>
+    82) <a name="l82" style="background-color: #ffcccc"> </a>
+    83) <a name="l83" style="background-color: #ffcccc">!---------------------------Common blocks-------------------------------</a>
+    84) <a name="l84" style="background-color: #ffcccc">! Dummy arguments</a>
+    85) <a name="l85" style="background-color: #ffcccc">  character(len=*),   intent(in)    :: input_file</a>
+    86) <a name="l86" style="background-color: #ffcccc">  TYPE(read_interp),  intent(inout) :: xin   </a>
+    87) <a name="l87" style="background-color: #ffcccc"> </a>
+    88) <a name="l88" style="background-color: #ffcccc">  integer lonid                 ! netcdf id for longitude variable</a>
+    89) <a name="l89" style="background-color: #ffcccc">  integer latid                 ! netcdf id for latitude variable</a>
+    90) <a name="l90" style="background-color: #ffcccc">  integer timeid                ! netcdf id for time variable</a>
+    91) <a name="l91" style="background-color: #ffcccc">  integer dateid                ! netcdf id for date variable</a>
+    92) <a name="l92" style="background-color: #ffcccc">  integer secid                 ! netcdf id for seconds variable</a>
+    93) <a name="l93" style="background-color: #ffcccc">  integer londimid              ! netcdf id for longitude variable</a>
+    94) <a name="l94" style="background-color: #ffcccc">  integer latdimid              ! netcdf id for latitude variable</a>
+    95) <a name="l95" style="background-color: #ffcccc"> </a>
+    96) <a name="l96" style="background-color: #ffcccc">  integer dtime                 ! timestep size [seconds]</a>
+    97) <a name="l97" style="background-color: #ffcccc">  integer cnt3(3)               ! array of counts for each dimension</a>
+    98) <a name="l98" style="background-color: #ffcccc">  integer strt3(3)              ! array of starting indices</a>
+    99) <a name="l99" style="background-color: #ffcccc">  integer n                     ! indices</a>
+   100) <a name="l100" style="background-color: #ffcccc">  integer j                     ! latitude index</a>
+   101) <a name="l101" style="background-color: #ffcccc">  integer istat                 ! error return</a>
+   102) <a name="l102" style="background-color: #ffcccc">  integer  :: yr, mon, day      ! components of a date</a>
+   103) <a name="l103" style="background-color: #ffcccc">  integer  :: ncdate            ! current date in integer format [yyyymmdd]</a>
+   104) <a name="l104" style="background-color: #ffcccc">  integer  :: ncsec             ! current time of day [seconds]</a>
+   105) <a name="l105" style="background-color: #ffcccc">  real(r8) calday               ! calendar day (includes yr if no cycling)</a>
+   106) <a name="l106" style="background-color: #ffcccc">  real(r8) caldayloc            ! calendar day (includes yr if no cycling)</a>
+   107) <a name="l107" style="background-color: #ffcccc"> </a>
+   108) <a name="l108" style="background-color: #ffcccc">  xin%nm_f = 1</a>
+   109) <a name="l109" style="background-color: #ffcccc">  xin%np_f = 2</a>
+   110) <a name="l110" style="background-color: #ffcccc"> </a>
+   111) <a name="l111" style="background-color: #ffcccc">! Allocate space for data.</a>
+   112) <a name="l112" style="background-color: #ffcccc"> </a>
+   113) <a name="l113" style="background-color: #ffcccc">  allocate( xin%co2flx(pcols,begchunk:endchunk), stat=istat )</a>
+   114) <a name="l114" style="background-color: #ffcccc">  call alloc_err( istat, 'CO2FLUX_READ', 'co2flx', &amp;</a>
+   115) <a name="l115" style="background-color: #ffcccc">       pcols*(endchunk-begchunk+1) )</a>
+   116) <a name="l116" style="background-color: #ffcccc"> </a>
+   117) <a name="l117" style="background-color: #ffcccc">  allocate( xin%co2bdy(pcols,begchunk:endchunk,2), stat=istat )</a>
+   118) <a name="l118" style="background-color: #ffcccc">  call alloc_err( istat, 'CO2FLUX_READ', 'co2bdy', &amp;</a>
+   119) <a name="l119" style="background-color: #ffcccc">       pcols*(endchunk-begchunk+1)*2 )</a>
+   120) <a name="l120" style="background-color: #ffcccc"> </a>
+   121) <a name="l121" style="background-color: #ffcccc">! SPMD: Master does all the work.</a>
+   122) <a name="l122" style="background-color: #ffcccc"> </a>
+   123) <a name="l123" style="background-color: #ffcccc">  if (masterproc) then</a>
+   124) <a name="l124" style="background-color: #ffcccc">!</a>
+   125) <a name="l125" style="background-color: #ffcccc">! Use year information only if not cycling sst dataset</a>
+   126) <a name="l126" style="background-color: #ffcccc">!</a>
+   127) <a name="l127" style="background-color: #ffcccc">     if (is_first_step()) then</a>
+   128) <a name="l128" style="background-color: #ffcccc">        dtime = get_step_size()</a>
+   129) <a name="l129" style="background-color: #ffcccc">        dtime = -dtime</a>
+   130) <a name="l130" style="background-color: #ffcccc">        calday = get_curr_calday(offset=dtime)</a>
+   131) <a name="l131" style="background-color: #ffcccc">     else</a>
+   132) <a name="l132" style="background-color: #ffcccc">        calday = get_curr_calday()</a>
+   133) <a name="l133" style="background-color: #ffcccc">     endif</a>
+   134) <a name="l134" style="background-color: #ffcccc">     if ( is_perpetual() ) then</a>
+   135) <a name="l135" style="background-color: #ffcccc">        call get_perp_date(yr, mon, day, ncsec)</a>
+   136) <a name="l136" style="background-color: #ffcccc">     else</a>
+   137) <a name="l137" style="background-color: #ffcccc">        if (is_first_step()) then</a>
+   138) <a name="l138" style="background-color: #ffcccc">           call get_curr_date(yr, mon, day, ncsec,offset=dtime)</a>
+   139) <a name="l139" style="background-color: #ffcccc">        else</a>
+   140) <a name="l140" style="background-color: #ffcccc">           call get_curr_date(yr, mon, day, ncsec)</a>
+   141) <a name="l141" style="background-color: #ffcccc">        endif</a>
+   142) <a name="l142" style="background-color: #ffcccc">     end if</a>
+   143) <a name="l143" style="background-color: #ffcccc"> </a>
+   144) <a name="l144" style="background-color: #ffcccc">     ncdate = yr*10000 + mon*100 + day</a>
+   145) <a name="l145" style="background-color: #ffcccc"> </a>
+   146) <a name="l146" style="background-color: #ffcccc">     caldayloc = calday + yr*daysperyear</a>
+   147) <a name="l147" style="background-color: #ffcccc"> </a>
+   148) <a name="l148" style="background-color: #ffcccc">! Open NetCDF File</a>
+   149) <a name="l149" style="background-color: #ffcccc"> </a>
+   150) <a name="l150" style="background-color: #ffcccc">     call getfil(input_file, xin%locfn)</a>
+   151) <a name="l151" style="background-color: #ffcccc">     call handle_ncerr( nf90_open(xin%locfn, 0, xin%ncid_f),&amp;</a>
+   152) <a name="l152" style="background-color: #ffcccc">       'co2_data_flux.F90:154')</a>
+   153) <a name="l153" style="background-color: #ffcccc">     write(iulog,*)'CO2FLUX_READ: NCOPN returns id ',xin%ncid_f,' for file ',trim(xin%locfn)</a>
+   154) <a name="l154" style="background-color: #ffcccc"> </a>
+   155) <a name="l155" style="background-color: #ffcccc">! Get and check dimension info</a>
+   156) <a name="l156" style="background-color: #ffcccc"> </a>
+   157) <a name="l157" style="background-color: #ffcccc">     call handle_ncerr( nf90_inq_dimid( xin%ncid_f, 'lon', londimid ),&amp;</a>
+   158) <a name="l158" style="background-color: #ffcccc">       'co2_data_flux.F90:160')</a>
+   159) <a name="l159" style="background-color: #ffcccc">     call handle_ncerr( nf90_inq_dimid( xin%ncid_f, 'lat', latdimid ),&amp;</a>
+   160) <a name="l160" style="background-color: #ffcccc">       'co2_data_flux.F90:162')</a>
+   161) <a name="l161" style="background-color: #ffcccc">     call handle_ncerr( nf90_inq_dimid( xin%ncid_f, 'time',  timeid ),&amp;</a>
+   162) <a name="l162" style="background-color: #ffcccc">       'co2_data_flux.F90:164')</a>
+   163) <a name="l163" style="background-color: #ffcccc"></a>
+   164) <a name="l164" style="background-color: #ffcccc">     call handle_ncerr( nf90_inquire_dimension( xin%ncid_f, londimid, len=lonsiz     ),&amp;</a>
+   165) <a name="l165" style="background-color: #ffcccc">       'co2_data_flux.F90:167')</a>
+   166) <a name="l166" style="background-color: #ffcccc">     call handle_ncerr( nf90_inquire_dimension( xin%ncid_f, latdimid, len=latsiz     ),&amp;</a>
+   167) <a name="l167" style="background-color: #ffcccc">       'co2_data_flux.F90:169')</a>
+   168) <a name="l168" style="background-color: #ffcccc">     call handle_ncerr( nf90_inquire_dimension( xin%ncid_f, timeid,   len=xin%timesz ),&amp;</a>
+   169) <a name="l169" style="background-color: #ffcccc">       'co2_data_flux.F90:171')</a>
+   170) <a name="l170" style="background-color: #ffcccc"></a>
+   171) <a name="l171" style="background-color: #ffcccc">     allocate(xin%date_f(xin%timesz), xin%sec_f(xin%timesz))</a>
+   172) <a name="l172" style="background-color: #ffcccc">! Get data id</a>
+   173) <a name="l173" style="background-color: #ffcccc">        </a>
+   174) <a name="l174" style="background-color: #ffcccc">     call handle_ncerr( nf90_inq_varid( xin%ncid_f, 'date',     dateid     ),&amp;</a>
+   175) <a name="l175" style="background-color: #ffcccc">       'co2_data_flux.F90:192')</a>
+   176) <a name="l176" style="background-color: #ffcccc">     call handle_ncerr( nf90_inq_varid( xin%ncid_f, 'datesec',  secid      ),&amp;</a>
+   177) <a name="l177" style="background-color: #ffcccc">       'co2_data_flux.F90:194')</a>
+   178) <a name="l178" style="background-color: #ffcccc">     call handle_ncerr( nf90_inq_varid( xin%ncid_f, 'CO2_flux', xin%fluxid ),&amp;</a>
+   179) <a name="l179" style="background-color: #ffcccc">       'co2_data_flux.F90:196')</a>
+   180) <a name="l180" style="background-color: #ffcccc"> </a>
+   181) <a name="l181" style="background-color: #ffcccc">! Retrieve entire date and sec variables.</a>
+   182) <a name="l182" style="background-color: #ffcccc"> </a>
+   183) <a name="l183" style="background-color: #ffcccc">     call handle_ncerr( nf90_get_var ( xin%ncid_f, dateid, xin%date_f ),&amp;</a>
+   184) <a name="l184" style="background-color: #ffcccc">       'co2_data_flux.F90:201')</a>
+   185) <a name="l185" style="background-color: #ffcccc">     call handle_ncerr( nf90_get_var ( xin%ncid_f, secid,  xin%sec_f  ),&amp;</a>
+   186) <a name="l186" style="background-color: #ffcccc">       'co2_data_flux.F90:203')</a>
+   187) <a name="l187" style="background-color: #ffcccc"></a>
+   188) <a name="l188" style="background-color: #ffcccc">! initialize</a>
+   189) <a name="l189" style="background-color: #ffcccc"> </a>
+   190) <a name="l190" style="background-color: #ffcccc">     strt3(1) = 1</a>
+   191) <a name="l191" style="background-color: #ffcccc">     strt3(2) = 1</a>
+   192) <a name="l192" style="background-color: #ffcccc">     strt3(3) = 1</a>
+   193) <a name="l193" style="background-color: #ffcccc">     cnt3(1)  = lonsiz</a>
+   194) <a name="l194" style="background-color: #ffcccc">     cnt3(2)  = latsiz</a>
+   195) <a name="l195" style="background-color: #ffcccc">     cnt3(3)  = 1</a>
+   196) <a name="l196" style="background-color: #ffcccc"></a>
+   197) <a name="l197" style="background-color: #ffcccc">  endif</a>
+   198) <a name="l198" style="background-color: #ffcccc"></a>
+   199) <a name="l199" style="background-color: #ffcccc">#ifdef SPMD</a>
+   200) <a name="l200" style="background-color: #ffcccc">  call mpibcast( cnt3, 2,     mpiint, 0, mpicom )</a>
+   201) <a name="l201" style="background-color: #ffcccc">#endif</a>
+   202) <a name="l202" style="background-color: #ffcccc">  allocate(xin%xvar(cnt3(1),cnt3(2),2))</a>
+   203) <a name="l203" style="background-color: #ffcccc">  if (masterproc) then</a>
+   204) <a name="l204" style="background-color: #ffcccc">! Normal interpolation between consecutive time slices.</a>
+   205) <a name="l205" style="background-color: #ffcccc"></a>
+   206) <a name="l206" style="background-color: #ffcccc">     do n=1,xin%timesz-1</a>
+   207) <a name="l207" style="background-color: #ffcccc"></a>
+   208) <a name="l208" style="background-color: #ffcccc">        xin%np1_f = n + 1</a>
+   209) <a name="l209" style="background-color: #ffcccc"> </a>
+   210) <a name="l210" style="background-color: #ffcccc">        call bnddyi(xin%date_f(n  ),       xin%sec_f(n  ),       xin%cdayfm)</a>
+   211) <a name="l211" style="background-color: #ffcccc">        call bnddyi(xin%date_f(xin%np1_f), xin%sec_f(xin%np1_f), xin%cdayfp)</a>
+   212) <a name="l212" style="background-color: #ffcccc"> </a>
+   213) <a name="l213" style="background-color: #ffcccc">        yr         = xin%date_f(n)/10000</a>
+   214) <a name="l214" style="background-color: #ffcccc">        xin%cdayfm = xin%cdayfm + yr*daysperyear</a>
+   215) <a name="l215" style="background-color: #ffcccc"></a>
+   216) <a name="l216" style="background-color: #ffcccc">        yr         = xin%date_f(xin%np1_f)/10000</a>
+   217) <a name="l217" style="background-color: #ffcccc">        xin%cdayfp = xin%cdayfp + yr*daysperyear</a>
+   218) <a name="l218" style="background-color: #ffcccc"> </a>
+   219) <a name="l219" style="background-color: #ffcccc">!       read 2 time sample bracketing ncdate</a>
+   220) <a name="l220" style="background-color: #ffcccc"></a>
+   221) <a name="l221" style="background-color: #ffcccc">        if ( caldayloc &gt; xin%cdayfm .and. caldayloc &lt;= xin%cdayfp ) then</a>
+   222) <a name="l222" style="background-color: #ffcccc"> </a>
+   223) <a name="l223" style="background-color: #ffcccc">           strt3(3) = n</a>
+   224) <a name="l224" style="background-color: #ffcccc">           call handle_ncerr( nf90_get_var ( xin%ncid_f, xin%fluxid, xin%xvar(:,:,xin%nm_f), strt3, cnt3), &amp;</a>
+   225) <a name="l225" style="background-color: #ffcccc">             'co2_data_flux.F90:235')</a>
+   226) <a name="l226" style="background-color: #ffcccc">           strt3(3) = xin%np1_f                                      </a>
+   227) <a name="l227" style="background-color: #ffcccc">           call handle_ncerr( nf90_get_var ( xin%ncid_f, xin%fluxid, xin%xvar(:,:,xin%np_f), strt3, cnt3),&amp;</a>
+   228) <a name="l228" style="background-color: #ffcccc">             'co2_data_flux.F90:238')</a>
+   229) <a name="l229" style="background-color: #ffcccc"></a>
+   230) <a name="l230" style="background-color: #ffcccc">           goto 10</a>
+   231) <a name="l231" style="background-color: #ffcccc"></a>
+   232) <a name="l232" style="background-color: #ffcccc">        end if</a>
+   233) <a name="l233" style="background-color: #ffcccc"> </a>
+   234) <a name="l234" style="background-color: #ffcccc">     end do</a>
+   235) <a name="l235" style="background-color: #ffcccc"></a>
+   236) <a name="l236" style="background-color: #ffcccc">     write(iulog,*)'CO2FLUX_READ: Failed to find dates bracketing ncdate, ncsec=', ncdate, ncsec</a>
+   237) <a name="l237" style="background-color: #ffcccc">     call endrun</a>
+   238) <a name="l238" style="background-color: #ffcccc"> </a>
+   239) <a name="l239" style="background-color: #ffcccc">10   continue</a>
+   240) <a name="l240" style="background-color: #ffcccc">     write(iulog,*)'CO2FLUX_READ: Read ', trim(xin%locfn), ' for dates ', xin%date_f(n), xin%sec_f(n), &amp;</a>
+   241) <a name="l241" style="background-color: #ffcccc">          ' and ', xin%date_f(xin%np1_f), xin%sec_f(xin%np1_f)</a>
+   242) <a name="l242" style="background-color: #ffcccc"> </a>
+   243) <a name="l243" style="background-color: #ffcccc">#if (defined SPMD )</a>
+   244) <a name="l244" style="background-color: #ffcccc">     call mpibcast( xin%timesz, 1,     mpiint, 0, mpicom )</a>
+   245) <a name="l245" style="background-color: #ffcccc">     call mpibcast( xin%date_f, xin%timesz, mpiint, 0, mpicom )</a>
+   246) <a name="l246" style="background-color: #ffcccc">     call mpibcast( xin%sec_f,  xin%timesz, mpiint, 0, mpicom )</a>
+   247) <a name="l247" style="background-color: #ffcccc">     call mpibcast( xin%cdayfm, 1,     mpir8 , 0, mpicom )</a>
+   248) <a name="l248" style="background-color: #ffcccc">     call mpibcast( xin%cdayfp, 1,     mpir8,  0, mpicom )</a>
+   249) <a name="l249" style="background-color: #ffcccc">     call mpibcast( xin%np1_f,  1,     mpiint, 0, mpicom )</a>
+   250) <a name="l250" style="background-color: #ffcccc">  else</a>
+   251) <a name="l251" style="background-color: #ffcccc">     call mpibcast( xin%timesz, 1,     mpiint, 0, mpicom )</a>
+   252) <a name="l252" style="background-color: #ffcccc">     allocate(xin%date_f(xin%timesz), xin%sec_f(xin%timesz))</a>
+   253) <a name="l253" style="background-color: #ffcccc">     call mpibcast( xin%date_f, xin%timesz, mpiint, 0, mpicom )</a>
+   254) <a name="l254" style="background-color: #ffcccc">     call mpibcast( xin%sec_f,  xin%timesz, mpiint, 0, mpicom )</a>
+   255) <a name="l255" style="background-color: #ffcccc">     call mpibcast( xin%cdayfm, 1,     mpir8 , 0, mpicom )</a>
+   256) <a name="l256" style="background-color: #ffcccc">     call mpibcast( xin%cdayfp, 1,     mpir8,  0, mpicom )</a>
+   257) <a name="l257" style="background-color: #ffcccc">     call mpibcast( xin%np1_f,  1,     mpiint, 0, mpicom )</a>
+   258) <a name="l258" style="background-color: #ffcccc">#endif</a>
+   259) <a name="l259" style="background-color: #ffcccc">  end if</a>
+   260) <a name="l260" style="background-color: #ffcccc"></a>
+   261) <a name="l261" style="background-color: #ffcccc">  call scatter_field_to_chunk ( 1,1,2,cnt3(1), xin%xvar, xin%co2bdy )</a>
+   262) <a name="l262" style="background-color: #ffcccc"></a>
+   263) <a name="l263" style="background-color: #ffcccc">  return</a>
+   264) <a name="l264" style="background-color: #ffcccc">end subroutine read_data_flux</a>
+   265) <a name="l265" style="background-color: #ffcccc"></a><a style="background-color: #ffffff"> </a>
+   266) <a name="l266" style="background-color: #ffffff">!===============================================================================</a>
+   267) <a name="l267" style="background-color: #ffffff"></a>
+   268) <a name="l268" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">interp_time_flux (xin, prev_timestep)</a>
+   269) <a name="l269" style="background-color: #ffcccc"> </a>
+   270) <a name="l270" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   271) <a name="l271" style="background-color: #ffcccc">! Time interpolate data to current time.</a>
+   272) <a name="l272" style="background-color: #ffcccc">! Reading in new monthly data if necessary.</a>
+   273) <a name="l273" style="background-color: #ffcccc">!</a>
+   274) <a name="l274" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   275) <a name="l275" style="background-color: #ffcccc"> </a>
+   276) <a name="l276" style="background-color: #ffcccc">  use time_manager, only : get_curr_date, get_curr_calday, &amp;</a>
+   277) <a name="l277" style="background-color: #ffcccc">                          is_perpetual, get_perp_date, get_step_size, is_first_step</a>
+   278) <a name="l278" style="background-color: #ffcccc">  use interpolate_data,   only : get_timeinterp_factors</a>
+   279) <a name="l279" style="background-color: #ffcccc"> </a>
+   280) <a name="l280" style="background-color: #ffcccc">  logical, intent(in), optional     :: prev_timestep ! If using previous timestep, set to true</a>
+   281) <a name="l281" style="background-color: #ffcccc">  TYPE(read_interp),  intent(inout) :: xin</a>
+   282) <a name="l282" style="background-color: #ffcccc"></a>
+   283) <a name="l283" style="background-color: #ffcccc">!---------------------------Local variables-----------------------------</a>
+   284) <a name="l284" style="background-color: #ffcccc">  integer dtime          ! timestep size [seconds]</a>
+   285) <a name="l285" style="background-color: #ffcccc">  integer cnt3(3)        ! array of counts for each dimension</a>
+   286) <a name="l286" style="background-color: #ffcccc">  integer strt3(3)       ! array of starting indices</a>
+   287) <a name="l287" style="background-color: #ffcccc">  integer i,j,lchnk      ! indices</a>
+   288) <a name="l288" style="background-color: #ffcccc">  integer ncol           ! number of columns in current chunk</a>
+   289) <a name="l289" style="background-color: #ffcccc">  integer ntmp           ! temporary</a>
+   290) <a name="l290" style="background-color: #ffcccc">  real(r8) fact1, fact2  ! time interpolation factors</a>
+   291) <a name="l291" style="background-color: #ffcccc">  integer :: yr, mon, day! components of a date</a>
+   292) <a name="l292" style="background-color: #ffcccc">  integer :: ncdate      ! current date in integer format [yyyymmdd]</a>
+   293) <a name="l293" style="background-color: #ffcccc">  integer :: ncsec       ! current time of day [seconds]</a>
+   294) <a name="l294" style="background-color: #ffcccc">  real(r8) :: calday     ! current calendar day</a>
+   295) <a name="l295" style="background-color: #ffcccc">  real(r8) caldayloc     ! calendar day (includes yr if no cycling)</a>
+   296) <a name="l296" style="background-color: #ffcccc">  real(r8) deltat        ! time (days) between interpolating data</a>
+   297) <a name="l297" style="background-color: #ffcccc">  logical :: previous</a>
+   298) <a name="l298" style="background-color: #ffcccc">  logical :: co2cyc=.false.</a>
+   299) <a name="l299" style="background-color: #ffcccc"> </a>
+   300) <a name="l300" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   301) <a name="l301" style="background-color: #ffcccc"> </a>
+   302) <a name="l302" style="background-color: #ffcccc">! SPMD: Master does all the work.  Sends needed info to slaves</a>
+   303) <a name="l303" style="background-color: #ffcccc"> </a>
+   304) <a name="l304" style="background-color: #ffcccc">! Use year information only if a multiyear dataset</a>
+   305) <a name="l305" style="background-color: #ffcccc"> </a>
+   306) <a name="l306" style="background-color: #ffcccc">     if ( .not. present(prev_timestep) ) then</a>
+   307) <a name="l307" style="background-color: #ffcccc">        previous = .false.</a>
+   308) <a name="l308" style="background-color: #ffcccc">     else</a>
+   309) <a name="l309" style="background-color: #ffcccc">        previous = prev_timestep</a>
+   310) <a name="l310" style="background-color: #ffcccc">     end if</a>
+   311) <a name="l311" style="background-color: #ffcccc"> </a>
+   312) <a name="l312" style="background-color: #ffcccc">     if (previous .and. is_first_step()) then</a>
+   313) <a name="l313" style="background-color: #ffcccc">        dtime = get_step_size()</a>
+   314) <a name="l314" style="background-color: #ffcccc">        dtime = -dtime</a>
+   315) <a name="l315" style="background-color: #ffcccc">        calday = get_curr_calday(offset=dtime)</a>
+   316) <a name="l316" style="background-color: #ffcccc">     else</a>
+   317) <a name="l317" style="background-color: #ffcccc">        calday = get_curr_calday()</a>
+   318) <a name="l318" style="background-color: #ffcccc">     endif</a>
+   319) <a name="l319" style="background-color: #ffcccc"> </a>
+   320) <a name="l320" style="background-color: #ffcccc">     if ( is_perpetual() ) then</a>
+   321) <a name="l321" style="background-color: #ffcccc">        call get_perp_date(yr, mon, day, ncsec)</a>
+   322) <a name="l322" style="background-color: #ffcccc">     else</a>
+   323) <a name="l323" style="background-color: #ffcccc">        if (previous .and. is_first_step()) then</a>
+   324) <a name="l324" style="background-color: #ffcccc">           call get_curr_date(yr, mon, day, ncsec,offset=dtime)</a>
+   325) <a name="l325" style="background-color: #ffcccc">        else</a>
+   326) <a name="l326" style="background-color: #ffcccc">           call get_curr_date(yr, mon, day, ncsec)</a>
+   327) <a name="l327" style="background-color: #ffcccc">        endif</a>
+   328) <a name="l328" style="background-color: #ffcccc">     end if</a>
+   329) <a name="l329" style="background-color: #ffcccc"> </a>
+   330) <a name="l330" style="background-color: #ffcccc">     ncdate = yr*10000 + mon*100 + day</a>
+   331) <a name="l331" style="background-color: #ffcccc"> </a>
+   332) <a name="l332" style="background-color: #ffcccc">     caldayloc = calday + yr*daysperyear</a>
+   333) <a name="l333" style="background-color: #ffcccc"></a>
+   334) <a name="l334" style="background-color: #ffcccc">     if (masterproc) then</a>
+   335) <a name="l335" style="background-color: #ffcccc"></a>
+   336) <a name="l336" style="background-color: #ffcccc">        strt3(1) = 1</a>
+   337) <a name="l337" style="background-color: #ffcccc">        strt3(2) = 1</a>
+   338) <a name="l338" style="background-color: #ffcccc">        strt3(3) = 1</a>
+   339) <a name="l339" style="background-color: #ffcccc">        cnt3(1)  = lonsiz</a>
+   340) <a name="l340" style="background-color: #ffcccc">        cnt3(2)  = latsiz</a>
+   341) <a name="l341" style="background-color: #ffcccc">        cnt3(3)  = 1</a>
+   342) <a name="l342" style="background-color: #ffcccc"></a>
+   343) <a name="l343" style="background-color: #ffcccc">     endif</a>
+   344) <a name="l344" style="background-color: #ffcccc"></a>
+   345) <a name="l345" style="background-color: #ffcccc">#ifdef SPMD</a>
+   346) <a name="l346" style="background-color: #ffcccc">     call mpibcast(cnt3, 2, mpiint, 0, mpicom)</a>
+   347) <a name="l347" style="background-color: #ffcccc">#endif</a>
+   348) <a name="l348" style="background-color: #ffcccc"> </a>
+   349) <a name="l349" style="background-color: #ffcccc">! If model time is past current forward data timeslice, read in the next</a>
+   350) <a name="l350" style="background-color: #ffcccc">! timeslice for time interpolation. </a>
+   351) <a name="l351" style="background-color: #ffcccc"> </a>
+   352) <a name="l352" style="background-color: #ffcccc">     if ( caldayloc &gt; xin%cdayfp .and. .not. (xin%np1_f==1 .and. caldayloc &gt; xin%cdayfm) ) then</a>
+   353) <a name="l353" style="background-color: #ffcccc"> </a>
+   354) <a name="l354" style="background-color: #ffcccc">        xin%np1_f = xin%np1_f + 1</a>
+   355) <a name="l355" style="background-color: #ffcccc"> </a>
+   356) <a name="l356" style="background-color: #ffcccc">        if ( xin%np1_f &gt; xin%timesz ) then</a>
+   357) <a name="l357" style="background-color: #ffcccc">           call endrun ('CO2FLUX_INTERP: Attempt to read past end of dataset')</a>
+   358) <a name="l358" style="background-color: #ffcccc">        end if</a>
+   359) <a name="l359" style="background-color: #ffcccc"> </a>
+   360) <a name="l360" style="background-color: #ffcccc">        xin%cdayfm = xin%cdayfp</a>
+   361) <a name="l361" style="background-color: #ffcccc"> </a>
+   362) <a name="l362" style="background-color: #ffcccc">        call bnddyi( xin%date_f(xin%np1_f), xin%sec_f(xin%np1_f), xin%cdayfp )</a>
+   363) <a name="l363" style="background-color: #ffcccc"></a>
+   364) <a name="l364" style="background-color: #ffcccc">        yr = xin%date_f(xin%np1_f)/10000</a>
+   365) <a name="l365" style="background-color: #ffcccc">        xin%cdayfp = xin%cdayfp + yr*daysperyear</a>
+   366) <a name="l366" style="background-color: #ffcccc"></a>
+   367) <a name="l367" style="background-color: #ffcccc">        if ( .not. (xin%np1_f == 1 .or. caldayloc &lt;= xin%cdayfp) ) then</a>
+   368) <a name="l368" style="background-color: #ffcccc">         </a>
+   369) <a name="l369" style="background-color: #ffcccc">           if (masterproc) then</a>
+   370) <a name="l370" style="background-color: #ffcccc">              write(iulog,*)'CO2FLUX_INTERP: Input data for date', xin%date_f(xin%np1_f), ' sec ', xin%sec_f(xin%np1_f), &amp;</a>
+   371) <a name="l371" style="background-color: #ffcccc">                        ' does not exceed model date', ncdate, ' sec ', ncsec, ' Stopping.'</a>
+   372) <a name="l372" style="background-color: #ffcccc">           end if</a>
+   373) <a name="l373" style="background-color: #ffcccc">           call endrun ()</a>
+   374) <a name="l374" style="background-color: #ffcccc">        end if</a>
+   375) <a name="l375" style="background-color: #ffcccc"></a>
+   376) <a name="l376" style="background-color: #ffcccc">        ntmp     = xin%nm_f</a>
+   377) <a name="l377" style="background-color: #ffcccc">        xin%nm_f = xin%np_f</a>
+   378) <a name="l378" style="background-color: #ffcccc">        xin%np_f = ntmp</a>
+   379) <a name="l379" style="background-color: #ffcccc"> </a>
+   380) <a name="l380" style="background-color: #ffcccc">        if (masterproc) then</a>
+   381) <a name="l381" style="background-color: #ffcccc">           strt3(3) = xin%np1_f</a>
+   382) <a name="l382" style="background-color: #ffcccc">           call handle_ncerr( nf90_get_var ( xin%ncid_f, xin%fluxid, xin%xvar(:,:,xin%np_f), strt3, cnt3 ),&amp;</a>
+   383) <a name="l383" style="background-color: #ffcccc">             'co2_data_flux.F90:391')</a>
+   384) <a name="l384" style="background-color: #ffcccc">           write(iulog,*)'CO2FLUX_INTERP: Read ', trim(xin%locfn),' for date (yyyymmdd) ', xin%date_f(xin%np1_f), &amp;</a>
+   385) <a name="l385" style="background-color: #ffcccc">                     ' sec ', xin%sec_f(xin%np1_f)</a>
+   386) <a name="l386" style="background-color: #ffcccc">        endif</a>
+   387) <a name="l387" style="background-color: #ffcccc"> </a>
+   388) <a name="l388" style="background-color: #ffcccc">        call scatter_field_to_chunk ( 1,1,2,cnt3(1), xin%xvar, xin%co2bdy )</a>
+   389) <a name="l389" style="background-color: #ffcccc">     end if</a>
+   390) <a name="l390" style="background-color: #ffcccc"> </a>
+   391) <a name="l391" style="background-color: #ffcccc">! Determine time interpolation factors.</a>
+   392) <a name="l392" style="background-color: #ffcccc"> </a>
+   393) <a name="l393" style="background-color: #ffcccc">     call get_timeinterp_factors ( co2cyc, xin%np1_f, xin%cdayfm, xin%cdayfp, caldayloc, fact1, fact2, 'CO2FLUX_INTERP:' )</a>
+   394) <a name="l394" style="background-color: #ffcccc"></a>
+   395) <a name="l395" style="background-color: #ffcccc">     do lchnk=begchunk,endchunk</a>
+   396) <a name="l396" style="background-color: #ffcccc">        ncol = get_ncols_p(lchnk)</a>
+   397) <a name="l397" style="background-color: #ffcccc">        do i=1,ncol</a>
+   398) <a name="l398" style="background-color: #ffcccc">           xin%co2flx(i,lchnk) = xin%co2bdy(i,lchnk,xin%nm_f)*fact1 + xin%co2bdy(i,lchnk,xin%np_f)*fact2</a>
+   399) <a name="l399" style="background-color: #ffcccc">        end do</a>
+   400) <a name="l400" style="background-color: #ffcccc">     end do</a>
+   401) <a name="l401" style="background-color: #ffcccc"></a>
+   402) <a name="l402" style="background-color: #ffcccc">  return</a>
+   403) <a name="l403" style="background-color: #ffcccc">end subroutine interp_time_flux</a>
+   404) <a name="l404" style="background-color: #ffffff"></a>
+   405) <a name="l405" style="background-color: #ffffff">!============================================================================================================</a>
+   406) <a name="l406" style="background-color: #ffffff"></a>
+   407) <a name="l407" style="background-color: #ffffff">end module co2_data_flux</a>
+   408) <a name="l408" style="background-color: #ffffff"></a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

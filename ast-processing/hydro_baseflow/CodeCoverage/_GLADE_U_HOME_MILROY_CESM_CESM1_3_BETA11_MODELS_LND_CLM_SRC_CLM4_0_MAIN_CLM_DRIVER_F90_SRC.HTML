@@ -1,0 +1,934 @@
+<html>
+<head>
+<title>Listing of clm_driver.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;clm_driver.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 45.58&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module clm_driver</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">!BOP</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !MODULE: clm_driver</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     9) <a name="l9" style="background-color: #ffffff">! This module provides the main CLM driver physics calling sequence.  Most</a>
+    10) <a name="l10" style="background-color: #ffffff">! computations occurs over ``clumps'' of gridcells (and associated subgrid</a>
+    11) <a name="l11" style="background-color: #ffffff">! scale entities) assigned to each MPI process. Computation is further</a>
+    12) <a name="l12" style="background-color: #ffffff">! parallelized by looping over clumps on each process using shared memory OpenMP.</a>
+    13) <a name="l13" style="background-color: #ffffff">!</a>
+    14) <a name="l14" style="background-color: #ffffff">! The main CLM driver physics calling sequence for clm_driver1 is as follows:</a>
+    15) <a name="l15" style="background-color: #ffffff">! \begin{verbatim}</a>
+    16) <a name="l16" style="background-color: #ffffff">!</a>
+    17) <a name="l17" style="background-color: #ffffff">!     + interpMonthlyVeg      interpolate monthly vegetation data        [! CN or ! CNDV]</a>
+    18) <a name="l18" style="background-color: #ffffff">!       + readMonthlyVegetation read vegetation data for two months      [! CN or ! CNDV]</a>
+    19) <a name="l19" style="background-color: #ffffff">!</a>
+    20) <a name="l20" style="background-color: #ffffff">! ==== Begin Loop over clumps ====</a>
+    21) <a name="l21" style="background-color: #ffffff">!  -&gt; dynland_hwcontent   Get initial heat, water content</a>
+    22) <a name="l22" style="background-color: #ffffff">!     + pftdyn_interp                                                    [pftdyn]</a>
+    23) <a name="l23" style="background-color: #ffffff">!     + dynland_hwcontent   Get new heat, water content                  [pftdyn]</a>
+    24) <a name="l24" style="background-color: #ffffff">! ==== End Loop over clumps  ====</a>
+    25) <a name="l25" style="background-color: #ffffff">!</a>
+    26) <a name="l26" style="background-color: #ffffff">! ==== Begin Loop over clumps ====</a>
+    27) <a name="l27" style="background-color: #ffffff">!  -&gt; clm_driverInit      save of variables from previous time step</a>
+    28) <a name="l28" style="background-color: #ffffff">!  -&gt; Hydrology1          canopy interception and precip on ground</a>
+    29) <a name="l29" style="background-color: #ffffff">!     -&gt; FracWet          fraction of wet vegetated surface and dry elai</a>
+    30) <a name="l30" style="background-color: #ffffff">!  -&gt; SurfaceRadiation    surface solar radiation</a>
+    31) <a name="l31" style="background-color: #ffffff">!  -&gt; UrbanRadiation      surface solar and longwave radiation for Urban landunits</a>
+    32) <a name="l32" style="background-color: #ffffff">!  -&gt; Biogeophysics1      leaf temperature and surface fluxes</a>
+    33) <a name="l33" style="background-color: #ffffff">!  -&gt; BareGroundFluxes    surface fluxes for bare soil or snow-covered</a>
+    34) <a name="l34" style="background-color: #ffffff">!                         vegetation patches</a>
+    35) <a name="l35" style="background-color: #ffffff">!  -&gt; UrbanFluxes         surface fluxes for urban landunits</a>
+    36) <a name="l36" style="background-color: #ffffff">!     -&gt; MoninObukIni     first-guess Monin-Obukhov length and wind speed</a>
+    37) <a name="l37" style="background-color: #ffffff">!     -&gt; FrictionVelocity friction velocity and potential temperature and</a>
+    38) <a name="l38" style="background-color: #ffffff">!                         humidity profiles</a>
+    39) <a name="l39" style="background-color: #ffffff">!  -&gt; CanopyFluxes        leaf temperature and surface fluxes for vegetated</a>
+    40) <a name="l40" style="background-color: #ffffff">!                         patches</a>
+    41) <a name="l41" style="background-color: #ffffff">!     -&gt; QSat             saturated vapor pressure, specific humidity, &amp;</a>
+    42) <a name="l42" style="background-color: #ffffff">!                         derivatives at leaf surface</a>
+    43) <a name="l43" style="background-color: #ffffff">!     -&gt; MoninObukIni     first-guess Monin-Obukhov length and wind speed</a>
+    44) <a name="l44" style="background-color: #ffffff">!     -&gt; FrictionVelocity friction velocity and potential temperature and</a>
+    45) <a name="l45" style="background-color: #ffffff">!                         humidity profiles</a>
+    46) <a name="l46" style="background-color: #ffffff">!     -&gt; Stomata          stomatal resistance and photosynthesis for</a>
+    47) <a name="l47" style="background-color: #ffffff">!                         sunlit leaves</a>
+    48) <a name="l48" style="background-color: #ffffff">!     -&gt; Stomata          stomatal resistance and photosynthesis for</a>
+    49) <a name="l49" style="background-color: #ffffff">!                         shaded leaves</a>
+    50) <a name="l50" style="background-color: #ffffff">!     -&gt; QSat             recalculation of saturated vapor pressure,</a>
+    51) <a name="l51" style="background-color: #ffffff">!                         specific humidity, &amp; derivatives at leaf surface</a>
+    52) <a name="l52" style="background-color: #ffffff">!   + DustEmission        Dust mobilization</a>
+    53) <a name="l53" style="background-color: #ffffff">!   + DustDryDep          Dust dry deposition</a>
+    54) <a name="l54" style="background-color: #ffffff">!  -&gt; Biogeophysics_Lake  lake temperature and surface fluxes</a>
+    55) <a name="l55" style="background-color: #ffffff">!   + VOCEmission         compute VOC emission                          [VOC]</a>
+    56) <a name="l56" style="background-color: #ffffff">!  -&gt; Biogeophysics2      soil/snow &amp; ground temp and update surface fluxes</a>
+    57) <a name="l57" style="background-color: #ffffff">!  -&gt; pft2col             Average from PFT level to column level</a>
+    58) <a name="l58" style="background-color: #ffffff">!  -&gt; Hydrology2          surface and soil hydrology</a>
+    59) <a name="l59" style="background-color: #ffffff">!  -&gt; Hydrology_Lake      lake hydrology</a>
+    60) <a name="l60" style="background-color: #ffffff">!  -&gt; SnowAge_grain       update snow effective grain size for snow radiative transfer</a>
+    61) <a name="l61" style="background-color: #ffffff">!   + CNEcosystemDyn      Carbon Nitrogen model ecosystem dynamics:     [CN]</a>
+    62) <a name="l62" style="background-color: #ffffff">!                         vegetation phenology and soil carbon  </a>
+    63) <a name="l63" style="background-color: #ffffff">!   + EcosystemDyn        &quot;static&quot; ecosystem dynamics:                  [! CN ]</a>
+    64) <a name="l64" style="background-color: #ffffff">!                         vegetation phenology and soil carbon  </a>
+    65) <a name="l65" style="background-color: #ffffff">!  -&gt; BalanceCheck        check for errors in energy and water balances</a>
+    66) <a name="l66" style="background-color: #ffffff">!  -&gt; SurfaceAlbedo       albedos for next time step</a>
+    67) <a name="l67" style="background-color: #ffffff">!  -&gt; UrbanAlbedo         Urban landunit albedos for next time step</a>
+    68) <a name="l68" style="background-color: #ffffff">!  ====  End Loop over clumps  ====</a>
+    69) <a name="l69" style="background-color: #ffffff">!</a>
+    70) <a name="l70" style="background-color: #ffffff">! Second phase of the clm main driver, for handling history and restart file output.</a>
+    71) <a name="l71" style="background-color: #ffffff">!</a>
+    72) <a name="l72" style="background-color: #ffffff">!  -&gt; write_diagnostic    output diagnostic if appropriate</a>
+    73) <a name="l73" style="background-color: #ffffff">!  -&gt; updateAccFlds       update accumulated fields</a>
+    74) <a name="l74" style="background-color: #ffffff">!  -&gt; hist_update_hbuf    accumulate history fields for time interval</a>
+    75) <a name="l75" style="background-color: #ffffff">!  -&gt; htapes_wrapup       write history tapes if appropriate</a>
+    76) <a name="l76" style="background-color: #ffffff">!  -&gt; restFile_write      write restart file if appropriate</a>
+    77) <a name="l77" style="background-color: #ffffff">! \end{verbatim}</a>
+    78) <a name="l78" style="background-color: #ffffff">!</a>
+    79) <a name="l79" style="background-color: #ffffff">! Optional subroutines are denoted by an plus (+) with the associated</a>
+    80) <a name="l80" style="background-color: #ffffff">! CPP token or variable in brackets at the end of the line.</a>
+    81) <a name="l81" style="background-color: #ffffff">!</a>
+    82) <a name="l82" style="background-color: #ffffff">! !USES:</a>
+    83) <a name="l83" style="background-color: #ffffff">  use shr_kind_mod        , only : r8 =&gt; shr_kind_r8</a>
+    84) <a name="l84" style="background-color: #ffffff">  use clmtype</a>
+    85) <a name="l85" style="background-color: #ffffff">  use clm_varctl          , only : wrtdia, flanduse_timeseries, iulog, create_glacier_mec_landunit, &amp;</a>
+    86) <a name="l86" style="background-color: #ffffff">                                   use_cn, use_cndv, use_exit_spinup</a>
+    87) <a name="l87" style="background-color: #ffffff">  use spmdMod             , only : masterproc,mpicom</a>
+    88) <a name="l88" style="background-color: #ffffff">  use decompMod           , only : get_proc_clumps, get_clump_bounds, get_proc_bounds</a>
+    89) <a name="l89" style="background-color: #ffffff">  use filterMod           , only : filter, setFilters</a>
+    90) <a name="l90" style="background-color: #ffffff">  use CNDVMod             , only : dv, histCNDV</a>
+    91) <a name="l91" style="background-color: #ffffff">  use pftdynMod           , only : pftwt_interp</a>
+    92) <a name="l92" style="background-color: #ffffff">  use pftdynMod           , only : pftdyn_interp, pftdyn_wbal_init, pftdyn_wbal</a>
+    93) <a name="l93" style="background-color: #ffffff">  use pftdynMod           , only : pftdyn_cnbal</a>
+    94) <a name="l94" style="background-color: #ffffff">  use dynlandMod          , only : dynland_hwcontent</a>
+    95) <a name="l95" style="background-color: #ffffff">  use clm_varcon          , only : zlnd, isturb</a>
+    96) <a name="l96" style="background-color: #ffffff">  use clm_time_manager    , only : get_step_size,get_curr_date,get_ref_date,get_nstep</a>
+    97) <a name="l97" style="background-color: #ffffff">  use CropRestMod         , only : CropRestIncYear</a>
+    98) <a name="l98" style="background-color: #ffffff">  use histFileMod         , only : hist_update_hbuf, hist_htapes_wrapup</a>
+    99) <a name="l99" style="background-color: #ffffff">  use restFileMod         , only : restFile_write, restFile_filename</a>
+   100) <a name="l100" style="background-color: #ffffff">  use accFldsMod          , only : updateAccFlds</a>
+   101) <a name="l101" style="background-color: #ffffff">  use clm_driverInitMod   , only : clm_driverInit</a>
+   102) <a name="l102" style="background-color: #ffffff">  use BalanceCheckMod     , only : BeginWaterBalance, BalanceCheck</a>
+   103) <a name="l103" style="background-color: #ffffff">  use SurfaceRadiationMod , only : SurfaceRadiation</a>
+   104) <a name="l104" style="background-color: #ffffff">  use Hydrology1Mod       , only : Hydrology1</a>
+   105) <a name="l105" style="background-color: #ffffff">  use Hydrology2Mod       , only : Hydrology2</a>
+   106) <a name="l106" style="background-color: #ffffff">  use HydrologyLakeMod    , only : HydrologyLake</a>
+   107) <a name="l107" style="background-color: #ffffff">  use Biogeophysics1Mod   , only : Biogeophysics1</a>
+   108) <a name="l108" style="background-color: #ffffff">  use BareGroundFluxesMod , only : BareGroundFluxes</a>
+   109) <a name="l109" style="background-color: #ffffff">  use CanopyFluxesMod     , only : CanopyFluxes</a>
+   110) <a name="l110" style="background-color: #ffffff">  use Biogeophysics2Mod   , only : Biogeophysics2</a>
+   111) <a name="l111" style="background-color: #ffffff">  use BiogeophysicsLakeMod, only : BiogeophysicsLake</a>
+   112) <a name="l112" style="background-color: #ffffff">  use SurfaceAlbedoMod    , only : SurfaceAlbedo</a>
+   113) <a name="l113" style="background-color: #ffffff">  use pft2colMod          , only : pft2col</a>
+   114) <a name="l114" style="background-color: #ffffff">  use CNSetValueMod       , only : CNZeroFluxes_dwt</a>
+   115) <a name="l115" style="background-color: #ffffff">  use CNEcosystemDynMod   , only : CNEcosystemDyn</a>
+   116) <a name="l116" style="background-color: #ffffff">  use CNAnnualUpdateMod   , only : CNAnnualUpdate</a>
+   117) <a name="l117" style="background-color: #ffffff">  use CNBalanceCheckMod   , only : BeginCBalance, BeginNBalance, &amp;</a>
+   118) <a name="l118" style="background-color: #ffffff">                                   CBalanceCheck, NBalanceCheck</a>
+   119) <a name="l119" style="background-color: #ffffff">  use ndepStreamMod       , only : ndep_interp</a>
+   120) <a name="l120" style="background-color: #ffffff">  use STATICEcosysDynMod  , only : EcosystemDyn</a>
+   121) <a name="l121" style="background-color: #ffffff">  use DUSTMod             , only : DustDryDep, DustEmission</a>
+   122) <a name="l122" style="background-color: #ffffff">  use VOCEmissionMod      , only : VOCEmission</a>
+   123) <a name="l123" style="background-color: #ffffff">  use seq_drydep_mod      , only : n_drydep, drydep_method, DD_XLND</a>
+   124) <a name="l124" style="background-color: #ffffff">  use STATICEcosysDynMod  , only : interpMonthlyVeg</a>
+   125) <a name="l125" style="background-color: #ffffff">  use DryDepVelocity      , only : depvel_compute</a>
+   126) <a name="l126" style="background-color: #ffffff">  use abortutils          , only : endrun</a>
+   127) <a name="l127" style="background-color: #ffffff">  use UrbanMod            , only : UrbanAlbedo, UrbanRadiation, UrbanFluxes </a>
+   128) <a name="l128" style="background-color: #ffffff">  use SNICARMod           , only : SnowAge_grain</a>
+   129) <a name="l129" style="background-color: #ffffff">  use clm_atmlnd          , only : clm_map2gcell</a>
+   130) <a name="l130" style="background-color: #ffffff">  use clm_glclnd          , only : update_clm_s2x</a>
+   131) <a name="l131" style="background-color: #ffffff">  use perf_mod</a>
+   132) <a name="l132" style="background-color: #ffffff">!</a>
+   133) <a name="l133" style="background-color: #ffffff">! !PUBLIC TYPES:</a>
+   134) <a name="l134" style="background-color: #ffffff">  implicit none</a>
+   135) <a name="l135" style="background-color: #ffffff">!</a>
+   136) <a name="l136" style="background-color: #ffffff">! !PUBLIC MEMBER FUNCTIONS:</a>
+   137) <a name="l137" style="background-color: #ffffff">  public :: clm_drv                 ! clm physics,history, restart writes</a>
+   138) <a name="l138" style="background-color: #ffffff">!</a>
+   139) <a name="l139" style="background-color: #ffffff">! !PRIVATE MEMBER FUNCTIONS:</a>
+   140) <a name="l140" style="background-color: #ffffff">  private :: write_diagnostic       ! Write diagnostic information to log file</a>
+   141) <a name="l141" style="background-color: #ffffff">!EOP</a>
+   142) <a name="l142" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   143) <a name="l143" style="background-color: #ffffff"></a>
+   144) <a name="l144" style="background-color: #ffffff">contains</a>
+   145) <a name="l145" style="background-color: #ffffff"></a>
+   146) <a name="l146" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   147) <a name="l147" style="background-color: #ffffff">!BOP</a>
+   148) <a name="l148" style="background-color: #ffffff">!</a>
+   149) <a name="l149" style="background-color: #ffffff">! !ROUTINE: clm_drv</a>
+   150) <a name="l150" style="background-color: #ffffff">!</a>
+   151) <a name="l151" style="background-color: #ffffff">! !INTERFACE:</a>
+   152) <a name="l152" style="background-color: #ffffff">subroutine clm_drv(doalb, nextsw_cday, declinp1, declin, rstwr, nlend, rdate)</a>
+   153) <a name="l153" style="background-color: #ffffff">!</a>
+   154) <a name="l154" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   155) <a name="l155" style="background-color: #ffffff">!</a>
+   156) <a name="l156" style="background-color: #ffffff">! First phase of the clm driver calling the clm physics. An outline of</a>
+   157) <a name="l157" style="background-color: #ffffff">! the calling tree is given in the description of this module.</a>
+   158) <a name="l158" style="background-color: #ffffff">!</a>
+   159) <a name="l159" style="background-color: #ffffff">! !USES:</a>
+   160) <a name="l160" style="background-color: #ffffff"></a>
+   161) <a name="l161" style="background-color: #ffffff">! !ARGUMENTS:</a>
+   162) <a name="l162" style="background-color: #ffffff">  implicit none</a>
+   163) <a name="l163" style="background-color: #ffffff">  logical,         intent(in) :: doalb       ! true if time for surface albedo calc</a>
+   164) <a name="l164" style="background-color: #ffffff">  real(r8),        intent(in) :: nextsw_cday ! calendar day for nstep+1</a>
+   165) <a name="l165" style="background-color: #ffffff">  real(r8),        intent(in) :: declinp1    ! declination angle for next time step</a>
+   166) <a name="l166" style="background-color: #ffffff">  real(r8),        intent(in) :: declin      ! declination angle for current time step</a>
+   167) <a name="l167" style="background-color: #ffffff">  logical,         intent(in) :: rstwr       ! true =&gt; write restart file this step</a>
+   168) <a name="l168" style="background-color: #ffffff">  logical,         intent(in) :: nlend       ! true =&gt; end of run on this step</a>
+   169) <a name="l169" style="background-color: #ffffff">  character(len=*),intent(in) :: rdate       ! restart file time stamp for name</a>
+   170) <a name="l170" style="background-color: #ffffff">!</a>
+   171) <a name="l171" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   172) <a name="l172" style="background-color: #ffffff">! 2002.10.01  Mariana Vertenstein latest update to new data structures</a>
+   173) <a name="l173" style="background-color: #ffffff">! 11/26/03, Peter Thornton: Added new call for SurfaceRadiationSunShade when</a>
+   174) <a name="l174" style="background-color: #ffffff">!  cpp directive SUNSHA is set, for sunlit/shaded canopy radiation.</a>
+   175) <a name="l175" style="background-color: #ffffff">! 4/25/05, Peter Thornton: Made the sun/shade routine the default, no longer</a>
+   176) <a name="l176" style="background-color: #ffffff">!  need to have SUNSHA defined.  </a>
+   177) <a name="l177" style="background-color: #ffffff">! Oct/05 &amp; Jul/07 Sam Levis: Starting dates of CNDV and crop model work</a>
+   178) <a name="l178" style="background-color: #ffffff">! 2/29/08, Dave Lawrence: Revised snow cover fraction according to Niu and Yang, 2007</a>
+   179) <a name="l179" style="background-color: #ffffff">! 3/6/09, Peter Thornton: Added declin as new argument, for daylength control on Vcmax</a>
+   180) <a name="l180" style="background-color: #ffffff">! 2008.11.12  B. Kauffman: morph routine casa() in casa_ecosytemDyn(), so casa</a>
+   181) <a name="l181" style="background-color: #ffffff">!    is more similar to CN &amp; DGVM</a>
+   182) <a name="l182" style="background-color: #ffffff">! 2/25/2012 M. Vertenstein: Removed CASA references </a>
+   183) <a name="l183" style="background-color: #ffffff">!</a>
+   184) <a name="l184" style="background-color: #ffffff">!EOP</a>
+   185) <a name="l185" style="background-color: #ffffff">!</a>
+   186) <a name="l186" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+   187) <a name="l187" style="background-color: #ffffff">!</a>
+   188) <a name="l188" style="background-color: #ffffff">! local pointers to implicit in arguments</a>
+   189) <a name="l189" style="background-color: #ffffff">!</a>
+   190) <a name="l190" style="background-color: #ffffff">  integer , pointer :: clandunit(:) ! landunit index associated with each column</a>
+   191) <a name="l191" style="background-color: #ffffff">  integer , pointer :: itypelun(:)  ! landunit type</a>
+   192) <a name="l192" style="background-color: #ffffff">!</a>
+   193) <a name="l193" style="background-color: #ffffff">! !OTHER LOCAL VARIABLES:</a>
+   194) <a name="l194" style="background-color: #ffffff">  integer  :: nstep                    ! time step number</a>
+   195) <a name="l195" style="background-color: #ffffff">  real(r8) :: dtime                    ! land model time step (sec)</a>
+   196) <a name="l196" style="background-color: #ffffff">  real(r8) :: t1, t2, t3               ! temporary for mass balance checks</a>
+   197) <a name="l197" style="background-color: #ffffff">  integer  :: nc, fc, c, fp, p, l, g   ! indices</a>
+   198) <a name="l198" style="background-color: #ffffff">  integer  :: nclumps                  ! number of clumps on this processor</a>
+   199) <a name="l199" style="background-color: #ffffff">  integer  :: begg, endg               ! clump beginning and ending gridcell indices</a>
+   200) <a name="l200" style="background-color: #ffffff">  integer  :: begl, endl               ! clump beginning and ending landunit indices</a>
+   201) <a name="l201" style="background-color: #ffffff">  integer  :: begc, endc               ! clump beginning and ending column indices</a>
+   202) <a name="l202" style="background-color: #ffffff">  integer  :: begp, endp               ! clump beginning and ending pft indices</a>
+   203) <a name="l203" style="background-color: #ffffff">  integer  :: begg_proc, endg_proc     ! proc beginning and ending gridcell indices</a>
+   204) <a name="l204" style="background-color: #ffffff">  integer  :: begl_proc, endl_proc     ! proc beginning and ending landunit indices</a>
+   205) <a name="l205" style="background-color: #ffffff">  integer  :: begc_proc, endc_proc     ! proc beginning and ending column indices</a>
+   206) <a name="l206" style="background-color: #ffffff">  integer  :: begp_proc, endp_proc     ! proc beginning and ending pft indices</a>
+   207) <a name="l207" style="background-color: #ffffff">  type(column_type), pointer :: cptr   ! pointer to column derived subtype</a>
+   208) <a name="l208" style="background-color: #ffffff">  integer  :: yrp1                     ! year (0, ...) for nstep+1</a>
+   209) <a name="l209" style="background-color: #ffffff">  integer  :: monp1                    ! month (1, ..., 12) for nstep+1</a>
+   210) <a name="l210" style="background-color: #ffffff">  integer  :: dayp1                    ! day of month (1, ..., 31) for nstep+1</a>
+   211) <a name="l211" style="background-color: #ffffff">  integer  :: secp1                    ! seconds into current date for nstep+1</a>
+   212) <a name="l212" style="background-color: #ffffff">  integer  :: yr                       ! year (0, ...)</a>
+   213) <a name="l213" style="background-color: #ffffff">  integer  :: mon                      ! month (1, ..., 12)</a>
+   214) <a name="l214" style="background-color: #ffffff">  integer  :: day                      ! day of month (1, ..., 31)</a>
+   215) <a name="l215" style="background-color: #ffffff">  integer  :: sec                      ! seconds of the day</a>
+   216) <a name="l216" style="background-color: #ffffff">  integer  :: ncdate                   ! current date</a>
+   217) <a name="l217" style="background-color: #ffffff">  integer  :: nbdate                   ! base date (reference date)</a>
+   218) <a name="l218" style="background-color: #ffffff">  integer  :: kyr                      ! thousand years, equals 2 at end of first year</a>
+   219) <a name="l219" style="background-color: #ffffff">  character(len=256) :: filer          ! restart file name</a>
+   220) <a name="l220" style="background-color: #ffffff">  integer :: ier                       ! error code</a>
+   221) <a name="l221" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   222) <a name="l222" style="background-color: #ffffff"></a>
+   223) <a name="l223" style="background-color: #ffffff">  ! Assign local pointers to derived subtypes components (landunit-level)</a>
+   224) <a name="l224" style="background-color: #ffffff"></a>
+   225) <a name="l225" style="background-color: #ffffff">  itypelun            =&gt; lun%itype</a>
+   226) <a name="l226" style="background-color: #ffffff"></a>
+   227) <a name="l227" style="background-color: #ffffff">  ! Assign local pointers to derived subtypes components (column-level)</a>
+   228) <a name="l228" style="background-color: #ffffff"></a>
+   229) <a name="l229" style="background-color: #ffffff">  clandunit           =&gt; col%landunit</a>
+   230) <a name="l230" style="background-color: #ffffff"></a>
+   231) <a name="l231" style="background-color: #ffffff">  ! Set pointers into derived type</a>
+   232) <a name="l232" style="background-color: #ffffff"></a>
+   233) <a name="l233" style="background-color: #ffffff">  cptr =&gt; col</a>
+   234) <a name="l234" style="background-color: #ffffff"></a>
+   235) <a name="l235" style="background-color: #ffffff">  ! Update time-related info</a>
+   236) <a name="l236" style="background-color: #ffffff"></a>
+   237) <a name="l237" style="background-color: #ffffff">  call CropRestIncYear()</a>
+   238) <a name="l238" style="background-color: #ffffff"></a>
+   239) <a name="l239" style="background-color: #ffffff"></a>
+   240) <a name="l240" style="background-color: #ffffff">  if (use_cn) then</a>
+   241) <a name="l241" style="background-color: #ffffff">     ! For dry-deposition need to call CLMSP so that mlaidiff is obtained</a>
+   242) <a name="l242" style="background-color: #ffff99">     if ( n_drydep &gt; 0 .and. drydep_method == DD_XLND ) then</a>
+   243) <a name="l243" style="background-color: #ffff99">        call t_startf('interpMonthlyVeg')</a>
+   244) <a name="l244" style="background-color: #ffff99">        call interpMonthlyVeg()</a>
+   245) <a name="l245" style="background-color: #ffff99">        call t_stopf('interpMonthlyVeg')</a>
+   246) <a name="l246" style="background-color: #ffff99">     endif</a>
+   247) <a name="l247" style="background-color: #ffff99">  else</a>
+   248) <a name="l248" style="background-color: #ffff99">     ! Determine weights for time interpolation of monthly vegetation data.</a>
+   249) <a name="l249" style="background-color: #ffff99">     ! This also determines whether it is time to read new monthly vegetation and</a>
+   250) <a name="l250" style="background-color: #ffff99">     ! obtain updated leaf area index [mlai1,mlai2], stem area index [msai1,msai2],</a>
+   251) <a name="l251" style="background-color: #ffff99">     ! vegetation top [mhvt1,mhvt2] and vegetation bottom [mhvb1,mhvb2]. The</a>
+   252) <a name="l252" style="background-color: #ffff99">     ! weights obtained here are used in subroutine ecosystemdyn to obtain time</a>
+   253) <a name="l253" style="background-color: #ffff99">     ! interpolated values.</a>
+   254) <a name="l254" style="background-color: #ffffff">     if (doalb .or. ( n_drydep &gt; 0 .and. drydep_method == DD_XLND )) then</a>
+   255) <a name="l255" style="background-color: #ffffff">        call t_startf('interpMonthlyVeg')</a>
+   256) <a name="l256" style="background-color: #ffffff">        call interpMonthlyVeg()</a>
+   257) <a name="l257" style="background-color: #ffffff">        call t_stopf('interpMonthlyVeg')</a>
+   258) <a name="l258" style="background-color: #ffffff">     end if</a>
+   259) <a name="l259" style="background-color: #ffffff">  end if</a>
+   260) <a name="l260" style="background-color: #ffffff"></a>
+   261) <a name="l261" style="background-color: #ffffff">  ! ============================================================================</a>
+   262) <a name="l262" style="background-color: #ffffff">  ! Loop over clumps</a>
+   263) <a name="l263" style="background-color: #ffffff">  ! ============================================================================</a>
+   264) <a name="l264" style="background-color: #ffffff"></a>
+   265) <a name="l265" style="background-color: #ffffff">  nclumps = get_proc_clumps()</a>
+   266) <a name="l266" style="background-color: #ffffff"></a>
+   267) <a name="l267" style="background-color: #ffffff">  !$OMP PARALLEL DO PRIVATE (nc,g,begg,endg,begl,endl,begc,endc,begp,endp)</a>
+   268) <a name="l268" style="background-color: #ffffff">  do nc = 1,nclumps</a>
+   269) <a name="l269" style="background-color: #ffffff"></a>
+   270) <a name="l270" style="background-color: #ffffff">     ! ============================================================================</a>
+   271) <a name="l271" style="background-color: #ffffff">     ! Determine clump boundaries</a>
+   272) <a name="l272" style="background-color: #ffffff">     ! ============================================================================</a>
+   273) <a name="l273" style="background-color: #ffffff"></a>
+   274) <a name="l274" style="background-color: #ffffff">     call get_clump_bounds(nc, begg, endg, begl, endl, begc, endc, begp, endp)</a>
+   275) <a name="l275" style="background-color: #ffffff"></a>
+   276) <a name="l276" style="background-color: #ffffff">     ! ============================================================================</a>
+   277) <a name="l277" style="background-color: #ffffff">     ! change pft weights and compute associated heat &amp; water fluxes</a>
+   278) <a name="l278" style="background-color: #ffffff">     ! ============================================================================</a>
+   279) <a name="l279" style="background-color: #ffffff"></a>
+   280) <a name="l280" style="background-color: #ffffff">     ! initialize heat and water content and dynamic balance fields to zero</a>
+   281) <a name="l281" style="background-color: #ffffff">     do g = begg,endg</a>
+   282) <a name="l282" style="background-color: #ffffff">        gwf%qflx_liq_dynbal(g) = 0._r8</a>
+   283) <a name="l283" style="background-color: #ffffff">        gws%gc_liq2(g)         = 0._r8</a>
+   284) <a name="l284" style="background-color: #ffffff">        gws%gc_liq1(g)         = 0._r8</a>
+   285) <a name="l285" style="background-color: #ffffff">        gwf%qflx_ice_dynbal(g) = 0._r8</a>
+   286) <a name="l286" style="background-color: #ffffff">        gws%gc_ice2(g)         = 0._r8 </a>
+   287) <a name="l287" style="background-color: #ffffff">        gws%gc_ice1(g)         = 0._r8</a>
+   288) <a name="l288" style="background-color: #ffffff">        gef%eflx_dynbal(g)     = 0._r8</a>
+   289) <a name="l289" style="background-color: #ffffff">        ges%gc_heat2(g)        = 0._r8</a>
+   290) <a name="l290" style="background-color: #ffffff">        ges%gc_heat1(g)        = 0._r8</a>
+   291) <a name="l291" style="background-color: #ffffff">     enddo</a>
+   292) <a name="l292" style="background-color: #ffffff"></a>
+   293) <a name="l293" style="background-color: #ffffff">     !--- get initial heat,water content ---</a>
+   294) <a name="l294" style="background-color: #ffffff">      call </a><a style="background-color: #fafad2">dynland_hwcontent( begg, endg, gws%gc_liq1(begg:endg), &amp;</a>
+   295) <a name="l295" style="background-color: #fafad2">                              gws%gc_ice1(begg:endg), </a><a style="background-color: #ffff99">ges%gc_heat1(begg:endg) )</a>
+   296) <a name="l296" style="background-color: #ffff99">   end do</a>
+   297) <a name="l297" style="background-color: #ffff99">   !$OMP END PARALLEL DO</a>
+   298) <a name="l298" style="background-color: #ffff99"></a>
+   299) <a name="l299" style="background-color: #ffffff">   if (.not. use_cndv) then</a>
+   300) <a name="l300" style="background-color: #ffffff">      if (flanduse_timeseries /= ' ') then</a>
+   301) <a name="l301" style="background-color: #ffffff">         call </a><a style="background-color: #ffff99">pftdyn_interp  ! change the pft weights</a>
+   302) <a name="l302" style="background-color: #ffff99">      </a>
+   303) <a name="l303" style="background-color: #ffff99">         !$OMP PARALLEL DO PRIVATE (nc,g,begg,endg,begl,endl,begc,endc,begp,endp)</a>
+   304) <a name="l304" style="background-color: #ffff99">         do nc = 1,nclumps</a>
+   305) <a name="l305" style="background-color: #ffff99">            call get_clump_bounds(nc, begg, endg, begl, endl, begc, endc, begp, endp)</a>
+   306) <a name="l306" style="background-color: #ffff99">            </a>
+   307) <a name="l307" style="background-color: #ffff99">            !--- get new heat,water content: (new-old)/dt = flux into lnd model ---</a>
+   308) <a name="l308" style="background-color: #ffff99">            call dynland_hwcontent( begg, endg, gws%gc_liq2(begg:endg), &amp;</a>
+   309) <a name="l309" style="background-color: #ffff99">                 gws%gc_ice2(begg:endg), ges%gc_heat2(begg:endg) )</a>
+   310) <a name="l310" style="background-color: #ffff99">            dtime = get_step_size()</a>
+   311) <a name="l311" style="background-color: #ffff99">            do g = begg,endg</a>
+   312) <a name="l312" style="background-color: #ffff99">               gwf%qflx_liq_dynbal(g) = (gws%gc_liq2 (g) - gws%gc_liq1 (g))/dtime</a>
+   313) <a name="l313" style="background-color: #ffff99">               gwf%qflx_ice_dynbal(g) = (gws%gc_ice2 (g) - gws%gc_ice1 (g))/dtime</a>
+   314) <a name="l314" style="background-color: #ffff99">               gef%eflx_dynbal    (g) = (ges%gc_heat2(g) - ges%gc_heat1(g))/dtime</a>
+   315) <a name="l315" style="background-color: #ffff99">            enddo</a>
+   316) <a name="l316" style="background-color: #ffff99">         end do</a>
+   317) <a name="l317" style="background-color: #ffff99">         !$OMP END PARALLEL DO</a>
+   318) <a name="l318" style="background-color: #ffff99">      end if</a>
+   319) <a name="l319" style="background-color: #ffff99">   end if</a>
+   320) <a name="l320" style="background-color: #ffff99">      </a>
+   321) <a name="l321" style="background-color: #ffff99">   !$OMP PARALLEL DO PRIVATE (nc,g,begg,endg,begl,endl,begc,endc,begp,endp)</a>
+   322) <a name="l322" style="background-color: #ffffff">   do nc = 1,nclumps</a>
+   323) <a name="l323" style="background-color: #ffffff">     call get_clump_bounds(nc, begg, endg, begl, endl, begc, endc, begp, endp)</a>
+   324) <a name="l324" style="background-color: #ffffff"></a>
+   325) <a name="l325" style="background-color: #ffffff">     ! ============================================================================</a>
+   326) <a name="l326" style="background-color: #ffffff">     ! Initialize the mass balance checks: water, carbon, and nitrogen</a>
+   327) <a name="l327" style="background-color: #ffffff">     ! ============================================================================</a>
+   328) <a name="l328" style="background-color: #ffffff"></a>
+   329) <a name="l329" style="background-color: #ffffff">     call t_startf('begwbal')</a>
+   330) <a name="l330" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">BeginWaterBalance(begc, endc, begp, endp, &amp;</a>
+   331) <a name="l331" style="background-color: #fafad2">          filter(nc)%num_nolakec, filter(nc)%nolakec, filter(nc)%num_lakec, filter(nc)%lakec, &amp;</a>
+   332) <a name="l332" style="background-color: #fafad2">          filter(nc)%num_hydrologyc, filter(nc)%hydrologyc)</a>
+   333) <a name="l333" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_stopf('begwbal')</a>
+   334) <a name="l334" style="background-color: #ffffff"></a>
+   335) <a name="l335" style="background-color: #ffffff">     if (use_cn) then</a>
+   336) <a name="l336" style="background-color: #ffffff">        call </a><a style="background-color: #ffff99">t_startf('begcnbal')</a>
+   337) <a name="l337" style="background-color: #ffff99">        call BeginCBalance(begc, endc, filter(nc)%num_soilc, filter(nc)%soilc)</a>
+   338) <a name="l338" style="background-color: #ffff99">        call BeginNBalance(begc, endc, filter(nc)%num_soilc, filter(nc)%soilc)</a>
+   339) <a name="l339" style="background-color: #ffff99">        call t_stopf('begcnbal')</a>
+   340) <a name="l340" style="background-color: #ffff99">     end if</a>
+   341) <a name="l341" style="background-color: #ffff99"></a>
+   342) <a name="l342" style="background-color: #ffff99">  end do</a>
+   343) <a name="l343" style="background-color: #ffff99">  !$OMP END PARALLEL DO</a>
+   344) <a name="l344" style="background-color: #ffff99"></a>
+   345) <a name="l345" style="background-color: #ffff99">  ! ============================================================================</a>
+   346) <a name="l346" style="background-color: #ffff99">  ! Initialize h2ocan_loss to zero</a>
+   347) <a name="l347" style="background-color: #ffff99">  ! ============================================================================</a>
+   348) <a name="l348" style="background-color: #ffff99"></a>
+   349) <a name="l349" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">t_startf('pftdynwts')</a>
+   350) <a name="l350" style="background-color: #ffffff"></a>
+   351) <a name="l351" style="background-color: #ffffff">  !$OMP PARALLEL DO PRIVATE (nc,begg,endg,begl,endl,begc,endc,begp,endp)</a>
+   352) <a name="l352" style="background-color: #ffffff">  do nc = 1,nclumps</a>
+   353) <a name="l353" style="background-color: #ffffff">     call get_clump_bounds(nc, begg, endg, begl, endl, begc, endc, begp, endp)</a>
+   354) <a name="l354" style="background-color: #ffffff">     call pftdyn_wbal_init( begc, endc )</a>
+   355) <a name="l355" style="background-color: #ffffff"></a>
+   356) <a name="l356" style="background-color: #ffffff">     if (use_cndv) then</a>
+   357) <a name="l357" style="background-color: #ffffff">        ! NOTE: Currently CNDV and flanduse_timeseries /= ' ' are incompatible</a>
+   358) <a name="l358" style="background-color: #ffffff">        call </a><a style="background-color: #ffff99">CNZeroFluxes_dwt( begc, endc, begp, endp )</a>
+   359) <a name="l359" style="background-color: #ffff99">        call pftwt_interp( begp, endp )</a>
+   360) <a name="l360" style="background-color: #ffff99">        call pftdyn_wbal( begg, endg, begc, endc, begp, endp )</a>
+   361) <a name="l361" style="background-color: #ffff99">        call pftdyn_cnbal( begc, endc, begp, endp )</a>
+   362) <a name="l362" style="background-color: #ffff99">        call setFilters(nc)</a>
+   363) <a name="l363" style="background-color: #ffff99">     else</a>
+   364) <a name="l364" style="background-color: #ffff99">        ! ============================================================================</a>
+   365) <a name="l365" style="background-color: #ffff99">        ! Update weights and reset filters if dynamic land use</a>
+   366) <a name="l366" style="background-color: #ffff99">        ! This needs to be done outside the clumps loop, but after BeginWaterBalance()</a>
+   367) <a name="l367" style="background-color: #ffff99">        ! The call to CNZeroFluxes_dwt() is needed regardless of flanduse_timeseries</a>
+   368) <a name="l368" style="background-color: #ffff99">        ! ============================================================================</a>
+   369) <a name="l369" style="background-color: #ffffff">        if (use_cn) then</a>
+   370) <a name="l370" style="background-color: #ffffff">           call </a><a style="background-color: #ffff99">CNZeroFluxes_dwt( begc, endc, begp, endp )</a>
+   371) <a name="l371" style="background-color: #ffff99">        end if</a>
+   372) <a name="l372" style="background-color: #ffffff">        if (flanduse_timeseries /= ' ') then</a>
+   373) <a name="l373" style="background-color: #ffff99">           if (use_cn) then</a>
+   374) <a name="l374" style="background-color: #ffff99">              call pftdyn_cnbal( begc, endc, begp, endp )</a>
+   375) <a name="l375" style="background-color: #ffff99">           end if</a>
+   376) <a name="l376" style="background-color: #ffff99">           call setFilters(nc)</a>
+   377) <a name="l377" style="background-color: #ffff99">        end if</a>
+   378) <a name="l378" style="background-color: #ffff99">     end if</a>
+   379) <a name="l379" style="background-color: #ffff99"></a>
+   380) <a name="l380" style="background-color: #ffff99">  end do</a>
+   381) <a name="l381" style="background-color: #ffff99">  !$OMP END PARALLEL DO</a>
+   382) <a name="l382" style="background-color: #ffff99"></a>
+   383) <a name="l383" style="background-color: #ffff99"></a>
+   384) <a name="l384" style="background-color: #ffffff">  if (use_cn) then</a>
+   385) <a name="l385" style="background-color: #ffffff">     ! ============================================================================</a>
+   386) <a name="l386" style="background-color: #ffffff">     ! Update dynamic N deposition field, on albedo timestep</a>
+   387) <a name="l387" style="background-color: #ffffff">     ! currently being done outside clumps loop, but no reason why it couldn't be</a>
+   388) <a name="l388" style="background-color: #ffffff">     ! re-written to go inside.</a>
+   389) <a name="l389" style="background-color: #ffffff">     ! ============================================================================</a>
+   390) <a name="l390" style="background-color: #ffffff">     ! PET: switching CN timestep</a>
+   391) <a name="l391" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">ndep_interp()</a>
+   392) <a name="l392" style="background-color: #ffff99">  end if</a>
+   393) <a name="l393" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">t_stopf('pftdynwts')</a>
+   394) <a name="l394" style="background-color: #ffffff"></a>
+   395) <a name="l395" style="background-color: #ffffff">  !$OMP PARALLEL DO PRIVATE (nc,l,c,begg,endg,begl,endl,begc,endc,begp,endp)</a>
+   396) <a name="l396" style="background-color: #ffffff">  do nc = 1,nclumps</a>
+   397) <a name="l397" style="background-color: #ffffff"></a>
+   398) <a name="l398" style="background-color: #ffffff">     ! ============================================================================</a>
+   399) <a name="l399" style="background-color: #ffffff">     ! Determine clump boundaries</a>
+   400) <a name="l400" style="background-color: #ffffff">     ! ============================================================================</a>
+   401) <a name="l401" style="background-color: #ffffff"></a>
+   402) <a name="l402" style="background-color: #ffffff">     call get_clump_bounds(nc, begg, endg, begl, endl, begc, endc, begp, endp)</a>
+   403) <a name="l403" style="background-color: #ffffff"></a>
+   404) <a name="l404" style="background-color: #ffffff">     ! ============================================================================</a>
+   405) <a name="l405" style="background-color: #ffffff">     ! Initialize variables from previous time step and</a>
+   406) <a name="l406" style="background-color: #ffffff">     ! Determine canopy interception and precipitation onto ground surface.</a>
+   407) <a name="l407" style="background-color: #ffffff">     ! Determine the fraction of foliage covered by water and the fraction</a>
+   408) <a name="l408" style="background-color: #ffffff">     ! of foliage that is dry and transpiring. Initialize snow layer if the</a>
+   409) <a name="l409" style="background-color: #ffffff">     ! snow accumulation exceeds 10 mm.</a>
+   410) <a name="l410" style="background-color: #ffffff">     ! ============================================================================</a>
+   411) <a name="l411" style="background-color: #ffffff">     </a>
+   412) <a name="l412" style="background-color: #ffffff">     ! initialize intracellular CO2 (Pa) parameters each timestep for use in VOCEmission</a>
+   413) <a name="l413" style="background-color: #ffffff">     pps%cisun(begp:endp) = -999._r8</a>
+   414) <a name="l414" style="background-color: #ffffff">     pps%cisha(begp:endp) = -999._r8</a>
+   415) <a name="l415" style="background-color: #ffffff"></a>
+   416) <a name="l416" style="background-color: #ffffff">     ! initialize declination for current timestep</a>
+   417) <a name="l417" style="background-color: #ffffff">     do c = begc,endc</a>
+   418) <a name="l418" style="background-color: #ffffff">        cps%decl(c) = declin</a>
+   419) <a name="l419" style="background-color: #ffffff">     end do</a>
+   420) <a name="l420" style="background-color: #ffffff">     </a>
+   421) <a name="l421" style="background-color: #ffffff">     call t_startf('drvinit')</a>
+   422) <a name="l422" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">clm_driverInit(begc, endc, begp, endp, &amp;</a>
+   423) <a name="l423" style="background-color: #fafad2">          filter(nc)%num_nolakec, filter(nc)%nolakec, filter(nc)%num_lakec, filter(nc)%lakec)</a>
+   424) <a name="l424" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_stopf('drvinit')</a>
+   425) <a name="l425" style="background-color: #ffffff"></a>
+   426) <a name="l426" style="background-color: #ffffff">     ! ============================================================================</a>
+   427) <a name="l427" style="background-color: #ffffff">     ! Hydrology1</a>
+   428) <a name="l428" style="background-color: #ffffff">     ! ============================================================================</a>
+   429) <a name="l429" style="background-color: #ffffff"></a>
+   430) <a name="l430" style="background-color: #ffffff">     call t_startf('hydro1')</a>
+   431) <a name="l431" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">Hydrology1(begc, endc, begp, endp, &amp;</a>
+   432) <a name="l432" style="background-color: #fafad2">                     filter(nc)%num_nolakec, filter(nc)%nolakec, &amp;</a>
+   433) <a name="l433" style="background-color: #fafad2">                     filter(nc)%num_nolakep, filter(nc)%nolakep)</a>
+   434) <a name="l434" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_stopf('hydro1')</a>
+   435) <a name="l435" style="background-color: #ffffff"></a>
+   436) <a name="l436" style="background-color: #ffffff">     ! ============================================================================</a>
+   437) <a name="l437" style="background-color: #ffffff">     ! Surface Radiation</a>
+   438) <a name="l438" style="background-color: #ffffff">     ! ============================================================================</a>
+   439) <a name="l439" style="background-color: #ffffff"></a>
+   440) <a name="l440" style="background-color: #ffffff">     call t_startf('surfrad')</a>
+   441) <a name="l441" style="background-color: #ffffff"></a>
+   442) <a name="l442" style="background-color: #ffffff">     ! Surface Radiation for non-urban columns</a>
+   443) <a name="l443" style="background-color: #ffffff"></a>
+   444) <a name="l444" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">SurfaceRadiation(begp, endp, &amp;</a>
+   445) <a name="l445" style="background-color: #fafad2">                           filter(nc)%num_nourbanp, filter(nc)%nourbanp)</a>
+   446) <a name="l446" style="background-color: #fafad2"></a>
+   447) <a name="l447" style="background-color: #fafad2">     ! Surface Radiation for urban columns</a>
+   448) <a name="l448" style="background-color: #fafad2"></a>
+   449) <a name="l449" style="background-color: #fafad2">     call UrbanRadiation(nc, begl, endl, begc, endc, begp, endp, &amp;</a>
+   450) <a name="l450" style="background-color: #fafad2">                         filter(nc)%num_nourbanl, filter(nc)%nourbanl, &amp;</a>
+   451) <a name="l451" style="background-color: #fafad2">                         filter(nc)%num_urbanl, filter(nc)%urbanl, &amp;</a>
+   452) <a name="l452" style="background-color: #fafad2">                         filter(nc)%num_urbanc, filter(nc)%urbanc, &amp;</a>
+   453) <a name="l453" style="background-color: #fafad2">                         filter(nc)%num_urbanp, filter(nc)%urbanp)</a>
+   454) <a name="l454" style="background-color: #fafad2"></a>
+   455) <a name="l455" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_stopf('surfrad')</a>
+   456) <a name="l456" style="background-color: #ffffff"></a>
+   457) <a name="l457" style="background-color: #ffffff">     ! ============================================================================</a>
+   458) <a name="l458" style="background-color: #ffffff">     ! Determine leaf temperature and surface fluxes based on ground</a>
+   459) <a name="l459" style="background-color: #ffffff">     ! temperature from previous time step.</a>
+   460) <a name="l460" style="background-color: #ffffff">     ! ============================================================================</a>
+   461) <a name="l461" style="background-color: #ffffff"></a>
+   462) <a name="l462" style="background-color: #ffffff">     call t_startf('bgp1')</a>
+   463) <a name="l463" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">Biogeophysics1(begg, endg, begc, endc, begp, endp, &amp;</a>
+   464) <a name="l464" style="background-color: #fafad2">                         filter(nc)%num_nolakec, filter(nc)%nolakec, &amp;</a>
+   465) <a name="l465" style="background-color: #fafad2">                         filter(nc)%num_nolakep, filter(nc)%nolakep)</a>
+   466) <a name="l466" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_stopf('bgp1')</a>
+   467) <a name="l467" style="background-color: #ffffff"></a>
+   468) <a name="l468" style="background-color: #ffffff">     ! ============================================================================</a>
+   469) <a name="l469" style="background-color: #ffffff">     ! Determine bare soil or snow-covered vegetation surface temperature and fluxes</a>
+   470) <a name="l470" style="background-color: #ffffff">     ! Calculate Ground fluxes (frac_veg_nosno is either 1 or 0)</a>
+   471) <a name="l471" style="background-color: #ffffff">     ! ============================================================================</a>
+   472) <a name="l472" style="background-color: #ffffff"></a>
+   473) <a name="l473" style="background-color: #ffffff">     call t_startf('bgflux')</a>
+   474) <a name="l474" style="background-color: #ffffff"></a>
+   475) <a name="l475" style="background-color: #ffffff">     ! BareGroundFluxes for all pfts except lakes and urban landunits</a>
+   476) <a name="l476" style="background-color: #ffffff"></a>
+   477) <a name="l477" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">BareGroundFluxes(begp, endp, &amp;</a>
+   478) <a name="l478" style="background-color: #fafad2">                           filter(nc)%num_nolakeurbanp, filter(nc)%nolakeurbanp)</a>
+   479) <a name="l479" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_stopf('bgflux')</a>
+   480) <a name="l480" style="background-color: #ffffff"></a>
+   481) <a name="l481" style="background-color: #ffffff">     ! Fluxes for all Urban landunits</a>
+   482) <a name="l482" style="background-color: #ffffff"></a>
+   483) <a name="l483" style="background-color: #ffffff">     call t_startf('uflux')</a>
+   484) <a name="l484" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">UrbanFluxes(nc, begp, endp, begl, endl, begc, endc, &amp;</a>
+   485) <a name="l485" style="background-color: #fafad2">                      filter(nc)%num_nourbanl, filter(nc)%nourbanl, &amp;</a>
+   486) <a name="l486" style="background-color: #fafad2">                      filter(nc)%num_urbanl, filter(nc)%urbanl, &amp;</a>
+   487) <a name="l487" style="background-color: #fafad2">                      filter(nc)%num_urbanc, filter(nc)%urbanc, &amp;</a>
+   488) <a name="l488" style="background-color: #fafad2">                      filter(nc)%num_urbanp, filter(nc)%urbanp)</a>
+   489) <a name="l489" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_stopf('uflux')</a>
+   490) <a name="l490" style="background-color: #ffffff"></a>
+   491) <a name="l491" style="background-color: #ffffff">     ! ============================================================================</a>
+   492) <a name="l492" style="background-color: #ffffff">     ! Determine non snow-covered vegetation surface temperature and fluxes</a>
+   493) <a name="l493" style="background-color: #ffffff">     ! Calculate canopy temperature, latent and sensible fluxes from the canopy,</a>
+   494) <a name="l494" style="background-color: #ffffff">     ! and leaf water change by evapotranspiration</a>
+   495) <a name="l495" style="background-color: #ffffff">     ! ============================================================================</a>
+   496) <a name="l496" style="background-color: #ffffff"></a>
+   497) <a name="l497" style="background-color: #ffffff">     call t_startf('canflux')</a>
+   498) <a name="l498" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">CanopyFluxes(begg, endg, begc, endc, begp, endp, &amp;</a>
+   499) <a name="l499" style="background-color: #fafad2">                       filter(nc)%num_nolakep, filter(nc)%nolakep)</a>
+   500) <a name="l500" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_stopf('canflux')</a>
+   501) <a name="l501" style="background-color: #ffffff"></a>
+   502) <a name="l502" style="background-color: #ffffff">     ! ============================================================================</a>
+   503) <a name="l503" style="background-color: #ffffff">     ! Determine lake temperature and surface fluxes</a>
+   504) <a name="l504" style="background-color: #ffffff">     ! ============================================================================</a>
+   505) <a name="l505" style="background-color: #ffffff"></a>
+   506) <a name="l506" style="background-color: #ffffff">     call t_startf('bgplake')</a>
+   507) <a name="l507" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">BiogeophysicsLake(begc, endc, begp, endp, &amp;</a>
+   508) <a name="l508" style="background-color: #fafad2">                            filter(nc)%num_lakec, filter(nc)%lakec, &amp;</a>
+   509) <a name="l509" style="background-color: #fafad2">                            filter(nc)%num_lakep, filter(nc)%lakep)</a>
+   510) <a name="l510" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_stopf('bgplake')</a>
+   511) <a name="l511" style="background-color: #ffffff"></a>
+   512) <a name="l512" style="background-color: #ffffff">     ! ============================================================================</a>
+   513) <a name="l513" style="background-color: #ffffff">     ! DUST and VOC emissions</a>
+   514) <a name="l514" style="background-color: #ffffff">     ! ============================================================================</a>
+   515) <a name="l515" style="background-color: #ffffff"></a>
+   516) <a name="l516" style="background-color: #ffffff">     call t_startf('bgc')</a>
+   517) <a name="l517" style="background-color: #ffffff"></a>
+   518) <a name="l518" style="background-color: #ffffff">     ! Dust mobilization (C. Zender's modified codes)</a>
+   519) <a name="l519" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">DustEmission(begp, endp, begc, endc, begl, endl, &amp;</a>
+   520) <a name="l520" style="background-color: #fafad2">                       filter(nc)%num_nolakep, filter(nc)%nolakep)</a>
+   521) <a name="l521" style="background-color: #fafad2"></a>
+   522) <a name="l522" style="background-color: #fafad2">     ! Dust dry deposition (C. Zender's modified codes)</a>
+   523) <a name="l523" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">DustDryDep(begp, endp)</a>
+   524) <a name="l524" style="background-color: #ffffff"></a>
+   525) <a name="l525" style="background-color: #ffffff">     ! VOC emission (A. Guenther's MEGAN (2006) model)</a>
+   526) <a name="l526" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">VOCEmission(begp, endp, &amp;</a>
+   527) <a name="l527" style="background-color: #fafad2">                      filter(nc)%num_soilp, filter(nc)%soilp)</a>
+   528) <a name="l528" style="background-color: #fafad2"></a>
+   529) <a name="l529" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_stopf('bgc')</a>
+   530) <a name="l530" style="background-color: #ffffff"></a>
+   531) <a name="l531" style="background-color: #ffffff">     ! ============================================================================</a>
+   532) <a name="l532" style="background-color: #ffffff">     ! Determine soil/snow temperatures including ground temperature and</a>
+   533) <a name="l533" style="background-color: #ffffff">     ! update surface fluxes for new ground temperature.</a>
+   534) <a name="l534" style="background-color: #ffffff">     ! ============================================================================</a>
+   535) <a name="l535" style="background-color: #ffffff"></a>
+   536) <a name="l536" style="background-color: #ffffff">     call t_startf('bgp2')</a>
+   537) <a name="l537" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">Biogeophysics2(begl, endl, begc, endc, begp, endp, &amp;</a>
+   538) <a name="l538" style="background-color: #fafad2">                         filter(nc)%num_urbanl,  filter(nc)%urbanl, &amp;</a>
+   539) <a name="l539" style="background-color: #fafad2">                         filter(nc)%num_nolakec, filter(nc)%nolakec, &amp;</a>
+   540) <a name="l540" style="background-color: #fafad2">                         filter(nc)%num_nolakep, filter(nc)%nolakep)</a>
+   541) <a name="l541" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_stopf('bgp2')</a>
+   542) <a name="l542" style="background-color: #ffffff"></a>
+   543) <a name="l543" style="background-color: #ffffff">     ! ============================================================================</a>
+   544) <a name="l544" style="background-color: #ffffff">     ! Perform averaging from PFT level to column level</a>
+   545) <a name="l545" style="background-color: #ffffff">     ! ============================================================================</a>
+   546) <a name="l546" style="background-color: #ffffff"></a>
+   547) <a name="l547" style="background-color: #ffffff">     call t_startf('pft2col')</a>
+   548) <a name="l548" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">pft2col(begc, endc, filter(nc)%num_nolakec, filter(nc)%nolakec)</a>
+   549) <a name="l549" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_stopf('pft2col')</a>
+   550) <a name="l550" style="background-color: #ffffff"></a>
+   551) <a name="l551" style="background-color: #ffffff">     ! ============================================================================</a>
+   552) <a name="l552" style="background-color: #ffffff">     ! Vertical (column) soil and surface hydrology</a>
+   553) <a name="l553" style="background-color: #ffffff">     ! ============================================================================</a>
+   554) <a name="l554" style="background-color: #ffffff"></a>
+   555) <a name="l555" style="background-color: #ffffff">     call t_startf('hydro2')</a>
+   556) <a name="l556" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">Hydrology2(begc, endc, begp, endp, &amp;</a>
+   557) <a name="l557" style="background-color: #fafad2">                     filter(nc)%num_nolakec, filter(nc)%nolakec, &amp;</a>
+   558) <a name="l558" style="background-color: #fafad2">                     filter(nc)%num_hydrologyc, filter(nc)%hydrologyc, &amp;</a>
+   559) <a name="l559" style="background-color: #fafad2">                     filter(nc)%num_urbanc, filter(nc)%urbanc, &amp;</a>
+   560) <a name="l560" style="background-color: #fafad2">                     filter(nc)%num_snowc, filter(nc)%snowc, &amp;</a>
+   561) <a name="l561" style="background-color: #fafad2">                     filter(nc)%num_nosnowc, filter(nc)%nosnowc)</a>
+   562) <a name="l562" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_stopf('hydro2')</a>
+   563) <a name="l563" style="background-color: #ffffff"></a>
+   564) <a name="l564" style="background-color: #ffffff">     ! ============================================================================</a>
+   565) <a name="l565" style="background-color: #ffffff">     ! Lake hydrology</a>
+   566) <a name="l566" style="background-color: #ffffff">     ! ============================================================================</a>
+   567) <a name="l567" style="background-color: #ffffff"></a>
+   568) <a name="l568" style="background-color: #ffffff">     call t_startf('hylake')</a>
+   569) <a name="l569" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">HydrologyLake(begp, endp, &amp;</a>
+   570) <a name="l570" style="background-color: #fafad2">                        filter(nc)%num_lakep, filter(nc)%lakep)</a>
+   571) <a name="l571" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_stopf('hylake')</a>
+   572) <a name="l572" style="background-color: #ffffff"></a>
+   573) <a name="l573" style="background-color: #ffffff">     ! ============================================================================</a>
+   574) <a name="l574" style="background-color: #ffffff">     ! ! Fraction of soil covered by snow (Z.-L. Yang U. Texas)</a>
+   575) <a name="l575" style="background-color: #ffffff">     ! ============================================================================</a>
+   576) <a name="l576" style="background-color: #ffffff"></a>
+   577) <a name="l577" style="background-color: #ffffff">     do c = begc,endc</a>
+   578) <a name="l578" style="background-color: #ffffff">        l = clandunit(c)</a>
+   579) <a name="l579" style="background-color: #ffffff">        if (itypelun(l) == isturb) then</a>
+   580) <a name="l580" style="background-color: #ffffff">           ! Urban landunit use Bonan 1996 (LSM Technical Note)</a>
+   581) <a name="l581" style="background-color: #ffffff">           cps%frac_sno(c) = min( cps%snowdp(c)/0.05_r8, 1._r8)</a>
+   582) <a name="l582" style="background-color: #ffffff">        else</a>
+   583) <a name="l583" style="background-color: #ffffff">           ! snow cover fraction in Niu et al. 2007</a>
+   584) <a name="l584" style="background-color: #ffffff">           cps%frac_sno(c) = 0.0_r8</a>
+   585) <a name="l585" style="background-color: #ffffff">           if(cps%snowdp(c) .gt. 0.0_r8)  then</a>
+   586) <a name="l586" style="background-color: #ffffff">             cps%frac_sno(c) = tanh(cps%snowdp(c)/(2.5_r8*zlnd* &amp;</a>
+   587) <a name="l587" style="background-color: #ffffff">               (min(800._r8,cws%h2osno(c)/cps%snowdp(c))/100._r8)**1._r8) )</a>
+   588) <a name="l588" style="background-color: #ffffff">           endif</a>
+   589) <a name="l589" style="background-color: #ffffff">        end if</a>
+   590) <a name="l590" style="background-color: #ffffff">     end do</a>
+   591) <a name="l591" style="background-color: #ffffff"></a>
+   592) <a name="l592" style="background-color: #ffffff">     ! ============================================================================</a>
+   593) <a name="l593" style="background-color: #ffffff">     ! Snow aging routine based on Flanner and Zender (2006), Linking snowpack </a>
+   594) <a name="l594" style="background-color: #ffffff">     ! microphysics and albedo evolution, JGR, and Brun (1989), Investigation of </a>
+   595) <a name="l595" style="background-color: #ffffff">     ! wet-snow metamorphism in respect of liquid-water content, Ann. Glaciol.</a>
+   596) <a name="l596" style="background-color: #ffffff">     ! ============================================================================</a>
+   597) <a name="l597" style="background-color: #ffffff">     call </a><a style="background-color: #fafad2">SnowAge_grain(begc, endc, &amp;</a>
+   598) <a name="l598" style="background-color: #fafad2">          filter(nc)%num_snowc, filter(nc)%snowc, &amp;</a>
+   599) <a name="l599" style="background-color: #fafad2">          filter(nc)%num_nosnowc, filter(nc)%nosnowc)</a>
+   600) <a name="l600" style="background-color: #fafad2"></a>
+   601) <a name="l601" style="background-color: #fafad2">     ! ============================================================================</a>
+   602) <a name="l602" style="background-color: #fafad2">     ! Ecosystem dynamics: Uses CN, CNDV, or static parameterizations</a>
+   603) <a name="l603" style="background-color: #fafad2">     ! ============================================================================</a>
+   604) <a name="l604" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_startf('ecosysdyn')</a>
+   605) <a name="l605" style="background-color: #ffffff"></a>
+   606) <a name="l606" style="background-color: #ffffff">     if (use_cn) then</a>
+   607) <a name="l607" style="background-color: #ffffff">        ! fully prognostic canopy structure and C-N biogeochemistry</a>
+   608) <a name="l608" style="background-color: #ffffff">        ! - CNDV defined: prognostic biogeography; else prescribed</a>
+   609) <a name="l609" style="background-color: #ffffff">        ! - crop model:   crop algorithms called from within CNEcosystemDyn</a>
+   610) <a name="l610" style="background-color: #ffffff">        call </a><a style="background-color: #ffff99">CNEcosystemDyn(begc,endc,begp,endp,filter(nc)%num_soilc,&amp;</a>
+   611) <a name="l611" style="background-color: #ffff99">             filter(nc)%soilc, filter(nc)%num_soilp, &amp;</a>
+   612) <a name="l612" style="background-color: #ffff99">             filter(nc)%soilp, filter(nc)%num_pcropp, &amp;</a>
+   613) <a name="l613" style="background-color: #ffff99">             filter(nc)%pcropp, doalb)</a>
+   614) <a name="l614" style="background-color: #ffff99">        call CNAnnualUpdate(begc,endc,begp,endp,filter(nc)%num_soilc,&amp;</a>
+   615) <a name="l615" style="background-color: #ffff99">             filter(nc)%soilc, filter(nc)%num_soilp, &amp;</a>
+   616) <a name="l616" style="background-color: #ffff99">             filter(nc)%soilp)</a>
+   617) <a name="l617" style="background-color: #ffff99">     else</a>
+   618) <a name="l618" style="background-color: #ffff99">        ! Prescribed biogeography,</a>
+   619) <a name="l619" style="background-color: #ffff99">        ! prescribed canopy structure, some prognostic carbon fluxes</a>
+   620) <a name="l620" style="background-color: #ffff99">        call </a><a style="background-color: #fafad2">EcosystemDyn(begp, endp, &amp;</a>
+   621) <a name="l621" style="background-color: #fafad2">                          filter(nc)%num_nolakep, filter(nc)%nolakep, &amp;</a>
+   622) <a name="l622" style="background-color: #fafad2">                          doalb)</a>
+   623) <a name="l623" style="background-color: #fafad2">     end if</a>
+   624) <a name="l624" style="background-color: #fafad2">     call </a><a style="background-color: #ffffff">t_stopf('ecosysdyn')</a>
+   625) <a name="l625" style="background-color: #ffffff"></a>
+   626) <a name="l626" style="background-color: #ffffff">     ! Dry Deposition of chemical tracers (Wesely (1998) parameterizaion)</a>
+   627) <a name="l627" style="background-color: #ffffff">     call depvel_compute(begp,endp)</a>
+   628) <a name="l628" style="background-color: #ffffff"></a>
+   629) <a name="l629" style="background-color: #ffffff">     ! ============================================================================</a>
+   630) <a name="l630" style="background-color: #ffffff">     ! Check the energy and water balance, also carbon and nitrogen balance</a>
+   631) <a name="l631" style="background-color: #ffffff">     ! ============================================================================</a>
+   632) <a name="l632" style="background-color: #ffffff"></a>
+   633) <a name="l633" style="background-color: #ffffff">     call t_startf('balchk')</a>
+   634) <a name="l634" style="background-color: #ffffff">     call BalanceCheck(begp, endp, begc, endc, begl, endl, begg, endg)</a>
+   635) <a name="l635" style="background-color: #ffffff">     call t_stopf('balchk')</a>
+   636) <a name="l636" style="background-color: #ffffff"></a>
+   637) <a name="l637" style="background-color: #ffffff">     if (use_exit_spinup) then</a>
+   638) <a name="l638" style="background-color: #ffffff">        ! skip calls to C and N balance checking during EXIT_SPINUP</a>
+   639) <a name="l639" style="background-color: #ffffff">        ! because the system is (intentionally) not conserving mass</a>
+   640) <a name="l640" style="background-color: #ffffff">        ! on the first EXIT_SPINUP doalb timestep     </a>
+   641) <a name="l641" style="background-color: #ffffff">     else</a>
+   642) <a name="l642" style="background-color: #ffffff">        if (use_cn) then</a>
+   643) <a name="l643" style="background-color: #ffff99">           nstep = get_nstep()</a>
+   644) <a name="l644" style="background-color: #ffff99">           if (nstep &gt; 2) then</a>
+   645) <a name="l645" style="background-color: #ffff99">              call t_startf('cnbalchk')</a>
+   646) <a name="l646" style="background-color: #ffff99">              call CBalanceCheck(begc, endc, filter(nc)%num_soilc, filter(nc)%soilc)</a>
+   647) <a name="l647" style="background-color: #ffff99">              call NBalanceCheck(begc, endc, filter(nc)%num_soilc, filter(nc)%soilc)</a>
+   648) <a name="l648" style="background-color: #ffff99">              call t_stopf('cnbalchk')</a>
+   649) <a name="l649" style="background-color: #ffff99">           end if</a>
+   650) <a name="l650" style="background-color: #ffff99">        end if</a>
+   651) <a name="l651" style="background-color: #ffff99">     end if</a>
+   652) <a name="l652" style="background-color: #ffff99"></a>
+   653) <a name="l653" style="background-color: #ffff99">     ! ============================================================================</a>
+   654) <a name="l654" style="background-color: #ffff99">     ! Determine albedos for next time step</a>
+   655) <a name="l655" style="background-color: #ffff99">     ! ============================================================================</a>
+   656) <a name="l656" style="background-color: #ffff99"></a>
+   657) <a name="l657" style="background-color: #ffffff">     if (doalb) then</a>
+   658) <a name="l658" style="background-color: #ffffff">        call t_startf('surfalb')</a>
+   659) <a name="l659" style="background-color: #ffffff"></a>
+   660) <a name="l660" style="background-color: #ffffff">        ! Albedos for non-urban columns</a>
+   661) <a name="l661" style="background-color: #ffffff"></a>
+   662) <a name="l662" style="background-color: #ffffff">        call </a><a style="background-color: #fafad2">SurfaceAlbedo(begg, endg, begc, endc, begp, endp, &amp;</a>
+   663) <a name="l663" style="background-color: #fafad2">                           filter(nc)%num_nourbanc, filter(nc)%nourbanc, &amp;</a>
+   664) <a name="l664" style="background-color: #fafad2">                           filter(nc)%num_nourbanp, filter(nc)%nourbanp, &amp;</a>
+   665) <a name="l665" style="background-color: #fafad2">                           nextsw_cday, declinp1)</a>
+   666) <a name="l666" style="background-color: #fafad2"></a>
+   667) <a name="l667" style="background-color: #fafad2">        call </a><a style="background-color: #ffffff">t_stopf('surfalb')</a>
+   668) <a name="l668" style="background-color: #ffffff"></a>
+   669) <a name="l669" style="background-color: #ffffff">        ! Albedos for urban columns</a>
+   670) <a name="l670" style="background-color: #ffffff"></a>
+   671) <a name="l671" style="background-color: #ffffff">        call t_startf('urbsurfalb')</a>
+   672) <a name="l672" style="background-color: #ffffff"></a>
+   673) <a name="l673" style="background-color: #ffffff">        if (filter(nc)%num_urbanl &gt; 0) then</a>
+   674) <a name="l674" style="background-color: #ffffff">           call </a><a style="background-color: #fafad2">UrbanAlbedo(nc, begl, endl, begc, endc, begp, endp,   &amp;</a>
+   675) <a name="l675" style="background-color: #fafad2">                            filter(nc)%num_urbanl, filter(nc)%urbanl, &amp;</a>
+   676) <a name="l676" style="background-color: #fafad2">                            filter(nc)%num_urbanc, filter(nc)%urbanc, &amp;</a>
+   677) <a name="l677" style="background-color: #fafad2">                            filter(nc)%num_urbanp, filter(nc)%urbanp)</a>
+   678) <a name="l678" style="background-color: #fafad2">        end if</a>
+   679) <a name="l679" style="background-color: #fafad2"></a>
+   680) <a name="l680" style="background-color: #fafad2">        call </a><a style="background-color: #ffffff">t_stopf('urbsurfalb')</a>
+   681) <a name="l681" style="background-color: #ffffff"></a>
+   682) <a name="l682" style="background-color: #ffffff">     end if</a>
+   683) <a name="l683" style="background-color: #ffffff"></a>
+   684) <a name="l684" style="background-color: #ffffff">  end do</a>
+   685) <a name="l685" style="background-color: #ffffff">  !$OMP END PARALLEL DO</a>
+   686) <a name="l686" style="background-color: #ffffff"></a>
+   687) <a name="l687" style="background-color: #ffffff">  ! ============================================================================</a>
+   688) <a name="l688" style="background-color: #ffffff">  ! Determine gridcell averaged properties to send to atm (l2as and l2af derived types)</a>
+   689) <a name="l689" style="background-color: #ffffff">  ! ============================================================================</a>
+   690) <a name="l690" style="background-color: #ffffff"></a>
+   691) <a name="l691" style="background-color: #ffffff">  call t_startf('clm_map2gcell')</a>
+   692) <a name="l692" style="background-color: #ffffff">  call clm_map2gcell( )</a>
+   693) <a name="l693" style="background-color: #ffffff">  call t_stopf('clm_map2gcell')</a>
+   694) <a name="l694" style="background-color: #ffffff"></a>
+   695) <a name="l695" style="background-color: #ffffff">  ! ============================================================================</a>
+   696) <a name="l696" style="background-color: #ffffff">  ! Determine fields to send to glc</a>
+   697) <a name="l697" style="background-color: #ffffff">  ! ============================================================================</a>
+   698) <a name="l698" style="background-color: #ffffff">  </a>
+   699) <a name="l699" style="background-color: #ffffff">  if (create_glacier_mec_landunit) then</a>
+   700) <a name="l700" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">t_startf('create_s2x')</a>
+   701) <a name="l701" style="background-color: #ffff99">     call update_clm_s2x(init=.false.)</a>
+   702) <a name="l702" style="background-color: #ffff99">     call t_stopf('create_s2x')</a>
+   703) <a name="l703" style="background-color: #ffff99">  end if</a>
+   704) <a name="l704" style="background-color: #ffff99"></a>
+   705) <a name="l705" style="background-color: #ffff99">  ! ============================================================================</a>
+   706) <a name="l706" style="background-color: #ffff99">  ! Write global average diagnostics to standard output</a>
+   707) <a name="l707" style="background-color: #ffff99">  ! ============================================================================</a>
+   708) <a name="l708" style="background-color: #ffff99"></a>
+   709) <a name="l709" style="background-color: #ffffff">  nstep = get_nstep()</a>
+   710) <a name="l710" style="background-color: #ffffff">  if (wrtdia) </a><a style="background-color: #ffff99">call mpi_barrier(mpicom,ier)</a>
+   711) <a name="l711" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">t_startf('wrtdiag')</a>
+   712) <a name="l712" style="background-color: #ffffff">  call write_diagnostic(wrtdia, nstep)</a>
+   713) <a name="l713" style="background-color: #ffffff">  call t_stopf('wrtdiag')</a>
+   714) <a name="l714" style="background-color: #ffffff"></a>
+   715) <a name="l715" style="background-color: #ffffff">  ! ============================================================================</a>
+   716) <a name="l716" style="background-color: #ffffff">  ! Update accumulators</a>
+   717) <a name="l717" style="background-color: #ffffff">  ! ============================================================================</a>
+   718) <a name="l718" style="background-color: #ffffff"></a>
+   719) <a name="l719" style="background-color: #ffffff">  call t_startf('accum')</a>
+   720) <a name="l720" style="background-color: #ffffff">  call updateAccFlds()</a>
+   721) <a name="l721" style="background-color: #ffffff">  call t_stopf('accum')</a>
+   722) <a name="l722" style="background-color: #ffffff"></a>
+   723) <a name="l723" style="background-color: #ffffff">  ! ============================================================================</a>
+   724) <a name="l724" style="background-color: #ffffff">  ! Update history buffer</a>
+   725) <a name="l725" style="background-color: #ffffff">  ! ============================================================================</a>
+   726) <a name="l726" style="background-color: #ffffff"></a>
+   727) <a name="l727" style="background-color: #ffffff">  call t_startf('hbuf')</a>
+   728) <a name="l728" style="background-color: #ffffff">  call hist_update_hbuf()</a>
+   729) <a name="l729" style="background-color: #ffffff">  call t_stopf('hbuf')</a>
+   730) <a name="l730" style="background-color: #ffffff"></a>
+   731) <a name="l731" style="background-color: #ffffff">  ! ============================================================================</a>
+   732) <a name="l732" style="background-color: #ffffff">  ! Call dv (dynamic vegetation) at last time step of year</a>
+   733) <a name="l733" style="background-color: #ffffff">  ! NOTE: monp1, dayp1, and secp1 correspond to nstep+1</a>
+   734) <a name="l734" style="background-color: #ffffff">  ! ============================================================================</a>
+   735) <a name="l735" style="background-color: #ffffff"></a>
+   736) <a name="l736" style="background-color: #ffffff">  if (use_cndv) then</a>
+   737) <a name="l737" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">t_startf('d2dgvm')</a>
+   738) <a name="l738" style="background-color: #ffff99">     dtime = get_step_size()</a>
+   739) <a name="l739" style="background-color: #ffff99">     call get_curr_date(yrp1, monp1, dayp1, secp1, offset=int(dtime))</a>
+   740) <a name="l740" style="background-color: #ffff99">     if (monp1==1 .and. dayp1==1 .and. secp1==dtime .and. nstep&gt;0)  then</a>
+   741) <a name="l741" style="background-color: #ffff99">        </a>
+   742) <a name="l742" style="background-color: #ffff99">        ! Get date info.  kyr is used in lpj().  At end of first year, kyr = 2.</a>
+   743) <a name="l743" style="background-color: #ffff99">        call get_curr_date(yr, mon, day, sec)</a>
+   744) <a name="l744" style="background-color: #ffff99">        ncdate = yr*10000 + mon*100 + day</a>
+   745) <a name="l745" style="background-color: #ffff99">        call get_ref_date(yr, mon, day, sec)</a>
+   746) <a name="l746" style="background-color: #ffff99">        nbdate = yr*10000 + mon*100 + day</a>
+   747) <a name="l747" style="background-color: #ffff99">        kyr = ncdate/10000 - nbdate/10000 + 1</a>
+   748) <a name="l748" style="background-color: #ffff99">        </a>
+   749) <a name="l749" style="background-color: #ffff99">        if (masterproc) write(iulog,*) 'End of year. CNDV called now: ncdate=', &amp;</a>
+   750) <a name="l750" style="background-color: #ffff99">             ncdate,' nbdate=',nbdate,' kyr=',kyr,' nstep=', nstep</a>
+   751) <a name="l751" style="background-color: #ffff99">        </a>
+   752) <a name="l752" style="background-color: #ffff99">        nclumps = get_proc_clumps()</a>
+   753) <a name="l753" style="background-color: #ffff99">        </a>
+   754) <a name="l754" style="background-color: #ffff99">        !$OMP PARALLEL DO PRIVATE (nc,begg,endg,begl,endl,begc,endc,begp,endp)</a>
+   755) <a name="l755" style="background-color: #ffff99">        do nc = 1,nclumps</a>
+   756) <a name="l756" style="background-color: #ffff99">           call get_clump_bounds(nc, begg, endg, begl, endl, begc, endc, begp, endp)</a>
+   757) <a name="l757" style="background-color: #ffff99">           call dv(begg, endg, begp, endp,                  &amp;</a>
+   758) <a name="l758" style="background-color: #ffff99">                filter(nc)%num_natvegp, filter(nc)%natvegp, kyr)</a>
+   759) <a name="l759" style="background-color: #ffff99">        end do</a>
+   760) <a name="l760" style="background-color: #ffff99">        !$OMP END PARALLEL DO</a>
+   761) <a name="l761" style="background-color: #ffff99">     end if</a>
+   762) <a name="l762" style="background-color: #ffff99">     call t_stopf('d2dgvm')</a>
+   763) <a name="l763" style="background-color: #ffff99">  end if</a>
+   764) <a name="l764" style="background-color: #ffff99"></a>
+   765) <a name="l765" style="background-color: #ffff99">  ! ============================================================================</a>
+   766) <a name="l766" style="background-color: #ffff99">  ! Create history and write history tapes if appropriate</a>
+   767) <a name="l767" style="background-color: #ffff99">  ! ============================================================================</a>
+   768) <a name="l768" style="background-color: #ffff99"></a>
+   769) <a name="l769" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">t_startf('clm_drv_io')</a>
+   770) <a name="l770" style="background-color: #ffffff"></a>
+   771) <a name="l771" style="background-color: #ffffff">  call t_startf('clm_drv_io_htapes')</a>
+   772) <a name="l772" style="background-color: #ffffff">  call hist_htapes_wrapup( rstwr, nlend )</a>
+   773) <a name="l773" style="background-color: #ffffff">  call t_stopf('clm_drv_io_htapes')</a>
+   774) <a name="l774" style="background-color: #ffffff"></a>
+   775) <a name="l775" style="background-color: #ffffff">  ! ============================================================================</a>
+   776) <a name="l776" style="background-color: #ffffff">  ! Write to CNDV history buffer if appropriate</a>
+   777) <a name="l777" style="background-color: #ffffff">  ! ============================================================================</a>
+   778) <a name="l778" style="background-color: #ffffff"></a>
+   779) <a name="l779" style="background-color: #ffffff">  if (use_cndv) then</a>
+   780) <a name="l780" style="background-color: #ffff99">     if (monp1==1 .and. dayp1==1 .and. secp1==dtime .and. nstep&gt;0)  then</a>
+   781) <a name="l781" style="background-color: #ffff99">        call t_startf('clm_drv_io_hdgvm')</a>
+   782) <a name="l782" style="background-color: #ffff99">        call histCNDV()</a>
+   783) <a name="l783" style="background-color: #ffff99">        if (masterproc) write(iulog,*) 'Annual CNDV calculations are complete'</a>
+   784) <a name="l784" style="background-color: #ffff99">        call t_stopf('clm_drv_io_hdgvm')</a>
+   785) <a name="l785" style="background-color: #ffff99">     end if</a>
+   786) <a name="l786" style="background-color: #ffff99">  end if</a>
+   787) <a name="l787" style="background-color: #ffff99"></a>
+   788) <a name="l788" style="background-color: #ffff99">  ! ============================================================================</a>
+   789) <a name="l789" style="background-color: #ffff99">  ! Write restart/initial files if appropriate</a>
+   790) <a name="l790" style="background-color: #ffff99">  ! ============================================================================</a>
+   791) <a name="l791" style="background-color: #ffff99"></a>
+   792) <a name="l792" style="background-color: #ffffff">  if (rstwr) then</a>
+   793) <a name="l793" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">t_startf('clm_drv_io_wrest')</a>
+   794) <a name="l794" style="background-color: #ffff99">     filer = restFile_filename(rdate=rdate)</a>
+   795) <a name="l795" style="background-color: #ffff99">     call restFile_write( filer, nlend, rdate=rdate )</a>
+   796) <a name="l796" style="background-color: #ffff99">     call t_stopf('clm_drv_io_wrest')</a>
+   797) <a name="l797" style="background-color: #ffff99">  end if</a>
+   798) <a name="l798" style="background-color: #ffff99"></a>
+   799) <a name="l799" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">t_stopf('clm_drv_io')</a>
+   800) <a name="l800" style="background-color: #ffffff"></a>
+   801) <a name="l801" style="background-color: #ffffff">end subroutine clm_drv</a>
+   802) <a name="l802" style="background-color: #ffffff"></a>
+   803) <a name="l803" style="background-color: #ffffff">!------------------------------------------------------------------------</a>
+   804) <a name="l804" style="background-color: #ffffff">!BOP</a>
+   805) <a name="l805" style="background-color: #ffffff">!</a>
+   806) <a name="l806" style="background-color: #ffffff">! !IROUTINE: write_diagnostic</a>
+   807) <a name="l807" style="background-color: #ffffff">!</a>
+   808) <a name="l808" style="background-color: #ffffff">! !INTERFACE:</a>
+   809) <a name="l809" style="background-color: #ffffff">subroutine write_diagnostic (wrtdia, nstep)</a>
+   810) <a name="l810" style="background-color: #ffffff">!</a>
+   811) <a name="l811" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   812) <a name="l812" style="background-color: #ffffff">! Write diagnostic surface temperature output each timestep.  Written to</a>
+   813) <a name="l813" style="background-color: #ffffff">! be fast but not bit-for-bit because order of summations can change each</a>
+   814) <a name="l814" style="background-color: #ffffff">! timestep.</a>
+   815) <a name="l815" style="background-color: #ffffff">!</a>
+   816) <a name="l816" style="background-color: #ffffff">! !USES:</a>
+   817) <a name="l817" style="background-color: #ffffff">  use clm_atmlnd , only : clm_l2a</a>
+   818) <a name="l818" style="background-color: #ffffff">  use decompMod  , only : get_proc_bounds, get_proc_global</a>
+   819) <a name="l819" style="background-color: #ffffff">  use spmdMod    , only : masterproc, npes, MPI_REAL8, MPI_ANY_SOURCE, &amp;</a>
+   820) <a name="l820" style="background-color: #ffffff">                          MPI_STATUS_SIZE, mpicom, MPI_SUM</a>
+   821) <a name="l821" style="background-color: #ffffff">  use shr_sys_mod, only : shr_sys_flush</a>
+   822) <a name="l822" style="background-color: #ffffff">  use abortutils , only : endrun</a>
+   823) <a name="l823" style="background-color: #ffffff">!</a>
+   824) <a name="l824" style="background-color: #ffffff">! !ARGUMENTS:</a>
+   825) <a name="l825" style="background-color: #ffffff">  implicit none</a>
+   826) <a name="l826" style="background-color: #ffffff">  logical, intent(in) :: wrtdia     !true =&gt; write diagnostic</a>
+   827) <a name="l827" style="background-color: #ffffff">  integer, intent(in) :: nstep      !model time step</a>
+   828) <a name="l828" style="background-color: #ffffff">!</a>
+   829) <a name="l829" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   830) <a name="l830" style="background-color: #ffffff">! Created by Mariana Vertenstein</a>
+   831) <a name="l831" style="background-color: #ffffff">!</a>
+   832) <a name="l832" style="background-color: #ffffff">!EOP</a>
+   833) <a name="l833" style="background-color: #ffffff">!</a>
+   834) <a name="l834" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+   835) <a name="l835" style="background-color: #ffffff">  integer :: p                       ! loop index</a>
+   836) <a name="l836" style="background-color: #ffffff">  integer :: begp, endp              ! per-proc beginning and ending pft indices</a>
+   837) <a name="l837" style="background-color: #ffffff">  integer :: begc, endc              ! per-proc beginning and ending column indices</a>
+   838) <a name="l838" style="background-color: #ffffff">  integer :: begl, endl              ! per-proc beginning and ending landunit indices</a>
+   839) <a name="l839" style="background-color: #ffffff">  integer :: begg, endg              ! per-proc gridcell ending gridcell indices</a>
+   840) <a name="l840" style="background-color: #ffffff">  integer :: numg                    ! total number of gridcells across all processors</a>
+   841) <a name="l841" style="background-color: #ffffff">  integer :: numl                    ! total number of landunits across all processors</a>
+   842) <a name="l842" style="background-color: #ffffff">  integer :: numc                    ! total number of columns across all processors</a>
+   843) <a name="l843" style="background-color: #ffffff">  integer :: nump                    ! total number of pfts across all processors</a>
+   844) <a name="l844" style="background-color: #ffffff">  integer :: ier                     ! error status</a>
+   845) <a name="l845" style="background-color: #ffffff">  real(r8):: psum                    ! partial sum of ts</a>
+   846) <a name="l846" style="background-color: #ffffff">  real(r8):: tsum                    ! sum of ts</a>
+   847) <a name="l847" style="background-color: #ffffff">  real(r8):: tsxyav                  ! average ts for diagnostic output</a>
+   848) <a name="l848" style="background-color: #ffffff">  integer :: status(MPI_STATUS_SIZE) ! mpi status</a>
+   849) <a name="l849" style="background-color: #ffffff">  logical,parameter :: old_sendrecv = .false.  ! Flag if should use old send/receive method rather than MPI reduce</a>
+   850) <a name="l850" style="background-color: #ffffff">!------------------------------------------------------------------------</a>
+   851) <a name="l851" style="background-color: #ffffff"></a>
+   852) <a name="l852" style="background-color: #ffffff">  call get_proc_bounds(begg, endg, begl, endl, begc, endc, begp, endp)</a>
+   853) <a name="l853" style="background-color: #ffffff">  call get_proc_global(numg, numl, numc, nump)</a>
+   854) <a name="l854" style="background-color: #ffffff"></a>
+   855) <a name="l855" style="background-color: #ffffff">  if (wrtdia) then</a>
+   856) <a name="l856" style="background-color: #ffffff"></a>
+   857) <a name="l857" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">t_barrierf('sync_write_diag', mpicom)</a>
+   858) <a name="l858" style="background-color: #ffff99">     psum = sum(clm_l2a%t_rad(begg:endg))</a>
+   859) <a name="l859" style="background-color: #ffff99">     if (old_sendrecv) then</a>
+   860) <a name="l860" style="background-color: #ffff99">        if (masterproc) then</a>
+   861) <a name="l861" style="background-color: #ffff99">           tsum = psum</a>
+   862) <a name="l862" style="background-color: #ffff99">           do p = 1, npes-1</a>
+   863) <a name="l863" style="background-color: #ffff99">              call mpi_recv(psum, 1, MPI_REAL8, p, 999, mpicom, status, ier)</a>
+   864) <a name="l864" style="background-color: #ffff99">              if (ier/=0) then</a>
+   865) <a name="l865" style="background-color: #ffff99">                 write(iulog,*) 'write_diagnostic: Error in mpi_recv()'</a>
+   866) <a name="l866" style="background-color: #ffff99">                 call endrun</a>
+   867) <a name="l867" style="background-color: #ffff99">              end if</a>
+   868) <a name="l868" style="background-color: #ffff99">              tsum = tsum + psum</a>
+   869) <a name="l869" style="background-color: #ffff99">           end do</a>
+   870) <a name="l870" style="background-color: #ffff99">        else</a>
+   871) <a name="l871" style="background-color: #ffff99">           call mpi_send(psum, 1, MPI_REAL8, 0, 999, mpicom, ier)</a>
+   872) <a name="l872" style="background-color: #ffff99">           if (ier/=0) then</a>
+   873) <a name="l873" style="background-color: #ffff99">              write(iulog,*) 'write_diagnostic: Error in mpi_send()'</a>
+   874) <a name="l874" style="background-color: #ffff99">              call endrun</a>
+   875) <a name="l875" style="background-color: #ffff99">           end if</a>
+   876) <a name="l876" style="background-color: #ffff99">        end if</a>
+   877) <a name="l877" style="background-color: #ffff99">     else</a>
+   878) <a name="l878" style="background-color: #ffff99">        call mpi_reduce(psum, tsum, 1, MPI_REAL8, MPI_SUM, 0, mpicom, ier)</a>
+   879) <a name="l879" style="background-color: #ffff99">        if (ier/=0) then</a>
+   880) <a name="l880" style="background-color: #ffff99">           write(iulog,*) 'write_diagnostic: Error in mpi_reduce()'</a>
+   881) <a name="l881" style="background-color: #ffff99">           call endrun</a>
+   882) <a name="l882" style="background-color: #ffff99">        end if</a>
+   883) <a name="l883" style="background-color: #ffff99">     endif</a>
+   884) <a name="l884" style="background-color: #ffff99">     if (masterproc) then</a>
+   885) <a name="l885" style="background-color: #ffff99">        tsxyav = tsum / numg</a>
+   886) <a name="l886" style="background-color: #ffff99">        write(iulog,1000) nstep, tsxyav</a>
+   887) <a name="l887" style="background-color: #ffff99">        call shr_sys_flush(iulog)</a>
+   888) <a name="l888" style="background-color: #ffff99">     end if</a>
+   889) <a name="l889" style="background-color: #ffff99"></a>
+   890) <a name="l890" style="background-color: #ffff99">  else</a>
+   891) <a name="l891" style="background-color: #ffff99"></a>
+   892) <a name="l892" style="background-color: #ffffff">     if (masterproc) then</a>
+   893) <a name="l893" style="background-color: #ffffff">        write(iulog,*)'clm2: completed timestep ',nstep</a>
+   894) <a name="l894" style="background-color: #ffffff">        call shr_sys_flush(iulog)</a>
+   895) <a name="l895" style="background-color: #ffffff">     end if</a>
+   896) <a name="l896" style="background-color: #ffffff"></a>
+   897) <a name="l897" style="background-color: #ffffff">  endif</a>
+   898) <a name="l898" style="background-color: #ffffff"></a>
+   899) <a name="l899" style="background-color: #ffffff">1000 format (1x,'nstep = ',i10,'   TS = ',f21.15)</a>
+   900) <a name="l900" style="background-color: #ffffff"></a>
+   901) <a name="l901" style="background-color: #ffffff">end subroutine write_diagnostic</a>
+   902) <a name="l902" style="background-color: #ffffff"></a>
+   903) <a name="l903" style="background-color: #ffffff">end module clm_driver</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

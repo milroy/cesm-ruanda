@@ -1,0 +1,465 @@
+<html>
+<head>
+<title>Listing of mo_apex.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;mo_apex.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module mo_apex</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">! Purpose:</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">!   Calculate apex coordinates and magnetic field magnitudes</a>
+     7) <a name="l7" style="background-color: #ffffff">!   at global geographic grid for year of current model run. </a>
+     8) <a name="l8" style="background-color: #ffffff">!</a>
+     9) <a name="l9" style="background-color: #ffffff">! Method: </a>
+    10) <a name="l10" style="background-color: #ffffff">!</a>
+    11) <a name="l11" style="background-color: #ffffff">!   The magnetic field parameters output by this module are time and height</a>
+    12) <a name="l12" style="background-color: #ffffff">!     independent. They are chunked for waccm physics, i.e., allocated as </a>
+    13) <a name="l13" style="background-color: #ffffff">!     (pcols,begchunk:endchunk)</a>
+    14) <a name="l14" style="background-color: #ffffff">!   Interface sub apexmag is called once per run from sub inti.</a>
+    15) <a name="l15" style="background-color: #ffffff">!     Sub apexmag may be called for years 1900 through 2005.</a>
+    16) <a name="l16" style="background-color: #ffffff">!   This module is dependent on routines in apex_subs.F (modified IGRF model).</a>
+    17) <a name="l17" style="background-color: #ffffff">!   Apex_subs has several authors, but has been modified and maintained</a>
+    18) <a name="l18" style="background-color: #ffffff">!     in recent years by Roy Barnes (bozo@ucar.edu).</a>
+    19) <a name="l19" style="background-color: #ffffff">!   Subs apxmka and apxmall are called with the current lat x lon grid </a>
+    20) <a name="l20" style="background-color: #ffffff">!     resolution.</a>
+    21) <a name="l21" style="background-color: #ffffff">!</a>
+    22) <a name="l22" style="background-color: #ffffff">! Author: Ben Foster, foster@ucar.edu (Nov, 2003)</a>
+    23) <a name="l23" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+    24) <a name="l24" style="background-color: #ffffff"></a>
+    25) <a name="l25" style="background-color: #ffffff">   use shr_kind_mod,    only: r8 =&gt; shr_kind_r8</a>
+    26) <a name="l26" style="background-color: #ffffff">   use ppgrid,          only: pcols, begchunk, endchunk          ! physics grid</a>
+    27) <a name="l27" style="background-color: #ffffff">   use phys_grid,       only: get_lat_p, get_lon_p, get_ncols_p</a>
+    28) <a name="l28" style="background-color: #ffffff">   use abortutils,      only: endrun</a>
+    29) <a name="l29" style="background-color: #ffffff">   use cam_control_mod, only: magfield_fix_year</a>
+    30) <a name="l30" style="background-color: #ffffff">   use cam_logfile,     only: iulog</a>
+    31) <a name="l31" style="background-color: #ffffff">   use spmd_utils,      only: masterproc</a>
+    32) <a name="l32" style="background-color: #ffffff"></a>
+    33) <a name="l33" style="background-color: #ffffff">   implicit none</a>
+    34) <a name="l34" style="background-color: #ffffff"></a>
+    35) <a name="l35" style="background-color: #ffffff">   private</a>
+    36) <a name="l36" style="background-color: #ffffff">   public :: apexmag</a>
+    37) <a name="l37" style="background-color: #ffffff">   public :: alatm, alonm, glonm, bnorth, beast, bdown, bmag</a>
+    38) <a name="l38" style="background-color: #ffffff">   public :: d1vec, d2vec, colatp, elonp</a>
+    39) <a name="l39" style="background-color: #ffffff"></a>
+    40) <a name="l40" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+    41) <a name="l41" style="background-color: #ffffff">! Magnetic field output arrays, chunked for physics:</a>
+    42) <a name="l42" style="background-color: #ffffff">! (these are allocated (pcols,begchunk:endchunk) by sub apex_alloc)</a>
+    43) <a name="l43" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+    44) <a name="l44" style="background-color: #ffffff">   real(r8), allocatable, dimension(:,:) :: &amp; ! (pcols,begchunk:endchunk)</a>
+    45) <a name="l45" style="background-color: #ffffff">     alatm,  &amp; ! apex mag latitude at each geographic grid point (radians)</a>
+    46) <a name="l46" style="background-color: #ffffff">     alonm,  &amp; ! apex mag longitude at each geographic grid point (radians)</a>
+    47) <a name="l47" style="background-color: #ffffff">     glonm,  &amp; ! apex mag longitude at each geographic grid point (radians)</a>
+    48) <a name="l48" style="background-color: #ffffff">     bnorth, &amp; ! northward component of magnetic field</a>
+    49) <a name="l49" style="background-color: #ffffff">     beast,  &amp; ! eastward component of magnetic field</a>
+    50) <a name="l50" style="background-color: #ffffff">     bdown,  &amp; ! downward component of magnetic field</a>
+    51) <a name="l51" style="background-color: #ffffff">     bmag      ! magnitude of magnetic field</a>
+    52) <a name="l52" style="background-color: #ffffff">   real(r8), allocatable, dimension(:,:,:) :: &amp; ! (3,pcols,begchunk:endchunk)</a>
+    53) <a name="l53" style="background-color: #ffffff">     d1vec,    &amp; ! base vectors more-or-less magnetic eastward direction</a>
+    54) <a name="l54" style="background-color: #ffffff">     d2vec       ! base vectors more-or-less magnetic downward/equatorward direction</a>
+    55) <a name="l55" style="background-color: #ffffff">   real(r8) :: &amp;</a>
+    56) <a name="l56" style="background-color: #ffffff">     colatp,   &amp; ! geocentric colatitude of geomagnetic dipole north pole (deg)</a>
+    57) <a name="l57" style="background-color: #ffffff">     elonp	 ! East longitude of geomagnetic dipole north pole (deg)</a>
+    58) <a name="l58" style="background-color: #ffffff"></a>
+    59) <a name="l59" style="background-color: #ffffff">   logical :: initialized = .false.</a>
+    60) <a name="l60" style="background-color: #ffffff"></a>
+    61) <a name="l61" style="background-color: #ffffff">contains</a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">apexmag</a>
+    64) <a name="l64" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+    65) <a name="l65" style="background-color: #ffcccc">! Driver for apex code to calculate apex magnetic coordinates at </a>
+    66) <a name="l66" style="background-color: #ffcccc">!   current geographic spatial resolution for given year. This calls</a>
+    67) <a name="l67" style="background-color: #ffcccc">!   routines in apex_subs.F.</a>
+    68) <a name="l68" style="background-color: #ffcccc">!</a>
+    69) <a name="l69" style="background-color: #ffcccc">! This is called once per run from sub inti.</a>
+    70) <a name="l70" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+    71) <a name="l71" style="background-color: #ffcccc"></a>
+    72) <a name="l72" style="background-color: #ffcccc">   use physconst,      only: pi</a>
+    73) <a name="l73" style="background-color: #ffcccc">   use dyn_grid, only : get_dyn_grid_parm, get_horiz_grid_d</a>
+    74) <a name="l74" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+    75) <a name="l75" style="background-color: #ffcccc">! Local variables</a>
+    76) <a name="l76" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+    77) <a name="l77" style="background-color: #ffcccc">   integer, parameter  :: nalt  = 2             ! number of altitudes</a>
+    78) <a name="l78" style="background-color: #ffcccc">   real(r8), parameter :: re    = 6.378165e8_r8 ! earth radius (cm)</a>
+    79) <a name="l79" style="background-color: #ffcccc">   real(r8), parameter :: h0    = 9.0e6_r8      ! base height (90 km)</a>
+    80) <a name="l80" style="background-color: #ffcccc">   real(r8), parameter :: hs    = 1.3e7_r8</a>
+    81) <a name="l81" style="background-color: #ffcccc">   real(r8), parameter :: eps   = 1.e-6_r8      ! epsilon</a>
+    82) <a name="l82" style="background-color: #ffcccc">   real(r8), parameter :: cm2km = 1.e-5_r8</a>
+    83) <a name="l83" style="background-color: #ffcccc"></a>
+    84) <a name="l84" style="background-color: #ffcccc">   integer  :: i, j, ist, lchnk              ! indices</a>
+    85) <a name="l85" style="background-color: #ffcccc">   integer  :: ncol, ic, jc</a>
+    86) <a name="l86" style="background-color: #ffcccc"></a>
+    87) <a name="l87" style="background-color: #ffcccc">   real(r8), allocatable :: dlat_mid(:)              ! midpoint latitudes to assist interp</a>
+    88) <a name="l88" style="background-color: #ffcccc">   real(r8), allocatable :: dlon_mid(:)              ! midpoint longitudes to assist interp</a>
+    89) <a name="l89" style="background-color: #ffcccc">   real(r8), allocatable :: dlon_shft(:)             ! shifted midpoint longitudes</a>
+    90) <a name="l90" style="background-color: #ffcccc"></a>
+    91) <a name="l91" style="background-color: #ffcccc">   real(r8) :: rtd, dtr                      ! deg&lt;-&gt;radians conversions</a>
+    92) <a name="l92" style="background-color: #ffcccc">   real(r8) :: rekm, h0km, alt, hr, ror03, alon, alat, &amp; ! apxmall args</a>
+    93) <a name="l93" style="background-color: #ffcccc">               vmp, w, d, be3, sim, xlatqd, f, si, date1(1), collat, collon</a>
+    94) <a name="l94" style="background-color: #ffcccc">   real(r8) :: gpalt(nalt)                   ! altitudes passed to apxmka</a>
+    95) <a name="l95" style="background-color: #ffcccc">   real(r8), allocatable :: wk(:), clat(:), clon(:)</a>
+    96) <a name="l96" style="background-color: #ffcccc">   integer :: plon, plat, plonp1, platp1, lwk</a>
+    97) <a name="l97" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+    98) <a name="l98" style="background-color: #ffcccc">! Non-scalar arguments returned by APXMALL:</a>
+    99) <a name="l99" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   100) <a name="l100" style="background-color: #ffcccc">   real(r8) :: bhat(3)</a>
+   101) <a name="l101" style="background-color: #ffcccc">   real(r8) :: d3(3)</a>
+   102) <a name="l102" style="background-color: #ffcccc">   real(r8) :: e1(3), e2(3), e3(3)</a>
+   103) <a name="l103" style="background-color: #ffcccc">   real(r8) :: f1(2), f2(2)</a>
+   104) <a name="l104" style="background-color: #ffcccc"></a>
+   105) <a name="l105" style="background-color: #ffcccc">   real(r8), allocatable :: glatm(:,:)</a>
+   106) <a name="l106" style="background-color: #ffcccc">   real(r8), allocatable :: bglobal(:,:,:)</a>
+   107) <a name="l107" style="background-color: #ffcccc">   real(r8), allocatable :: d1global(:,:,:)</a>
+   108) <a name="l108" style="background-color: #ffcccc">   real(r8), allocatable :: d2global(:,:,:)</a>
+   109) <a name="l109" style="background-color: #ffcccc">   real(r8), allocatable :: bmglobal(:,:)   </a>
+   110) <a name="l110" style="background-color: #ffcccc"></a>
+   111) <a name="l111" style="background-color: #ffcccc">   real(r8) :: rdum</a>
+   112) <a name="l112" style="background-color: #ffcccc"></a>
+   113) <a name="l113" style="background-color: #ffcccc">   if (initialized) return</a>
+   114) <a name="l114" style="background-color: #ffcccc"></a>
+   115) <a name="l115" style="background-color: #ffcccc">   plat = get_dyn_grid_parm('plat')</a>
+   116) <a name="l116" style="background-color: #ffcccc">   plon = get_dyn_grid_parm('plon')</a>
+   117) <a name="l117" style="background-color: #ffcccc">   platp1 = plat+1</a>
+   118) <a name="l118" style="background-color: #ffcccc">   plonp1 = plon+1</a>
+   119) <a name="l119" style="background-color: #ffcccc">   lwk = platp1*plonp1*nalt*5+platp1 + plonp1 + nalt</a>
+   120) <a name="l120" style="background-color: #ffcccc"></a>
+   121) <a name="l121" style="background-color: #ffcccc">   allocate(dlat_mid(platp1), dlon_mid(plonp1), dlon_shft(plonp1), wk(lwk))</a>
+   122) <a name="l122" style="background-color: #ffcccc">   allocate(glatm(plon,plat), bglobal(3,plon,plat), d1global(3,plon,plat), d2global(3,plon,plat))</a>
+   123) <a name="l123" style="background-color: #ffcccc">   allocate(bmglobal(plon,plat))</a>
+   124) <a name="l124" style="background-color: #ffcccc">   allocate(clat(plat), clon(plon))</a>
+   125) <a name="l125" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   126) <a name="l126" style="background-color: #ffcccc">! Allocate output arrays</a>
+   127) <a name="l127" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   128) <a name="l128" style="background-color: #ffcccc">   call apex_alloc</a>
+   129) <a name="l129" style="background-color: #ffcccc"></a>
+   130) <a name="l130" style="background-color: #ffcccc">   rtd = 180._r8/pi     ! radians to degrees</a>
+   131) <a name="l131" style="background-color: #ffcccc">   dtr = pi/180._r8     ! degrees to radians</a>
+   132) <a name="l132" style="background-color: #ffcccc"></a>
+   133) <a name="l133" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   134) <a name="l134" style="background-color: #ffcccc">! Extend staggered latitudes (midpoints) to assist apxmka build </a>
+   135) <a name="l135" style="background-color: #ffcccc">! interpolation tables (degrees).</a>
+   136) <a name="l136" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   137) <a name="l137" style="background-color: #ffcccc">   call get_horiz_grid_d(plat, clat_d_out=clat)</a>
+   138) <a name="l138" style="background-color: #ffcccc">   call get_horiz_grid_d(plon, clon_d_out=clon)</a>
+   139) <a name="l139" style="background-color: #ffcccc"></a>
+   140) <a name="l140" style="background-color: #ffcccc">   dlat_mid(1) = clat(1)*rtd</a>
+   141) <a name="l141" style="background-color: #ffcccc">   do j = 2,plat</a>
+   142) <a name="l142" style="background-color: #ffcccc">      dlat_mid(j) = rtd*(clat(j-1) + clat(j))/2.0_r8</a>
+   143) <a name="l143" style="background-color: #ffcccc">   end do</a>
+   144) <a name="l144" style="background-color: #ffcccc">   dlat_mid(platp1) = rtd*clat(plat)</a>
+   145) <a name="l145" style="background-color: #ffcccc"></a>
+   146) <a name="l146" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   147) <a name="l147" style="background-color: #ffcccc">! Set longitude midpoints (assume non-reducing grid, so use londeg(:,1))</a>
+   148) <a name="l148" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   149) <a name="l149" style="background-color: #ffcccc">   dlon_mid(1) = rtd*(clon(1) - .5_r8*(clon(2) - clon(1)))</a>
+   150) <a name="l150" style="background-color: #ffcccc">   do i = 2,plon</a>
+   151) <a name="l151" style="background-color: #ffcccc">     dlon_mid(i) = .5_r8*rtd*(clon(i) + clon(i-1))</a>
+   152) <a name="l152" style="background-color: #ffcccc">   end do</a>
+   153) <a name="l153" style="background-color: #ffcccc">   dlon_mid(plon+1) = dlon_mid(plon) + rtd*(clon(plon) - clon(plon-1))</a>
+   154) <a name="l154" style="background-color: #ffcccc"></a>
+   155) <a name="l155" style="background-color: #ffcccc"></a>
+   156) <a name="l156" style="background-color: #ffcccc">#ifdef AURORA_DEBUG</a>
+   157) <a name="l157" style="background-color: #ffcccc">   write(iulog,*) '---------------------------------------'</a>
+   158) <a name="l158" style="background-color: #ffcccc">   write(iulog,*) 'apex: dlon_mid'</a>
+   159) <a name="l159" style="background-color: #ffcccc">   write(iulog,'(1p,5g15.7)') dlon_mid(:)</a>
+   160) <a name="l160" style="background-color: #ffcccc">   write(iulog,*) 'apex: dlat_mid'</a>
+   161) <a name="l161" style="background-color: #ffcccc">   write(iulog,'(1p,5g15.7)') dlat_mid(:)</a>
+   162) <a name="l162" style="background-color: #ffcccc">   write(iulog,*) '---------------------------------------'</a>
+   163) <a name="l163" style="background-color: #ffcccc">#endif</a>
+   164) <a name="l164" style="background-color: #ffcccc"></a>
+   165) <a name="l165" style="background-color: #ffcccc">   date1(1) = magfield_fix_year</a>
+   166) <a name="l166" style="background-color: #ffcccc"></a>
+   167) <a name="l167" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   168) <a name="l168" style="background-color: #ffcccc">! Center min, max altitudes about 130 km</a>
+   169) <a name="l169" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   170) <a name="l170" style="background-color: #ffcccc">   gpalt(1) =  90._r8</a>
+   171) <a name="l171" style="background-color: #ffcccc">   gpalt(2) = 170._r8</a>
+   172) <a name="l172" style="background-color: #ffcccc"></a>
+   173) <a name="l173" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   174) <a name="l174" style="background-color: #ffcccc">! Set up interpolation.</a>
+   175) <a name="l175" style="background-color: #ffcccc">! (Note apxmka expects longitudes in -180 -&gt; +180)</a>
+   176) <a name="l176" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   177) <a name="l177" style="background-color: #ffcccc">   dlon_shft(:) = dlon_mid(:) - 180._r8</a>
+   178) <a name="l178" style="background-color: #ffcccc">   call apxmka( iulog, date1, dlat_mid, dlon_shft, gpalt, &amp;</a>
+   179) <a name="l179" style="background-color: #ffcccc">                platp1, plonp1, nalt, wk, lwk, ist )</a>
+   180) <a name="l180" style="background-color: #ffcccc">   if( ist /= 0 ) then</a>
+   181) <a name="l181" style="background-color: #ffcccc">     write(iulog,&quot;(/,'&gt;&gt;&gt; apexmag: Error from apxmka: ist=',i5)&quot;) ist</a>
+   182) <a name="l182" style="background-color: #ffcccc">     call endrun</a>
+   183) <a name="l183" style="background-color: #ffcccc">   end if</a>
+   184) <a name="l184" style="background-color: #ffcccc"></a>
+   185) <a name="l185" style="background-color: #ffcccc">   rekm  = re*cm2km    ! earth radius (km)</a>
+   186) <a name="l186" style="background-color: #ffcccc">   h0km  = h0*cm2km    ! base height (km)</a>
+   187) <a name="l187" style="background-color: #ffcccc">   alt   = hs*cm2km    ! altitude for apxmall (km)</a>
+   188) <a name="l188" style="background-color: #ffcccc">   hr    = alt         ! reference altitude (km)</a>
+   189) <a name="l189" style="background-color: #ffcccc">   ror03 = ((rekm + alt)/(rekm + h0km))**3</a>
+   190) <a name="l190" style="background-color: #ffcccc"></a>
+   191) <a name="l191" style="background-color: #ffcccc">!------------------------------------------------------------------------------</a>
+   192) <a name="l192" style="background-color: #ffcccc">! Apex coords alon, alat are returned for each geographic grid point:</a>
+   193) <a name="l193" style="background-color: #ffcccc">! first form global arrays</a>
+   194) <a name="l194" style="background-color: #ffcccc">!------------------------------------------------------------------------------</a>
+   195) <a name="l195" style="background-color: #ffcccc">   do j = 1,plat</a>
+   196) <a name="l196" style="background-color: #ffcccc">      collat = clat(j)*rtd                       ! latitude of current column (deg)</a>
+   197) <a name="l197" style="background-color: #ffcccc">      do i = 1,plon</a>
+   198) <a name="l198" style="background-color: #ffcccc">         collon = clon(i)*rtd ! longitude of current column (deg)</a>
+   199) <a name="l199" style="background-color: #ffcccc">         call apxmall(                                  &amp;</a>
+   200) <a name="l200" style="background-color: #ffcccc">           collat, collon, alt, hr, wk, lwk,            &amp; ! Inputs</a>
+   201) <a name="l201" style="background-color: #ffcccc">           bglobal(1,i,j), bhat, bmglobal(i,j), si,     &amp; ! Mag Fld</a>
+   202) <a name="l202" style="background-color: #ffcccc">           alon, alat,                                  &amp; ! Apex lon,lat output</a>
+   203) <a name="l203" style="background-color: #ffcccc">           vmp, w, d, be3, sim, d1global(1,i,j), d2global(1,i,j), d3, e1, e2, e3, &amp; ! Mod Apex</a>
+   204) <a name="l204" style="background-color: #ffcccc">           xlatqd, f, f1, f2, ist )                       ! Qsi-Dpl</a>
+   205) <a name="l205" style="background-color: #ffcccc">         if( ist /= 0 ) then</a>
+   206) <a name="l206" style="background-color: #ffcccc">           write(iulog,&quot;(/,'&gt;&gt;&gt; apexmag: Error from apxmall: ist=',i4)&quot;) ist</a>
+   207) <a name="l207" style="background-color: #ffcccc">           call endrun</a>
+   208) <a name="l208" style="background-color: #ffcccc">         end if</a>
+   209) <a name="l209" style="background-color: #ffcccc">         glonm(i,j)   =  alon*dtr                         ! mag lons (radians)</a>
+   210) <a name="l210" style="background-color: #ffcccc">         glatm(i,j)   =  alat*dtr                         ! mag lats (radians)</a>
+   211) <a name="l211" style="background-color: #ffcccc">      end do</a>
+   212) <a name="l212" style="background-color: #ffcccc">   end do</a>
+   213) <a name="l213" style="background-color: #ffcccc"></a>
+   214) <a name="l214" style="background-color: #ffcccc">#ifdef AURORA_DEBUG</a>
+   215) <a name="l215" style="background-color: #ffcccc">   write(iulog,*) '---------------------------------------'</a>
+   216) <a name="l216" style="background-color: #ffcccc">   write(iulog,*) 'apex: geo lons'</a>
+   217) <a name="l217" style="background-color: #ffcccc">   write(iulog,'(1p,5g15.7)') rtd*clon(:)</a>
+   218) <a name="l218" style="background-color: #ffcccc">   write(iulog,*) 'apex: geo lats'</a>
+   219) <a name="l219" style="background-color: #ffcccc">   write(iulog,'(1p,5g15.7)') rtd*clat(:)</a>
+   220) <a name="l220" style="background-color: #ffcccc">   write(iulog,*) ' '</a>
+   221) <a name="l221" style="background-color: #ffcccc">   do j = 1,plat</a>
+   222) <a name="l222" style="background-color: #ffcccc">      write(iulog,*) 'apexmag: mag lats @ lat ndx = ',j</a>
+   223) <a name="l223" style="background-color: #ffcccc">      write(iulog,'(1p,5g15.7)') glatm(:,j)/dtr</a>
+   224) <a name="l224" style="background-color: #ffcccc">   end do</a>
+   225) <a name="l225" style="background-color: #ffcccc">   write(iulog,*) ' '</a>
+   226) <a name="l226" style="background-color: #ffcccc">   do j = 1,plat</a>
+   227) <a name="l227" style="background-color: #ffcccc">      write(iulog,*) 'apexmag: mag lons @ lat ndx = ',j</a>
+   228) <a name="l228" style="background-color: #ffcccc">      write(iulog,'(1p,5g15.7)') glonm(:,j)/dtr</a>
+   229) <a name="l229" style="background-color: #ffcccc">   end do</a>
+   230) <a name="l230" style="background-color: #ffcccc">   write(iulog,*) ' '</a>
+   231) <a name="l231" style="background-color: #ffcccc">   write(iulog,*) '---------------------------------------'</a>
+   232) <a name="l232" style="background-color: #ffcccc">#endif</a>
+   233) <a name="l233" style="background-color: #ffcccc"></a>
+   234) <a name="l234" style="background-color: #ffcccc">!------------------------------------------------------------------------------</a>
+   235) <a name="l235" style="background-color: #ffcccc">! map globals to chunks</a>
+   236) <a name="l236" style="background-color: #ffcccc">!------------------------------------------------------------------------------</a>
+   237) <a name="l237" style="background-color: #ffcccc">chunk_loop : &amp;</a>
+   238) <a name="l238" style="background-color: #ffcccc">   do lchnk = begchunk,endchunk  ! physics chunks (groups of arbitrary columns)</a>
+   239) <a name="l239" style="background-color: #ffcccc">     ncol = get_ncols_p( lchnk )</a>
+   240) <a name="l240" style="background-color: #ffcccc">column_loop : &amp;</a>
+   241) <a name="l241" style="background-color: #ffcccc">     do i = 1,ncol             ! number of columns in each chunk</a>
+   242) <a name="l242" style="background-color: #ffcccc">!------------------------------------------------------------------------------</a>
+   243) <a name="l243" style="background-color: #ffcccc">! set module output from apxmall output:</a>
+   244) <a name="l244" style="background-color: #ffcccc">!------------------------------------------------------------------------------</a>
+   245) <a name="l245" style="background-color: #ffcccc">       ic                = get_lon_p(lchnk,i)</a>
+   246) <a name="l246" style="background-color: #ffcccc">       jc                = get_lat_p(lchnk,i)</a>
+   247) <a name="l247" style="background-color: #ffcccc">!      write(iulog,*) 'apex: lchnk,i,ic,jc = ',lchnk,i,ic,jc</a>
+   248) <a name="l248" style="background-color: #ffcccc">       alatm (i,lchnk)   =  glatm(ic,jc)                ! mag lats (radians)</a>
+   249) <a name="l249" style="background-color: #ffcccc">       alonm (i,lchnk)   =  glonm(ic,jc)                ! mag lons (radians)</a>
+   250) <a name="l250" style="background-color: #ffcccc">!      bnorth(i,lchnk)   =  bglobal(2,ic,jc)*1.e-5_r8   ! northward nT -&gt; gauss</a>
+   251) <a name="l251" style="background-color: #ffcccc">!      beast (i,lchnk)   =  bglobal(1,ic,jc)*1.e-5_r8   ! eastward  nT -&gt; gauss</a>
+   252) <a name="l252" style="background-color: #ffcccc">!      bdown (i,lchnk)   = -bglobal(3,ic,jc)*1.e-5_r8   ! downward  nT -&gt; gauss</a>
+   253) <a name="l253" style="background-color: #ffcccc">!      bmag  (i,lchnk)   =  bmglobal(ic,jc)*1.e-5_r8    ! magnitude nT -&gt; gauss</a>
+   254) <a name="l254" style="background-color: #ffcccc">       bnorth(i,lchnk)   =  bglobal(2,ic,jc)            ! northward nT -&gt; gauss</a>
+   255) <a name="l255" style="background-color: #ffcccc">       beast (i,lchnk)   =  bglobal(1,ic,jc)            ! eastward  nT -&gt; gauss</a>
+   256) <a name="l256" style="background-color: #ffcccc">       bdown (i,lchnk)   = -bglobal(3,ic,jc)            ! downward  nT -&gt; gauss</a>
+   257) <a name="l257" style="background-color: #ffcccc">       bmag  (i,lchnk)   =  bmglobal(ic,jc)             ! magnitude nT -&gt; gauss</a>
+   258) <a name="l258" style="background-color: #ffcccc">       d1vec (:,i,lchnk) =  d1global(:,ic,jc)</a>
+   259) <a name="l259" style="background-color: #ffcccc">       d2vec (:,i,lchnk) =  d2global(:,ic,jc)</a>
+   260) <a name="l260" style="background-color: #ffcccc">     end do column_loop</a>
+   261) <a name="l261" style="background-color: #ffcccc"></a>
+   262) <a name="l262" style="background-color: #ffcccc">#ifdef DEBUG</a>
+   263) <a name="l263" style="background-color: #ffcccc">     write(iulog,&quot;('apexmag: lchnk=',i3,' alatm(:,lchnk)*rtd=',/,(1p,6g12.4))&quot;) &amp;</a>
+   264) <a name="l264" style="background-color: #ffcccc">       lchnk,alatm(:,lchnk)*rtd</a>
+   265) <a name="l265" style="background-color: #ffcccc">     write(iulog,&quot;('apexmag: lchnk=',i3,' alonm(:,lchnk)*rtd=',/,(1p,6g12.4))&quot;) &amp;</a>
+   266) <a name="l266" style="background-color: #ffcccc">       lchnk,alonm(:,lchnk)*rtd</a>
+   267) <a name="l267" style="background-color: #ffcccc">     write(iulog,&quot;('apexmag: lchnk=',i3,' bnorth(:,lchnk)=',/,(6e12.4))&quot;) &amp;</a>
+   268) <a name="l268" style="background-color: #ffcccc">       lchnk,bnorth(:,lchnk)</a>
+   269) <a name="l269" style="background-color: #ffcccc">     write(iulog,&quot;('apexmag: lchnk=',i3,' beast(:,lchnk)=' ,/,(6e12.4))&quot;) &amp;</a>
+   270) <a name="l270" style="background-color: #ffcccc">       lchnk,beast(:,lchnk)</a>
+   271) <a name="l271" style="background-color: #ffcccc">     write(iulog,&quot;('apexmag: lchnk=',i3,' bdown(:,lchnk)=' ,/,(6e12.4))&quot;) &amp;</a>
+   272) <a name="l272" style="background-color: #ffcccc">       lchnk,bdown(:,lchnk)</a>
+   273) <a name="l273" style="background-color: #ffcccc">     write(iulog,&quot;('apexmag: lchnk=',i3,' bmag(:,lchnk)='  ,/,(6e12.4))&quot;) &amp;</a>
+   274) <a name="l274" style="background-color: #ffcccc">       lchnk,bmag(:,lchnk)</a>
+   275) <a name="l275" style="background-color: #ffcccc">#endif</a>
+   276) <a name="l276" style="background-color: #ffcccc">   end do chunk_loop</a>
+   277) <a name="l277" style="background-color: #ffcccc"></a>
+   278) <a name="l278" style="background-color: #ffcccc">#ifdef DEBUG</a>
+   279) <a name="l279" style="background-color: #ffcccc">   write(iulog,*) '---------------------------------------'</a>
+   280) <a name="l280" style="background-color: #ffcccc">   write(iulog,*) 'apex: begchunk,endchunk = ', begchunk,endchunk</a>
+   281) <a name="l281" style="background-color: #ffcccc">   write(iulog,*) 'apex: mag lons at j = 81'</a>
+   282) <a name="l282" style="background-color: #ffcccc">   write(iulog,'(1p,5g15.7)') glonm(:,81)/dtr</a>
+   283) <a name="l283" style="background-color: #ffcccc">   write(iulog,*) 'apex: mag lons at j = 82'</a>
+   284) <a name="l284" style="background-color: #ffcccc">   write(iulog,'(1p,5g15.7)') glonm(:,82)/dtr</a>
+   285) <a name="l285" style="background-color: #ffcccc">   write(iulog,*) 'apex: mag lons at j = 83'</a>
+   286) <a name="l286" style="background-color: #ffcccc">   write(iulog,'(1p,5g15.7)') glonm(:,83)/dtr</a>
+   287) <a name="l287" style="background-color: #ffcccc">   write(iulog,*) '---------------------------------------'</a>
+   288) <a name="l288" style="background-color: #ffcccc">#endif</a>
+   289) <a name="l289" style="background-color: #ffcccc"></a>
+   290) <a name="l290" style="background-color: #ffcccc">   call dypol( colatp, elonp, rdum )	! get geomagnetic dipole north pole </a>
+   291) <a name="l291" style="background-color: #ffcccc"></a>
+   292) <a name="l292" style="background-color: #ffcccc">   if (masterproc) write(iulog,*) 'apex: colatp,elonp ', colatp, elonp</a>
+   293) <a name="l293" style="background-color: #ffcccc"></a>
+   294) <a name="l294" style="background-color: #ffcccc">  deallocate(dlat_mid, dlon_mid, dlon_shft, wk)</a>
+   295) <a name="l295" style="background-color: #ffcccc">  deallocate(glatm, bglobal, d1global, d2global)</a>
+   296) <a name="l296" style="background-color: #ffcccc">  deallocate(bmglobal)</a>
+   297) <a name="l297" style="background-color: #ffcccc">  deallocate(clat, clon)</a>
+   298) <a name="l298" style="background-color: #ffcccc">  if (masterproc) write(iulog,&quot;(' APEXMAG: Calculated apex magnetic coordinates for year AD ',i4)&quot;) &amp;</a>
+   299) <a name="l299" style="background-color: #ffcccc">                  magfield_fix_year</a>
+   300) <a name="l300" style="background-color: #ffcccc"></a>
+   301) <a name="l301" style="background-color: #ffcccc">  initialized = .true.</a>
+   302) <a name="l302" style="background-color: #ffcccc"></a>
+   303) <a name="l303" style="background-color: #ffcccc">end subroutine apexmag</a>
+   304) <a name="l304" style="background-color: #ffffff"></a>
+   305) <a name="l305" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">apex_alloc</a>
+   306) <a name="l306" style="background-color: #ffcccc">  use dyn_grid, only : get_dyn_grid_parm</a>
+   307) <a name="l307" style="background-color: #ffcccc">!------------------------------------------------------------------------------</a>
+   308) <a name="l308" style="background-color: #ffcccc">! Allocate module output arrays for chunked physics grid.</a>
+   309) <a name="l309" style="background-color: #ffcccc">!------------------------------------------------------------------------------</a>
+   310) <a name="l310" style="background-color: #ffcccc"></a>
+   311) <a name="l311" style="background-color: #ffcccc">!------------------------------------------------------------------------------</a>
+   312) <a name="l312" style="background-color: #ffcccc">! local variables</a>
+   313) <a name="l313" style="background-color: #ffcccc">!------------------------------------------------------------------------------</a>
+   314) <a name="l314" style="background-color: #ffcccc">  integer :: istat  ! status of allocate statements</a>
+   315) <a name="l315" style="background-color: #ffcccc">  integer :: plat, plon</a>
+   316) <a name="l316" style="background-color: #ffcccc"></a>
+   317) <a name="l317" style="background-color: #ffcccc">  plat = get_dyn_grid_parm('plat')</a>
+   318) <a name="l318" style="background-color: #ffcccc">  plon = get_dyn_grid_parm('plon')</a>
+   319) <a name="l319" style="background-color: #ffcccc"></a>
+   320) <a name="l320" style="background-color: #ffcccc">  if (.not.allocated(alatm)) then</a>
+   321) <a name="l321" style="background-color: #ffcccc">    allocate(alatm(pcols,begchunk:endchunk),stat=istat)</a>
+   322) <a name="l322" style="background-color: #ffcccc">    if (istat /= 0) then</a>
+   323) <a name="l323" style="background-color: #ffcccc">      write(iulog,&quot;('&gt;&gt;&gt; apex_alloc: allocate of alatm failed: istat=',i5)&quot;) istat</a>
+   324) <a name="l324" style="background-color: #ffcccc">      call endrun</a>
+   325) <a name="l325" style="background-color: #ffcccc">    end if</a>
+   326) <a name="l326" style="background-color: #ffcccc">!   write(iulog,&quot;('apex_alloc: allocated alatm: pcols=',i3,' beg,endchunk=',2i4)&quot;) &amp;</a>
+   327) <a name="l327" style="background-color: #ffcccc">!     pcols,begchunk,endchunk</a>
+   328) <a name="l328" style="background-color: #ffcccc">  end if</a>
+   329) <a name="l329" style="background-color: #ffcccc"></a>
+   330) <a name="l330" style="background-color: #ffcccc">  if (.not.allocated(glonm)) then</a>
+   331) <a name="l331" style="background-color: #ffcccc">    allocate(glonm(plon,plat),stat=istat)</a>
+   332) <a name="l332" style="background-color: #ffcccc">    if (istat /= 0) then</a>
+   333) <a name="l333" style="background-color: #ffcccc">      write(iulog,&quot;('&gt;&gt;&gt; apex_alloc: allocate of glonm failed: istat=',i5)&quot;) istat</a>
+   334) <a name="l334" style="background-color: #ffcccc">      call endrun</a>
+   335) <a name="l335" style="background-color: #ffcccc">    end if</a>
+   336) <a name="l336" style="background-color: #ffcccc">  end if</a>
+   337) <a name="l337" style="background-color: #ffcccc"></a>
+   338) <a name="l338" style="background-color: #ffcccc">  if (.not.allocated(alonm)) then</a>
+   339) <a name="l339" style="background-color: #ffcccc">    allocate(alonm(pcols,begchunk:endchunk),stat=istat)</a>
+   340) <a name="l340" style="background-color: #ffcccc">    if (istat /= 0) then</a>
+   341) <a name="l341" style="background-color: #ffcccc">      write(iulog,&quot;('&gt;&gt;&gt; apex_alloc: allocate of alonm failed: istat=',i5)&quot;) istat</a>
+   342) <a name="l342" style="background-color: #ffcccc">      call endrun</a>
+   343) <a name="l343" style="background-color: #ffcccc">    end if</a>
+   344) <a name="l344" style="background-color: #ffcccc">!   write(iulog,&quot;('apex_alloc: allocated alonm: pcols=',i3,' beg,endchunk=',2i4)&quot;) &amp;</a>
+   345) <a name="l345" style="background-color: #ffcccc">!     pcols,begchunk,endchunk</a>
+   346) <a name="l346" style="background-color: #ffcccc">  end if</a>
+   347) <a name="l347" style="background-color: #ffcccc"></a>
+   348) <a name="l348" style="background-color: #ffcccc">  if (.not.allocated(bnorth)) then</a>
+   349) <a name="l349" style="background-color: #ffcccc">    allocate(bnorth(pcols,begchunk:endchunk),stat=istat)</a>
+   350) <a name="l350" style="background-color: #ffcccc">    if (istat /= 0) then</a>
+   351) <a name="l351" style="background-color: #ffcccc">      write(iulog,&quot;('&gt;&gt;&gt; apex_alloc: allocate of bnorth failed: istat=',i5)&quot;) istat</a>
+   352) <a name="l352" style="background-color: #ffcccc">      call endrun</a>
+   353) <a name="l353" style="background-color: #ffcccc">    end if</a>
+   354) <a name="l354" style="background-color: #ffcccc">!   write(iulog,&quot;('apex_alloc: allocated bnorth: pcols=',i3,' beg,endchunk=',2i4)&quot;) &amp;</a>
+   355) <a name="l355" style="background-color: #ffcccc">!     pcols,begchunk,endchunk</a>
+   356) <a name="l356" style="background-color: #ffcccc">  end if</a>
+   357) <a name="l357" style="background-color: #ffcccc"></a>
+   358) <a name="l358" style="background-color: #ffcccc">  if (.not.allocated(beast)) then</a>
+   359) <a name="l359" style="background-color: #ffcccc">    allocate(beast(pcols,begchunk:endchunk),stat=istat)</a>
+   360) <a name="l360" style="background-color: #ffcccc">    if (istat /= 0) then</a>
+   361) <a name="l361" style="background-color: #ffcccc">      write(iulog,&quot;('&gt;&gt;&gt; apex_alloc: allocate of beast failed: istat=',i5)&quot;) istat</a>
+   362) <a name="l362" style="background-color: #ffcccc">      call endrun</a>
+   363) <a name="l363" style="background-color: #ffcccc">    end if</a>
+   364) <a name="l364" style="background-color: #ffcccc">!   write(iulog,&quot;('apex_alloc: allocated beast: pcols=',i3,' beg,endchunk=',2i4)&quot;) &amp;</a>
+   365) <a name="l365" style="background-color: #ffcccc">!     pcols,begchunk,endchunk</a>
+   366) <a name="l366" style="background-color: #ffcccc">  end if</a>
+   367) <a name="l367" style="background-color: #ffcccc"></a>
+   368) <a name="l368" style="background-color: #ffcccc">  if (.not.allocated(bdown)) then</a>
+   369) <a name="l369" style="background-color: #ffcccc">    allocate(bdown(pcols,begchunk:endchunk),stat=istat)</a>
+   370) <a name="l370" style="background-color: #ffcccc">    if (istat /= 0) then</a>
+   371) <a name="l371" style="background-color: #ffcccc">      write(iulog,&quot;('&gt;&gt;&gt; apex_alloc: allocate of bdown failed: istat=',i5)&quot;) istat</a>
+   372) <a name="l372" style="background-color: #ffcccc">      call endrun</a>
+   373) <a name="l373" style="background-color: #ffcccc">    end if</a>
+   374) <a name="l374" style="background-color: #ffcccc">!   write(iulog,&quot;('apex_alloc: allocated bdown: pcols=',i3,' beg,endchunk=',2i4)&quot;) &amp;</a>
+   375) <a name="l375" style="background-color: #ffcccc">!     pcols,begchunk,endchunk</a>
+   376) <a name="l376" style="background-color: #ffcccc">  end if</a>
+   377) <a name="l377" style="background-color: #ffcccc"></a>
+   378) <a name="l378" style="background-color: #ffcccc">  if (.not.allocated(bmag)) then</a>
+   379) <a name="l379" style="background-color: #ffcccc">    allocate(bmag(pcols,begchunk:endchunk),stat=istat)</a>
+   380) <a name="l380" style="background-color: #ffcccc">    if (istat /= 0) then</a>
+   381) <a name="l381" style="background-color: #ffcccc">      write(iulog,&quot;('&gt;&gt;&gt; apex_alloc: allocate of bmag failed: istat=',i5)&quot;) istat</a>
+   382) <a name="l382" style="background-color: #ffcccc">      call endrun</a>
+   383) <a name="l383" style="background-color: #ffcccc">    end if</a>
+   384) <a name="l384" style="background-color: #ffcccc">!   write(iulog,&quot;('apex_alloc: allocated bmag: pcols=',i3,' beg,endchunk=',2i4)&quot;) &amp;</a>
+   385) <a name="l385" style="background-color: #ffcccc">!     pcols,begchunk,endchunk</a>
+   386) <a name="l386" style="background-color: #ffcccc">  end if</a>
+   387) <a name="l387" style="background-color: #ffcccc">  if (.not.allocated(d1vec)) then</a>
+   388) <a name="l388" style="background-color: #ffcccc">    allocate(d1vec(3,pcols,begchunk:endchunk),stat=istat)</a>
+   389) <a name="l389" style="background-color: #ffcccc">    if (istat /= 0) then</a>
+   390) <a name="l390" style="background-color: #ffcccc">      write(iulog,&quot;('&gt;&gt;&gt; apex_alloc: allocate of d1vec failed: istat=',i5)&quot;) istat</a>
+   391) <a name="l391" style="background-color: #ffcccc">      call endrun</a>
+   392) <a name="l392" style="background-color: #ffcccc">    endif</a>
+   393) <a name="l393" style="background-color: #ffcccc">!   write(iulog,&quot;('apex_alloc: allocated d1vec: pcols=',i3,' beg,endchunk=',2i4)&quot;) &amp;</a>
+   394) <a name="l394" style="background-color: #ffcccc">!     pcols,begchunk,endchunk</a>
+   395) <a name="l395" style="background-color: #ffcccc">  endif</a>
+   396) <a name="l396" style="background-color: #ffcccc"></a>
+   397) <a name="l397" style="background-color: #ffcccc">  if (.not.allocated(d2vec)) then</a>
+   398) <a name="l398" style="background-color: #ffcccc">    allocate(d2vec(3,pcols,begchunk:endchunk),stat=istat)</a>
+   399) <a name="l399" style="background-color: #ffcccc">    if (istat /= 0) then</a>
+   400) <a name="l400" style="background-color: #ffcccc">      write(iulog,&quot;('&gt;&gt;&gt; apex_alloc: allocate of d2vec failed: istat=',i5)&quot;) istat</a>
+   401) <a name="l401" style="background-color: #ffcccc">      call endrun</a>
+   402) <a name="l402" style="background-color: #ffcccc">    endif</a>
+   403) <a name="l403" style="background-color: #ffcccc">!   write(iulog,&quot;('apex_alloc: allocated d2vec: pcols=',i3,' beg,endchunk=',2i4)&quot;) &amp;</a>
+   404) <a name="l404" style="background-color: #ffcccc">!     pcols,begchunk,endchunk</a>
+   405) <a name="l405" style="background-color: #ffcccc">  endif</a>
+   406) <a name="l406" style="background-color: #ffcccc"></a>
+   407) <a name="l407" style="background-color: #ffcccc">end subroutine apex_alloc</a>
+   408) <a name="l408" style="background-color: #ffffff"></a>
+   409) <a name="l409" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">apex_dealloc</a>
+   410) <a name="l410" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   411) <a name="l411" style="background-color: #ffcccc">! Deallocate module output arrays:</a>
+   412) <a name="l412" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   413) <a name="l413" style="background-color: #ffcccc"></a>
+   414) <a name="l414" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   415) <a name="l415" style="background-color: #ffcccc">! local variables</a>
+   416) <a name="l416" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   417) <a name="l417" style="background-color: #ffcccc">  integer :: istat(8)</a>
+   418) <a name="l418" style="background-color: #ffcccc"></a>
+   419) <a name="l419" style="background-color: #ffcccc">  if (allocated(alatm )) deallocate(alatm ,stat=istat(1))</a>
+   420) <a name="l420" style="background-color: #ffcccc">  if (allocated(alonm )) deallocate(alatm ,stat=istat(2))</a>
+   421) <a name="l421" style="background-color: #ffcccc">  if (allocated(bnorth)) deallocate(bnorth,stat=istat(3))</a>
+   422) <a name="l422" style="background-color: #ffcccc">  if (allocated(beast )) deallocate(beast ,stat=istat(4))</a>
+   423) <a name="l423" style="background-color: #ffcccc">  if (allocated(bdown )) deallocate(bdown ,stat=istat(5))</a>
+   424) <a name="l424" style="background-color: #ffcccc">  if (allocated(bmag  )) deallocate(bmag  ,stat=istat(6))</a>
+   425) <a name="l425" style="background-color: #ffcccc">  if (allocated(d1vec )) deallocate(d1vec ,stat=istat(7))</a>
+   426) <a name="l426" style="background-color: #ffcccc">  if (allocated(d2vec )) deallocate(d2vec ,stat=istat(8))</a>
+   427) <a name="l427" style="background-color: #ffcccc">  if (sum(istat) /= 0) then</a>
+   428) <a name="l428" style="background-color: #ffcccc">    write(iulog,&quot;('&gt;&gt;&gt; apex_dealloc: error deallocating apex arrays: istat=',i4)&quot;) istat</a>
+   429) <a name="l429" style="background-color: #ffcccc">    call endrun('apex_dealloc: error deallocating apex arrays')</a>
+   430) <a name="l430" style="background-color: #ffcccc">  endif</a>
+   431) <a name="l431" style="background-color: #ffcccc"></a>
+   432) <a name="l432" style="background-color: #ffcccc">end subroutine apex_dealloc</a>
+   433) <a name="l433" style="background-color: #ffffff"></a>
+   434) <a name="l434" style="background-color: #ffffff">end module mo_apex</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

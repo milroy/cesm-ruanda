@@ -1,0 +1,812 @@
+<html>
+<head>
+<title>Listing of pkg_cld_sediment.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;pkg_cld_sediment.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 16.67&#160;%func&#160;&#160;&#160;&#160;  7.83&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">#undef OLDLIQSED</a>
+     2) <a name="l2" style="background-color: #ffffff">module pkg_cld_sediment</a>
+     3) <a name="l3" style="background-color: #ffffff"></a>
+     4) <a name="l4" style="background-color: #ffffff">!---------------------------------------------------------------------------------</a>
+     5) <a name="l5" style="background-color: #ffffff">! Purpose:</a>
+     6) <a name="l6" style="background-color: #ffffff">!</a>
+     7) <a name="l7" style="background-color: #ffffff">! Contains routines to compute tendencies from sedimentation of cloud liquid and </a>
+     8) <a name="l8" style="background-color: #ffffff">! ice particles</a>
+     9) <a name="l9" style="background-color: #ffffff">!</a>
+    10) <a name="l10" style="background-color: #ffffff">! Author: Byron Boville  Sept 19, 2002 from code by P. J. Rasch</a>
+    11) <a name="l11" style="background-color: #ffffff">!</a>
+    12) <a name="l12" style="background-color: #ffffff">!---------------------------------------------------------------------------------</a>
+    13) <a name="l13" style="background-color: #ffffff"></a>
+    14) <a name="l14" style="background-color: #ffffff">  use shr_kind_mod,  only: r8=&gt;shr_kind_r8</a>
+    15) <a name="l15" style="background-color: #ffffff">  use spmd_utils,    only: masterproc</a>
+    16) <a name="l16" style="background-color: #ffffff">  use ppgrid,        only: pcols, pver, pverp</a>
+    17) <a name="l17" style="background-color: #ffffff">  use physconst,     only: gravit, latvap, latice, rair, rhoh2o</a>
+    18) <a name="l18" style="background-color: #ffffff">  use cldwat,        only: icritc</a>
+    19) <a name="l19" style="background-color: #ffffff">  use pkg_cldoptics, only: reitab, reltab</a>
+    20) <a name="l20" style="background-color: #ffffff">  use abortutils,    only: endrun</a>
+    21) <a name="l21" style="background-color: #ffffff">  use cam_logfile,   only: iulog</a>
+    22) <a name="l22" style="background-color: #ffffff"></a>
+    23) <a name="l23" style="background-color: #ffffff">  implicit none</a>
+    24) <a name="l24" style="background-color: #ffffff">  private</a>
+    25) <a name="l25" style="background-color: #ffffff">  save</a>
+    26) <a name="l26" style="background-color: #ffffff"></a>
+    27) <a name="l27" style="background-color: #ffffff">  public :: cld_sediment_readnl, cld_sediment_vel, cld_sediment_tend</a>
+    28) <a name="l28" style="background-color: #ffffff"></a>
+    29) <a name="l29" style="background-color: #ffffff"></a>
+    30) <a name="l30" style="background-color: #ffffff">  real (r8), parameter :: vland  = 1.5_r8            ! liquid fall velocity over land  (cm/s)</a>
+    31) <a name="l31" style="background-color: #ffffff">  real (r8), parameter :: vocean = 2.8_r8            ! liquid fall velocity over ocean (cm/s)</a>
+    32) <a name="l32" style="background-color: #ffffff">  real (r8), parameter :: mxsedfac   = 0.99_r8       ! maximum sedimentation flux factor</a>
+    33) <a name="l33" style="background-color: #ffffff"></a>
+    34) <a name="l34" style="background-color: #ffffff">  logical,   parameter :: stokes = .true.         ! use Stokes velocity instead of McFarquhar and Heymsfield</a>
+    35) <a name="l35" style="background-color: #ffffff"></a>
+    36) <a name="l36" style="background-color: #ffffff">! parameter for modified McFarquhar and Heymsfield</a>
+    37) <a name="l37" style="background-color: #ffffff">  real (r8), parameter :: vice_small = 1._r8         ! ice fall velocity for small concentration (cm/s)</a>
+    38) <a name="l38" style="background-color: #ffffff"></a>
+    39) <a name="l39" style="background-color: #ffffff">! parameters for Stokes velocity</a>
+    40) <a name="l40" style="background-color: #ffffff">  real (r8), parameter :: eta =  1.7e-5_r8           ! viscosity of air (kg m / s)</a>
+    41) <a name="l41" style="background-color: #ffffff">  real (r8), parameter :: r40 =  40._r8              !  40 micron radius</a>
+    42) <a name="l42" style="background-color: #ffffff">  real (r8), parameter :: r400= 400._r8              ! 400 micron radius</a>
+    43) <a name="l43" style="background-color: #ffffff">  real (r8), parameter :: v400= 1.00_r8              ! fall velocity of 400 micron sphere (m/s)</a>
+    44) <a name="l44" style="background-color: #ffffff">  real (r8)            :: v40 ! = (2._r8/9._r8) * rhoh2o * gravit/eta * r40**2 * 1.e-12_r8  </a>
+    45) <a name="l45" style="background-color: #ffffff">                                                     ! Stokes fall velocity of 40 micron sphere (m/s)</a>
+    46) <a name="l46" style="background-color: #ffffff">  real (r8)            :: vslope !  = (v400 - v40)/(r400 -r40) ! linear slope for large particles m/s/micron</a>
+    47) <a name="l47" style="background-color: #ffffff"></a>
+    48) <a name="l48" style="background-color: #ffffff">  ! namelist variables</a>
+    49) <a name="l49" style="background-color: #ffffff">  real(r8) :: cldsed_ice_stokes_fac = huge(1._r8)    ! factor applied to the ice fall velocity computed from </a>
+    50) <a name="l50" style="background-color: #ffffff">                                                     ! stokes terminal velocity</a>
+    51) <a name="l51" style="background-color: #ffffff"></a>
+    52) <a name="l52" style="background-color: #ffffff">!===============================================================================</a>
+    53) <a name="l53" style="background-color: #ffffff">contains</a>
+    54) <a name="l54" style="background-color: #ffffff">!===============================================================================</a>
+    55) <a name="l55" style="background-color: #ffffff"></a>
+    56) <a name="l56" style="background-color: #ffffff">subroutine cld_sediment_readnl(nlfile)</a>
+    57) <a name="l57" style="background-color: #ffffff"></a>
+    58) <a name="l58" style="background-color: #ffffff">   use namelist_utils,  only: find_group_name</a>
+    59) <a name="l59" style="background-color: #ffffff">   use units,           only: getunit, freeunit</a>
+    60) <a name="l60" style="background-color: #ffffff">   use mpishorthand</a>
+    61) <a name="l61" style="background-color: #ffffff"></a>
+    62) <a name="l62" style="background-color: #ffffff">   character(len=*), intent(in) :: nlfile  ! filepath for file containing namelist input</a>
+    63) <a name="l63" style="background-color: #ffffff"></a>
+    64) <a name="l64" style="background-color: #ffffff">   ! Local variables</a>
+    65) <a name="l65" style="background-color: #ffffff">   integer :: unitn, ierr</a>
+    66) <a name="l66" style="background-color: #ffffff">   character(len=*), parameter :: subname = 'cld_sediment_readnl'</a>
+    67) <a name="l67" style="background-color: #ffffff"></a>
+    68) <a name="l68" style="background-color: #ffffff">   namelist /cldsed_nl/ cldsed_ice_stokes_fac</a>
+    69) <a name="l69" style="background-color: #ffffff">   !-----------------------------------------------------------------------------</a>
+    70) <a name="l70" style="background-color: #ffffff"></a>
+    71) <a name="l71" style="background-color: #ffffff">   if (masterproc) then</a>
+    72) <a name="l72" style="background-color: #ffffff">      unitn = getunit()</a>
+    73) <a name="l73" style="background-color: #ffffff">      open( unitn, file=trim(nlfile), status='old' )</a>
+    74) <a name="l74" style="background-color: #ffffff">      call find_group_name(unitn, 'cldsed_nl', status=ierr)</a>
+    75) <a name="l75" style="background-color: #ffffff">      if (ierr == 0) then</a>
+    76) <a name="l76" style="background-color: #ffffff">         read(unitn, cldsed_nl, iostat=ierr)</a>
+    77) <a name="l77" style="background-color: #ffffff">         if (ierr /= 0) then</a>
+    78) <a name="l78" style="background-color: #ffffff">            call </a><a style="background-color: #ffff99">endrun(subname // ':: ERROR reading namelist')</a>
+    79) <a name="l79" style="background-color: #ffff99">         end if</a>
+    80) <a name="l80" style="background-color: #ffff99">      end if</a>
+    81) <a name="l81" style="background-color: #ffff99">      close(</a><a style="background-color: #ffffff">unitn)</a>
+    82) <a name="l82" style="background-color: #ffffff">      call freeunit(unitn)</a>
+    83) <a name="l83" style="background-color: #ffffff"></a>
+    84) <a name="l84" style="background-color: #ffffff">      write(iulog,*) subname//': cldsed_ice_stokes_fac = ', cldsed_ice_stokes_fac</a>
+    85) <a name="l85" style="background-color: #ffffff"></a>
+    86) <a name="l86" style="background-color: #ffffff">   end if</a>
+    87) <a name="l87" style="background-color: #ffffff"></a>
+    88) <a name="l88" style="background-color: #ffffff">#ifdef SPMD</a>
+    89) <a name="l89" style="background-color: #ffffff">   ! Broadcast namelist variables</a>
+    90) <a name="l90" style="background-color: #ffffff">   call mpibcast(cldsed_ice_stokes_fac, 1, mpir8, 0, mpicom)</a>
+    91) <a name="l91" style="background-color: #ffffff">#endif</a>
+    92) <a name="l92" style="background-color: #ffffff"></a>
+    93) <a name="l93" style="background-color: #ffffff">end subroutine cld_sediment_readnl</a>
+    94) <a name="l94" style="background-color: #ffffff"></a>
+    95) <a name="l95" style="background-color: #ffffff">!===============================================================================</a>
+    96) <a name="l96" style="background-color: #ffffff"></a>
+    97) <a name="l97" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">cld_sediment_vel (ncol,                               &amp;</a>
+    98) <a name="l98" style="background-color: #ffcccc">       icefrac , landfrac, ocnfrac , pmid    , pdel    , t       , &amp;</a>
+    99) <a name="l99" style="background-color: #ffcccc">       cloud   , cldliq  , cldice  , pvliq   , pvice   , landm, snowh)</a>
+   100) <a name="l100" style="background-color: #ffcccc"></a>
+   101) <a name="l101" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   102) <a name="l102" style="background-color: #ffcccc"></a>
+   103) <a name="l103" style="background-color: #ffcccc">! Compute gravitational sedimentation velocities for cloud liquid water</a>
+   104) <a name="l104" style="background-color: #ffcccc">! and ice, based on Lawrence and Crutzen (1998).</a>
+   105) <a name="l105" style="background-color: #ffcccc"></a>
+   106) <a name="l106" style="background-color: #ffcccc">! LIQUID</a>
+   107) <a name="l107" style="background-color: #ffcccc"></a>
+   108) <a name="l108" style="background-color: #ffcccc">! The fall velocities assume that droplets have a gamma distribution</a>
+   109) <a name="l109" style="background-color: #ffcccc">! with effective radii for land and ocean as assessed by Han et al.;</a>
+   110) <a name="l110" style="background-color: #ffcccc">! see Lawrence and Crutzen (1998) for a derivation.</a>
+   111) <a name="l111" style="background-color: #ffcccc"></a>
+   112) <a name="l112" style="background-color: #ffcccc">! ICE</a>
+   113) <a name="l113" style="background-color: #ffcccc"></a>
+   114) <a name="l114" style="background-color: #ffcccc">! The fall velocities are based on data from McFarquhar and Heymsfield</a>
+   115) <a name="l115" style="background-color: #ffcccc">! or on Stokes terminal velocity for spheres and the effective radius.</a>
+   116) <a name="l116" style="background-color: #ffcccc"></a>
+   117) <a name="l117" style="background-color: #ffcccc">! NEED TO BE CAREFUL - VELOCITIES SHOULD BE AT THE *LOWER* INTERFACE</a>
+   118) <a name="l118" style="background-color: #ffcccc">! (THAT IS, FOR K+1), FLUXES ARE ALSO AT THE LOWER INTERFACE (K+1), </a>
+   119) <a name="l119" style="background-color: #ffcccc">! BUT MIXING RATIOS ARE AT THE MIDPOINTS (K)...</a>
+   120) <a name="l120" style="background-color: #ffcccc"></a>
+   121) <a name="l121" style="background-color: #ffcccc">! NOTE THAT PVEL IS ON PVERP (INTERFACES), WHEREAS VFALL IS FOR THE CELL</a>
+   122) <a name="l122" style="background-color: #ffcccc">! AVERAGES (I.E., MIDPOINTS); ASSUME THE FALL VELOCITY APPLICABLE TO THE </a>
+   123) <a name="l123" style="background-color: #ffcccc">! LOWER INTERFACE (K+1) IS THE SAME AS THAT APPLICABLE FOR THE CELL (V(K))</a>
+   124) <a name="l124" style="background-color: #ffcccc"></a>
+   125) <a name="l125" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   126) <a name="l126" style="background-color: #ffcccc">!     MATCH-MPIC version 2.0, Author: mgl, March 1998</a>
+   127) <a name="l127" style="background-color: #ffcccc">! adapted by P. J. Rasch</a>
+   128) <a name="l128" style="background-color: #ffcccc">!            B. A. Boville, September 19, 2002</a>
+   129) <a name="l129" style="background-color: #ffcccc">!            P. J. Rasch    May 22, 2003 (added stokes flow calc for liquid</a>
+   130) <a name="l130" style="background-color: #ffcccc">!                                         drops based on effect radii)</a>
+   131) <a name="l131" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   132) <a name="l132" style="background-color: #ffcccc"></a>
+   133) <a name="l133" style="background-color: #ffcccc"></a>
+   134) <a name="l134" style="background-color: #ffcccc">! Arguments</a>
+   135) <a name="l135" style="background-color: #ffcccc">    integer, intent(in) :: ncol                     ! number of colums to process</a>
+   136) <a name="l136" style="background-color: #ffcccc"></a>
+   137) <a name="l137" style="background-color: #ffcccc">    real(r8), intent(in)  :: icefrac (pcols)        ! sea ice fraction (fraction)</a>
+   138) <a name="l138" style="background-color: #ffcccc">    real(r8), intent(in)  :: landfrac(pcols)        ! land fraction (fraction)</a>
+   139) <a name="l139" style="background-color: #ffcccc">    real(r8), intent(in)  :: ocnfrac (pcols)        ! ocean fraction (fraction)</a>
+   140) <a name="l140" style="background-color: #ffcccc">    real(r8), intent(in)  :: pmid  (pcols,pver)     ! pressure of midpoint levels (Pa)</a>
+   141) <a name="l141" style="background-color: #ffcccc">    real(r8), intent(in)  :: pdel  (pcols,pver)     ! pressure diff across layer (Pa)</a>
+   142) <a name="l142" style="background-color: #ffcccc">    real(r8), intent(in)  :: cloud (pcols,pver)     ! cloud fraction (fraction)</a>
+   143) <a name="l143" style="background-color: #ffcccc">    real(r8), intent(in)  :: t     (pcols,pver)     ! temperature (K)</a>
+   144) <a name="l144" style="background-color: #ffcccc">    real(r8), intent(in)  :: cldliq(pcols,pver)     ! cloud water, liquid (kg/kg)</a>
+   145) <a name="l145" style="background-color: #ffcccc">    real(r8), intent(in)  :: cldice(pcols,pver)     ! cloud water, ice    (kg/kg)</a>
+   146) <a name="l146" style="background-color: #ffcccc">    real(r8), intent(in) :: snowh(pcols)         ! Snow depth over land, water equivalent (m)</a>
+   147) <a name="l147" style="background-color: #ffcccc"></a>
+   148) <a name="l148" style="background-color: #ffcccc">    real(r8), intent(out) :: pvliq (pcols,pverp)    ! vertical velocity of cloud liquid drops (Pa/s)</a>
+   149) <a name="l149" style="background-color: #ffcccc">    real(r8), intent(out) :: pvice (pcols,pverp)    ! vertical velocity of cloud ice particles (Pa/s)</a>
+   150) <a name="l150" style="background-color: #ffcccc">    real(r8), intent(in) :: landm(pcols)            ! land fraction ramped over water</a>
+   151) <a name="l151" style="background-color: #ffcccc">! -&gt; note that pvel is at the interfaces (loss from cell is based on pvel(k+1))</a>
+   152) <a name="l152" style="background-color: #ffcccc"></a>
+   153) <a name="l153" style="background-color: #ffcccc">! Local variables</a>
+   154) <a name="l154" style="background-color: #ffcccc">    real (r8) :: rho(pcols,pver)                    ! air density in kg/m3</a>
+   155) <a name="l155" style="background-color: #ffcccc">    real (r8) :: vfall                              ! settling velocity of cloud particles (m/s)</a>
+   156) <a name="l156" style="background-color: #ffcccc">    real (r8) :: icice                              ! in cloud ice water content (kg/kg)</a>
+   157) <a name="l157" style="background-color: #ffcccc">    real (r8) :: iciwc                              ! in cloud ice water content in g/m3</a>
+   158) <a name="l158" style="background-color: #ffcccc">    real (r8) :: icefac</a>
+   159) <a name="l159" style="background-color: #ffcccc">    real (r8) :: logiwc</a>
+   160) <a name="l160" style="background-color: #ffcccc"></a>
+   161) <a name="l161" style="background-color: #ffcccc">    real (r8) :: rei(pcols,pver)                    ! effective radius of ice particles (microns)</a>
+   162) <a name="l162" style="background-color: #ffcccc">    real (r8) :: rel(pcols,pver)                    ! effective radius of liq particles (microns)</a>
+   163) <a name="l163" style="background-color: #ffcccc">    real(r8)  pvliq2 (pcols,pverp)    ! vertical velocity of cloud liquid drops (Pa/s)</a>
+   164) <a name="l164" style="background-color: #ffcccc"></a>
+   165) <a name="l165" style="background-color: #ffcccc">    integer i,k</a>
+   166) <a name="l166" style="background-color: #ffcccc"></a>
+   167) <a name="l167" style="background-color: #ffcccc">    real (r8) :: lbound, ac, bc, cc</a>
+   168) <a name="l168" style="background-color: #ffcccc"></a>
+   169) <a name="l169" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   170) <a name="l170" style="background-color: #ffcccc">!------- initialize linear ramp variables for fall velocity ------------</a>
+   171) <a name="l171" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   172) <a name="l172" style="background-color: #ffcccc"></a>
+   173) <a name="l173" style="background-color: #ffcccc">  v40 = (2._r8/9._r8) * rhoh2o * gravit/eta * r40**2 * 1.e-12_r8  </a>
+   174) <a name="l174" style="background-color: #ffcccc">  vslope = (v400 - v40)/(r400 -r40)</a>
+   175) <a name="l175" style="background-color: #ffcccc"></a>
+   176) <a name="l176" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   177) <a name="l177" style="background-color: #ffcccc">!--------------------- liquid fall velocity ----------------------------</a>
+   178) <a name="l178" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   179) <a name="l179" style="background-color: #ffcccc"></a>
+   180) <a name="l180" style="background-color: #ffcccc">    ! compute air density</a>
+   181) <a name="l181" style="background-color: #ffcccc">    rho(:ncol,:) = pmid(:ncol,:) / (rair * t(:ncol,:))</a>
+   182) <a name="l182" style="background-color: #ffcccc"></a>
+   183) <a name="l183" style="background-color: #ffcccc">    pvliq(:ncol,:) = 0._r8</a>
+   184) <a name="l184" style="background-color: #ffcccc"></a>
+   185) <a name="l185" style="background-color: #ffcccc">    ! get effective radius of liquid drop</a>
+   186) <a name="l186" style="background-color: #ffcccc">    call reltab(ncol, t, landfrac, landm, icefrac, rel, snowh)</a>
+   187) <a name="l187" style="background-color: #ffcccc"></a>
+   188) <a name="l188" style="background-color: #ffcccc">    do k = 1,pver</a>
+   189) <a name="l189" style="background-color: #ffcccc">       do i = 1,ncol</a>
+   190) <a name="l190" style="background-color: #ffcccc">          if (cloud(i,k) &gt; 0._r8 .and. cldliq(i,k) &gt; 0._r8) then</a>
+   191) <a name="l191" style="background-color: #ffcccc"></a>
+   192) <a name="l192" style="background-color: #ffcccc">#ifdef OLDLIQSED</a>
+   193) <a name="l193" style="background-color: #ffcccc">! oldway</a>
+   194) <a name="l194" style="background-color: #ffcccc">             ! merge the liquid fall velocities for land and ocean (cm/s)</a>
+   195) <a name="l195" style="background-color: #ffcccc">             ! SHOULD ALSO ACCOUNT FOR ICEFRAC</a>
+   196) <a name="l196" style="background-color: #ffcccc">             vfall = vland*landfrac(i) + vocean*(1._r8-landfrac(i))</a>
+   197) <a name="l197" style="background-color: #ffcccc">!!$          vfall = vland*landfrac(i) + vocean*ocnfrac(i) + vseaice*icefrac(i)</a>
+   198) <a name="l198" style="background-color: #ffcccc"></a>
+   199) <a name="l199" style="background-color: #ffcccc">             ! convert the fall speed to pressure units, but do not apply the traditional</a>
+   200) <a name="l200" style="background-color: #ffcccc">             ! negative convention for pvel.</a>
+   201) <a name="l201" style="background-color: #ffcccc">             pvliq(i,k+1) = vfall     &amp;</a>
+   202) <a name="l202" style="background-color: #ffcccc">                  * 0.01_r8                 &amp; ! cm to meters</a>
+   203) <a name="l203" style="background-color: #ffcccc">                  * rho(i,k)*gravit        ! meters/sec to pascals/sec</a>
+   204) <a name="l204" style="background-color: #ffcccc">#else</a>
+   205) <a name="l205" style="background-color: #ffcccc"></a>
+   206) <a name="l206" style="background-color: #ffcccc">! newway</a>
+   207) <a name="l207" style="background-color: #ffcccc">             if (rel(i,k) &lt; 40._r8 ) then</a>
+   208) <a name="l208" style="background-color: #ffcccc">                vfall = 2._r8/9._r8 * rhoh2o * gravit * rel(i,k)**2 / eta  * 1.e-12_r8  ! micons^2 -&gt; m^2</a>
+   209) <a name="l209" style="background-color: #ffcccc">             else</a>
+   210) <a name="l210" style="background-color: #ffcccc">                vfall = v40 + vslope * (rel(i,k)-r40)      ! linear above 40 microns</a>
+   211) <a name="l211" style="background-color: #ffcccc">             end if</a>
+   212) <a name="l212" style="background-color: #ffcccc">             ! convert the fall speed to pressure units</a>
+   213) <a name="l213" style="background-color: #ffcccc">             ! but do not apply the traditional</a>
+   214) <a name="l214" style="background-color: #ffcccc">             ! negative convention for pvel.</a>
+   215) <a name="l215" style="background-color: #ffcccc">!             pvliq2(i,k+1) = vfall * rho(i,k)*gravit        ! meters/sec to pascals/sec</a>
+   216) <a name="l216" style="background-color: #ffcccc">             pvliq(i,k+1) = vfall * rho(i,k)*gravit        ! meters/sec to pascals/sec</a>
+   217) <a name="l217" style="background-color: #ffcccc">#endif</a>
+   218) <a name="l218" style="background-color: #ffcccc">          end if</a>
+   219) <a name="l219" style="background-color: #ffcccc">       end do</a>
+   220) <a name="l220" style="background-color: #ffcccc">    end do</a>
+   221) <a name="l221" style="background-color: #ffcccc"></a>
+   222) <a name="l222" style="background-color: #ffcccc">    !-----------------------------------------------------------------------</a>
+   223) <a name="l223" style="background-color: #ffcccc">    !--------------------- ice fall velocity -------------------------------</a>
+   224) <a name="l224" style="background-color: #ffcccc">    !-----------------------------------------------------------------------</a>
+   225) <a name="l225" style="background-color: #ffcccc"></a>
+   226) <a name="l226" style="background-color: #ffcccc">    pvice(:ncol,:) = 0._r8</a>
+   227) <a name="l227" style="background-color: #ffcccc"></a>
+   228) <a name="l228" style="background-color: #ffcccc">    if (stokes) then</a>
+   229) <a name="l229" style="background-color: #ffcccc"></a>
+   230) <a name="l230" style="background-color: #ffcccc">       !-----------------------------------------------------------------------</a>
+   231) <a name="l231" style="background-color: #ffcccc">       !--------------------- stokes terminal velocity &lt; 40 microns -----------</a>
+   232) <a name="l232" style="background-color: #ffcccc">       !-----------------------------------------------------------------------</a>
+   233) <a name="l233" style="background-color: #ffcccc"></a>
+   234) <a name="l234" style="background-color: #ffcccc">       ! get effective radius</a>
+   235) <a name="l235" style="background-color: #ffcccc">       call reitab(ncol, t, rei)</a>
+   236) <a name="l236" style="background-color: #ffcccc"></a>
+   237) <a name="l237" style="background-color: #ffcccc">       do k = 1,pver</a>
+   238) <a name="l238" style="background-color: #ffcccc">          do i = 1,ncol</a>
+   239) <a name="l239" style="background-color: #ffcccc">             if (cloud(i,k) &gt; 0._r8 .and. cldice(i,k) &gt; 0._r8) then</a>
+   240) <a name="l240" style="background-color: #ffcccc">                if (rei(i,k) &lt; 40._r8 ) then</a>
+   241) <a name="l241" style="background-color: #ffcccc">                   vfall = 2._r8/9._r8 * rhoh2o * gravit * rei(i,k)**2 / eta  * 1.e-12_r8  ! micons^2 -&gt; m^2</a>
+   242) <a name="l242" style="background-color: #ffcccc">                   vfall = vfall * cldsed_ice_stokes_fac</a>
+   243) <a name="l243" style="background-color: #ffcccc">                else</a>
+   244) <a name="l244" style="background-color: #ffcccc">                   vfall = v40 + vslope * (rei(i,k)-r40)      ! linear above 40 microns</a>
+   245) <a name="l245" style="background-color: #ffcccc">                end if</a>
+   246) <a name="l246" style="background-color: #ffcccc"></a>
+   247) <a name="l247" style="background-color: #ffcccc">                ! convert the fall speed to pressure units, but do not apply the traditional</a>
+   248) <a name="l248" style="background-color: #ffcccc">                ! negative convention for pvel.</a>
+   249) <a name="l249" style="background-color: #ffcccc">                pvice(i,k+1) = vfall * rho(i,k)*gravit        ! meters/sec to pascals/sec</a>
+   250) <a name="l250" style="background-color: #ffcccc">             end if</a>
+   251) <a name="l251" style="background-color: #ffcccc">          end do</a>
+   252) <a name="l252" style="background-color: #ffcccc">       end do</a>
+   253) <a name="l253" style="background-color: #ffcccc"></a>
+   254) <a name="l254" style="background-color: #ffcccc">    else</a>
+   255) <a name="l255" style="background-color: #ffcccc"></a>
+   256) <a name="l256" style="background-color: #ffcccc">       !-----------------------------------------------------------------------</a>
+   257) <a name="l257" style="background-color: #ffcccc">       !--------------------- McFarquhar and Heymsfield &gt; icritc --------------</a>
+   258) <a name="l258" style="background-color: #ffcccc">       !-----------------------------------------------------------------------</a>
+   259) <a name="l259" style="background-color: #ffcccc"></a>
+   260) <a name="l260" style="background-color: #ffcccc">       ! lower bound for iciwc</a>
+   261) <a name="l261" style="background-color: #ffcccc"></a>
+   262) <a name="l262" style="background-color: #ffcccc">       cc = 128.64_r8 </a>
+   263) <a name="l263" style="background-color: #ffcccc">       bc = 53.242_r8</a>
+   264) <a name="l264" style="background-color: #ffcccc">       ac = 5.4795_r8</a>
+   265) <a name="l265" style="background-color: #ffcccc">       lbound = (-bc + sqrt(bc*bc-4*ac*cc))/(2*ac)</a>
+   266) <a name="l266" style="background-color: #ffcccc">       lbound = 10._r8**lbound</a>
+   267) <a name="l267" style="background-color: #ffcccc"></a>
+   268) <a name="l268" style="background-color: #ffcccc">       do k = 1,pver</a>
+   269) <a name="l269" style="background-color: #ffcccc">          do i = 1,ncol</a>
+   270) <a name="l270" style="background-color: #ffcccc">             if (cloud(i,k) &gt; 0._r8 .and. cldice(i,k) &gt; 0._r8) then</a>
+   271) <a name="l271" style="background-color: #ffcccc"></a>
+   272) <a name="l272" style="background-color: #ffcccc">                ! compute the in-cloud ice concentration (kg/kg)</a>
+   273) <a name="l273" style="background-color: #ffcccc">                icice = cldice(i,k) / cloud(i,k)</a>
+   274) <a name="l274" style="background-color: #ffcccc"></a>
+   275) <a name="l275" style="background-color: #ffcccc">                ! compute the ice water content in g/m3</a>
+   276) <a name="l276" style="background-color: #ffcccc">                iciwc = icice * rho(i,k) * 1.e3_r8</a>
+   277) <a name="l277" style="background-color: #ffcccc"></a>
+   278) <a name="l278" style="background-color: #ffcccc">                ! set the fall velocity (cm/s) to depend on the ice water content in g/m3,</a>
+   279) <a name="l279" style="background-color: #ffcccc">                if (iciwc &gt; lbound) then ! need this because of log10</a>
+   280) <a name="l280" style="background-color: #ffcccc">                   logiwc = log10(iciwc)</a>
+   281) <a name="l281" style="background-color: #ffcccc">                   !          Median - </a>
+   282) <a name="l282" style="background-color: #ffcccc">                   vfall = 128.64_r8 + 53.242_r8*logiwc + 5.4795_r8*logiwc**2</a>
+   283) <a name="l283" style="background-color: #ffcccc">                   !          Average - </a>
+   284) <a name="l284" style="background-color: #ffcccc">                !!$             vfall = 122.63 + 44.111*logiwc + 4.2144*logiwc**2</a>
+   285) <a name="l285" style="background-color: #ffcccc">                else</a>
+   286) <a name="l286" style="background-color: #ffcccc">                   vfall = 0._r8</a>
+   287) <a name="l287" style="background-color: #ffcccc">                end if</a>
+   288) <a name="l288" style="background-color: #ffcccc"></a>
+   289) <a name="l289" style="background-color: #ffcccc">                ! set ice velocity to 1 cm/s if ice mixing ratio &lt; icritc, ramp to value</a>
+   290) <a name="l290" style="background-color: #ffcccc">                ! calculated above at 2*icritc</a>
+   291) <a name="l291" style="background-color: #ffcccc">                if (icice &lt;= icritc) then</a>
+   292) <a name="l292" style="background-color: #ffcccc">                   vfall = vice_small</a>
+   293) <a name="l293" style="background-color: #ffcccc">                else if(icice &lt; 2*icritc) then</a>
+   294) <a name="l294" style="background-color: #ffcccc">                   icefac = (icice-icritc)/icritc</a>
+   295) <a name="l295" style="background-color: #ffcccc">                   vfall = vice_small * (1._r8-icefac) + vfall * icefac</a>
+   296) <a name="l296" style="background-color: #ffcccc">                end if</a>
+   297) <a name="l297" style="background-color: #ffcccc"></a>
+   298) <a name="l298" style="background-color: #ffcccc">                ! bound the terminal velocity of ice particles at high concentration</a>
+   299) <a name="l299" style="background-color: #ffcccc">                vfall = min(100.0_r8, vfall)</a>
+   300) <a name="l300" style="background-color: #ffcccc"></a>
+   301) <a name="l301" style="background-color: #ffcccc">                ! convert the fall speed to pressure units, but do not apply the traditional</a>
+   302) <a name="l302" style="background-color: #ffcccc">                ! negative convention for pvel.</a>
+   303) <a name="l303" style="background-color: #ffcccc">                pvice(i,k+1) = vfall     &amp;</a>
+   304) <a name="l304" style="background-color: #ffcccc">                   * 0.01_r8                 &amp; ! cm to meters</a>
+   305) <a name="l305" style="background-color: #ffcccc">                   * rho(i,k)*gravit        ! meters/sec to pascals/sec</a>
+   306) <a name="l306" style="background-color: #ffcccc">             end if</a>
+   307) <a name="l307" style="background-color: #ffcccc">          end do</a>
+   308) <a name="l308" style="background-color: #ffcccc">       end do</a>
+   309) <a name="l309" style="background-color: #ffcccc"></a>
+   310) <a name="l310" style="background-color: #ffcccc">    end if</a>
+   311) <a name="l311" style="background-color: #ffcccc"></a>
+   312) <a name="l312" style="background-color: #ffcccc"> end subroutine cld_sediment_vel</a>
+   313) <a name="l313" style="background-color: #ffffff"></a>
+   314) <a name="l314" style="background-color: #ffffff"></a>
+   315) <a name="l315" style="background-color: #ffffff">!===============================================================================</a>
+   316) <a name="l316" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">cld_sediment_tend (ncol, dtime  ,               &amp;</a>
+   317) <a name="l317" style="background-color: #ffcccc">       pint   , pmid   , pdel   , t      ,                   &amp;</a>
+   318) <a name="l318" style="background-color: #ffcccc">       cloud  , cldliq , cldice , pvliq  , pvice  ,          &amp;</a>
+   319) <a name="l319" style="background-color: #ffcccc">       liqtend, icetend, wvtend , htend  , sfliq  , sfice   )</a>
+   320) <a name="l320" style="background-color: #ffcccc"></a>
+   321) <a name="l321" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   322) <a name="l322" style="background-color: #ffcccc">!     Apply Cloud Particle Gravitational Sedimentation to Condensate</a>
+   323) <a name="l323" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   324) <a name="l324" style="background-color: #ffcccc"></a>
+   325) <a name="l325" style="background-color: #ffcccc"></a>
+   326) <a name="l326" style="background-color: #ffcccc">! Arguments</a>
+   327) <a name="l327" style="background-color: #ffcccc">    integer,  intent(in)  :: ncol                      ! number of colums to process</a>
+   328) <a name="l328" style="background-color: #ffcccc"></a>
+   329) <a name="l329" style="background-color: #ffcccc">    real(r8), intent(in)  :: dtime                     ! time step</a>
+   330) <a name="l330" style="background-color: #ffcccc">    real(r8), intent(in)  :: pint  (pcols,pverp)       ! interfaces pressure (Pa)</a>
+   331) <a name="l331" style="background-color: #ffcccc">    real(r8), intent(in)  :: pmid  (pcols,pver)        ! midpoint pressures (Pa)</a>
+   332) <a name="l332" style="background-color: #ffcccc">    real(r8), intent(in)  :: pdel  (pcols,pver)        ! pressure diff across layer (Pa)</a>
+   333) <a name="l333" style="background-color: #ffcccc">    real(r8), intent(in)  :: cloud (pcols,pver)        ! cloud fraction (fraction)</a>
+   334) <a name="l334" style="background-color: #ffcccc">    real(r8), intent(in)  :: t     (pcols,pver)        ! temperature (K)</a>
+   335) <a name="l335" style="background-color: #ffcccc">    real(r8), intent(in)  :: cldliq(pcols,pver)        ! cloud liquid water (kg/kg)</a>
+   336) <a name="l336" style="background-color: #ffcccc">    real(r8), intent(in)  :: cldice(pcols,pver)        ! cloud ice water    (kg/kg)</a>
+   337) <a name="l337" style="background-color: #ffcccc">    real(r8), intent(in)  :: pvliq (pcols,pverp)       ! vertical velocity of liquid drops  (Pa/s)</a>
+   338) <a name="l338" style="background-color: #ffcccc">    real(r8), intent(in)  :: pvice (pcols,pverp)       ! vertical velocity of ice particles (Pa/s)</a>
+   339) <a name="l339" style="background-color: #ffcccc">! -&gt; note that pvel is at the interfaces (loss from cell is based on pvel(k+1))</a>
+   340) <a name="l340" style="background-color: #ffcccc"></a>
+   341) <a name="l341" style="background-color: #ffcccc">    real(r8), intent(out) :: liqtend(pcols,pver)       ! liquid condensate tend</a>
+   342) <a name="l342" style="background-color: #ffcccc">    real(r8), intent(out) :: icetend(pcols,pver)       ! ice condensate tend</a>
+   343) <a name="l343" style="background-color: #ffcccc">    real(r8), intent(out) :: wvtend (pcols,pver)       ! water vapor tend</a>
+   344) <a name="l344" style="background-color: #ffcccc">    real(r8), intent(out) :: htend  (pcols,pver)       ! heating rate</a>
+   345) <a name="l345" style="background-color: #ffcccc">    real(r8), intent(out) :: sfliq  (pcols)            ! surface flux of liquid (rain, kg/m/s)</a>
+   346) <a name="l346" style="background-color: #ffcccc">    real(r8), intent(out) :: sfice  (pcols)            ! surface flux of ice    (snow, kg/m/s)</a>
+   347) <a name="l347" style="background-color: #ffcccc"></a>
+   348) <a name="l348" style="background-color: #ffcccc">! Local variables</a>
+   349) <a name="l349" style="background-color: #ffcccc">    real(r8) :: fxliq(pcols,pverp)                     ! fluxes at the interfaces, liquid (positive = down)</a>
+   350) <a name="l350" style="background-color: #ffcccc">    real(r8) :: fxice(pcols,pverp)                     ! fluxes at the interfaces, ice    (positive = down)</a>
+   351) <a name="l351" style="background-color: #ffcccc">    real(r8) :: cldab(pcols)                           ! cloud in layer above</a>
+   352) <a name="l352" style="background-color: #ffcccc">    real(r8) :: evapliq                                ! evaporation of cloud liquid into environment</a>
+   353) <a name="l353" style="background-color: #ffcccc">    real(r8) :: evapice                                ! evaporation of cloud ice into environment</a>
+   354) <a name="l354" style="background-color: #ffcccc">    real(r8) :: cldovrl                                ! cloud overlap factor</a>
+   355) <a name="l355" style="background-color: #ffcccc"></a>
+   356) <a name="l356" style="background-color: #ffcccc">    integer :: i,k</a>
+   357) <a name="l357" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   358) <a name="l358" style="background-color: #ffcccc"></a>
+   359) <a name="l359" style="background-color: #ffcccc">! initialize variables</a>
+   360) <a name="l360" style="background-color: #ffcccc">    fxliq  (:ncol,:) = 0._r8 ! flux at interfaces (liquid)</a>
+   361) <a name="l361" style="background-color: #ffcccc">    fxice  (:ncol,:) = 0._r8 ! flux at interfaces (ice)</a>
+   362) <a name="l362" style="background-color: #ffcccc">    liqtend(:ncol,:) = 0._r8 ! condensate tend (liquid)</a>
+   363) <a name="l363" style="background-color: #ffcccc">    icetend(:ncol,:) = 0._r8 ! condensate tend (ice)</a>
+   364) <a name="l364" style="background-color: #ffcccc">    wvtend(:ncol,:)  = 0._r8 ! environmental moistening</a>
+   365) <a name="l365" style="background-color: #ffcccc">    htend(:ncol,:)   = 0._r8 ! evaporative cooling</a>
+   366) <a name="l366" style="background-color: #ffcccc">    sfliq(:ncol)     = 0._r8 ! condensate sedimentation flux out bot of column (liquid)</a>
+   367) <a name="l367" style="background-color: #ffcccc">    sfice(:ncol)     = 0._r8 ! condensate sedimentation flux out bot of column (ice)</a>
+   368) <a name="l368" style="background-color: #ffcccc"></a>
+   369) <a name="l369" style="background-color: #ffcccc">! fluxes at interior points</a>
+   370) <a name="l370" style="background-color: #ffcccc">    call getflx(ncol, pint, cldliq, pvliq, dtime, fxliq)</a>
+   371) <a name="l371" style="background-color: #ffcccc">    call getflx(ncol, pint, cldice, pvice, dtime, fxice)</a>
+   372) <a name="l372" style="background-color: #ffcccc"></a>
+   373) <a name="l373" style="background-color: #ffcccc">! calculate fluxes at boundaries</a>
+   374) <a name="l374" style="background-color: #ffcccc">    do i = 1,ncol</a>
+   375) <a name="l375" style="background-color: #ffcccc">       fxliq(i,1) = 0._r8</a>
+   376) <a name="l376" style="background-color: #ffcccc">       fxice(i,1) = 0._r8</a>
+   377) <a name="l377" style="background-color: #ffcccc">! surface flux by upstream scheme</a>
+   378) <a name="l378" style="background-color: #ffcccc">       fxliq(i,pverp) = cldliq(i,pver) * pvliq(i,pverp) * dtime</a>
+   379) <a name="l379" style="background-color: #ffcccc">       fxice(i,pverp) = cldice(i,pver) * pvice(i,pverp) * dtime</a>
+   380) <a name="l380" style="background-color: #ffcccc">    end do</a>
+   381) <a name="l381" style="background-color: #ffcccc"></a>
+   382) <a name="l382" style="background-color: #ffcccc">! filter out any negative fluxes from the getflx routine</a>
+   383) <a name="l383" style="background-color: #ffcccc">! (typical fluxes are of order &gt; 1e-3 when clouds are present)</a>
+   384) <a name="l384" style="background-color: #ffcccc">    do k = 2,pver</a>
+   385) <a name="l385" style="background-color: #ffcccc">       fxliq(:ncol,k) = max(0._r8, fxliq(:ncol,k))</a>
+   386) <a name="l386" style="background-color: #ffcccc">       fxice(:ncol,k) = max(0._r8, fxice(:ncol,k))</a>
+   387) <a name="l387" style="background-color: #ffcccc">    end do</a>
+   388) <a name="l388" style="background-color: #ffcccc"></a>
+   389) <a name="l389" style="background-color: #ffcccc">! Limit the flux out of the bottom of each cell to the water content in each phase.</a>
+   390) <a name="l390" style="background-color: #ffcccc">! Apply mxsedfac to prevent generating very small negative cloud water/ice</a>
+   391) <a name="l391" style="background-color: #ffcccc">! NOTE, REMOVED CLOUD FACTOR FROM AVAILABLE WATER. ALL CLOUD WATER IS IN CLOUDS.</a>
+   392) <a name="l392" style="background-color: #ffcccc">! ***Should we include the flux in the top, to allow for thin surface layers?</a>
+   393) <a name="l393" style="background-color: #ffcccc">! ***Requires simple treatment of cloud overlap, already included below.</a>
+   394) <a name="l394" style="background-color: #ffcccc">    do k = 1,pver</a>
+   395) <a name="l395" style="background-color: #ffcccc">       do i = 1,ncol</a>
+   396) <a name="l396" style="background-color: #ffcccc">          fxliq(i,k+1) = min( fxliq(i,k+1), mxsedfac * cldliq(i,k) * pdel(i,k) )</a>
+   397) <a name="l397" style="background-color: #ffcccc">          fxice(i,k+1) = min( fxice(i,k+1), mxsedfac * cldice(i,k) * pdel(i,k) )</a>
+   398) <a name="l398" style="background-color: #ffcccc">!!$        fxliq(i,k+1) = min( fxliq(i,k+1), cldliq(i,k) * pdel(i,k) + fxliq(i,k))</a>
+   399) <a name="l399" style="background-color: #ffcccc">!!$        fxice(i,k+1) = min( fxice(i,k+1), cldice(i,k) * pdel(i,k) + fxice(i,k))</a>
+   400) <a name="l400" style="background-color: #ffcccc">!!$        fxliq(i,k+1) = min( fxliq(i,k+1), cloud(i,k) * cldliq(i,k) * pdel(i,k) )</a>
+   401) <a name="l401" style="background-color: #ffcccc">!!$        fxice(i,k+1) = min( fxice(i,k+1), cloud(i,k) * cldice(i,k) * pdel(i,k) )</a>
+   402) <a name="l402" style="background-color: #ffcccc">       end do</a>
+   403) <a name="l403" style="background-color: #ffcccc">    end do</a>
+   404) <a name="l404" style="background-color: #ffcccc"></a>
+   405) <a name="l405" style="background-color: #ffcccc">! Now calculate the tendencies assuming that condensate evaporates when</a>
+   406) <a name="l406" style="background-color: #ffcccc">! it falls into environment, and does not when it falls into cloud.</a>
+   407) <a name="l407" style="background-color: #ffcccc">! All flux out of the layer comes from the cloudy part.</a>
+   408) <a name="l408" style="background-color: #ffcccc">! Assume maximum overlap for stratiform clouds</a>
+   409) <a name="l409" style="background-color: #ffcccc">!  if cloud above &lt; cloud,  all water falls into cloud below</a>
+   410) <a name="l410" style="background-color: #ffcccc">!  if cloud above &gt; cloud,  water split between cloud  and environment</a>
+   411) <a name="l411" style="background-color: #ffcccc">    do k = 1,pver</a>
+   412) <a name="l412" style="background-color: #ffcccc">       cldab(:ncol) = 0._r8</a>
+   413) <a name="l413" style="background-color: #ffcccc">       do i = 1,ncol</a>
+   414) <a name="l414" style="background-color: #ffcccc">! cloud overlap cloud factor</a>
+   415) <a name="l415" style="background-color: #ffcccc">          cldovrl  = min( cloud(i,k) / (cldab(i)+.0001_r8), 1._r8 )</a>
+   416) <a name="l416" style="background-color: #ffcccc">          cldab(i) = cloud(i,k)</a>
+   417) <a name="l417" style="background-color: #ffcccc">! evaporation into environment cause moistening and cooling</a>
+   418) <a name="l418" style="background-color: #ffcccc">          evapliq = fxliq(i,k) * (1._r8-cldovrl) / (dtime * pdel(i,k))  ! into env (kg/kg/s)</a>
+   419) <a name="l419" style="background-color: #ffcccc">          evapice = fxice(i,k) * (1._r8-cldovrl) / (dtime * pdel(i,k))  ! into env (kg/kg/s)</a>
+   420) <a name="l420" style="background-color: #ffcccc">          wvtend(i,k) = evapliq + evapice                          ! evaporation into environment (kg/kg/s)</a>
+   421) <a name="l421" style="background-color: #ffcccc">          htend (i,k) = -latvap*evapliq -(latvap+latice)*evapice   ! evaporation (W/kg)</a>
+   422) <a name="l422" style="background-color: #ffcccc">! net flux into cloud changes cloud liquid/ice (all flux is out of cloud)</a>
+   423) <a name="l423" style="background-color: #ffcccc">          liqtend(i,k)  = (fxliq(i,k)*cldovrl - fxliq(i,k+1)) / (dtime * pdel(i,k))</a>
+   424) <a name="l424" style="background-color: #ffcccc">          icetend(i,k)  = (fxice(i,k)*cldovrl - fxice(i,k+1)) / (dtime * pdel(i,k))</a>
+   425) <a name="l425" style="background-color: #ffcccc">       end do</a>
+   426) <a name="l426" style="background-color: #ffcccc">    end do</a>
+   427) <a name="l427" style="background-color: #ffcccc"></a>
+   428) <a name="l428" style="background-color: #ffcccc">! convert flux out the bottom to mass units Pa -&gt; kg/m2/s</a>
+   429) <a name="l429" style="background-color: #ffcccc">    sfliq(:ncol) = fxliq(:ncol,pverp) / (dtime*gravit)</a>
+   430) <a name="l430" style="background-color: #ffcccc">    sfice(:ncol) = fxice(:ncol,pverp) / (dtime*gravit)</a>
+   431) <a name="l431" style="background-color: #ffcccc"></a>
+   432) <a name="l432" style="background-color: #ffcccc">    return</a>
+   433) <a name="l433" style="background-color: #ffcccc">  end subroutine cld_sediment_tend</a>
+   434) <a name="l434" style="background-color: #ffffff"></a>
+   435) <a name="l435" style="background-color: #ffffff">!===============================================================================</a>
+   436) <a name="l436" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">getflx(ncol, xw, phi, vel, deltat, flux)</a>
+   437) <a name="l437" style="background-color: #ffcccc"></a>
+   438) <a name="l438" style="background-color: #ffcccc">!.....xw1.......xw2.......xw3.......xw4.......xw5.......xw6</a>
+   439) <a name="l439" style="background-color: #ffcccc">!....psiw1.....psiw2.....psiw3.....psiw4.....psiw5.....psiw6</a>
+   440) <a name="l440" style="background-color: #ffcccc">!....velw1.....velw2.....velw3.....velw4.....velw5.....velw6</a>
+   441) <a name="l441" style="background-color: #ffcccc">!.........phi1......phi2.......phi3.....phi4.......phi5.......</a>
+   442) <a name="l442" style="background-color: #ffcccc"></a>
+   443) <a name="l443" style="background-color: #ffcccc"></a>
+   444) <a name="l444" style="background-color: #ffcccc"></a>
+   445) <a name="l445" style="background-color: #ffcccc">    integer, intent(in) :: ncol                      ! number of colums to process</a>
+   446) <a name="l446" style="background-color: #ffcccc"></a>
+   447) <a name="l447" style="background-color: #ffcccc">    integer i</a>
+   448) <a name="l448" style="background-color: #ffcccc">    integer k</a>
+   449) <a name="l449" style="background-color: #ffcccc"></a>
+   450) <a name="l450" style="background-color: #ffcccc">    real (r8), intent(in) :: vel(pcols,pverp)</a>
+   451) <a name="l451" style="background-color: #ffcccc">    real (r8) flux(pcols,pverp)</a>
+   452) <a name="l452" style="background-color: #ffcccc">    real (r8) xw(pcols,pverp)</a>
+   453) <a name="l453" style="background-color: #ffcccc">    real (r8) psi(pcols,pverp)</a>
+   454) <a name="l454" style="background-color: #ffcccc">    real (r8), intent(in) :: phi(pcols,pverp-1)</a>
+   455) <a name="l455" style="background-color: #ffcccc">    real (r8) fdot(pcols,pverp)</a>
+   456) <a name="l456" style="background-color: #ffcccc">    real (r8) xx(pcols)</a>
+   457) <a name="l457" style="background-color: #ffcccc">    real (r8) fxdot(pcols)</a>
+   458) <a name="l458" style="background-color: #ffcccc">    real (r8) fxdd(pcols)</a>
+   459) <a name="l459" style="background-color: #ffcccc"></a>
+   460) <a name="l460" style="background-color: #ffcccc">    real (r8) psistar(pcols)</a>
+   461) <a name="l461" style="background-color: #ffcccc">    real (r8) deltat</a>
+   462) <a name="l462" style="background-color: #ffcccc"></a>
+   463) <a name="l463" style="background-color: #ffcccc">    real (r8) xxk(pcols,pver)</a>
+   464) <a name="l464" style="background-color: #ffcccc"></a>
+   465) <a name="l465" style="background-color: #ffcccc">    do i = 1,ncol</a>
+   466) <a name="l466" style="background-color: #ffcccc">!        integral of phi</a>
+   467) <a name="l467" style="background-color: #ffcccc">       psi(i,1) = 0._r8</a>
+   468) <a name="l468" style="background-color: #ffcccc">!        fluxes at boundaries</a>
+   469) <a name="l469" style="background-color: #ffcccc">       flux(i,1) = 0._r8</a>
+   470) <a name="l470" style="background-color: #ffcccc">       flux(i,pverp) = 0._r8</a>
+   471) <a name="l471" style="background-color: #ffcccc">    end do</a>
+   472) <a name="l472" style="background-color: #ffcccc"></a>
+   473) <a name="l473" style="background-color: #ffcccc">!     integral function</a>
+   474) <a name="l474" style="background-color: #ffcccc">    do k = 2,pverp</a>
+   475) <a name="l475" style="background-color: #ffcccc">       do i = 1,ncol</a>
+   476) <a name="l476" style="background-color: #ffcccc">          psi(i,k) = phi(i,k-1)*(xw(i,k)-xw(i,k-1)) + psi(i,k-1)</a>
+   477) <a name="l477" style="background-color: #ffcccc">       end do</a>
+   478) <a name="l478" style="background-color: #ffcccc">    end do</a>
+   479) <a name="l479" style="background-color: #ffcccc"></a>
+   480) <a name="l480" style="background-color: #ffcccc"></a>
+   481) <a name="l481" style="background-color: #ffcccc">!     calculate the derivatives for the interpolating polynomial</a>
+   482) <a name="l482" style="background-color: #ffcccc">    call cfdotmc_pro (ncol, xw, psi, fdot)</a>
+   483) <a name="l483" style="background-color: #ffcccc"></a>
+   484) <a name="l484" style="background-color: #ffcccc">!  NEW WAY</a>
+   485) <a name="l485" style="background-color: #ffcccc">!     calculate fluxes at interior pts</a>
+   486) <a name="l486" style="background-color: #ffcccc">    do k = 2,pver</a>
+   487) <a name="l487" style="background-color: #ffcccc">       do i = 1,ncol</a>
+   488) <a name="l488" style="background-color: #ffcccc">          xxk(i,k) = xw(i,k)-vel(i,k)*deltat</a>
+   489) <a name="l489" style="background-color: #ffcccc">       end do</a>
+   490) <a name="l490" style="background-color: #ffcccc">    end do</a>
+   491) <a name="l491" style="background-color: #ffcccc">    do k = 2,pver</a>
+   492) <a name="l492" style="background-color: #ffcccc">       call cfint2(ncol, xw, psi, fdot, xxk(1,k), fxdot, fxdd, psistar)</a>
+   493) <a name="l493" style="background-color: #ffcccc">       do i = 1,ncol</a>
+   494) <a name="l494" style="background-color: #ffcccc">          flux(i,k) = (psi(i,k)-psistar(i))</a>
+   495) <a name="l495" style="background-color: #ffcccc">       end do</a>
+   496) <a name="l496" style="background-color: #ffcccc">    end do</a>
+   497) <a name="l497" style="background-color: #ffcccc"></a>
+   498) <a name="l498" style="background-color: #ffcccc"></a>
+   499) <a name="l499" style="background-color: #ffcccc">    return</a>
+   500) <a name="l500" style="background-color: #ffcccc">  end subroutine getflx</a>
+   501) <a name="l501" style="background-color: #ffffff"></a>
+   502) <a name="l502" style="background-color: #ffffff"></a>
+   503) <a name="l503" style="background-color: #ffffff"></a>
+   504) <a name="l504" style="background-color: #ffffff">!##############################################################################</a>
+   505) <a name="l505" style="background-color: #ffffff"></a>
+   506) <a name="l506" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">cfint2 (ncol, x, f, fdot, xin, fxdot, fxdd, psistar)</a>
+   507) <a name="l507" style="background-color: #ffcccc"></a>
+   508) <a name="l508" style="background-color: #ffcccc"></a>
+   509) <a name="l509" style="background-color: #ffcccc"></a>
+   510) <a name="l510" style="background-color: #ffcccc">! input</a>
+   511) <a name="l511" style="background-color: #ffcccc">    integer ncol                      ! number of colums to process</a>
+   512) <a name="l512" style="background-color: #ffcccc"></a>
+   513) <a name="l513" style="background-color: #ffcccc">    real (r8) x(pcols, pverp)</a>
+   514) <a name="l514" style="background-color: #ffcccc">    real (r8) f(pcols, pverp)</a>
+   515) <a name="l515" style="background-color: #ffcccc">    real (r8) fdot(pcols, pverp)</a>
+   516) <a name="l516" style="background-color: #ffcccc">    real (r8) xin(pcols)</a>
+   517) <a name="l517" style="background-color: #ffcccc"></a>
+   518) <a name="l518" style="background-color: #ffcccc">! output</a>
+   519) <a name="l519" style="background-color: #ffcccc">    real (r8) fxdot(pcols)</a>
+   520) <a name="l520" style="background-color: #ffcccc">    real (r8) fxdd(pcols)</a>
+   521) <a name="l521" style="background-color: #ffcccc">    real (r8) psistar(pcols)</a>
+   522) <a name="l522" style="background-color: #ffcccc"></a>
+   523) <a name="l523" style="background-color: #ffcccc">    integer i</a>
+   524) <a name="l524" style="background-color: #ffcccc">    integer k</a>
+   525) <a name="l525" style="background-color: #ffcccc">    integer intz(pcols)</a>
+   526) <a name="l526" style="background-color: #ffcccc">    real (r8) dx</a>
+   527) <a name="l527" style="background-color: #ffcccc">    real (r8) s</a>
+   528) <a name="l528" style="background-color: #ffcccc">    real (r8) c2</a>
+   529) <a name="l529" style="background-color: #ffcccc">    real (r8) c3</a>
+   530) <a name="l530" style="background-color: #ffcccc">    real (r8) xx</a>
+   531) <a name="l531" style="background-color: #ffcccc">    real (r8) xinf</a>
+   532) <a name="l532" style="background-color: #ffcccc">    real (r8) psi1, psi2, psi3, psim</a>
+   533) <a name="l533" style="background-color: #ffcccc">    real (r8) cfint</a>
+   534) <a name="l534" style="background-color: #ffcccc">    real (r8) cfnew</a>
+   535) <a name="l535" style="background-color: #ffcccc">    real (r8) xins(pcols)</a>
+   536) <a name="l536" style="background-color: #ffcccc"></a>
+   537) <a name="l537" style="background-color: #ffcccc">!     the minmod function </a>
+   538) <a name="l538" style="background-color: #ffcccc">    real (r8) a, b, c</a>
+   539) <a name="l539" style="background-color: #ffcccc">    real (r8) minmod</a>
+   540) <a name="l540" style="background-color: #ffcccc">    real (r8) medan</a>
+   541) <a name="l541" style="background-color: #ffcccc">    logical found_error</a>
+   542) <a name="l542" style="background-color: #ffcccc"></a>
+   543) <a name="l543" style="background-color: #ffcccc">    minmod(a,b) = 0.5_r8*(sign(1._r8,a) + sign(1._r8,b))*min(abs(a),abs(b))</a>
+   544) <a name="l544" style="background-color: #ffcccc">    medan(a,b,c) = a + minmod(b-a,c-a)</a>
+   545) <a name="l545" style="background-color: #ffcccc"></a>
+   546) <a name="l546" style="background-color: #ffcccc">    do i = 1,ncol</a>
+   547) <a name="l547" style="background-color: #ffcccc">       xins(i) = medan(x(i,1), xin(i), x(i,pverp))</a>
+   548) <a name="l548" style="background-color: #ffcccc">       intz(i) = 0</a>
+   549) <a name="l549" style="background-color: #ffcccc">    end do</a>
+   550) <a name="l550" style="background-color: #ffcccc"></a>
+   551) <a name="l551" style="background-color: #ffcccc">! first find the interval </a>
+   552) <a name="l552" style="background-color: #ffcccc">    do k =  1,pverp-1</a>
+   553) <a name="l553" style="background-color: #ffcccc">       do i = 1,ncol</a>
+   554) <a name="l554" style="background-color: #ffcccc">          if ((xins(i)-x(i,k))*(x(i,k+1)-xins(i)).ge.0) then</a>
+   555) <a name="l555" style="background-color: #ffcccc">             intz(i) = k</a>
+   556) <a name="l556" style="background-color: #ffcccc">          endif</a>
+   557) <a name="l557" style="background-color: #ffcccc">       end do</a>
+   558) <a name="l558" style="background-color: #ffcccc">    end do</a>
+   559) <a name="l559" style="background-color: #ffcccc"></a>
+   560) <a name="l560" style="background-color: #ffcccc">    found_error=.false.</a>
+   561) <a name="l561" style="background-color: #ffcccc">    do i = 1,ncol</a>
+   562) <a name="l562" style="background-color: #ffcccc">       if (intz(i).eq.0._r8) found_error=.true.</a>
+   563) <a name="l563" style="background-color: #ffcccc">    end do</a>
+   564) <a name="l564" style="background-color: #ffcccc">    if(found_error) then</a>
+   565) <a name="l565" style="background-color: #ffcccc">       do i = 1,ncol</a>
+   566) <a name="l566" style="background-color: #ffcccc">          if (intz(i).eq.0._r8) then</a>
+   567) <a name="l567" style="background-color: #ffcccc">             write(iulog,*) ' interval was not found for col i ', i</a>
+   568) <a name="l568" style="background-color: #ffcccc">             call endrun('CFINT2')</a>
+   569) <a name="l569" style="background-color: #ffcccc">          endif</a>
+   570) <a name="l570" style="background-color: #ffcccc">       end do</a>
+   571) <a name="l571" style="background-color: #ffcccc">    endif</a>
+   572) <a name="l572" style="background-color: #ffcccc"></a>
+   573) <a name="l573" style="background-color: #ffcccc">! now interpolate</a>
+   574) <a name="l574" style="background-color: #ffcccc">    do i = 1,ncol</a>
+   575) <a name="l575" style="background-color: #ffcccc">       k = intz(i)</a>
+   576) <a name="l576" style="background-color: #ffcccc">       dx = (x(i,k+1)-x(i,k))</a>
+   577) <a name="l577" style="background-color: #ffcccc">       s = (f(i,k+1)-f(i,k))/dx</a>
+   578) <a name="l578" style="background-color: #ffcccc">       c2 = (3*s-2*fdot(i,k)-fdot(i,k+1))/dx</a>
+   579) <a name="l579" style="background-color: #ffcccc">       c3 = (fdot(i,k)+fdot(i,k+1)-2*s)/dx**2</a>
+   580) <a name="l580" style="background-color: #ffcccc">       xx = (xins(i)-x(i,k))</a>
+   581) <a name="l581" style="background-color: #ffcccc">       fxdot(i) =  (3*c3*xx + 2*c2)*xx + fdot(i,k)</a>
+   582) <a name="l582" style="background-color: #ffcccc">       fxdd(i) = 6*c3*xx + 2*c2</a>
+   583) <a name="l583" style="background-color: #ffcccc">       cfint = ((c3*xx + c2)*xx + fdot(i,k))*xx + f(i,k)</a>
+   584) <a name="l584" style="background-color: #ffcccc"></a>
+   585) <a name="l585" style="background-color: #ffcccc">!        limit the interpolant</a>
+   586) <a name="l586" style="background-color: #ffcccc">       psi1 = f(i,k)+(f(i,k+1)-f(i,k))*xx/dx</a>
+   587) <a name="l587" style="background-color: #ffcccc">       if (k.eq.1) then</a>
+   588) <a name="l588" style="background-color: #ffcccc">          psi2 = f(i,1)</a>
+   589) <a name="l589" style="background-color: #ffcccc">       else</a>
+   590) <a name="l590" style="background-color: #ffcccc">          psi2 = f(i,k) + (f(i,k)-f(i,k-1))*xx/(x(i,k)-x(i,k-1))</a>
+   591) <a name="l591" style="background-color: #ffcccc">       endif</a>
+   592) <a name="l592" style="background-color: #ffcccc">       if (k+1.eq.pverp) then</a>
+   593) <a name="l593" style="background-color: #ffcccc">          psi3 = f(i,pverp)</a>
+   594) <a name="l594" style="background-color: #ffcccc">       else</a>
+   595) <a name="l595" style="background-color: #ffcccc">          psi3 = f(i,k+1) - (f(i,k+2)-f(i,k+1))*(dx-xx)/(x(i,k+2)-x(i,k+1))</a>
+   596) <a name="l596" style="background-color: #ffcccc">       endif</a>
+   597) <a name="l597" style="background-color: #ffcccc">       psim = medan(psi1, psi2, psi3)</a>
+   598) <a name="l598" style="background-color: #ffcccc">       cfnew = medan(cfint, psi1, psim)</a>
+   599) <a name="l599" style="background-color: #ffcccc">       if (abs(cfnew-cfint)/(abs(cfnew)+abs(cfint)+1.e-36_r8)  .gt..03_r8) then</a>
+   600) <a name="l600" style="background-color: #ffcccc">!     CHANGE THIS BACK LATER!!!</a>
+   601) <a name="l601" style="background-color: #ffcccc">!     $        .gt..1) then</a>
+   602) <a name="l602" style="background-color: #ffcccc"></a>
+   603) <a name="l603" style="background-color: #ffcccc"></a>
+   604) <a name="l604" style="background-color: #ffcccc">!     UNCOMMENT THIS LATER!!!</a>
+   605) <a name="l605" style="background-color: #ffcccc">!            write(iulog,*) ' cfint2 limiting important ', cfint, cfnew</a>
+   606) <a name="l606" style="background-color: #ffcccc"></a>
+   607) <a name="l607" style="background-color: #ffcccc"></a>
+   608) <a name="l608" style="background-color: #ffcccc">       endif</a>
+   609) <a name="l609" style="background-color: #ffcccc">       psistar(i) = cfnew</a>
+   610) <a name="l610" style="background-color: #ffcccc">    end do</a>
+   611) <a name="l611" style="background-color: #ffcccc"></a>
+   612) <a name="l612" style="background-color: #ffcccc">    return</a>
+   613) <a name="l613" style="background-color: #ffcccc">  end subroutine cfint2</a>
+   614) <a name="l614" style="background-color: #ffffff"></a>
+   615) <a name="l615" style="background-color: #ffffff"></a>
+   616) <a name="l616" style="background-color: #ffffff"></a>
+   617) <a name="l617" style="background-color: #ffffff">!##############################################################################</a>
+   618) <a name="l618" style="background-color: #ffffff"></a>
+   619) <a name="l619" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">cfdotmc_pro (ncol, x, f, fdot)</a>
+   620) <a name="l620" style="background-color: #ffcccc"></a>
+   621) <a name="l621" style="background-color: #ffcccc">!     prototype version; eventually replace with final SPITFIRE scheme</a>
+   622) <a name="l622" style="background-color: #ffcccc"></a>
+   623) <a name="l623" style="background-color: #ffcccc">!     calculate the derivative for the interpolating polynomial</a>
+   624) <a name="l624" style="background-color: #ffcccc">!     multi column version</a>
+   625) <a name="l625" style="background-color: #ffcccc"></a>
+   626) <a name="l626" style="background-color: #ffcccc"></a>
+   627) <a name="l627" style="background-color: #ffcccc"></a>
+   628) <a name="l628" style="background-color: #ffcccc">! input</a>
+   629) <a name="l629" style="background-color: #ffcccc">    integer ncol                      ! number of colums to process</a>
+   630) <a name="l630" style="background-color: #ffcccc"></a>
+   631) <a name="l631" style="background-color: #ffcccc">    real (r8) x(pcols, pverp)</a>
+   632) <a name="l632" style="background-color: #ffcccc">    real (r8) f(pcols, pverp)</a>
+   633) <a name="l633" style="background-color: #ffcccc">! output</a>
+   634) <a name="l634" style="background-color: #ffcccc">    real (r8) fdot(pcols, pverp)          ! derivative at nodes</a>
+   635) <a name="l635" style="background-color: #ffcccc"></a>
+   636) <a name="l636" style="background-color: #ffcccc">! assumed variable distribution</a>
+   637) <a name="l637" style="background-color: #ffcccc">!     x1.......x2.......x3.......x4.......x5.......x6     1,pverp points</a>
+   638) <a name="l638" style="background-color: #ffcccc">!     f1.......f2.......f3.......f4.......f5.......f6     1,pverp points</a>
+   639) <a name="l639" style="background-color: #ffcccc">!     ...sh1.......sh2......sh3......sh4......sh5....     1,pver points</a>
+   640) <a name="l640" style="background-color: #ffcccc">!     .........d2.......d3.......d4.......d5.........     2,pver points</a>
+   641) <a name="l641" style="background-color: #ffcccc">!     .........s2.......s3.......s4.......s5.........     2,pver points</a>
+   642) <a name="l642" style="background-color: #ffcccc">!     .............dh2......dh3......dh4.............     2,pver-1 points</a>
+   643) <a name="l643" style="background-color: #ffcccc">!     .............eh2......eh3......eh4.............     2,pver-1 points</a>
+   644) <a name="l644" style="background-color: #ffcccc">!     ..................e3.......e4..................     3,pver-1 points</a>
+   645) <a name="l645" style="background-color: #ffcccc">!     .................ppl3......ppl4................     3,pver-1 points</a>
+   646) <a name="l646" style="background-color: #ffcccc">!     .................ppr3......ppr4................     3,pver-1 points</a>
+   647) <a name="l647" style="background-color: #ffcccc">!     .................t3........t4..................     3,pver-1 points</a>
+   648) <a name="l648" style="background-color: #ffcccc">!     ................fdot3.....fdot4................     3,pver-1 points</a>
+   649) <a name="l649" style="background-color: #ffcccc"></a>
+   650) <a name="l650" style="background-color: #ffcccc"></a>
+   651) <a name="l651" style="background-color: #ffcccc">! work variables</a>
+   652) <a name="l652" style="background-color: #ffcccc"></a>
+   653) <a name="l653" style="background-color: #ffcccc"></a>
+   654) <a name="l654" style="background-color: #ffcccc">    integer i</a>
+   655) <a name="l655" style="background-color: #ffcccc">    integer k</a>
+   656) <a name="l656" style="background-color: #ffcccc"></a>
+   657) <a name="l657" style="background-color: #ffcccc">    real (r8) a                    ! work var</a>
+   658) <a name="l658" style="background-color: #ffcccc">    real (r8) b                    ! work var</a>
+   659) <a name="l659" style="background-color: #ffcccc">    real (r8) c                    ! work var</a>
+   660) <a name="l660" style="background-color: #ffcccc">    real (r8) s(pcols,pverp)             ! first divided differences at nodes</a>
+   661) <a name="l661" style="background-color: #ffcccc">    real (r8) sh(pcols,pverp)            ! first divided differences between nodes</a>
+   662) <a name="l662" style="background-color: #ffcccc">    real (r8) d(pcols,pverp)             ! second divided differences at nodes</a>
+   663) <a name="l663" style="background-color: #ffcccc">    real (r8) dh(pcols,pverp)            ! second divided differences between nodes</a>
+   664) <a name="l664" style="background-color: #ffcccc">    real (r8) e(pcols,pverp)             ! third divided differences at nodes</a>
+   665) <a name="l665" style="background-color: #ffcccc">    real (r8) eh(pcols,pverp)            ! third divided differences between nodes</a>
+   666) <a name="l666" style="background-color: #ffcccc">    real (r8) pp                   ! p prime</a>
+   667) <a name="l667" style="background-color: #ffcccc">    real (r8) ppl(pcols,pverp)           ! p prime on left</a>
+   668) <a name="l668" style="background-color: #ffcccc">    real (r8) ppr(pcols,pverp)           ! p prime on right</a>
+   669) <a name="l669" style="background-color: #ffcccc">    real (r8) qpl</a>
+   670) <a name="l670" style="background-color: #ffcccc">    real (r8) qpr</a>
+   671) <a name="l671" style="background-color: #ffcccc">    real (r8) ttt</a>
+   672) <a name="l672" style="background-color: #ffcccc">    real (r8) t</a>
+   673) <a name="l673" style="background-color: #ffcccc">    real (r8) tmin</a>
+   674) <a name="l674" style="background-color: #ffcccc">    real (r8) tmax</a>
+   675) <a name="l675" style="background-color: #ffcccc">    real (r8) delxh(pcols,pverp)</a>
+   676) <a name="l676" style="background-color: #ffcccc"></a>
+   677) <a name="l677" style="background-color: #ffcccc"></a>
+   678) <a name="l678" style="background-color: #ffcccc">!     the minmod function </a>
+   679) <a name="l679" style="background-color: #ffcccc">    real (r8) minmod</a>
+   680) <a name="l680" style="background-color: #ffcccc">    real (r8) medan</a>
+   681) <a name="l681" style="background-color: #ffcccc">    minmod(a,b) = 0.5_r8*(sign(1._r8,a) + sign(1._r8,b))*min(abs(a),abs(b))</a>
+   682) <a name="l682" style="background-color: #ffcccc">    medan(a,b,c) = a + minmod(b-a,c-a)</a>
+   683) <a name="l683" style="background-color: #ffcccc"></a>
+   684) <a name="l684" style="background-color: #ffcccc">    do k = 1,pver</a>
+   685) <a name="l685" style="background-color: #ffcccc"></a>
+   686) <a name="l686" style="background-color: #ffcccc"></a>
+   687) <a name="l687" style="background-color: #ffcccc">!        first divided differences between nodes</a>
+   688) <a name="l688" style="background-color: #ffcccc">       do i = 1, ncol</a>
+   689) <a name="l689" style="background-color: #ffcccc">          delxh(i,k) = (x(i,k+1)-x(i,k))</a>
+   690) <a name="l690" style="background-color: #ffcccc">          sh(i,k) = (f(i,k+1)-f(i,k))/delxh(i,k)</a>
+   691) <a name="l691" style="background-color: #ffcccc">       end do</a>
+   692) <a name="l692" style="background-color: #ffcccc"></a>
+   693) <a name="l693" style="background-color: #ffcccc">!        first and second divided differences at nodes</a>
+   694) <a name="l694" style="background-color: #ffcccc">       if (k.ge.2) then</a>
+   695) <a name="l695" style="background-color: #ffcccc">          do i = 1,ncol</a>
+   696) <a name="l696" style="background-color: #ffcccc">             d(i,k) = (sh(i,k)-sh(i,k-1))/(x(i,k+1)-x(i,k-1))</a>
+   697) <a name="l697" style="background-color: #ffcccc">             s(i,k) = minmod(sh(i,k),sh(i,k-1))</a>
+   698) <a name="l698" style="background-color: #ffcccc">          end do</a>
+   699) <a name="l699" style="background-color: #ffcccc">       endif</a>
+   700) <a name="l700" style="background-color: #ffcccc">    end do</a>
+   701) <a name="l701" style="background-color: #ffcccc"></a>
+   702) <a name="l702" style="background-color: #ffcccc">!     second and third divided diffs between nodes</a>
+   703) <a name="l703" style="background-color: #ffcccc">    do k = 2,pver-1</a>
+   704) <a name="l704" style="background-color: #ffcccc">       do i = 1, ncol</a>
+   705) <a name="l705" style="background-color: #ffcccc">          eh(i,k) = (d(i,k+1)-d(i,k))/(x(i,k+2)-x(i,k-1))</a>
+   706) <a name="l706" style="background-color: #ffcccc">          dh(i,k) = minmod(d(i,k),d(i,k+1))</a>
+   707) <a name="l707" style="background-color: #ffcccc">       end do</a>
+   708) <a name="l708" style="background-color: #ffcccc">    end do</a>
+   709) <a name="l709" style="background-color: #ffcccc"></a>
+   710) <a name="l710" style="background-color: #ffcccc">!     treat the boundaries</a>
+   711) <a name="l711" style="background-color: #ffcccc">    do i = 1,ncol</a>
+   712) <a name="l712" style="background-color: #ffcccc">       e(i,2) = eh(i,2)</a>
+   713) <a name="l713" style="background-color: #ffcccc">       e(i,pver) = eh(i,pver-1)</a>
+   714) <a name="l714" style="background-color: #ffcccc">!        outside level</a>
+   715) <a name="l715" style="background-color: #ffcccc">       fdot(i,1) = sh(i,1) - d(i,2)*delxh(i,1)  &amp;</a>
+   716) <a name="l716" style="background-color: #ffcccc">            - eh(i,2)*delxh(i,1)*(x(i,1)-x(i,3))</a>
+   717) <a name="l717" style="background-color: #ffcccc">       fdot(i,1) = minmod(fdot(i,1),3*sh(i,1))</a>
+   718) <a name="l718" style="background-color: #ffcccc">       fdot(i,pverp) = sh(i,pver) + d(i,pver)*delxh(i,pver)  &amp;</a>
+   719) <a name="l719" style="background-color: #ffcccc">            + eh(i,pver-1)*delxh(i,pver)*(x(i,pverp)-x(i,pver-1))</a>
+   720) <a name="l720" style="background-color: #ffcccc">       fdot(i,pverp) = minmod(fdot(i,pverp),3*sh(i,pver))</a>
+   721) <a name="l721" style="background-color: #ffcccc">!        one in from boundary</a>
+   722) <a name="l722" style="background-color: #ffcccc">       fdot(i,2) = sh(i,1) + d(i,2)*delxh(i,1) - eh(i,2)*delxh(i,1)*delxh(i,2)</a>
+   723) <a name="l723" style="background-color: #ffcccc">       fdot(i,2) = minmod(fdot(i,2),3*s(i,2))</a>
+   724) <a name="l724" style="background-color: #ffcccc">       fdot(i,pver) = sh(i,pver) - d(i,pver)*delxh(i,pver)   &amp;</a>
+   725) <a name="l725" style="background-color: #ffcccc">            - eh(i,pver-1)*delxh(i,pver)*delxh(i,pver-1)</a>
+   726) <a name="l726" style="background-color: #ffcccc">       fdot(i,pver) = minmod(fdot(i,pver),3*s(i,pver))</a>
+   727) <a name="l727" style="background-color: #ffcccc">    end do</a>
+   728) <a name="l728" style="background-color: #ffcccc"></a>
+   729) <a name="l729" style="background-color: #ffcccc"></a>
+   730) <a name="l730" style="background-color: #ffcccc">    do k = 3,pver-1</a>
+   731) <a name="l731" style="background-color: #ffcccc">       do i = 1,ncol</a>
+   732) <a name="l732" style="background-color: #ffcccc">          e(i,k) = minmod(eh(i,k),eh(i,k-1))</a>
+   733) <a name="l733" style="background-color: #ffcccc">       end do</a>
+   734) <a name="l734" style="background-color: #ffcccc">    end do</a>
+   735) <a name="l735" style="background-color: #ffcccc"></a>
+   736) <a name="l736" style="background-color: #ffcccc"></a>
+   737) <a name="l737" style="background-color: #ffcccc"></a>
+   738) <a name="l738" style="background-color: #ffcccc">    do k = 3,pver-1</a>
+   739) <a name="l739" style="background-color: #ffcccc"></a>
+   740) <a name="l740" style="background-color: #ffcccc">       do i = 1,ncol</a>
+   741) <a name="l741" style="background-color: #ffcccc"></a>
+   742) <a name="l742" style="background-color: #ffcccc">!           p prime at k-0.5</a>
+   743) <a name="l743" style="background-color: #ffcccc">          ppl(i,k)=sh(i,k-1) + dh(i,k-1)*delxh(i,k-1)  </a>
+   744) <a name="l744" style="background-color: #ffcccc">!           p prime at k+0.5</a>
+   745) <a name="l745" style="background-color: #ffcccc">          ppr(i,k)=sh(i,k)   - dh(i,k)  *delxh(i,k)</a>
+   746) <a name="l746" style="background-color: #ffcccc"></a>
+   747) <a name="l747" style="background-color: #ffcccc">          t = minmod(ppl(i,k),ppr(i,k))</a>
+   748) <a name="l748" style="background-color: #ffcccc"></a>
+   749) <a name="l749" style="background-color: #ffcccc">!           derivate from parabola thru f(i,k-1), f(i,k), and f(i,k+1)</a>
+   750) <a name="l750" style="background-color: #ffcccc">          pp = sh(i,k-1) + d(i,k)*delxh(i,k-1) </a>
+   751) <a name="l751" style="background-color: #ffcccc"></a>
+   752) <a name="l752" style="background-color: #ffcccc">!           quartic estimate of fdot</a>
+   753) <a name="l753" style="background-color: #ffcccc">          fdot(i,k) = pp                            &amp;</a>
+   754) <a name="l754" style="background-color: #ffcccc">               - delxh(i,k-1)*delxh(i,k)            &amp;</a>
+   755) <a name="l755" style="background-color: #ffcccc">               *(  eh(i,k-1)*(x(i,k+2)-x(i,k  ))    &amp;</a>
+   756) <a name="l756" style="background-color: #ffcccc">               + eh(i,k  )*(x(i,k  )-x(i,k-2))      &amp;</a>
+   757) <a name="l757" style="background-color: #ffcccc">               )/(x(i,k+2)-x(i,k-2))</a>
+   758) <a name="l758" style="background-color: #ffcccc"></a>
+   759) <a name="l759" style="background-color: #ffcccc">!           now limit it</a>
+   760) <a name="l760" style="background-color: #ffcccc">          qpl = sh(i,k-1)       &amp;</a>
+   761) <a name="l761" style="background-color: #ffcccc">               + delxh(i,k-1)*minmod(d(i,k-1)+e(i,k-1)*(x(i,k)-x(i,k-2)), &amp;</a>
+   762) <a name="l762" style="background-color: #ffcccc">               d(i,k)  -e(i,k)*delxh(i,k))</a>
+   763) <a name="l763" style="background-color: #ffcccc">          qpr = sh(i,k)         &amp;</a>
+   764) <a name="l764" style="background-color: #ffcccc">               + delxh(i,k  )*minmod(d(i,k)  +e(i,k)*delxh(i,k-1),        &amp;</a>
+   765) <a name="l765" style="background-color: #ffcccc">               d(i,k+1)+e(i,k+1)*(x(i,k)-x(i,k+2)))</a>
+   766) <a name="l766" style="background-color: #ffcccc"></a>
+   767) <a name="l767" style="background-color: #ffcccc">          fdot(i,k) = medan(fdot(i,k), qpl, qpr)</a>
+   768) <a name="l768" style="background-color: #ffcccc"></a>
+   769) <a name="l769" style="background-color: #ffcccc">          ttt = minmod(qpl, qpr)</a>
+   770) <a name="l770" style="background-color: #ffcccc">          tmin = min(0._r8,3*s(i,k),1.5_r8*t,ttt)</a>
+   771) <a name="l771" style="background-color: #ffcccc">          tmax = max(0._r8,3*s(i,k),1.5_r8*t,ttt)</a>
+   772) <a name="l772" style="background-color: #ffcccc"></a>
+   773) <a name="l773" style="background-color: #ffcccc">          fdot(i,k) = fdot(i,k) + minmod(tmin-fdot(i,k), tmax-fdot(i,k))</a>
+   774) <a name="l774" style="background-color: #ffcccc"></a>
+   775) <a name="l775" style="background-color: #ffcccc">       end do</a>
+   776) <a name="l776" style="background-color: #ffcccc"></a>
+   777) <a name="l777" style="background-color: #ffcccc">    end do</a>
+   778) <a name="l778" style="background-color: #ffcccc"></a>
+   779) <a name="l779" style="background-color: #ffcccc">    return</a>
+   780) <a name="l780" style="background-color: #ffcccc">  end subroutine cfdotmc_pro</a>
+   781) <a name="l781" style="background-color: #ffffff">end module pkg_cld_sediment</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

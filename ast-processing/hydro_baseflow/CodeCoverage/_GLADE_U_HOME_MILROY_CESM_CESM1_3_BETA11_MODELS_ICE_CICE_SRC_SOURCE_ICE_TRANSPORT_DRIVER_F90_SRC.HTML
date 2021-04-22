@@ -1,0 +1,1999 @@
+<html>
+<head>
+<title>Listing of ice_transport_driver.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;ice_transport_driver.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  8.33&#160;%func&#160;&#160;&#160;&#160;  8.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!=======================================================================</a>
+     2) <a name="l2" style="background-color: #ffffff">!BOP</a>
+     3) <a name="l3" style="background-color: #ffffff">!</a>
+     4) <a name="l4" style="background-color: #ffffff">! !MODULE: ice_transport_driver - drivers for ice transport</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! Drivers for remapping and upwind ice transport</a>
+     9) <a name="l9" style="background-color: #ffffff">!</a>
+    10) <a name="l10" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    11) <a name="l11" style="background-color: #ffffff">!  SVN:$Id: ice_transport_upwind.F 28 2006-11-03 20:32:53Z eclare $</a>
+    12) <a name="l12" style="background-color: #ffffff">!</a>
+    13) <a name="l13" style="background-color: #ffffff">! authors: Elizabeth C. Hunke and William H. Lipscomb, LANL </a>
+    14) <a name="l14" style="background-color: #ffffff">!</a>
+    15) <a name="l15" style="background-color: #ffffff">! 2004: Revised by William Lipscomb from ice_transport_mpdata.</a>
+    16) <a name="l16" style="background-color: #ffffff">!       Stripped out mpdata, retained upwind, and added block structure.</a>
+    17) <a name="l17" style="background-color: #ffffff">! 2006: Incorporated remap transport driver and renamed from</a>
+    18) <a name="l18" style="background-color: #ffffff">!       ice_transport_upwind.  </a>
+    19) <a name="l19" style="background-color: #ffffff">!</a>
+    20) <a name="l20" style="background-color: #ffffff">! !INTERFACE:</a>
+    21) <a name="l21" style="background-color: #ffffff"></a>
+    22) <a name="l22" style="background-color: #ffffff">      module ice_transport_driver</a>
+    23) <a name="l23" style="background-color: #ffffff">!</a>
+    24) <a name="l24" style="background-color: #ffffff">! !USES:</a>
+    25) <a name="l25" style="background-color: #ffffff">      use ice_kinds_mod</a>
+    26) <a name="l26" style="background-color: #ffffff">      use ice_communicate, only: my_task, master_task, MPI_COMM_ICE</a>
+    27) <a name="l27" style="background-color: #ffffff">      use ice_domain_size</a>
+    28) <a name="l28" style="background-color: #ffffff">      use ice_constants</a>
+    29) <a name="l29" style="background-color: #ffffff">      use ice_fileunits</a>
+    30) <a name="l30" style="background-color: #ffffff">      use perf_mod,        only: t_startf, t_stopf, t_barrierf</a>
+    31) <a name="l31" style="background-color: #ffffff">!</a>
+    32) <a name="l32" style="background-color: #ffffff">!EOP</a>
+    33) <a name="l33" style="background-color: #ffffff">!</a>
+    34) <a name="l34" style="background-color: #ffffff">      implicit none</a>
+    35) <a name="l35" style="background-color: #ffffff">      save</a>
+    36) <a name="l36" style="background-color: #ffffff"></a>
+    37) <a name="l37" style="background-color: #ffffff">      character (len=char_len) ::     &amp;</a>
+    38) <a name="l38" style="background-color: #ffffff">         advection   ! type of advection scheme used</a>
+    39) <a name="l39" style="background-color: #ffffff">                     ! 'upwind' =&gt; 1st order donor cell scheme</a>
+    40) <a name="l40" style="background-color: #ffffff">                     ! 'remap' =&gt; remapping scheme</a>
+    41) <a name="l41" style="background-color: #ffffff"></a>
+    42) <a name="l42" style="background-color: #ffffff">      logical, parameter :: &amp; ! if true, prescribe area flux across each edge  </a>
+    43) <a name="l43" style="background-color: #ffffff">         l_fixed_area = .false.</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">! NOTE: For remapping, hice, hsno, qice, and qsno are considered tracers.</a>
+    46) <a name="l46" style="background-color: #ffffff">!       max_ntrace is not equal to max_ntrcr!</a>
+    47) <a name="l47" style="background-color: #ffffff">!       ntrace is not equal to ntrcr!</a>
+    48) <a name="l48" style="background-color: #ffffff"></a>
+    49) <a name="l49" style="background-color: #ffffff">      integer (kind=int_kind), parameter ::                      &amp;</a>
+    50) <a name="l50" style="background-color: #ffffff">         max_ntrace = 2+max_ntrcr+nilyr+nslyr  ! hice,hsno,qice,qsno,trcr</a>
+    51) <a name="l51" style="background-color: #ffffff"></a>
+    52) <a name="l52" style="background-color: #ffffff">      integer (kind=int_kind) ::                      &amp;</a>
+    53) <a name="l53" style="background-color: #ffffff">         ntrace              ! number of tracers in use</a>
+    54) <a name="l54" style="background-color: #ffffff">                          </a>
+    55) <a name="l55" style="background-color: #ffffff">      integer (kind=int_kind), dimension (:), allocatable ::     &amp;</a>
+    56) <a name="l56" style="background-color: #ffffff">         tracer_type       ,&amp;! = 1, 2, or 3 (see comments below)</a>
+    57) <a name="l57" style="background-color: #ffffff">         depend              ! tracer dependencies (see below)</a>
+    58) <a name="l58" style="background-color: #ffffff"></a>
+    59) <a name="l59" style="background-color: #ffffff">      logical (kind=log_kind), dimension (:), allocatable ::     &amp;</a>
+    60) <a name="l60" style="background-color: #ffffff">         has_dependents      ! true if a tracer has dependent tracers</a>
+    61) <a name="l61" style="background-color: #ffffff"></a>
+    62) <a name="l62" style="background-color: #ffffff">      integer (kind=int_kind), parameter ::                      &amp;</a>
+    63) <a name="l63" style="background-color: #ffffff">         integral_order = 3   ! polynomial order of quadrature integrals</a>
+    64) <a name="l64" style="background-color: #ffffff">                              ! linear=1, quadratic=2, cubic=3</a>
+    65) <a name="l65" style="background-color: #ffffff"></a>
+    66) <a name="l66" style="background-color: #ffffff">      logical (kind=log_kind), parameter ::     &amp;</a>
+    67) <a name="l67" style="background-color: #ffffff">         l_dp_midpt = .true.  ! if true, find departure points using</a>
+    68) <a name="l68" style="background-color: #ffffff">                              ! corrected midpoint velocity</a>
+    69) <a name="l69" style="background-color: #ffffff">                          </a>
+    70) <a name="l70" style="background-color: #ffffff">!=======================================================================</a>
+    71) <a name="l71" style="background-color: #ffffff"></a>
+    72) <a name="l72" style="background-color: #ffffff">      contains</a>
+    73) <a name="l73" style="background-color: #ffffff"></a>
+    74) <a name="l74" style="background-color: #ffffff">!=======================================================================</a>
+    75) <a name="l75" style="background-color: #ffffff"></a>
+    76) <a name="l76" style="background-color: #ffffff">!BOP</a>
+    77) <a name="l77" style="background-color: #ffffff">!</a>
+    78) <a name="l78" style="background-color: #ffffff">! !IROUTINE: init_transport - initializations for horizontal transport</a>
+    79) <a name="l79" style="background-color: #ffffff">!</a>
+    80) <a name="l80" style="background-color: #ffffff">! !INTERFACE:</a>
+    81) <a name="l81" style="background-color: #ffffff">!</a>
+    82) <a name="l82" style="background-color: #ffffff">      subroutine init_transport</a>
+    83) <a name="l83" style="background-color: #ffffff">!</a>
+    84) <a name="l84" style="background-color: #ffffff">! !DESCRIPTION:</a>
+    85) <a name="l85" style="background-color: #ffffff">!</a>
+    86) <a name="l86" style="background-color: #ffffff">! This subroutine is a wrapper for init_remap, which initializes the</a>
+    87) <a name="l87" style="background-color: #ffffff">! remapping transport scheme.  If the model is run with upwind</a>
+    88) <a name="l88" style="background-color: #ffffff">! transport, no initializations are necessary.</a>
+    89) <a name="l89" style="background-color: #ffffff">!</a>
+    90) <a name="l90" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    91) <a name="l91" style="background-color: #ffffff">!</a>
+    92) <a name="l92" style="background-color: #ffffff">! authors William H. Lipscomb, LANL</a>
+    93) <a name="l93" style="background-color: #ffffff">!</a>
+    94) <a name="l94" style="background-color: #ffffff">! !USES:</a>
+    95) <a name="l95" style="background-color: #ffffff">!</a>
+    96) <a name="l96" style="background-color: #ffffff">      use ice_state, only: trcr_depend, ntrcr</a>
+    97) <a name="l97" style="background-color: #ffffff">      use ice_exit</a>
+    98) <a name="l98" style="background-color: #ffffff">      use ice_timers</a>
+    99) <a name="l99" style="background-color: #ffffff">      use ice_transport_remap, only: init_remap</a>
+   100) <a name="l100" style="background-color: #ffffff">!</a>
+   101) <a name="l101" style="background-color: #ffffff">!EOP</a>
+   102) <a name="l102" style="background-color: #ffffff">!</a>
+   103) <a name="l103" style="background-color: #ffffff">      integer (kind=int_kind) ::       &amp;</a>
+   104) <a name="l104" style="background-color: #ffffff">         k, nt, nt1     ! tracer indices</a>
+   105) <a name="l105" style="background-color: #ffffff"></a>
+   106) <a name="l106" style="background-color: #ffffff">      call ice_timer_start(timer_advect)  ! advection </a>
+   107) <a name="l107" style="background-color: #ffffff"></a>
+   108) <a name="l108" style="background-color: #ffffff">      ntrace = 2+ntrcr+nilyr+nslyr  ! hice,hsno,qice,qsno,trcr</a>
+   109) <a name="l109" style="background-color: #ffffff"></a>
+   110) <a name="l110" style="background-color: #fafad2">      allocate (tracer_type   (ntrace), &amp;</a>
+   111) <a name="l111" style="background-color: #fafad2">                depend        (ntrace), &amp;</a>
+   112) <a name="l112" style="background-color: #fafad2">                has_dependents(ntrace))</a>
+   113) <a name="l113" style="background-color: #fafad2"></a>
+   114) <a name="l114" style="background-color: #fafad2">      if (</a><a style="background-color: #ffffff">trim(advection)=='remap') then</a>
+   115) <a name="l115" style="background-color: #ffffff"></a>
+   116) <a name="l116" style="background-color: #ffffff">!lipscomb - two branches for now; consolidate later</a>
+   117) <a name="l117" style="background-color: #ffffff"></a>
+   118) <a name="l118" style="background-color: #ffffff">         ! define tracer dependency arrays</a>
+   119) <a name="l119" style="background-color: #ffffff">         ! see comments in remapping routine</a>
+   120) <a name="l120" style="background-color: #ffffff"></a>
+   121) <a name="l121" style="background-color: #ffffff">          depend(1:2)         = 0 ! hice, hsno</a>
+   122) <a name="l122" style="background-color: #ffffff">          tracer_type(1:2)    = 1 ! no dependency</a>
+   123) <a name="l123" style="background-color: #ffffff">      </a>
+   124) <a name="l124" style="background-color: #ffffff">          k = 2</a>
+   125) <a name="l125" style="background-color: #ffffff"></a>
+   126) <a name="l126" style="background-color: #ffffff">          do nt = 1, ntrcr</a>
+   127) <a name="l127" style="background-color: #ffffff">             depend(k+nt) = trcr_depend(nt) ! 0 for ice area tracers</a>
+   128) <a name="l128" style="background-color: #ffffff">                                            ! 1 for ice volume tracers</a>
+   129) <a name="l129" style="background-color: #ffffff">                                            ! 2 for snow volume tracers</a>
+   130) <a name="l130" style="background-color: #ffffff">             if (trcr_depend(nt) == 0) then</a>
+   131) <a name="l131" style="background-color: #ffffff">                tracer_type(k+nt) = 1</a>
+   132) <a name="l132" style="background-color: #ffffff">             else               ! trcr_depend = 1 or 2</a>
+   133) <a name="l133" style="background-color: #ffff99">                tracer_type(k+nt) = 2</a>
+   134) <a name="l134" style="background-color: #ffff99">             endif</a>
+   135) <a name="l135" style="background-color: #ffff99">          enddo</a>
+   136) <a name="l136" style="background-color: #ffff99"></a>
+   137) <a name="l137" style="background-color: #ffffff">          k = k + ntrcr</a>
+   138) <a name="l138" style="background-color: #ffffff">          </a>
+   139) <a name="l139" style="background-color: #ffffff">          depend(k+1:k+nilyr) = 1 ! qice depends on hice</a>
+   140) <a name="l140" style="background-color: #ffffff">          tracer_type(k+1:k+nilyr) = 2 </a>
+   141) <a name="l141" style="background-color: #ffffff"></a>
+   142) <a name="l142" style="background-color: #ffffff">          k = k + nilyr</a>
+   143) <a name="l143" style="background-color: #ffffff"></a>
+   144) <a name="l144" style="background-color: #ffffff">          depend(k+1:k+nslyr) = 2 ! qsno depends on hsno</a>
+   145) <a name="l145" style="background-color: #ffffff">          tracer_type(k+1:k+nslyr) = 2 </a>
+   146) <a name="l146" style="background-color: #ffffff"></a>
+   147) <a name="l147" style="background-color: #ffffff">          has_dependents = .false.</a>
+   148) <a name="l148" style="background-color: #ffffff">          do nt = 1, ntrace</a>
+   149) <a name="l149" style="background-color: #ffffff">             if (depend(nt) &gt; 0) then</a>
+   150) <a name="l150" style="background-color: #ffffff">                nt1 = depend(nt)</a>
+   151) <a name="l151" style="background-color: #ffffff">                has_dependents(nt1) = .true.</a>
+   152) <a name="l152" style="background-color: #ffffff">                if (nt1 &gt; nt) then</a>
+   153) <a name="l153" style="background-color: #ffff99">                   write(nu_diag,*)     &amp;</a>
+   154) <a name="l154" style="background-color: #ffff99">                      'Tracer nt2 =',nt,' depends on tracer nt1 =',nt1</a>
+   155) <a name="l155" style="background-color: #ffff99">                   call abort_ice       &amp;</a>
+   156) <a name="l156" style="background-color: #ffff99">                      ('ice: remap transport: Must have nt2 &gt; nt1')</a>
+   157) <a name="l157" style="background-color: #ffff99">                endif</a>
+   158) <a name="l158" style="background-color: #ffff99">             endif</a>
+   159) <a name="l159" style="background-color: #ffff99">          enddo                 ! ntrace</a>
+   160) <a name="l160" style="background-color: #ffff99"></a>
+   161) <a name="l161" style="background-color: #ffff99">          call </a><a style="background-color: #ffffff">init_remap    ! grid quantities</a>
+   162) <a name="l162" style="background-color: #ffffff"></a>
+   163) <a name="l163" style="background-color: #ffffff">      else   ! upwind</a>
+   164) <a name="l164" style="background-color: #ffffff"></a>
+   165) <a name="l165" style="background-color: #ffffff">         continue</a>
+   166) <a name="l166" style="background-color: #ffffff"></a>
+   167) <a name="l167" style="background-color: #ffffff">      endif</a>
+   168) <a name="l168" style="background-color: #ffffff"></a>
+   169) <a name="l169" style="background-color: #ffffff">      call ice_timer_stop(timer_advect)  ! advection </a>
+   170) <a name="l170" style="background-color: #ffffff"></a>
+   171) <a name="l171" style="background-color: #ffffff">      end subroutine init_transport</a>
+   172) <a name="l172" style="background-color: #ffffff"></a>
+   173) <a name="l173" style="background-color: #ffffff">!=======================================================================</a>
+   174) <a name="l174" style="background-color: #ffffff">!BOP</a>
+   175) <a name="l175" style="background-color: #ffffff">!</a>
+   176) <a name="l176" style="background-color: #ffffff">! !IROUTINE: transport_remap - wrapper for remapping transport scheme</a>
+   177) <a name="l177" style="background-color: #ffffff">!</a>
+   178) <a name="l178" style="background-color: #ffffff">! !INTERFACE:</a>
+   179) <a name="l179" style="background-color: #ffffff">!</a>
+   180) <a name="l180" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">transport_remap (dt)</a>
+   181) <a name="l181" style="background-color: #ffcccc">!</a>
+   182) <a name="l182" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+   183) <a name="l183" style="background-color: #ffcccc">!</a>
+   184) <a name="l184" style="background-color: #ffcccc">! This subroutine solves the transport equations for one timestep</a>
+   185) <a name="l185" style="background-color: #ffcccc">! using the conservative remapping scheme developed by John Dukowicz</a>
+   186) <a name="l186" style="background-color: #ffcccc">! and John Baumgardner (DB) and modified for sea ice by William</a>
+   187) <a name="l187" style="background-color: #ffcccc">! Lipscomb and Elizabeth Hunke.</a>
+   188) <a name="l188" style="background-color: #ffcccc">!</a>
+   189) <a name="l189" style="background-color: #ffcccc">! This scheme preserves monotonicity of ice area and tracers.  That is,</a>
+   190) <a name="l190" style="background-color: #ffcccc">! it does not produce new extrema.  It is second-order accurate in space,</a>
+   191) <a name="l191" style="background-color: #ffcccc">! except where gradients are limited to preserve monotonicity. </a>
+   192) <a name="l192" style="background-color: #ffcccc">!</a>
+   193) <a name="l193" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   194) <a name="l194" style="background-color: #ffcccc">!</a>
+   195) <a name="l195" style="background-color: #ffcccc">! authors William H. Lipscomb, LANL</a>
+   196) <a name="l196" style="background-color: #ffcccc">!</a>
+   197) <a name="l197" style="background-color: #ffcccc">! !USES:</a>
+   198) <a name="l198" style="background-color: #ffcccc">!</a>
+   199) <a name="l199" style="background-color: #ffcccc">      use ice_boundary</a>
+   200) <a name="l200" style="background-color: #ffcccc">      use ice_global_reductions</a>
+   201) <a name="l201" style="background-color: #ffcccc">      use ice_domain</a>
+   202) <a name="l202" style="background-color: #ffcccc">      use ice_blocks</a>
+   203) <a name="l203" style="background-color: #ffcccc">      use ice_state</a>
+   204) <a name="l204" style="background-color: #ffcccc">      use ice_grid, only: tarea, HTE, HTN</a>
+   205) <a name="l205" style="background-color: #ffcccc">      use ice_exit</a>
+   206) <a name="l206" style="background-color: #ffcccc">      use ice_calendar, only: istep1, istep, diagfreq</a>
+   207) <a name="l207" style="background-color: #ffcccc">      use ice_timers</a>
+   208) <a name="l208" style="background-color: #ffcccc">      use ice_transport_remap, only: horizontal_remap, make_masks</a>
+   209) <a name="l209" style="background-color: #ffcccc">!</a>
+   210) <a name="l210" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+   211) <a name="l211" style="background-color: #ffcccc">!</a>
+   212) <a name="l212" style="background-color: #ffcccc">      real (kind=dbl_kind), intent(in) ::     &amp;</a>
+   213) <a name="l213" style="background-color: #ffcccc">         dt      ! time step</a>
+   214) <a name="l214" style="background-color: #ffcccc">!</a>
+   215) <a name="l215" style="background-color: #ffcccc">!EOP</a>
+   216) <a name="l216" style="background-color: #ffcccc">!</a>
+   217) <a name="l217" style="background-color: #ffcccc">      ! local variables</a>
+   218) <a name="l218" style="background-color: #ffcccc"></a>
+   219) <a name="l219" style="background-color: #ffcccc">      integer (kind=int_kind) ::     &amp;</a>
+   220) <a name="l220" style="background-color: #ffcccc">         i, j           ,&amp;! horizontal indices</a>
+   221) <a name="l221" style="background-color: #ffcccc">         iblk           ,&amp;! block index</a>
+   222) <a name="l222" style="background-color: #ffcccc">         ilo,ihi,jlo,jhi,&amp;! beginning and end of physical domain</a>
+   223) <a name="l223" style="background-color: #ffcccc">         n              ,&amp;! ice category index</a>
+   224) <a name="l224" style="background-color: #ffcccc">         nt, nt1, nt2     ! tracer indices</a>
+   225) <a name="l225" style="background-color: #ffcccc"></a>
+   226) <a name="l226" style="background-color: #ffcccc">      real (kind=dbl_kind),      &amp;</a>
+   227) <a name="l227" style="background-color: #ffcccc">         dimension (nx_block,ny_block,0:ncat,max_blocks) ::     &amp;</a>
+   228) <a name="l228" style="background-color: #ffcccc">         aim            ,&amp;! mean ice category areas in each grid cell</a>
+   229) <a name="l229" style="background-color: #ffcccc">         aimask           ! = 1. if ice is present, = 0. otherwise</a>
+   230) <a name="l230" style="background-color: #ffcccc"></a>
+   231) <a name="l231" style="background-color: #ffcccc">      real (kind=dbl_kind),      &amp;</a>
+   232) <a name="l232" style="background-color: #ffcccc">         dimension (nx_block,ny_block,max_ntrace,ncat,max_blocks) ::     &amp;</a>
+   233) <a name="l233" style="background-color: #ffcccc">         trm            ,&amp;! mean tracer values in each grid cell</a>
+   234) <a name="l234" style="background-color: #ffcccc">         trmask           ! = 1. if tracer is present, = 0. otherwise</a>
+   235) <a name="l235" style="background-color: #ffcccc"></a>
+   236) <a name="l236" style="background-color: #ffcccc">      logical (kind=log_kind) ::     &amp;</a>
+   237) <a name="l237" style="background-color: #ffcccc">         l_stop           ! if true, abort the model</a>
+   238) <a name="l238" style="background-color: #ffcccc"></a>
+   239) <a name="l239" style="background-color: #ffcccc">      integer (kind=int_kind) ::     &amp;</a>
+   240) <a name="l240" style="background-color: #ffcccc">         istop, jstop     ! indices of grid cell where model aborts </a>
+   241) <a name="l241" style="background-color: #ffcccc"></a>
+   242) <a name="l242" style="background-color: #ffcccc">      integer (kind=int_kind), dimension(0:ncat,max_blocks) ::     &amp;</a>
+   243) <a name="l243" style="background-color: #ffcccc">         icellsnc         ! number of cells with ice</a>
+   244) <a name="l244" style="background-color: #ffcccc"></a>
+   245) <a name="l245" style="background-color: #ffcccc">      integer (kind=int_kind),      &amp;</a>
+   246) <a name="l246" style="background-color: #ffcccc">         dimension(nx_block*ny_block,0:ncat,max_blocks) ::     &amp;</a>
+   247) <a name="l247" style="background-color: #ffcccc">         indxinc, indxjnc   ! compressed i/j indices</a>
+   248) <a name="l248" style="background-color: #ffcccc"></a>
+   249) <a name="l249" style="background-color: #ffcccc">      type (block) :: &amp;</a>
+   250) <a name="l250" style="background-color: #ffcccc">         this_block           ! block information for current block</a>
+   251) <a name="l251" style="background-color: #ffcccc">      </a>
+   252) <a name="l252" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   253) <a name="l253" style="background-color: #ffcccc">    ! If l_fixed_area is true, the area of each departure region is</a>
+   254) <a name="l254" style="background-color: #ffcccc">    !  computed in advance (e.g., by taking the divergence of the </a>
+   255) <a name="l255" style="background-color: #ffcccc">    !  velocity field and passed to locate_triangles.  The departure </a>
+   256) <a name="l256" style="background-color: #ffcccc">    !  regions are adjusted to obtain the desired area.</a>
+   257) <a name="l257" style="background-color: #ffcccc">    ! If false, edgearea is computed in locate_triangles and passed out.</a>
+   258) <a name="l258" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   259) <a name="l259" style="background-color: #ffcccc"></a>
+   260) <a name="l260" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension(nx_block,ny_block,max_blocks) ::   &amp;</a>
+   261) <a name="l261" style="background-color: #ffcccc">         edgearea_e     ,&amp;! area of departure regions for east edges</a>
+   262) <a name="l262" style="background-color: #ffcccc">         edgearea_n       ! area of departure regions for north edges</a>
+   263) <a name="l263" style="background-color: #ffcccc"></a>
+   264) <a name="l264" style="background-color: #ffcccc">      ! variables related to optional bug checks</a>
+   265) <a name="l265" style="background-color: #ffcccc"></a>
+   266) <a name="l266" style="background-color: #ffcccc">      logical (kind=log_kind), parameter ::     &amp;</a>
+   267) <a name="l267" style="background-color: #ffcccc">         l_conservation_check = .true. ,&amp;! if true, check conservation</a>
+   268) <a name="l268" style="background-color: #ffcccc">         l_monotonicity_check = .true.   ! if true, check monotonicity</a>
+   269) <a name="l269" style="background-color: #ffcccc"></a>
+   270) <a name="l270" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension(0:ncat) ::     &amp;</a>
+   271) <a name="l271" style="background-color: #ffcccc">         asum_init      ,&amp;! initial global ice area</a>
+   272) <a name="l272" style="background-color: #ffcccc">         asum_final       ! final global ice area</a>
+   273) <a name="l273" style="background-color: #ffcccc"></a>
+   274) <a name="l274" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension(max_ntrace,ncat) ::     &amp;</a>
+   275) <a name="l275" style="background-color: #ffcccc">         atsum_init     ,&amp;! initial global ice area*tracer</a>
+   276) <a name="l276" style="background-color: #ffcccc">         atsum_final      ! final global ice area*tracer</a>
+   277) <a name="l277" style="background-color: #ffcccc"></a>
+   278) <a name="l278" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (:,:,:,:,:), allocatable ::     &amp;</a>
+   279) <a name="l279" style="background-color: #ffcccc">         tmin         ,&amp;! local min tracer</a>
+   280) <a name="l280" style="background-color: #ffcccc">         tmax           ! local max tracer</a>
+   281) <a name="l281" style="background-color: #ffcccc"></a>
+   282) <a name="l282" style="background-color: #ffcccc">      integer (kind=int_kind) :: alloc_error</a>
+   283) <a name="l283" style="background-color: #ffcccc"></a>
+   284) <a name="l284" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension(nx_block,ny_block,max_blocks) :: &amp;</a>
+   285) <a name="l285" style="background-color: #ffcccc">         work1</a>
+   286) <a name="l286" style="background-color: #ffcccc"></a>
+   287) <a name="l287" style="background-color: #ffcccc">      call ice_timer_start(timer_advect)  ! advection </a>
+   288) <a name="l288" style="background-color: #ffcccc"></a>
+   289) <a name="l289" style="background-color: #ffcccc">!---!-------------------------------------------------------------------</a>
+   290) <a name="l290" style="background-color: #ffcccc">!---! Prepare for remapping.</a>
+   291) <a name="l291" style="background-color: #ffcccc">!---! Initialize, update ghost cells, fill tracer arrays.</a>
+   292) <a name="l292" style="background-color: #ffcccc">!---!-------------------------------------------------------------------</a>
+   293) <a name="l293" style="background-color: #ffcccc"></a>
+   294) <a name="l294" style="background-color: #ffcccc">      l_stop = .false.</a>
+   295) <a name="l295" style="background-color: #ffcccc">      istop = 0</a>
+   296) <a name="l296" style="background-color: #ffcccc">      jstop = 0</a>
+   297) <a name="l297" style="background-color: #ffcccc"></a>
+   298) <a name="l298" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   299) <a name="l299" style="background-color: #ffcccc">    ! Compute open water area in each grid cell.</a>
+   300) <a name="l300" style="background-color: #ffcccc">    ! Note: An aggregate_area call is needed only if the open</a>
+   301) <a name="l301" style="background-color: #ffcccc">    !       water area has changed since the previous call.</a>
+   302) <a name="l302" style="background-color: #ffcccc">    !       Here we assume that aice0 is up to date.</a>
+   303) <a name="l303" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   304) <a name="l304" style="background-color: #ffcccc"></a>
+   305) <a name="l305" style="background-color: #ffcccc">!      do iblk = 1, nblocks</a>
+   306) <a name="l306" style="background-color: #ffcccc">!         call aggregate_area (nx_block, ny_block,</a>
+   307) <a name="l307" style="background-color: #ffcccc">!                              iblk,     &amp;</a>
+   308) <a name="l308" style="background-color: #ffcccc">!                              aicen(:,:,:,iblk),     &amp;</a>
+   309) <a name="l309" style="background-color: #ffcccc">!                              aice (:,:,  iblk),     &amp;</a>
+   310) <a name="l310" style="background-color: #ffcccc">!                              aice0(:,:,  iblk)) </a>
+   311) <a name="l311" style="background-color: #ffcccc">!      enddo</a>
+   312) <a name="l312" style="background-color: #ffcccc"></a>
+   313) <a name="l313" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   314) <a name="l314" style="background-color: #ffcccc">    ! Ghost cell updates for state variables.</a>
+   315) <a name="l315" style="background-color: #ffcccc">    ! Commented out because ghost cells are updated after cleanup_itd.</a>
+   316) <a name="l316" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   317) <a name="l317" style="background-color: #ffcccc">!      call ice_timer_start(timer_bound)</a>
+   318) <a name="l318" style="background-color: #ffcccc"></a>
+   319) <a name="l319" style="background-color: #ffcccc">!      call ice_HaloUpdate (aice0,            halo_info,     &amp;</a>
+   320) <a name="l320" style="background-color: #ffcccc">!                           field_loc_center, field_type_scalar)</a>
+   321) <a name="l321" style="background-color: #ffcccc"></a>
+   322) <a name="l322" style="background-color: #ffcccc">!      call bound_state (aicen, trcrn,     &amp;</a>
+   323) <a name="l323" style="background-color: #ffcccc">!                        vicen, vsnon,      &amp;</a>
+   324) <a name="l324" style="background-color: #ffcccc">!                        eicen, esnon)</a>
+   325) <a name="l325" style="background-color: #ffcccc"></a>
+   326) <a name="l326" style="background-color: #ffcccc">!      call ice_timer_stop(timer_bound)</a>
+   327) <a name="l327" style="background-color: #ffcccc"></a>
+   328) <a name="l328" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   329) <a name="l329" style="background-color: #ffcccc">    ! Ghost cell updates for ice velocity.</a>
+   330) <a name="l330" style="background-color: #ffcccc">    ! Commented out because ghost cell velocities are computed</a>
+   331) <a name="l331" style="background-color: #ffcccc">    !  in ice_dyn_evp.</a>
+   332) <a name="l332" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   333) <a name="l333" style="background-color: #ffcccc"></a>
+   334) <a name="l334" style="background-color: #ffcccc">!      call ice_timer_start(timer_bound)</a>
+   335) <a name="l335" style="background-color: #ffcccc">!      call ice_HaloUpdate (uvel,               halo_info,     &amp;</a>
+   336) <a name="l336" style="background-color: #ffcccc">!                           field_loc_NEcorner, field_type_vector)</a>
+   337) <a name="l337" style="background-color: #ffcccc">!      call ice_HaloUpdate (vvel,               halo_info,     &amp;</a>
+   338) <a name="l338" style="background-color: #ffcccc">!                           field_loc_NEcorner, field_type_vector)</a>
+   339) <a name="l339" style="background-color: #ffcccc">!      call ice_timer_stop(timer_bound)</a>
+   340) <a name="l340" style="background-color: #ffcccc"></a>
+   341) <a name="l341" style="background-color: #ffcccc"></a>
+   342) <a name="l342" style="background-color: #ffcccc">      call t_barrierf('cice_remap_s2t_BARRIER',MPI_COMM_ICE)</a>
+   343) <a name="l343" style="background-color: #ffcccc">      call t_startf  ('cice_remap_s2t')</a>
+   344) <a name="l344" style="background-color: #ffcccc"></a>
+   345) <a name="l345" style="background-color: #ffcccc">      !$OMP PARALLEL DO PRIVATE(iblk)</a>
+   346) <a name="l346" style="background-color: #ffcccc">      do iblk = 1, nblocks</a>
+   347) <a name="l347" style="background-color: #ffcccc"></a>
+   348) <a name="l348" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   349) <a name="l349" style="background-color: #ffcccc">    ! Fill arrays with fields to be remapped.</a>
+   350) <a name="l350" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   351) <a name="l351" style="background-color: #ffcccc"></a>
+   352) <a name="l352" style="background-color: #ffcccc">         call state_to_tracers(nx_block,          ny_block,             &amp;</a>
+   353) <a name="l353" style="background-color: #ffcccc">                               ntrcr,             ntrace,               &amp;</a>
+   354) <a name="l354" style="background-color: #ffcccc">                               aice0(:,:,  iblk),                       &amp;</a>
+   355) <a name="l355" style="background-color: #ffcccc">                               aicen(:,:,:,iblk), trcrn(:,:,:,:,iblk),  &amp;</a>
+   356) <a name="l356" style="background-color: #ffcccc">                               vicen(:,:,:,iblk), vsnon(:,:,  :,iblk),  &amp;</a>
+   357) <a name="l357" style="background-color: #ffcccc">                               eicen(:,:,:,iblk), esnon(:,:,  :,iblk),  &amp;</a>
+   358) <a name="l358" style="background-color: #ffcccc">                               aim  (:,:,:,iblk), trm  (:,:,:,:,iblk))</a>
+   359) <a name="l359" style="background-color: #ffcccc"></a>
+   360) <a name="l360" style="background-color: #ffcccc">      enddo</a>
+   361) <a name="l361" style="background-color: #ffcccc">      !$OMP END PARALLEL DO</a>
+   362) <a name="l362" style="background-color: #ffcccc"></a>
+   363) <a name="l363" style="background-color: #ffcccc">      call t_stopf   ('cice_remap_s2t')</a>
+   364) <a name="l364" style="background-color: #ffcccc">      call t_barrierf('cice_remap_check1_BARRIER',MPI_COMM_ICE)</a>
+   365) <a name="l365" style="background-color: #ffcccc">      call t_startf  ('cice_remap_check1')</a>
+   366) <a name="l366" style="background-color: #ffcccc"></a>
+   367) <a name="l367" style="background-color: #ffcccc">!---!-------------------------------------------------------------------</a>
+   368) <a name="l368" style="background-color: #ffcccc">!---! Optional conservation and monotonicity checks.</a>
+   369) <a name="l369" style="background-color: #ffcccc">!---!-------------------------------------------------------------------</a>
+   370) <a name="l370" style="background-color: #ffcccc"></a>
+   371) <a name="l371" style="background-color: #ffcccc">      if (l_conservation_check .and. mod(istep,diagfreq) == 0) then</a>
+   372) <a name="l372" style="background-color: #ffcccc"></a>
+   373) <a name="l373" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   374) <a name="l374" style="background-color: #ffcccc">    ! Compute initial values of globally conserved quantities.</a>
+   375) <a name="l375" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   376) <a name="l376" style="background-color: #ffcccc"></a>
+   377) <a name="l377" style="background-color: #ffcccc">         do n = 0, ncat</a>
+   378) <a name="l378" style="background-color: #ffcccc">            asum_init(n) = global_sum(aim(:,:,n,:),     distrb_info,       &amp;</a>
+   379) <a name="l379" style="background-color: #ffcccc">                                      field_loc_center, tarea)</a>
+   380) <a name="l380" style="background-color: #ffcccc">         enddo</a>
+   381) <a name="l381" style="background-color: #ffcccc"></a>
+   382) <a name="l382" style="background-color: #ffcccc">         do n = 1, ncat</a>
+   383) <a name="l383" style="background-color: #ffcccc">            do nt = 1, ntrace</a>
+   384) <a name="l384" style="background-color: #ffcccc">               if (tracer_type(nt)==1) then ! does not depend on another tracer</a>
+   385) <a name="l385" style="background-color: #ffcccc">                  atsum_init(nt,n) =      &amp;</a>
+   386) <a name="l386" style="background-color: #ffcccc">                      global_sum_prod(trm(:,:,nt,n,:), aim(:,:,n,:),       &amp;</a>
+   387) <a name="l387" style="background-color: #ffcccc">                                      distrb_info,     field_loc_center,   &amp;</a>
+   388) <a name="l388" style="background-color: #ffcccc">                                      tarea)</a>
+   389) <a name="l389" style="background-color: #ffcccc">               elseif (tracer_type(nt)==2) then ! depends on another tracer</a>
+   390) <a name="l390" style="background-color: #ffcccc">                  nt1 = depend(nt)</a>
+   391) <a name="l391" style="background-color: #ffcccc">                  do iblk = 1, nblocks</a>
+   392) <a name="l392" style="background-color: #ffcccc">                     do j= 1,ny_block  </a>
+   393) <a name="l393" style="background-color: #ffcccc">                        do i = 1,nx_block</a>
+   394) <a name="l394" style="background-color: #ffcccc">                           work1(i,j,iblk) = trm(i,j,nt,n,iblk)*trm(i,j,nt1,n,iblk)</a>
+   395) <a name="l395" style="background-color: #ffcccc">                        end do</a>
+   396) <a name="l396" style="background-color: #ffcccc">                     end do</a>
+   397) <a name="l397" style="background-color: #ffcccc">                  end do</a>
+   398) <a name="l398" style="background-color: #ffcccc">                  atsum_init(nt,n) =     &amp;</a>
+   399) <a name="l399" style="background-color: #ffcccc">                      global_sum_prod(work1(:,:,:), aim(:,:,n,:),          &amp;</a>
+   400) <a name="l400" style="background-color: #ffcccc">                                      distrb_info,  field_loc_center,      &amp;</a>
+   401) <a name="l401" style="background-color: #ffcccc">                                      tarea)</a>
+   402) <a name="l402" style="background-color: #ffcccc">               elseif (tracer_type(nt)==3) then ! depends on two tracers</a>
+   403) <a name="l403" style="background-color: #ffcccc">                  nt1 = depend(nt)</a>
+   404) <a name="l404" style="background-color: #ffcccc">                  nt2 = depend(nt1)</a>
+   405) <a name="l405" style="background-color: #ffcccc">                  do iblk = 1, nblocks</a>
+   406) <a name="l406" style="background-color: #ffcccc">                     do j= 1,ny_block  </a>
+   407) <a name="l407" style="background-color: #ffcccc">                        do i = 1,nx_block</a>
+   408) <a name="l408" style="background-color: #ffcccc">                           work1(i,j,iblk) = trm(i,j,nt,n,iblk)*trm(i,j,nt1,n,iblk) &amp;</a>
+   409) <a name="l409" style="background-color: #ffcccc">	                                                       *trm(i,j,nt2,n,iblk)</a>
+   410) <a name="l410" style="background-color: #ffcccc">                        end do</a>
+   411) <a name="l411" style="background-color: #ffcccc">                     end do</a>
+   412) <a name="l412" style="background-color: #ffcccc">                  end do</a>
+   413) <a name="l413" style="background-color: #ffcccc">                  atsum_init(nt,n) =     &amp;</a>
+   414) <a name="l414" style="background-color: #ffcccc">                      global_sum_prod(work1(:,:,:), aim(:,:,n,:),          &amp;</a>
+   415) <a name="l415" style="background-color: #ffcccc">                                      distrb_info,  field_loc_center,      &amp;</a>
+   416) <a name="l416" style="background-color: #ffcccc">                                      tarea)</a>
+   417) <a name="l417" style="background-color: #ffcccc">               endif            ! tracer_type</a>
+   418) <a name="l418" style="background-color: #ffcccc">            enddo               ! nt</a>
+   419) <a name="l419" style="background-color: #ffcccc">         enddo                  ! n</a>
+   420) <a name="l420" style="background-color: #ffcccc"></a>
+   421) <a name="l421" style="background-color: #ffcccc">      endif                     ! l_conservation_check</a>
+   422) <a name="l422" style="background-color: #ffcccc">      </a>
+   423) <a name="l423" style="background-color: #ffcccc">      if (l_monotonicity_check .and. mod(istep,diagfreq) == 0) then</a>
+   424) <a name="l424" style="background-color: #ffcccc"></a>
+   425) <a name="l425" style="background-color: #ffcccc">         allocate(tmin(nx_block,ny_block,ntrace,ncat,max_blocks),     &amp;</a>
+   426) <a name="l426" style="background-color: #ffcccc">                  tmax(nx_block,ny_block,ntrace,ncat,max_blocks),     &amp;</a>
+   427) <a name="l427" style="background-color: #ffcccc">                  STAT=alloc_error)</a>
+   428) <a name="l428" style="background-color: #ffcccc"></a>
+   429) <a name="l429" style="background-color: #ffcccc">         if (alloc_error /= 0)      &amp;</a>
+   430) <a name="l430" style="background-color: #ffcccc">              call abort_ice ('ice: allocation error')</a>
+   431) <a name="l431" style="background-color: #ffcccc"></a>
+   432) <a name="l432" style="background-color: #ffcccc">         tmin(:,:,:,:,:) = c0</a>
+   433) <a name="l433" style="background-color: #ffcccc">         tmax(:,:,:,:,:) = c0</a>
+   434) <a name="l434" style="background-color: #ffcccc"></a>
+   435) <a name="l435" style="background-color: #ffcccc">         !$OMP PARALLEL DO PRIVATE(iblk,this_block,ilo,ihi,jlo,jhi,n)</a>
+   436) <a name="l436" style="background-color: #ffcccc">         do iblk = 1, nblocks</a>
+   437) <a name="l437" style="background-color: #ffcccc">            this_block = get_block(blocks_ice(iblk),iblk)         </a>
+   438) <a name="l438" style="background-color: #ffcccc">            ilo = this_block%ilo</a>
+   439) <a name="l439" style="background-color: #ffcccc">            ihi = this_block%ihi</a>
+   440) <a name="l440" style="background-color: #ffcccc">            jlo = this_block%jlo</a>
+   441) <a name="l441" style="background-color: #ffcccc">            jhi = this_block%jhi</a>
+   442) <a name="l442" style="background-color: #ffcccc"></a>
+   443) <a name="l443" style="background-color: #ffcccc">    !------------------------------------------------------------------- </a>
+   444) <a name="l444" style="background-color: #ffcccc">    ! Compute masks.</a>
+   445) <a name="l445" style="background-color: #ffcccc">    ! Masks are used to prevent tracer values in cells without ice</a>
+   446) <a name="l446" style="background-color: #ffcccc">    !  from being used in the monotonicity check.</a>
+   447) <a name="l447" style="background-color: #ffcccc">    !------------------------------------------------------------------- </a>
+   448) <a name="l448" style="background-color: #ffcccc"></a>
+   449) <a name="l449" style="background-color: #ffcccc">            call make_masks (nx_block,          ny_block,              &amp;</a>
+   450) <a name="l450" style="background-color: #ffcccc">                             ilo, ihi,          jlo, jhi,              &amp;</a>
+   451) <a name="l451" style="background-color: #ffcccc">                             nghost,            ntrace,                &amp;</a>
+   452) <a name="l452" style="background-color: #ffcccc">                             has_dependents,    icellsnc(:,iblk),      &amp;</a>
+   453) <a name="l453" style="background-color: #ffcccc">                             indxinc(:,:,iblk), indxjnc(:,:,iblk),     &amp;</a>
+   454) <a name="l454" style="background-color: #ffcccc">                             aim(:,:,:,iblk),   aimask(:,:,:,iblk),    &amp;</a>
+   455) <a name="l455" style="background-color: #ffcccc">                             trm(:,:,:,:,iblk), trmask(:,:,:,:,iblk))</a>
+   456) <a name="l456" style="background-color: #ffcccc"></a>
+   457) <a name="l457" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   458) <a name="l458" style="background-color: #ffcccc">    ! Compute local max and min of tracer fields.</a>
+   459) <a name="l459" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   460) <a name="l460" style="background-color: #ffcccc"></a>
+   461) <a name="l461" style="background-color: #ffcccc">            do n = 1, ncat</a>
+   462) <a name="l462" style="background-color: #ffcccc">               call local_max_min                                      &amp;  </a>
+   463) <a name="l463" style="background-color: #ffcccc">                            (nx_block,           ny_block,             &amp;</a>
+   464) <a name="l464" style="background-color: #ffcccc">                             ilo, ihi,           jlo, jhi,             &amp;</a>
+   465) <a name="l465" style="background-color: #ffcccc">                             trm (:,:,:,n,iblk),                       &amp;</a>
+   466) <a name="l466" style="background-color: #ffcccc">                             tmin(:,:,:,n,iblk), tmax  (:,:,:,n,iblk), &amp;</a>
+   467) <a name="l467" style="background-color: #ffcccc">                             aimask(:,:,n,iblk), trmask(:,:,:,n,iblk))</a>
+   468) <a name="l468" style="background-color: #ffcccc">            enddo</a>
+   469) <a name="l469" style="background-color: #ffcccc">         enddo</a>
+   470) <a name="l470" style="background-color: #ffcccc">         !$OMP END PARALLEL DO</a>
+   471) <a name="l471" style="background-color: #ffcccc"></a>
+   472) <a name="l472" style="background-color: #ffcccc">         call ice_timer_start(timer_bound)</a>
+   473) <a name="l473" style="background-color: #ffcccc">         call ice_HaloUpdate (tmin,             halo_info,     &amp;</a>
+   474) <a name="l474" style="background-color: #ffcccc">                              field_loc_center, field_type_scalar)</a>
+   475) <a name="l475" style="background-color: #ffcccc">         call ice_HaloUpdate (tmax,             halo_info,     &amp;</a>
+   476) <a name="l476" style="background-color: #ffcccc">                              field_loc_center, field_type_scalar)</a>
+   477) <a name="l477" style="background-color: #ffcccc">         call ice_timer_stop(timer_bound)</a>
+   478) <a name="l478" style="background-color: #ffcccc"></a>
+   479) <a name="l479" style="background-color: #ffcccc">         !$OMP PARALLEL DO PRIVATE(iblk,this_block,ilo,ihi,jlo,jhi,n)</a>
+   480) <a name="l480" style="background-color: #ffcccc">         do iblk = 1, nblocks</a>
+   481) <a name="l481" style="background-color: #ffcccc">            this_block = get_block(blocks_ice(iblk),iblk)         </a>
+   482) <a name="l482" style="background-color: #ffcccc">            ilo = this_block%ilo</a>
+   483) <a name="l483" style="background-color: #ffcccc">            ihi = this_block%ihi</a>
+   484) <a name="l484" style="background-color: #ffcccc">            jlo = this_block%jlo</a>
+   485) <a name="l485" style="background-color: #ffcccc">            jhi = this_block%jhi</a>
+   486) <a name="l486" style="background-color: #ffcccc"></a>
+   487) <a name="l487" style="background-color: #ffcccc">            do n = 1, ncat</a>
+   488) <a name="l488" style="background-color: #ffcccc">               call quasilocal_max_min (nx_block, ny_block,     &amp;</a>
+   489) <a name="l489" style="background-color: #ffcccc">                                        ilo, ihi, jlo, jhi,     &amp;</a>
+   490) <a name="l490" style="background-color: #ffcccc">                                        tmin(:,:,:,n,iblk),      &amp;</a>
+   491) <a name="l491" style="background-color: #ffcccc">                                        tmax(:,:,:,n,iblk))</a>
+   492) <a name="l492" style="background-color: #ffcccc">            enddo</a>
+   493) <a name="l493" style="background-color: #ffcccc">         enddo</a>
+   494) <a name="l494" style="background-color: #ffcccc">         !$OMP END PARALLEL DO</a>
+   495) <a name="l495" style="background-color: #ffcccc"></a>
+   496) <a name="l496" style="background-color: #ffcccc">      endif                     ! l_monotonicity_check</a>
+   497) <a name="l497" style="background-color: #ffcccc"></a>
+   498) <a name="l498" style="background-color: #ffcccc">      call t_stopf   ('cice_remap_check1')</a>
+   499) <a name="l499" style="background-color: #ffcccc">      call t_barrierf('cice_remap_horz_BARRIER',MPI_COMM_ICE)</a>
+   500) <a name="l500" style="background-color: #ffcccc">      call t_startf  ('cice_remap_horz')</a>
+   501) <a name="l501" style="background-color: #ffcccc"></a>
+   502) <a name="l502" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   503) <a name="l503" style="background-color: #ffcccc">    ! Main remapping routine: Step ice area and tracers forward in time.</a>
+   504) <a name="l504" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   505) <a name="l505" style="background-color: #ffcccc">    ! If l_fixed_area is true, compute edgearea by taking the divergence</a>
+   506) <a name="l506" style="background-color: #ffcccc">    !  of the velocity field.  Otherwise, initialize edgearea.</a>
+   507) <a name="l507" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   508) <a name="l508" style="background-color: #ffcccc"></a>
+   509) <a name="l509" style="background-color: #ffcccc">         !$OMP PARALLEL DO PRIVATE(iblk,i,j)</a>
+   510) <a name="l510" style="background-color: #ffcccc">         do iblk = 1, nblocks</a>
+   511) <a name="l511" style="background-color: #ffcccc">         do j = 1, ny_block</a>
+   512) <a name="l512" style="background-color: #ffcccc">         do i = 1, nx_block</a>
+   513) <a name="l513" style="background-color: #ffcccc">            edgearea_e(i,j,iblk) = c0</a>
+   514) <a name="l514" style="background-color: #ffcccc">            edgearea_n(i,j,iblk) = c0</a>
+   515) <a name="l515" style="background-color: #ffcccc">         enddo</a>
+   516) <a name="l516" style="background-color: #ffcccc">         enddo</a>
+   517) <a name="l517" style="background-color: #ffcccc">         enddo</a>
+   518) <a name="l518" style="background-color: #ffcccc">         !$OMP END PARALLEL DO</a>
+   519) <a name="l519" style="background-color: #ffcccc"></a>
+   520) <a name="l520" style="background-color: #ffcccc">         if (l_fixed_area) then</a>
+   521) <a name="l521" style="background-color: #ffcccc"></a>
+   522) <a name="l522" style="background-color: #ffcccc">            !$OMP PARALLEL DO PRIVATE(iblk,this_block,i,j,ilo,ihi,jlo,jhi)</a>
+   523) <a name="l523" style="background-color: #ffcccc">            do iblk = 1, nblocks</a>
+   524) <a name="l524" style="background-color: #ffcccc">               this_block = get_block(blocks_ice(iblk),iblk)         </a>
+   525) <a name="l525" style="background-color: #ffcccc">               ilo = this_block%ilo</a>
+   526) <a name="l526" style="background-color: #ffcccc">               ihi = this_block%ihi</a>
+   527) <a name="l527" style="background-color: #ffcccc">               jlo = this_block%jlo</a>
+   528) <a name="l528" style="background-color: #ffcccc">               jhi = this_block%jhi</a>
+   529) <a name="l529" style="background-color: #ffcccc"></a>
+   530) <a name="l530" style="background-color: #ffcccc">               do j = jlo, jhi</a>
+   531) <a name="l531" style="background-color: #ffcccc">               do i = ilo-1, ihi</a>
+   532) <a name="l532" style="background-color: #ffcccc">                  edgearea_e(i,j,iblk) = (uvel(i,j,iblk) + uvel(i,j-1,iblk)) &amp;</a>
+   533) <a name="l533" style="background-color: #ffcccc">                                        * p5 * HTE(i,j,iblk) * dt</a>
+   534) <a name="l534" style="background-color: #ffcccc">               enddo</a>
+   535) <a name="l535" style="background-color: #ffcccc">               enddo</a>
+   536) <a name="l536" style="background-color: #ffcccc"></a>
+   537) <a name="l537" style="background-color: #ffcccc">               do j = jlo-1, jhi</a>
+   538) <a name="l538" style="background-color: #ffcccc">               do i = ilo, ihi</a>
+   539) <a name="l539" style="background-color: #ffcccc">                  edgearea_n(i,j,iblk) = (vvel(i,j,iblk) + vvel(i-1,j,iblk)) &amp;</a>
+   540) <a name="l540" style="background-color: #ffcccc">                                        * p5 * HTN(i,j,iblk) * dt</a>
+   541) <a name="l541" style="background-color: #ffcccc">               enddo</a>
+   542) <a name="l542" style="background-color: #ffcccc">               enddo</a>
+   543) <a name="l543" style="background-color: #ffcccc"></a>
+   544) <a name="l544" style="background-color: #ffcccc">            enddo  ! iblk</a>
+   545) <a name="l545" style="background-color: #ffcccc">            !$OMP END PARALLEL DO</a>
+   546) <a name="l546" style="background-color: #ffcccc"></a>
+   547) <a name="l547" style="background-color: #ffcccc">         endif</a>
+   548) <a name="l548" style="background-color: #ffcccc"></a>
+   549) <a name="l549" style="background-color: #ffcccc">         call horizontal_remap (dt,                ntrace,             &amp;</a>
+   550) <a name="l550" style="background-color: #ffcccc">                                uvel      (:,:,:), vvel      (:,:,:),  &amp;</a>
+   551) <a name="l551" style="background-color: #ffcccc">                                aim     (:,:,:,:), trm   (:,:,:,:,:),  &amp;</a>
+   552) <a name="l552" style="background-color: #ffcccc">                                l_fixed_area,                          &amp;</a>
+   553) <a name="l553" style="background-color: #ffcccc">                                edgearea_e(:,:,:), edgearea_n(:,:,:),  &amp;</a>
+   554) <a name="l554" style="background-color: #ffcccc">                                tracer_type,       depend,             &amp;</a>
+   555) <a name="l555" style="background-color: #ffcccc">                                has_dependents,    integral_order,     &amp;</a>
+   556) <a name="l556" style="background-color: #ffcccc">                                l_dp_midpt)</a>
+   557) <a name="l557" style="background-color: #ffcccc"></a>
+   558) <a name="l558" style="background-color: #ffcccc">      call t_stopf   ('cice_remap_horz')</a>
+   559) <a name="l559" style="background-color: #ffcccc">      call t_barrierf('cice_remap_t2s_BARRIER',MPI_COMM_ICE)</a>
+   560) <a name="l560" style="background-color: #ffcccc">      call t_startf  ('cice_remap_t2s')</a>
+   561) <a name="l561" style="background-color: #ffcccc"></a>
+   562) <a name="l562" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   563) <a name="l563" style="background-color: #ffcccc">    ! Given new fields, recompute state variables.</a>
+   564) <a name="l564" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   565) <a name="l565" style="background-color: #ffcccc"></a>
+   566) <a name="l566" style="background-color: #ffcccc">      !$OMP PARALLEL DO PRIVATE(iblk)</a>
+   567) <a name="l567" style="background-color: #ffcccc">      do iblk = 1, nblocks</a>
+   568) <a name="l568" style="background-color: #ffcccc"></a>
+   569) <a name="l569" style="background-color: #ffcccc">         call tracers_to_state (nx_block,          ny_block,            &amp;</a>
+   570) <a name="l570" style="background-color: #ffcccc">                                ntrcr,             ntrace,              &amp;</a>
+   571) <a name="l571" style="background-color: #ffcccc">                                aim  (:,:,:,iblk), trm  (:,:,:,:,iblk), &amp;</a>
+   572) <a name="l572" style="background-color: #ffcccc">                                aice0(:,:,  iblk),                      &amp;</a>
+   573) <a name="l573" style="background-color: #ffcccc">                                aicen(:,:,:,iblk), trcrn(:,:,:,:,iblk), &amp;</a>
+   574) <a name="l574" style="background-color: #ffcccc">                                vicen(:,:,:,iblk), vsnon(:,:,  :,iblk), &amp;</a>
+   575) <a name="l575" style="background-color: #ffcccc">                                eicen(:,:,:,iblk), esnon(:,:,  :,iblk)) </a>
+   576) <a name="l576" style="background-color: #ffcccc"></a>
+   577) <a name="l577" style="background-color: #ffcccc">      enddo                     ! iblk</a>
+   578) <a name="l578" style="background-color: #ffcccc">      !$OMP END PARALLEL DO</a>
+   579) <a name="l579" style="background-color: #ffcccc"></a>
+   580) <a name="l580" style="background-color: #ffcccc">      call t_stopf   ('cice_remap_t2s')</a>
+   581) <a name="l581" style="background-color: #ffcccc">      call t_barrierf('cice_remap_bound1_BARRIER',MPI_COMM_ICE)</a>
+   582) <a name="l582" style="background-color: #ffcccc">      call t_startf  ('cice_remap_bound1')</a>
+   583) <a name="l583" style="background-color: #ffcccc"></a>
+   584) <a name="l584" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   585) <a name="l585" style="background-color: #ffcccc">    ! Ghost cell updates for state variables.</a>
+   586) <a name="l586" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   587) <a name="l587" style="background-color: #ffcccc"></a>
+   588) <a name="l588" style="background-color: #ffcccc">      call ice_timer_start(timer_bound)</a>
+   589) <a name="l589" style="background-color: #ffcccc"></a>
+   590) <a name="l590" style="background-color: #ffcccc">      call bound_state (aicen, trcrn,     &amp;</a>
+   591) <a name="l591" style="background-color: #ffcccc">                        vicen, vsnon,      &amp;</a>
+   592) <a name="l592" style="background-color: #ffcccc">                        eicen, esnon)</a>
+   593) <a name="l593" style="background-color: #ffcccc"></a>
+   594) <a name="l594" style="background-color: #ffcccc">      call ice_timer_stop(timer_bound)</a>
+   595) <a name="l595" style="background-color: #ffcccc">      call t_stopf   ('cice_remap_bound1')</a>
+   596) <a name="l596" style="background-color: #ffcccc">      call t_barrierf('cice_remap_check2_BARRIER',MPI_COMM_ICE)</a>
+   597) <a name="l597" style="background-color: #ffcccc">      call t_startf  ('cice_remap_check2')</a>
+   598) <a name="l598" style="background-color: #ffcccc"></a>
+   599) <a name="l599" style="background-color: #ffcccc">!---!-------------------------------------------------------------------</a>
+   600) <a name="l600" style="background-color: #ffcccc">!---! Optional conservation and monotonicity checks</a>
+   601) <a name="l601" style="background-color: #ffcccc">!---!-------------------------------------------------------------------</a>
+   602) <a name="l602" style="background-color: #ffcccc"></a>
+   603) <a name="l603" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   604) <a name="l604" style="background-color: #ffcccc">    ! Compute final values of globally conserved quantities.</a>
+   605) <a name="l605" style="background-color: #ffcccc">    ! Check global conservation of area and area*tracers.  (Optional)</a>
+   606) <a name="l606" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   607) <a name="l607" style="background-color: #ffcccc"></a>
+   608) <a name="l608" style="background-color: #ffcccc">      if (l_conservation_check .and. mod(istep,diagfreq) == 0) then</a>
+   609) <a name="l609" style="background-color: #ffcccc"></a>
+   610) <a name="l610" style="background-color: #ffcccc">         do n = 0, ncat</a>
+   611) <a name="l611" style="background-color: #ffcccc">            asum_final(n) = global_sum(aim(:,:,n,:),     distrb_info,      &amp;</a>
+   612) <a name="l612" style="background-color: #ffcccc">                                       field_loc_center, tarea)</a>
+   613) <a name="l613" style="background-color: #ffcccc">         enddo</a>
+   614) <a name="l614" style="background-color: #ffcccc"></a>
+   615) <a name="l615" style="background-color: #ffcccc">         do n = 1, ncat</a>
+   616) <a name="l616" style="background-color: #ffcccc">            do nt = 1, ntrace</a>
+   617) <a name="l617" style="background-color: #ffcccc">               if (tracer_type(nt)==1) then ! does not depend on another tracer</a>
+   618) <a name="l618" style="background-color: #ffcccc">                  atsum_final(nt,n) =      &amp;</a>
+   619) <a name="l619" style="background-color: #ffcccc">                      global_sum_prod(trm(:,:,nt,n,:), aim(:,:,n,:),       &amp;</a>
+   620) <a name="l620" style="background-color: #ffcccc">                                      distrb_info,     field_loc_center,   &amp;</a>
+   621) <a name="l621" style="background-color: #ffcccc">                                      tarea)</a>
+   622) <a name="l622" style="background-color: #ffcccc">               elseif (tracer_type(nt)==2) then ! depends on another tracer</a>
+   623) <a name="l623" style="background-color: #ffcccc">                  nt1 = depend(nt)</a>
+   624) <a name="l624" style="background-color: #ffcccc">                  do iblk = 1, nblocks</a>
+   625) <a name="l625" style="background-color: #ffcccc">                     do j= 1,ny_block  </a>
+   626) <a name="l626" style="background-color: #ffcccc">                        do i = 1,nx_block</a>
+   627) <a name="l627" style="background-color: #ffcccc">                           work1(i,j,iblk) = trm(i,j,nt,n,iblk)*trm(i,j,nt1,n,iblk)</a>
+   628) <a name="l628" style="background-color: #ffcccc">                        end do</a>
+   629) <a name="l629" style="background-color: #ffcccc">                     end do</a>
+   630) <a name="l630" style="background-color: #ffcccc">                  end do</a>
+   631) <a name="l631" style="background-color: #ffcccc">                  atsum_final(nt,n) =     &amp;</a>
+   632) <a name="l632" style="background-color: #ffcccc">                      global_sum_prod(work1(:,:,:), aim(:,:,n,:),          &amp;</a>
+   633) <a name="l633" style="background-color: #ffcccc">                                      distrb_info,  field_loc_center,      &amp;</a>
+   634) <a name="l634" style="background-color: #ffcccc">                                      tarea)</a>
+   635) <a name="l635" style="background-color: #ffcccc">               elseif (tracer_type(nt)==3) then ! depends on two tracers</a>
+   636) <a name="l636" style="background-color: #ffcccc">                  nt1 = depend(nt)</a>
+   637) <a name="l637" style="background-color: #ffcccc">                  nt2 = depend(nt1)</a>
+   638) <a name="l638" style="background-color: #ffcccc">                  do iblk = 1, nblocks</a>
+   639) <a name="l639" style="background-color: #ffcccc">                     do j= 1,ny_block  </a>
+   640) <a name="l640" style="background-color: #ffcccc">                        do i = 1,nx_block</a>
+   641) <a name="l641" style="background-color: #ffcccc">                           work1(i,j,iblk) = trm(i,j,nt,n,iblk)*trm(i,j,nt1,n,iblk) &amp;</a>
+   642) <a name="l642" style="background-color: #ffcccc">	                                                       *trm(i,j,nt2,n,iblk)</a>
+   643) <a name="l643" style="background-color: #ffcccc">                        end do</a>
+   644) <a name="l644" style="background-color: #ffcccc">                     end do</a>
+   645) <a name="l645" style="background-color: #ffcccc">                  end do</a>
+   646) <a name="l646" style="background-color: #ffcccc">                  atsum_final(nt,n) =     &amp;</a>
+   647) <a name="l647" style="background-color: #ffcccc">                      global_sum_prod(work1(:,:,:), aim(:,:,n,:),          &amp;</a>
+   648) <a name="l648" style="background-color: #ffcccc">                                      distrb_info,  field_loc_center,      &amp;</a>
+   649) <a name="l649" style="background-color: #ffcccc">                                      tarea)</a>
+   650) <a name="l650" style="background-color: #ffcccc">               endif            ! tracer_type</a>
+   651) <a name="l651" style="background-color: #ffcccc">            enddo               ! nt</a>
+   652) <a name="l652" style="background-color: #ffcccc">         enddo                  ! n</a>
+   653) <a name="l653" style="background-color: #ffcccc"></a>
+   654) <a name="l654" style="background-color: #ffcccc"></a>
+   655) <a name="l655" style="background-color: #ffcccc">         if (my_task == master_task) then</a>
+   656) <a name="l656" style="background-color: #ffcccc">            call global_conservation (l_stop,     &amp;</a>
+   657) <a name="l657" style="background-color: #ffcccc">                                      asum_init(0), asum_final(0))</a>
+   658) <a name="l658" style="background-color: #ffcccc"></a>
+   659) <a name="l659" style="background-color: #ffcccc">            if (l_stop) then</a>
+   660) <a name="l660" style="background-color: #ffcccc">               write (nu_diag,*) 'istep1 =', istep1</a>
+   661) <a name="l661" style="background-color: #ffcccc">               write (nu_diag,*) 'transport: conservation error, cat 0'</a>
+   662) <a name="l662" style="background-color: #ffcccc">               l_stop = .false.</a>
+   663) <a name="l663" style="background-color: #ffcccc">               call abort_ice('ice remap transport: conservation error')</a>
+   664) <a name="l664" style="background-color: #ffcccc">            endif</a>
+   665) <a name="l665" style="background-color: #ffcccc"></a>
+   666) <a name="l666" style="background-color: #ffcccc">            do n = 1, ncat               </a>
+   667) <a name="l667" style="background-color: #ffcccc">               call global_conservation                                 &amp;</a>
+   668) <a name="l668" style="background-color: #ffcccc">                                     (l_stop,                           &amp;</a>
+   669) <a name="l669" style="background-color: #ffcccc">                                      asum_init(n),    asum_final(n),   &amp;</a>
+   670) <a name="l670" style="background-color: #ffcccc">                                      atsum_init(:,n), atsum_final(:,n))</a>
+   671) <a name="l671" style="background-color: #ffcccc"></a>
+   672) <a name="l672" style="background-color: #ffcccc">               if (l_stop) then</a>
+   673) <a name="l673" style="background-color: #ffcccc">                  write (nu_diag,*) 'istep1, cat =',     &amp;</a>
+   674) <a name="l674" style="background-color: #ffcccc">                                     istep1, n</a>
+   675) <a name="l675" style="background-color: #ffcccc">                  write (nu_diag,*) 'transport: conservation error, cat ',n</a>
+   676) <a name="l676" style="background-color: #ffcccc">                  l_stop = .false.</a>
+   677) <a name="l677" style="background-color: #ffcccc">                  call abort_ice     &amp;</a>
+   678) <a name="l678" style="background-color: #ffcccc">                       ('ice remap transport: conservation error')</a>
+   679) <a name="l679" style="background-color: #ffcccc">               endif</a>
+   680) <a name="l680" style="background-color: #ffcccc">            enddo               ! n</a>
+   681) <a name="l681" style="background-color: #ffcccc"></a>
+   682) <a name="l682" style="background-color: #ffcccc">         endif                  ! my_task = master_task</a>
+   683) <a name="l683" style="background-color: #ffcccc"></a>
+   684) <a name="l684" style="background-color: #ffcccc">      endif                     ! l_conservation_check</a>
+   685) <a name="l685" style="background-color: #ffcccc"></a>
+   686) <a name="l686" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   687) <a name="l687" style="background-color: #ffcccc">    ! Check tracer monotonicity.  (Optional)</a>
+   688) <a name="l688" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   689) <a name="l689" style="background-color: #ffcccc"></a>
+   690) <a name="l690" style="background-color: #ffcccc">      if (l_monotonicity_check .and. mod(istep,diagfreq) == 0) then</a>
+   691) <a name="l691" style="background-color: #ffcccc">         do iblk = 1, nblocks</a>
+   692) <a name="l692" style="background-color: #ffcccc">            this_block = get_block(blocks_ice(iblk),iblk)         </a>
+   693) <a name="l693" style="background-color: #ffcccc">            ilo = this_block%ilo</a>
+   694) <a name="l694" style="background-color: #ffcccc">            ihi = this_block%ihi</a>
+   695) <a name="l695" style="background-color: #ffcccc">            jlo = this_block%jlo</a>
+   696) <a name="l696" style="background-color: #ffcccc">            jhi = this_block%jhi</a>
+   697) <a name="l697" style="background-color: #ffcccc"></a>
+   698) <a name="l698" style="background-color: #ffcccc">            do n = 1, ncat</a>
+   699) <a name="l699" style="background-color: #ffcccc">               call check_monotonicity      &amp;</a>
+   700) <a name="l700" style="background-color: #ffcccc">                               (nx_block,           ny_block,     &amp;</a>
+   701) <a name="l701" style="background-color: #ffcccc">                                ilo, ihi, jlo, jhi,     &amp;</a>
+   702) <a name="l702" style="background-color: #ffcccc">                                iblk,     &amp;</a>
+   703) <a name="l703" style="background-color: #ffcccc">                                tmin(:,:,:,n,iblk), tmax(:,:,:,n,iblk),  &amp;</a>
+   704) <a name="l704" style="background-color: #ffcccc">                                aim (:,:,  n,iblk), trm (:,:,:,n,iblk),  &amp;</a>
+   705) <a name="l705" style="background-color: #ffcccc">                                l_stop,     &amp;</a>
+   706) <a name="l706" style="background-color: #ffcccc">                                istop,              jstop)</a>
+   707) <a name="l707" style="background-color: #ffcccc"></a>
+   708) <a name="l708" style="background-color: #ffcccc">               if (l_stop) then</a>
+   709) <a name="l709" style="background-color: #ffcccc">                  write (nu_diag,*) 'istep1, my_task, iblk, cat =',     &amp;</a>
+   710) <a name="l710" style="background-color: #ffcccc">                                     istep1, my_task, iblk, n</a>
+   711) <a name="l711" style="background-color: #ffcccc">                  write (nu_diag,*) 'i_glob, j_glob',this_block%i_glob(istop), &amp;</a>
+   712) <a name="l712" style="background-color: #ffcccc">                                                     this_block%j_glob(jstop)</a>
+   713) <a name="l713" style="background-color: #ffcccc">                  call abort_ice('ice remap transport: monotonicity error')</a>
+   714) <a name="l714" style="background-color: #ffcccc">               endif</a>
+   715) <a name="l715" style="background-color: #ffcccc"></a>
+   716) <a name="l716" style="background-color: #ffcccc">            enddo               ! n</a>
+   717) <a name="l717" style="background-color: #ffcccc"></a>
+   718) <a name="l718" style="background-color: #ffcccc">         enddo                  ! iblk</a>
+   719) <a name="l719" style="background-color: #ffcccc"></a>
+   720) <a name="l720" style="background-color: #ffcccc">         deallocate(tmin, tmax, STAT=alloc_error)</a>
+   721) <a name="l721" style="background-color: #ffcccc">         if (alloc_error /= 0) call abort_ice ('deallocation error')</a>
+   722) <a name="l722" style="background-color: #ffcccc"></a>
+   723) <a name="l723" style="background-color: #ffcccc">      endif                     ! l_monotonicity_check</a>
+   724) <a name="l724" style="background-color: #ffcccc"></a>
+   725) <a name="l725" style="background-color: #ffcccc">      call ice_timer_stop(timer_advect)  ! advection </a>
+   726) <a name="l726" style="background-color: #ffcccc">      call t_stopf   ('cice_remap_check2')</a>
+   727) <a name="l727" style="background-color: #ffcccc"></a>
+   728) <a name="l728" style="background-color: #ffcccc">      end subroutine transport_remap</a>
+   729) <a name="l729" style="background-color: #ffffff"></a>
+   730) <a name="l730" style="background-color: #ffffff">!=======================================================================</a>
+   731) <a name="l731" style="background-color: #ffffff">!BOP</a>
+   732) <a name="l732" style="background-color: #ffffff">!</a>
+   733) <a name="l733" style="background-color: #ffffff">! !IROUTINE: transport_upwind - upwind transport</a>
+   734) <a name="l734" style="background-color: #ffffff">!</a>
+   735) <a name="l735" style="background-color: #ffffff">! !INTERFACE:</a>
+   736) <a name="l736" style="background-color: #ffffff">!</a>
+   737) <a name="l737" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">transport_upwind (dt)</a>
+   738) <a name="l738" style="background-color: #ffcccc">!</a>
+   739) <a name="l739" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+   740) <a name="l740" style="background-color: #ffcccc">!</a>
+   741) <a name="l741" style="background-color: #ffcccc">! Computes the transport equations for one timestep using upwind. Sets</a>
+   742) <a name="l742" style="background-color: #ffcccc">! several fields into a work array and passes it to upwind routine.</a>
+   743) <a name="l743" style="background-color: #ffcccc">!</a>
+   744) <a name="l744" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   745) <a name="l745" style="background-color: #ffcccc">!</a>
+   746) <a name="l746" style="background-color: #ffcccc">! same as module</a>
+   747) <a name="l747" style="background-color: #ffcccc">!</a>
+   748) <a name="l748" style="background-color: #ffcccc">! !USES:</a>
+   749) <a name="l749" style="background-color: #ffcccc">!</a>
+   750) <a name="l750" style="background-color: #ffcccc">      use ice_boundary</a>
+   751) <a name="l751" style="background-color: #ffcccc">      use ice_blocks</a>
+   752) <a name="l752" style="background-color: #ffcccc">      use ice_domain</a>
+   753) <a name="l753" style="background-color: #ffcccc">      use ice_state</a>
+   754) <a name="l754" style="background-color: #ffcccc">      use ice_grid, only: HTE, HTN, tarea</a>
+   755) <a name="l755" style="background-color: #ffcccc">      use ice_timers</a>
+   756) <a name="l756" style="background-color: #ffcccc">!</a>
+   757) <a name="l757" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+   758) <a name="l758" style="background-color: #ffcccc">!</a>
+   759) <a name="l759" style="background-color: #ffcccc">      real (kind=dbl_kind), intent(in) ::     &amp;</a>
+   760) <a name="l760" style="background-color: #ffcccc">         dt      ! time step</a>
+   761) <a name="l761" style="background-color: #ffcccc">!</a>
+   762) <a name="l762" style="background-color: #ffcccc">!EOP</a>
+   763) <a name="l763" style="background-color: #ffcccc">!</a>
+   764) <a name="l764" style="background-color: #ffcccc">      integer (kind=int_kind) ::     &amp;</a>
+   765) <a name="l765" style="background-color: #ffcccc">         narr               ! number of state variable arrays</a>
+   766) <a name="l766" style="background-color: #ffcccc">                            ! not including eicen, esnon</a>
+   767) <a name="l767" style="background-color: #ffcccc"></a>
+   768) <a name="l768" style="background-color: #ffcccc">      integer (kind=int_kind) ::     &amp;</a>
+   769) <a name="l769" style="background-color: #ffcccc">         i, j, iblk       ,&amp;! horizontal indices</a>
+   770) <a name="l770" style="background-color: #ffcccc">         ilo,ihi,jlo,jhi    ! beginning and end of physical domain</a>
+   771) <a name="l771" style="background-color: #ffcccc"></a>
+   772) <a name="l772" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,nblocks) ::     &amp;</a>
+   773) <a name="l773" style="background-color: #ffcccc">         uee, vnn           ! cell edge velocities</a>
+   774) <a name="l774" style="background-color: #ffcccc"></a>
+   775) <a name="l775" style="background-color: #ffcccc">      real (kind=dbl_kind),     &amp;</a>
+   776) <a name="l776" style="background-color: #ffcccc">         dimension (:,:,:,:), allocatable ::      &amp;</a>
+   777) <a name="l777" style="background-color: #ffcccc">         works              ! work array</a>
+   778) <a name="l778" style="background-color: #ffcccc"></a>
+   779) <a name="l779" style="background-color: #ffcccc">      type (block) ::     &amp;</a>
+   780) <a name="l780" style="background-color: #ffcccc">         this_block           ! block information for current block</a>
+   781) <a name="l781" style="background-color: #ffcccc"></a>
+   782) <a name="l782" style="background-color: #ffcccc">      call ice_timer_start(timer_advect)  ! advection </a>
+   783) <a name="l783" style="background-color: #ffcccc"></a>
+   784) <a name="l784" style="background-color: #ffcccc">      narr = 1 + ncat*(3+ntrcr) ! max number of state variable arrays</a>
+   785) <a name="l785" style="background-color: #ffcccc">                                ! not including eicen, esnon</a>
+   786) <a name="l786" style="background-color: #ffcccc"></a>
+   787) <a name="l787" style="background-color: #ffcccc">      allocate (works(nx_block,ny_block,narr,max_blocks))</a>
+   788) <a name="l788" style="background-color: #ffcccc"></a>
+   789) <a name="l789" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   790) <a name="l790" style="background-color: #ffcccc">    ! Get ghost cell values of state variables.</a>
+   791) <a name="l791" style="background-color: #ffcccc">    ! (Assume velocities are already known for ghost cells, also.)</a>
+   792) <a name="l792" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   793) <a name="l793" style="background-color: #ffcccc">!      call bound_state (aicen, trcrn,     &amp;</a>
+   794) <a name="l794" style="background-color: #ffcccc">!                        vicen, vsnon,     &amp;</a>
+   795) <a name="l795" style="background-color: #ffcccc">!                        eicen, esnon)</a>
+   796) <a name="l796" style="background-color: #ffcccc"></a>
+   797) <a name="l797" style="background-color: #ffcccc">      uee(:,:,:) = c0</a>
+   798) <a name="l798" style="background-color: #ffcccc">      vnn(:,:,:) = c0</a>
+   799) <a name="l799" style="background-color: #ffcccc"></a>
+   800) <a name="l800" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   801) <a name="l801" style="background-color: #ffcccc">    ! Average corner velocities to edges.</a>
+   802) <a name="l802" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   803) <a name="l803" style="background-color: #ffcccc">      </a>
+   804) <a name="l804" style="background-color: #ffcccc">      !$OMP PARALLEL DO PRIVATE(iblk,this_block,i,j,ilo,ihi,jlo,jhi)</a>
+   805) <a name="l805" style="background-color: #ffcccc">      do iblk = 1, nblocks</a>
+   806) <a name="l806" style="background-color: #ffcccc">         this_block = get_block(blocks_ice(iblk),iblk)         </a>
+   807) <a name="l807" style="background-color: #ffcccc">         ilo = this_block%ilo</a>
+   808) <a name="l808" style="background-color: #ffcccc">         ihi = this_block%ihi</a>
+   809) <a name="l809" style="background-color: #ffcccc">         jlo = this_block%jlo</a>
+   810) <a name="l810" style="background-color: #ffcccc">         jhi = this_block%jhi</a>
+   811) <a name="l811" style="background-color: #ffcccc"></a>
+   812) <a name="l812" style="background-color: #ffcccc">         do j = jlo, jhi</a>
+   813) <a name="l813" style="background-color: #ffcccc">         do i = ilo, ihi</a>
+   814) <a name="l814" style="background-color: #ffcccc">            uee(i,j,iblk) = p5*(uvel(i,j,iblk) + uvel(i,j-1,iblk))</a>
+   815) <a name="l815" style="background-color: #ffcccc">            vnn(i,j,iblk) = p5*(vvel(i,j,iblk) + vvel(i-1,j,iblk))</a>
+   816) <a name="l816" style="background-color: #ffcccc">         enddo</a>
+   817) <a name="l817" style="background-color: #ffcccc">         enddo</a>
+   818) <a name="l818" style="background-color: #ffcccc">      enddo</a>
+   819) <a name="l819" style="background-color: #ffcccc">      !$OMP END PARALLEL DO</a>
+   820) <a name="l820" style="background-color: #ffcccc"></a>
+   821) <a name="l821" style="background-color: #ffcccc">      call ice_timer_start(timer_bound)</a>
+   822) <a name="l822" style="background-color: #ffcccc">      call ice_HaloUpdate (uee,             halo_info,     &amp;</a>
+   823) <a name="l823" style="background-color: #ffcccc">                           field_loc_Eface, field_type_vector)</a>
+   824) <a name="l824" style="background-color: #ffcccc">      call ice_HaloUpdate (vnn,             halo_info,     &amp;</a>
+   825) <a name="l825" style="background-color: #ffcccc">                           field_loc_Nface, field_type_vector)</a>
+   826) <a name="l826" style="background-color: #ffcccc">      call ice_timer_stop(timer_bound)</a>
+   827) <a name="l827" style="background-color: #ffcccc"></a>
+   828) <a name="l828" style="background-color: #ffcccc">      !$OMP PARALLEL DO PRIVATE(iblk,this_block,ilo,ihi,jlo,jhi)</a>
+   829) <a name="l829" style="background-color: #ffcccc">      do iblk = 1, nblocks</a>
+   830) <a name="l830" style="background-color: #ffcccc">         this_block = get_block(blocks_ice(iblk),iblk)         </a>
+   831) <a name="l831" style="background-color: #ffcccc">         ilo = this_block%ilo</a>
+   832) <a name="l832" style="background-color: #ffcccc">         ihi = this_block%ihi</a>
+   833) <a name="l833" style="background-color: #ffcccc">         jlo = this_block%jlo</a>
+   834) <a name="l834" style="background-color: #ffcccc">         jhi = this_block%jhi</a>
+   835) <a name="l835" style="background-color: #ffcccc"></a>
+   836) <a name="l836" style="background-color: #ffcccc"></a>
+   837) <a name="l837" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+   838) <a name="l838" style="background-color: #ffcccc">      ! fill work arrays with fields to be advected</a>
+   839) <a name="l839" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+   840) <a name="l840" style="background-color: #ffcccc"></a>
+   841) <a name="l841" style="background-color: #ffcccc">         call state_to_work (nx_block,             ny_block,             &amp;</a>
+   842) <a name="l842" style="background-color: #ffcccc">                             ntrcr,                                      &amp;</a>
+   843) <a name="l843" style="background-color: #ffcccc">                             narr,                 trcr_depend,          &amp;</a>
+   844) <a name="l844" style="background-color: #ffcccc">                             aicen (:,:,  :,iblk), trcrn (:,:,:,:,iblk), &amp;</a>
+   845) <a name="l845" style="background-color: #ffcccc">                             vicen (:,:,  :,iblk), vsnon (:,:,  :,iblk), &amp;</a>
+   846) <a name="l846" style="background-color: #ffcccc">                             aice0 (:,:,    iblk), works (:,:,  :,iblk))</a>
+   847) <a name="l847" style="background-color: #ffcccc"></a>
+   848) <a name="l848" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+   849) <a name="l849" style="background-color: #ffcccc">      ! advect</a>
+   850) <a name="l850" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+   851) <a name="l851" style="background-color: #ffcccc"></a>
+   852) <a name="l852" style="background-color: #ffcccc">         call upwind_field (nx_block,       ny_block,               &amp;</a>
+   853) <a name="l853" style="background-color: #ffcccc">                            ilo, ihi,       jlo, jhi,               &amp;</a>
+   854) <a name="l854" style="background-color: #ffcccc">                            dt,                                     &amp;</a>
+   855) <a name="l855" style="background-color: #ffcccc">                            narr,           works(:,:,:,iblk),      &amp;</a>
+   856) <a name="l856" style="background-color: #ffcccc">                            uee(:,:,iblk),  vnn    (:,:,iblk),      &amp;</a>
+   857) <a name="l857" style="background-color: #ffcccc">                            HTE(:,:,iblk),  HTN    (:,:,iblk),      &amp;</a>
+   858) <a name="l858" style="background-color: #ffcccc">                            tarea(:,:,iblk))</a>
+   859) <a name="l859" style="background-color: #ffcccc"></a>
+   860) <a name="l860" style="background-color: #ffcccc">         call upwind_field (nx_block,       ny_block,               &amp;</a>
+   861) <a name="l861" style="background-color: #ffcccc">                            ilo, ihi,       jlo, jhi,               &amp;</a>
+   862) <a name="l862" style="background-color: #ffcccc">                            dt,                                     &amp;</a>
+   863) <a name="l863" style="background-color: #ffcccc">                            ntilyr,         eicen(:,:,:,iblk),      &amp;</a>
+   864) <a name="l864" style="background-color: #ffcccc">                            uee(:,:,iblk),  vnn    (:,:,iblk),      &amp;</a>
+   865) <a name="l865" style="background-color: #ffcccc">                            HTE(:,:,iblk),  HTN    (:,:,iblk),      &amp;</a>
+   866) <a name="l866" style="background-color: #ffcccc">                            tarea(:,:,iblk))</a>
+   867) <a name="l867" style="background-color: #ffcccc"></a>
+   868) <a name="l868" style="background-color: #ffcccc">         call upwind_field (nx_block,       ny_block,               &amp;</a>
+   869) <a name="l869" style="background-color: #ffcccc">                            ilo, ihi,       jlo, jhi,               &amp;</a>
+   870) <a name="l870" style="background-color: #ffcccc">                            dt,                                     &amp;</a>
+   871) <a name="l871" style="background-color: #ffcccc">                            ntslyr,         esnon(:,:,:,iblk),      &amp;</a>
+   872) <a name="l872" style="background-color: #ffcccc">                            uee(:,:,iblk),  vnn    (:,:,iblk),      &amp;</a>
+   873) <a name="l873" style="background-color: #ffcccc">                            HTE(:,:,iblk),  HTN    (:,:,iblk),      &amp;</a>
+   874) <a name="l874" style="background-color: #ffcccc">                            tarea(:,:,iblk))</a>
+   875) <a name="l875" style="background-color: #ffcccc"></a>
+   876) <a name="l876" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+   877) <a name="l877" style="background-color: #ffcccc">      ! convert work arrays back to state variables</a>
+   878) <a name="l878" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+   879) <a name="l879" style="background-color: #ffcccc"></a>
+   880) <a name="l880" style="background-color: #ffcccc">         call work_to_state (nx_block,            ny_block,              &amp;</a>
+   881) <a name="l881" style="background-color: #ffcccc">                             ntrcr,                                      &amp;</a>
+   882) <a name="l882" style="background-color: #ffcccc">                             narr,                trcr_depend,           &amp;</a>
+   883) <a name="l883" style="background-color: #ffcccc">                             aicen(:,:,  :,iblk), trcrn (:,:,:,:,iblk),  &amp;</a>
+   884) <a name="l884" style="background-color: #ffcccc">                             vicen(:,:,  :,iblk), vsnon (:,:,  :,iblk),  &amp;</a>
+   885) <a name="l885" style="background-color: #ffcccc">                             aice0(:,:,    iblk), works (:,:,  :,iblk)) </a>
+   886) <a name="l886" style="background-color: #ffcccc"></a>
+   887) <a name="l887" style="background-color: #ffcccc">      enddo                     ! iblk</a>
+   888) <a name="l888" style="background-color: #ffcccc">      !$OMP END PARALLEL DO</a>
+   889) <a name="l889" style="background-color: #ffcccc"> </a>
+   890) <a name="l890" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   891) <a name="l891" style="background-color: #ffcccc">    ! Ghost cell updates for state variables.</a>
+   892) <a name="l892" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+   893) <a name="l893" style="background-color: #ffcccc"></a>
+   894) <a name="l894" style="background-color: #ffcccc">      call ice_timer_start(timer_bound)</a>
+   895) <a name="l895" style="background-color: #ffcccc"></a>
+   896) <a name="l896" style="background-color: #ffcccc">      call bound_state (aicen, trcrn,     &amp;</a>
+   897) <a name="l897" style="background-color: #ffcccc">                        vicen, vsnon,      &amp;</a>
+   898) <a name="l898" style="background-color: #ffcccc">                        eicen, esnon)</a>
+   899) <a name="l899" style="background-color: #ffcccc"></a>
+   900) <a name="l900" style="background-color: #ffcccc">      call ice_timer_stop(timer_bound)</a>
+   901) <a name="l901" style="background-color: #ffcccc"></a>
+   902) <a name="l902" style="background-color: #ffcccc">      call ice_timer_stop(timer_advect)  ! advection </a>
+   903) <a name="l903" style="background-color: #ffcccc"></a>
+   904) <a name="l904" style="background-color: #ffcccc">      deallocate(works)</a>
+   905) <a name="l905" style="background-color: #ffcccc"></a>
+   906) <a name="l906" style="background-color: #ffcccc">      end subroutine transport_upwind</a>
+   907) <a name="l907" style="background-color: #ffffff"></a>
+   908) <a name="l908" style="background-color: #ffffff">!=======================================================================</a>
+   909) <a name="l909" style="background-color: #ffffff">! The next few subroutines (through check_monotonicity) are called</a>
+   910) <a name="l910" style="background-color: #ffffff">! by transport_remap.</a>
+   911) <a name="l911" style="background-color: #ffffff">!=======================================================================</a>
+   912) <a name="l912" style="background-color: #ffffff">!</a>
+   913) <a name="l913" style="background-color: #ffffff">!BOP</a>
+   914) <a name="l914" style="background-color: #ffffff">!</a>
+   915) <a name="l915" style="background-color: #ffffff">! !IROUTINE: state_to_tracers -fill ice area and tracer arrays</a>
+   916) <a name="l916" style="background-color: #ffffff">!</a>
+   917) <a name="l917" style="background-color: #ffffff">! !INTERFACE:</a>
+   918) <a name="l918" style="background-color: #ffffff">!</a>
+   919) <a name="l919" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">state_to_tracers (nx_block, ny_block,   &amp;</a>
+   920) <a name="l920" style="background-color: #ffcccc">                                   ntrcr,    ntrace,     &amp;</a>
+   921) <a name="l921" style="background-color: #ffcccc">                                   aice0,                &amp;</a>
+   922) <a name="l922" style="background-color: #ffcccc">                                   aicen,    trcrn,      &amp;</a>
+   923) <a name="l923" style="background-color: #ffcccc">                                   vicen,    vsnon,      &amp;</a>
+   924) <a name="l924" style="background-color: #ffcccc">                                   eicen,    esnon,      &amp;</a>
+   925) <a name="l925" style="background-color: #ffcccc">                                   aim,      trm)</a>
+   926) <a name="l926" style="background-color: #ffcccc">!</a>
+   927) <a name="l927" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+   928) <a name="l928" style="background-color: #ffcccc">!</a>
+   929) <a name="l929" style="background-color: #ffcccc">! Fill ice area and tracer arrays.</a>
+   930) <a name="l930" style="background-color: #ffcccc">! Assume that the advected tracers are hicen, hsnon, trcrn, </a>
+   931) <a name="l931" style="background-color: #ffcccc">!  qicen(1:nilyr), and qsnon(1:nslyr).</a>
+   932) <a name="l932" style="background-color: #ffcccc">! This subroutine must be modified if a different set of tracers</a>
+   933) <a name="l933" style="background-color: #ffcccc">!   is to be transported.  The rule for ordering tracers</a>
+   934) <a name="l934" style="background-color: #ffcccc">!   is that a dependent tracer (such as qice) must have a larger</a>
+   935) <a name="l935" style="background-color: #ffcccc">!   tracer index than the tracer it depends on (i.e., hice).</a>
+   936) <a name="l936" style="background-color: #ffcccc">!</a>
+   937) <a name="l937" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   938) <a name="l938" style="background-color: #ffcccc">!</a>
+   939) <a name="l939" style="background-color: #ffcccc">! author William H. Lipscomb, LANL</a>
+   940) <a name="l940" style="background-color: #ffcccc">!</a>
+   941) <a name="l941" style="background-color: #ffcccc">! !USES:</a>
+   942) <a name="l942" style="background-color: #ffcccc">!</a>
+   943) <a name="l943" style="background-color: #ffcccc">      use ice_itd, only: ilyr1, slyr1</a>
+   944) <a name="l944" style="background-color: #ffcccc">!</a>
+   945) <a name="l945" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+   946) <a name="l946" style="background-color: #ffcccc">!</a>
+   947) <a name="l947" style="background-color: #ffcccc">      integer (kind=int_kind), intent(in) ::     &amp;</a>
+   948) <a name="l948" style="background-color: #ffcccc">           nx_block, ny_block, &amp;  ! block dimensions</a>
+   949) <a name="l949" style="background-color: #ffcccc">           ntrcr             , &amp; ! number of tracers in use</a>
+   950) <a name="l950" style="background-color: #ffcccc">           ntrace                ! number of tracers in use incl. hi, hs</a>
+   951) <a name="l951" style="background-color: #ffcccc"></a>
+   952) <a name="l952" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block),     &amp;</a>
+   953) <a name="l953" style="background-color: #ffcccc">           intent(in) ::     &amp;</a>
+   954) <a name="l954" style="background-color: #ffcccc">           aice0     ! fractional open water area</a>
+   955) <a name="l955" style="background-color: #ffcccc"></a>
+   956) <a name="l956" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,ncat),     &amp;</a>
+   957) <a name="l957" style="background-color: #ffcccc">           intent(in) ::     &amp;</a>
+   958) <a name="l958" style="background-color: #ffcccc">           aicen   ,&amp;! fractional ice area</a>
+   959) <a name="l959" style="background-color: #ffcccc">           vicen   ,&amp;! volume per unit area of ice          (m)</a>
+   960) <a name="l960" style="background-color: #ffcccc">           vsnon     ! volume per unit area of snow         (m)</a>
+   961) <a name="l961" style="background-color: #ffcccc"></a>
+   962) <a name="l962" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,max_ntrcr,ncat),     &amp;</a>
+   963) <a name="l963" style="background-color: #ffcccc">           intent(in) ::     &amp;</a>
+   964) <a name="l964" style="background-color: #ffcccc">           trcrn     ! ice area tracers</a>
+   965) <a name="l965" style="background-color: #ffcccc"></a>
+   966) <a name="l966" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,ntilyr),     &amp;</a>
+   967) <a name="l967" style="background-color: #ffcccc">           intent(in) ::     &amp;</a>
+   968) <a name="l968" style="background-color: #ffcccc">           eicen     ! energy of melting for each ice layer (J/m^2)</a>
+   969) <a name="l969" style="background-color: #ffcccc"></a>
+   970) <a name="l970" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,ntslyr),     &amp;</a>
+   971) <a name="l971" style="background-color: #ffcccc">           intent(in) ::     &amp;</a>
+   972) <a name="l972" style="background-color: #ffcccc">           esnon     ! energy of melting for each snow layer (J/m^2)</a>
+   973) <a name="l973" style="background-color: #ffcccc"></a>
+   974) <a name="l974" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,0:ncat),     &amp;</a>
+   975) <a name="l975" style="background-color: #ffcccc">            intent(out)::     &amp;</a>
+   976) <a name="l976" style="background-color: #ffcccc">           aim       ! mean ice area in each grid cell</a>
+   977) <a name="l977" style="background-color: #ffcccc"></a>
+   978) <a name="l978" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,max_ntrace,ncat),  &amp;</a>
+   979) <a name="l979" style="background-color: #ffcccc">           intent(out) ::     &amp;</a>
+   980) <a name="l980" style="background-color: #ffcccc">           trm       ! mean tracer values in each grid cell</a>
+   981) <a name="l981" style="background-color: #ffcccc"></a>
+   982) <a name="l982" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block) :: &amp;</a>
+   983) <a name="l983" style="background-color: #ffcccc">         worka, &amp;</a>
+   984) <a name="l984" style="background-color: #ffcccc">         workb</a>
+   985) <a name="l985" style="background-color: #ffcccc">!</a>
+   986) <a name="l986" style="background-color: #ffcccc">!EOP</a>
+   987) <a name="l987" style="background-color: #ffcccc">!</a>
+   988) <a name="l988" style="background-color: #ffcccc">      integer (kind=int_kind) ::     &amp;</a>
+   989) <a name="l989" style="background-color: #ffcccc">           i, j, k, n   ,&amp;! standard indices</a>
+   990) <a name="l990" style="background-color: #ffcccc">           it, kt       ,&amp;! tracer indices</a>
+   991) <a name="l991" style="background-color: #ffcccc">           ij             ! combined i/j index</a>
+   992) <a name="l992" style="background-color: #ffcccc"></a>
+   993) <a name="l993" style="background-color: #ffcccc">      real (kind=dbl_kind) ::     &amp;</a>
+   994) <a name="l994" style="background-color: #ffcccc">           w1             ! work variable</a>
+   995) <a name="l995" style="background-color: #ffcccc"></a>
+   996) <a name="l996" style="background-color: #ffcccc">      integer (kind=int_kind), dimension(nx_block*ny_block,0:ncat) ::  &amp;</a>
+   997) <a name="l997" style="background-color: #ffcccc">           indxi        ,&amp;! compressed i/j indices</a>
+   998) <a name="l998" style="background-color: #ffcccc">           indxj</a>
+   999) <a name="l999" style="background-color: #ffcccc"></a>
+  1000) <a name="l1000" style="background-color: #ffcccc">      integer (kind=int_kind), dimension(0:ncat) ::     &amp;</a>
+  1001) <a name="l1001" style="background-color: #ffcccc">           icells         ! number of cells with ice</a>
+  1002) <a name="l1002" style="background-color: #ffcccc"></a>
+  1003) <a name="l1003" style="background-color: #ffcccc">      worka(:,:) = c0</a>
+  1004) <a name="l1004" style="background-color: #ffcccc">      workb(:,:) = c0</a>
+  1005) <a name="l1005" style="background-color: #ffcccc"></a>
+  1006) <a name="l1006" style="background-color: #ffcccc">      aim(:,:,0) = aice0(:,:)</a>
+  1007) <a name="l1007" style="background-color: #ffcccc"></a>
+  1008) <a name="l1008" style="background-color: #ffcccc">      do n = 1, ncat</a>
+  1009) <a name="l1009" style="background-color: #ffcccc"></a>
+  1010) <a name="l1010" style="background-color: #ffcccc">         trm(:,:,:,n) = c0</a>
+  1011) <a name="l1011" style="background-color: #ffcccc"></a>
+  1012) <a name="l1012" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+  1013) <a name="l1013" style="background-color: #ffcccc">    ! Find grid cells where ice is present and fill area array.</a>
+  1014) <a name="l1014" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+  1015) <a name="l1015" style="background-color: #ffcccc"></a>
+  1016) <a name="l1016" style="background-color: #ffcccc">         icells(n) = 0</a>
+  1017) <a name="l1017" style="background-color: #ffcccc">         do j = 1, ny_block</a>
+  1018) <a name="l1018" style="background-color: #ffcccc">         do i = 1, nx_block</a>
+  1019) <a name="l1019" style="background-color: #ffcccc">            aim(i,j,n) = aicen(i,j,n)</a>
+  1020) <a name="l1020" style="background-color: #ffcccc">            if (aim(i,j,n) &gt; puny) then</a>
+  1021) <a name="l1021" style="background-color: #ffcccc">               icells(n) = icells(n) + 1</a>
+  1022) <a name="l1022" style="background-color: #ffcccc">               ij = icells(n)</a>
+  1023) <a name="l1023" style="background-color: #ffcccc">               indxi(ij,n) = i</a>
+  1024) <a name="l1024" style="background-color: #ffcccc">               indxj(ij,n) = j</a>
+  1025) <a name="l1025" style="background-color: #ffcccc">            endif               ! aim &gt; puny</a>
+  1026) <a name="l1026" style="background-color: #ffcccc">         enddo</a>
+  1027) <a name="l1027" style="background-color: #ffcccc">         enddo</a>
+  1028) <a name="l1028" style="background-color: #ffcccc">      </a>
+  1029) <a name="l1029" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+  1030) <a name="l1030" style="background-color: #ffcccc">    ! Fill tracer array</a>
+  1031) <a name="l1031" style="background-color: #ffcccc">    ! Note: If aice &gt; 0, then hice &gt; 0, but we can have hsno = 0.</a>
+  1032) <a name="l1032" style="background-color: #ffcccc">    ! Alse note: We transport qice*nilyr rather than qice, so as to</a>
+  1033) <a name="l1033" style="background-color: #ffcccc">    !  avoid extra operations here and in tracers_to_state.</a>
+  1034) <a name="l1034" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+  1035) <a name="l1035" style="background-color: #ffcccc"></a>
+  1036) <a name="l1036" style="background-color: #ffcccc">         do ij = 1, icells(n)</a>
+  1037) <a name="l1037" style="background-color: #ffcccc">            i = indxi(ij,n)</a>
+  1038) <a name="l1038" style="background-color: #ffcccc">            j = indxj(ij,n)</a>
+  1039) <a name="l1039" style="background-color: #ffcccc">            w1 = c1 / aim(i,j,n)</a>
+  1040) <a name="l1040" style="background-color: #ffcccc">            worka(i,j) = c1 / vicen(i,j,n)</a>
+  1041) <a name="l1041" style="background-color: #ffcccc">            trm(i,j,1,n) = vicen(i,j,n) * w1 ! hice</a>
+  1042) <a name="l1042" style="background-color: #ffcccc">            trm(i,j,2,n) = vsnon(i,j,n) * w1 ! hsno</a>
+  1043) <a name="l1043" style="background-color: #ffcccc">            if (trm(i,j,2,n) &gt; puny) then</a>
+  1044) <a name="l1044" style="background-color: #ffcccc">               workb(i,j) = c1 / vsnon(i,j,n)</a>
+  1045) <a name="l1045" style="background-color: #ffcccc">            else</a>
+  1046) <a name="l1046" style="background-color: #ffcccc">               workb(i,j) = c0</a>
+  1047) <a name="l1047" style="background-color: #ffcccc">            endif</a>
+  1048) <a name="l1048" style="background-color: #ffcccc">         enddo</a>
+  1049) <a name="l1049" style="background-color: #ffcccc">         kt = 2</a>
+  1050) <a name="l1050" style="background-color: #ffcccc"></a>
+  1051) <a name="l1051" style="background-color: #ffcccc">         do it = 1, ntrcr</a>
+  1052) <a name="l1052" style="background-color: #ffcccc">            do ij = 1, icells(n)</a>
+  1053) <a name="l1053" style="background-color: #ffcccc">               i = indxi(ij,n)</a>
+  1054) <a name="l1054" style="background-color: #ffcccc">               j = indxj(ij,n)</a>
+  1055) <a name="l1055" style="background-color: #ffcccc">               trm(i,j,kt+it,n) = trcrn(i,j,it,n) ! ice area tracers</a>
+  1056) <a name="l1056" style="background-color: #ffcccc">            enddo</a>
+  1057) <a name="l1057" style="background-color: #ffcccc">         enddo</a>
+  1058) <a name="l1058" style="background-color: #ffcccc">         kt = kt + ntrcr</a>
+  1059) <a name="l1059" style="background-color: #ffcccc"></a>
+  1060) <a name="l1060" style="background-color: #ffcccc">         do k =1, nilyr</a>
+  1061) <a name="l1061" style="background-color: #ffcccc">            do ij = 1, icells(n)</a>
+  1062) <a name="l1062" style="background-color: #ffcccc">               i = indxi(ij,n)</a>
+  1063) <a name="l1063" style="background-color: #ffcccc">               j = indxj(ij,n)</a>
+  1064) <a name="l1064" style="background-color: #ffcccc">               trm(i,j,kt+k,n) = eicen(i,j,ilyr1(n)+k-1)*worka(i,j) ! qice</a>
+  1065) <a name="l1065" style="background-color: #ffcccc">            enddo               ! ij</a>
+  1066) <a name="l1066" style="background-color: #ffcccc">         enddo                  ! ilyr</a>
+  1067) <a name="l1067" style="background-color: #ffcccc">         kt = kt + nilyr</a>
+  1068) <a name="l1068" style="background-color: #ffcccc"></a>
+  1069) <a name="l1069" style="background-color: #ffcccc">         do k = 1, nslyr</a>
+  1070) <a name="l1070" style="background-color: #ffcccc">            do ij = 1, icells(n)</a>
+  1071) <a name="l1071" style="background-color: #ffcccc">               i = indxi(ij,n)</a>
+  1072) <a name="l1072" style="background-color: #ffcccc">               j = indxj(ij,n)</a>
+  1073) <a name="l1073" style="background-color: #ffcccc">               if (trm(i,j,2,n) &gt; puny)    &amp;    ! hsno &gt; puny</a>
+  1074) <a name="l1074" style="background-color: #ffcccc">                 trm(i,j,kt+k,n) = esnon(i,j,slyr1(n)+k-1)*workb(i,j) &amp; ! qsno</a>
+  1075) <a name="l1075" style="background-color: #ffcccc">                                 + rhos*Lfresh</a>
+  1076) <a name="l1076" style="background-color: #ffcccc">            enddo               ! ij</a>
+  1077) <a name="l1077" style="background-color: #ffcccc">         enddo                  ! nslyr</a>
+  1078) <a name="l1078" style="background-color: #ffcccc"></a>
+  1079) <a name="l1079" style="background-color: #ffcccc">      enddo                     ! ncat</a>
+  1080) <a name="l1080" style="background-color: #ffcccc"> </a>
+  1081) <a name="l1081" style="background-color: #ffcccc">      end subroutine state_to_tracers</a>
+  1082) <a name="l1082" style="background-color: #ffffff"></a>
+  1083) <a name="l1083" style="background-color: #ffffff">!=======================================================================</a>
+  1084) <a name="l1084" style="background-color: #ffffff">!BOP</a>
+  1085) <a name="l1085" style="background-color: #ffffff">!</a>
+  1086) <a name="l1086" style="background-color: #ffffff">! !IROUTINE: tracers_to_state - convert tracer array to state variables</a>
+  1087) <a name="l1087" style="background-color: #ffffff">!</a>
+  1088) <a name="l1088" style="background-color: #ffffff">! !INTERFACE:</a>
+  1089) <a name="l1089" style="background-color: #ffffff">!</a>
+  1090) <a name="l1090" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">tracers_to_state (nx_block, ny_block,   &amp;</a>
+  1091) <a name="l1091" style="background-color: #ffcccc">                                   ntrcr,    ntrace,     &amp;</a>
+  1092) <a name="l1092" style="background-color: #ffcccc">                                   aim,      trm,        &amp;</a>
+  1093) <a name="l1093" style="background-color: #ffcccc">                                   aice0,                &amp;</a>
+  1094) <a name="l1094" style="background-color: #ffcccc">                                   aicen,    trcrn,      &amp;</a>
+  1095) <a name="l1095" style="background-color: #ffcccc">                                   vicen,    vsnon,      &amp;</a>
+  1096) <a name="l1096" style="background-color: #ffcccc">                                   eicen,    esnon) </a>
+  1097) <a name="l1097" style="background-color: #ffcccc">!</a>
+  1098) <a name="l1098" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+  1099) <a name="l1099" style="background-color: #ffcccc">!</a>
+  1100) <a name="l1100" style="background-color: #ffcccc">! Convert area and tracer arrays back to state variables.</a>
+  1101) <a name="l1101" style="background-color: #ffcccc">!</a>
+  1102) <a name="l1102" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+  1103) <a name="l1103" style="background-color: #ffcccc">!</a>
+  1104) <a name="l1104" style="background-color: #ffcccc">! author William H. Lipscomb, LANL</a>
+  1105) <a name="l1105" style="background-color: #ffcccc">!</a>
+  1106) <a name="l1106" style="background-color: #ffcccc">! !USES:</a>
+  1107) <a name="l1107" style="background-color: #ffcccc">!</a>
+  1108) <a name="l1108" style="background-color: #ffcccc">      use ice_itd, only: ilyr1, slyr1</a>
+  1109) <a name="l1109" style="background-color: #ffcccc">!</a>
+  1110) <a name="l1110" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+  1111) <a name="l1111" style="background-color: #ffcccc">!</a>
+  1112) <a name="l1112" style="background-color: #ffcccc">      integer (kind=int_kind), intent(in) ::     &amp;</a>
+  1113) <a name="l1113" style="background-color: #ffcccc">           nx_block, ny_block, &amp; ! block dimensions</a>
+  1114) <a name="l1114" style="background-color: #ffcccc">           ntrcr             , &amp; ! number of tracers in use</a>
+  1115) <a name="l1115" style="background-color: #ffcccc">           ntrace                ! number of tracers in use incl. hi, hs</a>
+  1116) <a name="l1116" style="background-color: #ffcccc"></a>
+  1117) <a name="l1117" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,0:ncat),     &amp;</a>
+  1118) <a name="l1118" style="background-color: #ffcccc">           intent(in) ::     &amp;</a>
+  1119) <a name="l1119" style="background-color: #ffcccc">           aim       ! fractional ice area</a>
+  1120) <a name="l1120" style="background-color: #ffcccc"></a>
+  1121) <a name="l1121" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,max_ntrace,ncat),  &amp;</a>
+  1122) <a name="l1122" style="background-color: #ffcccc">           intent(in) ::     &amp;</a>
+  1123) <a name="l1123" style="background-color: #ffcccc">           trm       ! mean tracer values in each grid cell</a>
+  1124) <a name="l1124" style="background-color: #ffcccc"></a>
+  1125) <a name="l1125" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block),     &amp;</a>
+  1126) <a name="l1126" style="background-color: #ffcccc">           intent(inout) ::     &amp;</a>
+  1127) <a name="l1127" style="background-color: #ffcccc">           aice0     ! fractional ice area</a>
+  1128) <a name="l1128" style="background-color: #ffcccc"></a>
+  1129) <a name="l1129" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,ncat),     &amp;</a>
+  1130) <a name="l1130" style="background-color: #ffcccc">           intent(inout) ::     &amp;</a>
+  1131) <a name="l1131" style="background-color: #ffcccc">           aicen   ,&amp;! fractional ice area</a>
+  1132) <a name="l1132" style="background-color: #ffcccc">           vicen   ,&amp;! volume per unit area of ice          (m)</a>
+  1133) <a name="l1133" style="background-color: #ffcccc">           vsnon     ! volume per unit area of snow         (m)</a>
+  1134) <a name="l1134" style="background-color: #ffcccc"></a>
+  1135) <a name="l1135" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,max_ntrcr,ncat),  &amp;</a>
+  1136) <a name="l1136" style="background-color: #ffcccc">           intent(inout) ::     &amp;</a>
+  1137) <a name="l1137" style="background-color: #ffcccc">           trcrn     ! tracers</a>
+  1138) <a name="l1138" style="background-color: #ffcccc"></a>
+  1139) <a name="l1139" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,ntilyr),     &amp;</a>
+  1140) <a name="l1140" style="background-color: #ffcccc">           intent(inout) ::     &amp;</a>
+  1141) <a name="l1141" style="background-color: #ffcccc">           eicen ! energy of melting for each ice layer (J/m^2)</a>
+  1142) <a name="l1142" style="background-color: #ffcccc"></a>
+  1143) <a name="l1143" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,ntslyr),     &amp;</a>
+  1144) <a name="l1144" style="background-color: #ffcccc">           intent(inout) ::     &amp;</a>
+  1145) <a name="l1145" style="background-color: #ffcccc">           esnon ! energy of melting for each snow layer (J/m^2)</a>
+  1146) <a name="l1146" style="background-color: #ffcccc">!</a>
+  1147) <a name="l1147" style="background-color: #ffcccc">!EOP</a>
+  1148) <a name="l1148" style="background-color: #ffcccc">!</a>
+  1149) <a name="l1149" style="background-color: #ffcccc">      integer (kind=int_kind) ::     &amp;</a>
+  1150) <a name="l1150" style="background-color: #ffcccc">           i, j, k, n      ,&amp;! standard indices</a>
+  1151) <a name="l1151" style="background-color: #ffcccc">           it, kt          ,&amp;! tracer indices</a>
+  1152) <a name="l1152" style="background-color: #ffcccc">           icells          ,&amp;! number of cells with ice</a>
+  1153) <a name="l1153" style="background-color: #ffcccc">           ij</a>
+  1154) <a name="l1154" style="background-color: #ffcccc"></a>
+  1155) <a name="l1155" style="background-color: #ffcccc">      integer (kind=int_kind), dimension (nx_block*ny_block) ::     &amp;</a>
+  1156) <a name="l1156" style="background-color: #ffcccc">           indxi, indxj      ! compressed indices</a>
+  1157) <a name="l1157" style="background-color: #ffcccc"></a>
+  1158) <a name="l1158" style="background-color: #ffcccc">      aice0(:,:) = aim(:,:,0)</a>
+  1159) <a name="l1159" style="background-color: #ffcccc"></a>
+  1160) <a name="l1160" style="background-color: #ffcccc">      do n = 1, ncat</a>
+  1161) <a name="l1161" style="background-color: #ffcccc"></a>
+  1162) <a name="l1162" style="background-color: #ffcccc">      icells = 0</a>
+  1163) <a name="l1163" style="background-color: #ffcccc">      do j = 1, ny_block</a>
+  1164) <a name="l1164" style="background-color: #ffcccc">      do i = 1, nx_block</a>
+  1165) <a name="l1165" style="background-color: #ffcccc">         if (aim(i,j,n) &gt; c0) then</a>
+  1166) <a name="l1166" style="background-color: #ffcccc">            icells = icells + 1</a>
+  1167) <a name="l1167" style="background-color: #ffcccc">            indxi(icells) = i</a>
+  1168) <a name="l1168" style="background-color: #ffcccc">            indxj(icells) = j</a>
+  1169) <a name="l1169" style="background-color: #ffcccc">         endif</a>
+  1170) <a name="l1170" style="background-color: #ffcccc">      enddo</a>
+  1171) <a name="l1171" style="background-color: #ffcccc">      enddo</a>
+  1172) <a name="l1172" style="background-color: #ffcccc"></a>
+  1173) <a name="l1173" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+  1174) <a name="l1174" style="background-color: #ffcccc">    ! Compute state variables.</a>
+  1175) <a name="l1175" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+  1176) <a name="l1176" style="background-color: #ffcccc"></a>
+  1177) <a name="l1177" style="background-color: #ffcccc">         do ij = 1, icells</a>
+  1178) <a name="l1178" style="background-color: #ffcccc">            i = indxi(ij)</a>
+  1179) <a name="l1179" style="background-color: #ffcccc">            j = indxj(ij)</a>
+  1180) <a name="l1180" style="background-color: #ffcccc">            aicen(i,j,n) = aim(i,j,n)</a>
+  1181) <a name="l1181" style="background-color: #ffcccc">            vicen(i,j,n) = aim(i,j,n)*trm(i,j,1,n) ! aice*hice</a>
+  1182) <a name="l1182" style="background-color: #ffcccc">            vsnon(i,j,n) = aim(i,j,n)*trm(i,j,2,n) ! aice*hsno</a>
+  1183) <a name="l1183" style="background-color: #ffcccc">         enddo                  ! ij</a>
+  1184) <a name="l1184" style="background-color: #ffcccc">         kt = 2</a>
+  1185) <a name="l1185" style="background-color: #ffcccc"></a>
+  1186) <a name="l1186" style="background-color: #ffcccc">         do it = 1, ntrcr</a>
+  1187) <a name="l1187" style="background-color: #ffcccc">         do ij = 1, icells</a>
+  1188) <a name="l1188" style="background-color: #ffcccc">            i = indxi(ij)</a>
+  1189) <a name="l1189" style="background-color: #ffcccc">            j = indxj(ij)</a>
+  1190) <a name="l1190" style="background-color: #ffcccc">               trcrn(i,j,it,n) = trm(i,j,kt+it,n)  ! ice tracers</a>
+  1191) <a name="l1191" style="background-color: #ffcccc">            enddo               ! ij</a>
+  1192) <a name="l1192" style="background-color: #ffcccc">         enddo                  ! ntrcr</a>
+  1193) <a name="l1193" style="background-color: #ffcccc">         kt = kt + ntrcr</a>
+  1194) <a name="l1194" style="background-color: #ffcccc"></a>
+  1195) <a name="l1195" style="background-color: #ffcccc">         do k = 1, nilyr</a>
+  1196) <a name="l1196" style="background-color: #ffcccc">         do ij = 1, icells</a>
+  1197) <a name="l1197" style="background-color: #ffcccc">            i = indxi(ij)</a>
+  1198) <a name="l1198" style="background-color: #ffcccc">            j = indxj(ij)</a>
+  1199) <a name="l1199" style="background-color: #ffcccc">               eicen(i,j,ilyr1(n)+k-1) = vicen(i,j,n)*trm(i,j,kt+k,n) </a>
+  1200) <a name="l1200" style="background-color: #ffcccc">            enddo               ! ij</a>
+  1201) <a name="l1201" style="background-color: #ffcccc">         enddo                  ! nilyr</a>
+  1202) <a name="l1202" style="background-color: #ffcccc">         kt = kt + nilyr</a>
+  1203) <a name="l1203" style="background-color: #ffcccc"></a>
+  1204) <a name="l1204" style="background-color: #ffcccc">         do k = 1, nslyr</a>
+  1205) <a name="l1205" style="background-color: #ffcccc">         do ij = 1, icells</a>
+  1206) <a name="l1206" style="background-color: #ffcccc">            i = indxi(ij)</a>
+  1207) <a name="l1207" style="background-color: #ffcccc">            j = indxj(ij)</a>
+  1208) <a name="l1208" style="background-color: #ffcccc">               esnon(i,j,slyr1(n)+k-1) = (trm(i,j,kt+k,n) - rhos*Lfresh) &amp;</a>
+  1209) <a name="l1209" style="background-color: #ffcccc">                                         * vsnon(i,j,n)</a>
+  1210) <a name="l1210" style="background-color: #ffcccc">            enddo               ! ij</a>
+  1211) <a name="l1211" style="background-color: #ffcccc">         enddo                  ! nslyr</a>
+  1212) <a name="l1212" style="background-color: #ffcccc"></a>
+  1213) <a name="l1213" style="background-color: #ffcccc">      enddo                     ! ncat</a>
+  1214) <a name="l1214" style="background-color: #ffcccc"></a>
+  1215) <a name="l1215" style="background-color: #ffcccc">      end subroutine tracers_to_state</a>
+  1216) <a name="l1216" style="background-color: #ffffff"></a>
+  1217) <a name="l1217" style="background-color: #ffffff">!=======================================================================</a>
+  1218) <a name="l1218" style="background-color: #ffffff">!</a>
+  1219) <a name="l1219" style="background-color: #ffffff">!BOP</a>
+  1220) <a name="l1220" style="background-color: #ffffff">!</a>
+  1221) <a name="l1221" style="background-color: #ffffff">! !IROUTINE: global_conservation - check for changes in conserved quantities</a>
+  1222) <a name="l1222" style="background-color: #ffffff">!</a>
+  1223) <a name="l1223" style="background-color: #ffffff">! !INTERFACE:</a>
+  1224) <a name="l1224" style="background-color: #ffffff">!</a>
+  1225) <a name="l1225" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">global_conservation (l_stop,                     &amp;</a>
+  1226) <a name="l1226" style="background-color: #ffcccc">                                      asum_init,  asum_final,     &amp;</a>
+  1227) <a name="l1227" style="background-color: #ffcccc">                                      atsum_init, atsum_final)</a>
+  1228) <a name="l1228" style="background-color: #ffcccc">!</a>
+  1229) <a name="l1229" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+  1230) <a name="l1230" style="background-color: #ffcccc">!</a>
+  1231) <a name="l1231" style="background-color: #ffcccc">! Check whether values of conserved quantities have changed.</a>
+  1232) <a name="l1232" style="background-color: #ffcccc">! An error probably means that ghost cells are treated incorrectly.</a>
+  1233) <a name="l1233" style="background-color: #ffcccc">!</a>
+  1234) <a name="l1234" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+  1235) <a name="l1235" style="background-color: #ffcccc">!</a>
+  1236) <a name="l1236" style="background-color: #ffcccc">! author William H. Lipscomb, LANL</a>
+  1237) <a name="l1237" style="background-color: #ffcccc">!</a>
+  1238) <a name="l1238" style="background-color: #ffcccc">! !USES:</a>
+  1239) <a name="l1239" style="background-color: #ffcccc">!</a>
+  1240) <a name="l1240" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+  1241) <a name="l1241" style="background-color: #ffcccc">!</a>
+  1242) <a name="l1242" style="background-color: #ffcccc">      real (kind=dbl_kind), intent(in) ::     &amp;</a>
+  1243) <a name="l1243" style="background-color: #ffcccc">         asum_init   ,&amp;! initial global ice area</a>
+  1244) <a name="l1244" style="background-color: #ffcccc">         asum_final    ! final global ice area</a>
+  1245) <a name="l1245" style="background-color: #ffcccc"></a>
+  1246) <a name="l1246" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension(max_ntrace), intent(in), optional :: &amp;</a>
+  1247) <a name="l1247" style="background-color: #ffcccc">         atsum_init  ,&amp;! initial global ice area*tracer</a>
+  1248) <a name="l1248" style="background-color: #ffcccc">         atsum_final   ! final global ice area*tracer</a>
+  1249) <a name="l1249" style="background-color: #ffcccc"></a>
+  1250) <a name="l1250" style="background-color: #ffcccc">      logical (kind=log_kind), intent(inout) ::     &amp;</a>
+  1251) <a name="l1251" style="background-color: #ffcccc">         l_stop    ! if true, abort on return</a>
+  1252) <a name="l1252" style="background-color: #ffcccc">!</a>
+  1253) <a name="l1253" style="background-color: #ffcccc">!EOP</a>
+  1254) <a name="l1254" style="background-color: #ffcccc">!</a>
+  1255) <a name="l1255" style="background-color: #ffcccc">      integer (kind=int_kind) ::     &amp;</a>
+  1256) <a name="l1256" style="background-color: #ffcccc">           nt            ! tracer index</a>
+  1257) <a name="l1257" style="background-color: #ffcccc"></a>
+  1258) <a name="l1258" style="background-color: #ffcccc">      real (kind=dbl_kind) ::     &amp;</a>
+  1259) <a name="l1259" style="background-color: #ffcccc">           diff          ! difference between initial and final values</a>
+  1260) <a name="l1260" style="background-color: #ffcccc"></a>
+  1261) <a name="l1261" style="background-color: #ffcccc"></a>
+  1262) <a name="l1262" style="background-color: #ffcccc">      if (asum_init &gt; puny) then</a>
+  1263) <a name="l1263" style="background-color: #ffcccc">         diff = asum_final - asum_init</a>
+  1264) <a name="l1264" style="background-color: #ffcccc">         if (abs(diff/asum_init) &gt; puny) then</a>
+  1265) <a name="l1265" style="background-color: #ffcccc">            l_stop = .true.</a>
+  1266) <a name="l1266" style="background-color: #ffcccc">            write (nu_diag,*)</a>
+  1267) <a name="l1267" style="background-color: #ffcccc">            write (nu_diag,*) 'Ice area conserv error'</a>
+  1268) <a name="l1268" style="background-color: #ffcccc">            write (nu_diag,*) 'Initial global area =', asum_init</a>
+  1269) <a name="l1269" style="background-color: #ffcccc">            write (nu_diag,*) 'Final global area =', asum_final</a>
+  1270) <a name="l1270" style="background-color: #ffcccc">            write (nu_diag,*) 'Fractional error =', abs(diff)/asum_init</a>
+  1271) <a name="l1271" style="background-color: #ffcccc">            write (nu_diag,*) 'asum_final-asum_init =', diff</a>
+  1272) <a name="l1272" style="background-color: #ffcccc">         endif</a>
+  1273) <a name="l1273" style="background-color: #ffcccc">      endif</a>
+  1274) <a name="l1274" style="background-color: #ffcccc"></a>
+  1275) <a name="l1275" style="background-color: #ffcccc">      if (present(atsum_init)) then</a>
+  1276) <a name="l1276" style="background-color: #ffcccc">       do nt = 1, ntrace</a>
+  1277) <a name="l1277" style="background-color: #ffcccc">         if (abs(atsum_init(nt)) &gt; puny) then</a>
+  1278) <a name="l1278" style="background-color: #ffcccc">            diff = atsum_final(nt) - atsum_init(nt)</a>
+  1279) <a name="l1279" style="background-color: #ffcccc">            if (abs(diff/atsum_init(nt)) &gt; puny) then</a>
+  1280) <a name="l1280" style="background-color: #ffcccc">               l_stop = .true.</a>
+  1281) <a name="l1281" style="background-color: #ffcccc">               write (nu_diag,*)</a>
+  1282) <a name="l1282" style="background-color: #ffcccc">               write (nu_diag,*) 'area*tracer conserv error'</a>
+  1283) <a name="l1283" style="background-color: #ffcccc">               write (nu_diag,*) 'tracer index =', nt</a>
+  1284) <a name="l1284" style="background-color: #ffcccc">               write (nu_diag,*) 'Initial global area*tracer =',   &amp;</a>
+  1285) <a name="l1285" style="background-color: #ffcccc">                                  atsum_init(nt)</a>
+  1286) <a name="l1286" style="background-color: #ffcccc">               write (nu_diag,*) 'Final global area*tracer =',     &amp;</a>
+  1287) <a name="l1287" style="background-color: #ffcccc">                                  atsum_final(nt)</a>
+  1288) <a name="l1288" style="background-color: #ffcccc">               write (nu_diag,*) 'Fractional error =',             &amp;</a>
+  1289) <a name="l1289" style="background-color: #ffcccc">                                  abs(diff)/atsum_init(nt)</a>
+  1290) <a name="l1290" style="background-color: #ffcccc">               write (nu_diag,*) 'atsum_final-atsum_init =', diff</a>
+  1291) <a name="l1291" style="background-color: #ffcccc">            endif</a>
+  1292) <a name="l1292" style="background-color: #ffcccc">         endif</a>
+  1293) <a name="l1293" style="background-color: #ffcccc">       enddo</a>
+  1294) <a name="l1294" style="background-color: #ffcccc">      endif                     ! present(atsum_init)</a>
+  1295) <a name="l1295" style="background-color: #ffcccc"></a>
+  1296) <a name="l1296" style="background-color: #ffcccc">      end subroutine global_conservation</a>
+  1297) <a name="l1297" style="background-color: #ffffff"></a>
+  1298) <a name="l1298" style="background-color: #ffffff">!=======================================================================</a>
+  1299) <a name="l1299" style="background-color: #ffffff">!BOP</a>
+  1300) <a name="l1300" style="background-color: #ffffff">!</a>
+  1301) <a name="l1301" style="background-color: #ffffff">! !IROUTINE: local_max_min - compute local max and min of a scalar field</a>
+  1302) <a name="l1302" style="background-color: #ffffff">!</a>
+  1303) <a name="l1303" style="background-color: #ffffff">! !INTERFACE:</a>
+  1304) <a name="l1304" style="background-color: #ffffff">!</a>
+  1305) <a name="l1305" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">local_max_min (nx_block, ny_block,     &amp;</a>
+  1306) <a name="l1306" style="background-color: #ffcccc">                                ilo, ihi, jlo, jhi,     &amp;</a>
+  1307) <a name="l1307" style="background-color: #ffcccc">                                trm,                    &amp;</a>
+  1308) <a name="l1308" style="background-color: #ffcccc">                                tmin,     tmax,         &amp;</a>
+  1309) <a name="l1309" style="background-color: #ffcccc">                                aimask,   trmask)</a>
+  1310) <a name="l1310" style="background-color: #ffcccc">!</a>
+  1311) <a name="l1311" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+  1312) <a name="l1312" style="background-color: #ffcccc">!</a>
+  1313) <a name="l1313" style="background-color: #ffcccc">! At each grid point, compute the local max and min of a scalar</a>
+  1314) <a name="l1314" style="background-color: #ffcccc">! field phi: i.e., the max and min values in the nine-cell region</a>
+  1315) <a name="l1315" style="background-color: #ffcccc">! consisting of the home cell and its eight neighbors.</a>
+  1316) <a name="l1316" style="background-color: #ffcccc">! </a>
+  1317) <a name="l1317" style="background-color: #ffcccc">! To extend to the neighbors of the neighbors (25 cells in all),</a>
+  1318) <a name="l1318" style="background-color: #ffcccc">! follow this call with a call to quasilocal_max_min.</a>
+  1319) <a name="l1319" style="background-color: #ffcccc">!</a>
+  1320) <a name="l1320" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+  1321) <a name="l1321" style="background-color: #ffcccc">!</a>
+  1322) <a name="l1322" style="background-color: #ffcccc">! author William H. Lipscomb, LANL</a>
+  1323) <a name="l1323" style="background-color: #ffcccc">!</a>
+  1324) <a name="l1324" style="background-color: #ffcccc">! !USES:</a>
+  1325) <a name="l1325" style="background-color: #ffcccc">!</a>
+  1326) <a name="l1326" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+  1327) <a name="l1327" style="background-color: #ffcccc">!</a>
+  1328) <a name="l1328" style="background-color: #ffcccc">      integer (kind=int_kind), intent(in) ::     &amp;</a>
+  1329) <a name="l1329" style="background-color: #ffcccc">           nx_block, ny_block,&amp;! block dimensions</a>
+  1330) <a name="l1330" style="background-color: #ffcccc">           ilo,ihi,jlo,jhi     ! beginning and end of physical domain</a>
+  1331) <a name="l1331" style="background-color: #ffcccc"></a>
+  1332) <a name="l1332" style="background-color: #ffcccc">      real (kind=dbl_kind), intent(in),        &amp;</a>
+  1333) <a name="l1333" style="background-color: #ffcccc">           dimension(nx_block,ny_block) ::     &amp;</a>
+  1334) <a name="l1334" style="background-color: #ffcccc">           aimask         ! ice area mask</a>
+  1335) <a name="l1335" style="background-color: #ffcccc"></a>
+  1336) <a name="l1336" style="background-color: #ffcccc">      real (kind=dbl_kind), intent(in),               &amp;</a>
+  1337) <a name="l1337" style="background-color: #ffcccc">           dimension (nx_block,ny_block,max_ntrace) ::    &amp;</a>
+  1338) <a name="l1338" style="background-color: #ffcccc">           trm          ,&amp;! tracer fields</a>
+  1339) <a name="l1339" style="background-color: #ffcccc">           trmask         ! tracer mask</a>
+  1340) <a name="l1340" style="background-color: #ffcccc"></a>
+  1341) <a name="l1341" style="background-color: #ffcccc">      real (kind=dbl_kind), intent(out),              &amp;</a>
+  1342) <a name="l1342" style="background-color: #ffcccc">           dimension (nx_block,ny_block,max_ntrace) ::    &amp;</a>
+  1343) <a name="l1343" style="background-color: #ffcccc">           tmin         ,&amp;! local min tracer</a>
+  1344) <a name="l1344" style="background-color: #ffcccc">           tmax           ! local max tracer</a>
+  1345) <a name="l1345" style="background-color: #ffcccc">!</a>
+  1346) <a name="l1346" style="background-color: #ffcccc">!EOP</a>
+  1347) <a name="l1347" style="background-color: #ffcccc">!</a>
+  1348) <a name="l1348" style="background-color: #ffcccc">      integer (kind=int_kind) ::     &amp;</a>
+  1349) <a name="l1349" style="background-color: #ffcccc">           i, j         ,&amp;! horizontal indices</a>
+  1350) <a name="l1350" style="background-color: #ffcccc">           nt, nt1        ! tracer indices</a>
+  1351) <a name="l1351" style="background-color: #ffcccc"></a>
+  1352) <a name="l1352" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension(nx_block,ny_block) ::     &amp;</a>
+  1353) <a name="l1353" style="background-color: #ffcccc">           phimask        ! aimask or trmask, as appropriate</a>
+  1354) <a name="l1354" style="background-color: #ffcccc"></a>
+  1355) <a name="l1355" style="background-color: #ffcccc">      real (kind=dbl_kind) ::     &amp;</a>
+  1356) <a name="l1356" style="background-color: #ffcccc">           phi_nw, phi_n, phi_ne ,&amp;! field values in 8 neighbor cells</a>
+  1357) <a name="l1357" style="background-color: #ffcccc">           phi_w, phi_e          ,&amp;</a>
+  1358) <a name="l1358" style="background-color: #ffcccc">           phi_sw, phi_s, phi_se</a>
+  1359) <a name="l1359" style="background-color: #ffcccc"></a>
+  1360) <a name="l1360" style="background-color: #ffcccc">      do nt = 1, ntrace</a>
+  1361) <a name="l1361" style="background-color: #ffcccc"></a>
+  1362) <a name="l1362" style="background-color: #ffcccc">         if (tracer_type(nt)==1) then  ! does not depend on another tracer</a>
+  1363) <a name="l1363" style="background-color: #ffcccc"></a>
+  1364) <a name="l1364" style="background-color: #ffcccc">            do j = 1, ny_block</a>
+  1365) <a name="l1365" style="background-color: #ffcccc">            do i = 1, nx_block</a>
+  1366) <a name="l1366" style="background-color: #ffcccc">               phimask(i,j) = aimask(i,j)</a>
+  1367) <a name="l1367" style="background-color: #ffcccc">            enddo</a>
+  1368) <a name="l1368" style="background-color: #ffcccc">            enddo</a>
+  1369) <a name="l1369" style="background-color: #ffcccc"></a>
+  1370) <a name="l1370" style="background-color: #ffcccc">         else   ! depends on another tracer</a>
+  1371) <a name="l1371" style="background-color: #ffcccc"></a>
+  1372) <a name="l1372" style="background-color: #ffcccc">            nt1 = depend(nt)</a>
+  1373) <a name="l1373" style="background-color: #ffcccc">            do j = 1, ny_block</a>
+  1374) <a name="l1374" style="background-color: #ffcccc">            do i = 1, nx_block</a>
+  1375) <a name="l1375" style="background-color: #ffcccc">               phimask(i,j) = trmask(i,j,nt1)</a>
+  1376) <a name="l1376" style="background-color: #ffcccc">            enddo</a>
+  1377) <a name="l1377" style="background-color: #ffcccc">            enddo</a>
+  1378) <a name="l1378" style="background-color: #ffcccc"></a>
+  1379) <a name="l1379" style="background-color: #ffcccc">         endif</a>
+  1380) <a name="l1380" style="background-color: #ffcccc"></a>
+  1381) <a name="l1381" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1382) <a name="l1382" style="background-color: #ffcccc">!  Store values of trm in the 8 neighbor cells.</a>
+  1383) <a name="l1383" style="background-color: #ffcccc">!  If aimask = 1, use the true value; otherwise use the home cell value</a>
+  1384) <a name="l1384" style="background-color: #ffcccc">!  so that non-physical values of phi do not contribute to the gradient.</a>
+  1385) <a name="l1385" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1386) <a name="l1386" style="background-color: #ffcccc"></a>
+  1387) <a name="l1387" style="background-color: #ffcccc">         do j = jlo, jhi</a>
+  1388) <a name="l1388" style="background-color: #ffcccc">            do i = ilo, ihi</a>
+  1389) <a name="l1389" style="background-color: #ffcccc"></a>
+  1390) <a name="l1390" style="background-color: #ffcccc">               phi_nw = phimask(i-1,j+1) * trm(i-1,j+1,nt)     &amp;</a>
+  1391) <a name="l1391" style="background-color: #ffcccc">                  + (c1-phimask(i-1,j+1))* trm(i,  j,  nt)</a>
+  1392) <a name="l1392" style="background-color: #ffcccc">               phi_n  = phimask(i,  j+1) * trm(i,  j+1,nt)     &amp;</a>
+  1393) <a name="l1393" style="background-color: #ffcccc">                  + (c1-phimask(i,  j+1))* trm(i,  j,  nt)</a>
+  1394) <a name="l1394" style="background-color: #ffcccc">               phi_ne = phimask(i+1,j+1) * trm(i+1,j+1,nt)     &amp;</a>
+  1395) <a name="l1395" style="background-color: #ffcccc">                  + (c1-phimask(i+1,j+1))* trm(i,  j,  nt)</a>
+  1396) <a name="l1396" style="background-color: #ffcccc">               phi_w  = phimask(i-1,j)   * trm(i-1,j,  nt)     &amp;</a>
+  1397) <a name="l1397" style="background-color: #ffcccc">                  + (c1-phimask(i-1,j))  * trm(i,  j,  nt)</a>
+  1398) <a name="l1398" style="background-color: #ffcccc">               phi_e  = phimask(i+1,j)   * trm(i+1,j,  nt)     &amp;</a>
+  1399) <a name="l1399" style="background-color: #ffcccc">                  + (c1-phimask(i+1,j))  * trm(i,  j,  nt)</a>
+  1400) <a name="l1400" style="background-color: #ffcccc">               phi_sw = phimask(i-1,j-1) * trm(i-1,j-1,nt)     &amp;</a>
+  1401) <a name="l1401" style="background-color: #ffcccc">                  + (c1-phimask(i-1,j-1))* trm(i,  j,  nt)</a>
+  1402) <a name="l1402" style="background-color: #ffcccc">               phi_s  = phimask(i,  j-1) * trm(i,  j-1,nt)     &amp;</a>
+  1403) <a name="l1403" style="background-color: #ffcccc">                  + (c1-phimask(i,  j-1))* trm(i,  j,  nt)</a>
+  1404) <a name="l1404" style="background-color: #ffcccc">               phi_se = phimask(i+1,j-1) * trm(i+1,j-1,nt)     &amp;</a>
+  1405) <a name="l1405" style="background-color: #ffcccc">                  + (c1-phimask(i+1,j-1))* trm(i,  j,  nt)</a>
+  1406) <a name="l1406" style="background-color: #ffcccc"></a>
+  1407) <a name="l1407" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1408) <a name="l1408" style="background-color: #ffcccc">!     Compute the minimum and maximum among the nine local cells.</a>
+  1409) <a name="l1409" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1410) <a name="l1410" style="background-color: #ffcccc"></a>
+  1411) <a name="l1411" style="background-color: #ffcccc">               tmax(i,j,nt) = max (phi_nw, phi_n,  phi_ne, phi_w,     &amp;</a>
+  1412) <a name="l1412" style="background-color: #ffcccc">                      trm(i,j,nt), phi_e,  phi_sw, phi_s,  phi_se)</a>
+  1413) <a name="l1413" style="background-color: #ffcccc"></a>
+  1414) <a name="l1414" style="background-color: #ffcccc">               tmin(i,j,nt) = min (phi_nw, phi_n,  phi_ne, phi_w,     &amp;</a>
+  1415) <a name="l1415" style="background-color: #ffcccc">                      trm(i,j,nt), phi_e,  phi_sw, phi_s,  phi_se)</a>
+  1416) <a name="l1416" style="background-color: #ffcccc"></a>
+  1417) <a name="l1417" style="background-color: #ffcccc">            enddo               ! i</a>
+  1418) <a name="l1418" style="background-color: #ffcccc">         enddo                  ! j</a>
+  1419) <a name="l1419" style="background-color: #ffcccc"></a>
+  1420) <a name="l1420" style="background-color: #ffcccc">      enddo                     ! nt</a>
+  1421) <a name="l1421" style="background-color: #ffcccc"></a>
+  1422) <a name="l1422" style="background-color: #ffcccc">      end subroutine local_max_min</a>
+  1423) <a name="l1423" style="background-color: #ffffff"></a>
+  1424) <a name="l1424" style="background-color: #ffffff">!=======================================================================</a>
+  1425) <a name="l1425" style="background-color: #ffffff">!BOP</a>
+  1426) <a name="l1426" style="background-color: #ffffff">!</a>
+  1427) <a name="l1427" style="background-color: #ffffff">! !IROUTINE: quasilocal_max_min - look one grid cell farther away</a>
+  1428) <a name="l1428" style="background-color: #ffffff">!</a>
+  1429) <a name="l1429" style="background-color: #ffffff">! !INTERFACE:</a>
+  1430) <a name="l1430" style="background-color: #ffffff">!</a>
+  1431) <a name="l1431" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">quasilocal_max_min (nx_block, ny_block,     &amp;</a>
+  1432) <a name="l1432" style="background-color: #ffcccc">                                     ilo, ihi, jlo, jhi,     &amp;</a>
+  1433) <a name="l1433" style="background-color: #ffcccc">                                     tmin,     tmax)</a>
+  1434) <a name="l1434" style="background-color: #ffcccc">!</a>
+  1435) <a name="l1435" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+  1436) <a name="l1436" style="background-color: #ffcccc">!</a>
+  1437) <a name="l1437" style="background-color: #ffcccc">! Extend the local max and min by one grid cell in each direction.</a>
+  1438) <a name="l1438" style="background-color: #ffcccc">! Incremental remapping is monotone for the &quot;quasilocal&quot; max and min,</a>
+  1439) <a name="l1439" style="background-color: #ffcccc">! but in rare cases may violate monotonicity for the local max and min.</a>
+  1440) <a name="l1440" style="background-color: #ffcccc">!</a>
+  1441) <a name="l1441" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+  1442) <a name="l1442" style="background-color: #ffcccc">!</a>
+  1443) <a name="l1443" style="background-color: #ffcccc">! author William H. Lipscomb, LANL</a>
+  1444) <a name="l1444" style="background-color: #ffcccc">!</a>
+  1445) <a name="l1445" style="background-color: #ffcccc">! !USES:</a>
+  1446) <a name="l1446" style="background-color: #ffcccc">!</a>
+  1447) <a name="l1447" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+  1448) <a name="l1448" style="background-color: #ffcccc">!</a>
+  1449) <a name="l1449" style="background-color: #ffcccc">      integer (kind=int_kind), intent(in) ::     &amp;</a>
+  1450) <a name="l1450" style="background-color: #ffcccc">         nx_block, ny_block,&amp;! block dimensions</a>
+  1451) <a name="l1451" style="background-color: #ffcccc">         ilo,ihi,jlo,jhi     ! beginning and end of physical domain</a>
+  1452) <a name="l1452" style="background-color: #ffcccc"></a>
+  1453) <a name="l1453" style="background-color: #ffcccc">      real (kind=dbl_kind), intent(inout),     &amp;</a>
+  1454) <a name="l1454" style="background-color: #ffcccc">           dimension (nx_block,ny_block,ntrace) ::     &amp;</a>
+  1455) <a name="l1455" style="background-color: #ffcccc">           tmin         ,&amp;! local min tracer</a>
+  1456) <a name="l1456" style="background-color: #ffcccc">           tmax           ! local max tracer</a>
+  1457) <a name="l1457" style="background-color: #ffcccc">!</a>
+  1458) <a name="l1458" style="background-color: #ffcccc">!EOP</a>
+  1459) <a name="l1459" style="background-color: #ffcccc">!</a>
+  1460) <a name="l1460" style="background-color: #ffcccc">      integer (kind=int_kind) ::     &amp;</a>
+  1461) <a name="l1461" style="background-color: #ffcccc">           i, j          ,&amp;! horizontal indices</a>
+  1462) <a name="l1462" style="background-color: #ffcccc">           nt              ! tracer index</a>
+  1463) <a name="l1463" style="background-color: #ffcccc"></a>
+  1464) <a name="l1464" style="background-color: #ffcccc">      do nt = 1, ntrace</a>
+  1465) <a name="l1465" style="background-color: #ffcccc"></a>
+  1466) <a name="l1466" style="background-color: #ffcccc">         do j = jlo, jhi</a>
+  1467) <a name="l1467" style="background-color: #ffcccc">         do i = ilo, ihi</a>
+  1468) <a name="l1468" style="background-color: #ffcccc"></a>
+  1469) <a name="l1469" style="background-color: #ffcccc">            tmax(i,j,nt) =     &amp;</a>
+  1470) <a name="l1470" style="background-color: #ffcccc">              max (tmax(i-1,j+1,nt), tmax(i,j+1,nt), tmax(i+1,j+1,nt),     &amp;</a>
+  1471) <a name="l1471" style="background-color: #ffcccc">                   tmax(i-1,j,  nt), tmax(i,j,  nt), tmax(i+1,j,  nt),     &amp;</a>
+  1472) <a name="l1472" style="background-color: #ffcccc">                   tmax(i-1,j-1,nt), tmax(i,j-1,nt), tmax(i+1,j-1,nt))</a>
+  1473) <a name="l1473" style="background-color: #ffcccc"></a>
+  1474) <a name="l1474" style="background-color: #ffcccc">            tmin(i,j,nt) =     &amp;</a>
+  1475) <a name="l1475" style="background-color: #ffcccc">              min (tmin(i-1,j+1,nt), tmin(i,j+1,nt), tmin(i+1,j+1,nt),     &amp;</a>
+  1476) <a name="l1476" style="background-color: #ffcccc">                   tmin(i-1,j,  nt), tmin(i,j,  nt), tmin(i+1,j,  nt),     &amp;</a>
+  1477) <a name="l1477" style="background-color: #ffcccc">                   tmin(i-1,j-1,nt), tmin(i,j-1,nt), tmin(i+1,j-1,nt))</a>
+  1478) <a name="l1478" style="background-color: #ffcccc"></a>
+  1479) <a name="l1479" style="background-color: #ffcccc">         enddo                  ! i</a>
+  1480) <a name="l1480" style="background-color: #ffcccc">         enddo                  ! j</a>
+  1481) <a name="l1481" style="background-color: #ffcccc"></a>
+  1482) <a name="l1482" style="background-color: #ffcccc">      enddo</a>
+  1483) <a name="l1483" style="background-color: #ffcccc"></a>
+  1484) <a name="l1484" style="background-color: #ffcccc">      end subroutine quasilocal_max_min</a>
+  1485) <a name="l1485" style="background-color: #ffffff"></a>
+  1486) <a name="l1486" style="background-color: #ffffff">!======================================================================</a>
+  1487) <a name="l1487" style="background-color: #ffffff">!</a>
+  1488) <a name="l1488" style="background-color: #ffffff">!BOP</a>
+  1489) <a name="l1489" style="background-color: #ffffff">!</a>
+  1490) <a name="l1490" style="background-color: #ffffff">! !IROUTINE: check_monotonicity - check bounds on new tracer values</a>
+  1491) <a name="l1491" style="background-color: #ffffff">!</a>
+  1492) <a name="l1492" style="background-color: #ffffff">! !INTERFACE:</a>
+  1493) <a name="l1493" style="background-color: #ffffff">!</a>
+  1494) <a name="l1494" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">check_monotonicity (nx_block, ny_block,     &amp;</a>
+  1495) <a name="l1495" style="background-color: #ffcccc">                                     ilo, ihi, jlo, jhi,     &amp;</a>
+  1496) <a name="l1496" style="background-color: #ffcccc">                                     iblk,                   &amp;</a>
+  1497) <a name="l1497" style="background-color: #ffcccc">                                     tmin,     tmax,         &amp;</a>
+  1498) <a name="l1498" style="background-color: #ffcccc">                                     aim,      trm,          &amp;</a>
+  1499) <a name="l1499" style="background-color: #ffcccc">                                     l_stop,                 &amp;</a>
+  1500) <a name="l1500" style="background-color: #ffcccc">                                     istop,    jstop)</a>
+  1501) <a name="l1501" style="background-color: #ffcccc">!</a>
+  1502) <a name="l1502" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+  1503) <a name="l1503" style="background-color: #ffcccc">!</a>
+  1504) <a name="l1504" style="background-color: #ffcccc">! At each grid point, make sure that the new tracer values</a>
+  1505) <a name="l1505" style="background-color: #ffcccc">! fall between the local max and min values before transport.</a>
+  1506) <a name="l1506" style="background-color: #ffcccc">!</a>
+  1507) <a name="l1507" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+  1508) <a name="l1508" style="background-color: #ffcccc">!</a>
+  1509) <a name="l1509" style="background-color: #ffcccc">! author William H. Lipscomb, LANL</a>
+  1510) <a name="l1510" style="background-color: #ffcccc">!</a>
+  1511) <a name="l1511" style="background-color: #ffcccc">! !USES:</a>
+  1512) <a name="l1512" style="background-color: #ffcccc">!</a>
+  1513) <a name="l1513" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+  1514) <a name="l1514" style="background-color: #ffcccc">!</a>
+  1515) <a name="l1515" style="background-color: #ffcccc">      integer (kind=int_kind), intent(in) ::     &amp;</a>
+  1516) <a name="l1516" style="background-color: #ffcccc">           nx_block, ny_block,&amp;! block dimensions</a>
+  1517) <a name="l1517" style="background-color: #ffcccc">           ilo,ihi,jlo,jhi   ,&amp;! beginning and end of physical domain</a>
+  1518) <a name="l1518" style="background-color: #ffcccc">           iblk                ! block index (diagnostic only)</a>
+  1519) <a name="l1519" style="background-color: #ffcccc"></a>
+  1520) <a name="l1520" style="background-color: #ffcccc">      real (kind=dbl_kind), intent(in),         &amp;</a>
+  1521) <a name="l1521" style="background-color: #ffcccc">           dimension (nx_block,ny_block) ::     &amp;</a>
+  1522) <a name="l1522" style="background-color: #ffcccc">           aim            ! new ice area</a>
+  1523) <a name="l1523" style="background-color: #ffcccc"></a>
+  1524) <a name="l1524" style="background-color: #ffcccc">      real (kind=dbl_kind), intent(in),                &amp;</a>
+  1525) <a name="l1525" style="background-color: #ffcccc">           dimension (nx_block,ny_block,max_ntrace) ::     &amp;</a>
+  1526) <a name="l1526" style="background-color: #ffcccc">           trm            ! new tracers</a>
+  1527) <a name="l1527" style="background-color: #ffcccc"></a>
+  1528) <a name="l1528" style="background-color: #ffcccc">      real (kind=dbl_kind), intent(in),                &amp;</a>
+  1529) <a name="l1529" style="background-color: #ffcccc">           dimension (nx_block,ny_block,ntrace) ::     &amp;</a>
+  1530) <a name="l1530" style="background-color: #ffcccc">           tmin         ,&amp;! local min tracer</a>
+  1531) <a name="l1531" style="background-color: #ffcccc">           tmax           ! local max tracer</a>
+  1532) <a name="l1532" style="background-color: #ffcccc"></a>
+  1533) <a name="l1533" style="background-color: #ffcccc">      logical (kind=log_kind), intent(inout) ::     &amp;</a>
+  1534) <a name="l1534" style="background-color: #ffcccc">         l_stop    ! if true, abort on return</a>
+  1535) <a name="l1535" style="background-color: #ffcccc"></a>
+  1536) <a name="l1536" style="background-color: #ffcccc">      integer (kind=int_kind), intent(inout) ::     &amp;</a>
+  1537) <a name="l1537" style="background-color: #ffcccc">         istop, jstop     ! indices of grid cell where model aborts </a>
+  1538) <a name="l1538" style="background-color: #ffcccc">!</a>
+  1539) <a name="l1539" style="background-color: #ffcccc">!EOP</a>
+  1540) <a name="l1540" style="background-color: #ffcccc">!</a>
+  1541) <a name="l1541" style="background-color: #ffcccc">      integer (kind=int_kind) ::     &amp;</a>
+  1542) <a name="l1542" style="background-color: #ffcccc">           i, j           ,&amp;! horizontal indices</a>
+  1543) <a name="l1543" style="background-color: #ffcccc">           nt, nt1, nt2     ! tracer indices</a>
+  1544) <a name="l1544" style="background-color: #ffcccc"></a>
+  1545) <a name="l1545" style="background-color: #ffcccc">      real (kind=dbl_kind) ::     &amp;</a>
+  1546) <a name="l1546" style="background-color: #ffcccc">           w1, w2         ! work variables</a>
+  1547) <a name="l1547" style="background-color: #ffcccc"></a>
+  1548) <a name="l1548" style="background-color: #ffcccc">      logical (kind=log_kind), dimension (nx_block, ny_block) ::   &amp;</a>
+  1549) <a name="l1549" style="background-color: #ffcccc">           l_check        ! if true, check monotonicity</a>
+  1550) <a name="l1550" style="background-color: #ffcccc"></a>
+  1551) <a name="l1551" style="background-color: #ffcccc">      do nt = 1, ntrace</a>
+  1552) <a name="l1552" style="background-color: #ffcccc"></a>
+  1553) <a name="l1553" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+  1554) <a name="l1554" style="background-color: #ffcccc">    ! Load logical array to identify tracers that need checking.</a>
+  1555) <a name="l1555" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+  1556) <a name="l1556" style="background-color: #ffcccc"></a>
+  1557) <a name="l1557" style="background-color: #ffcccc">         if (tracer_type(nt)==1) then ! does not depend on another tracer</a>
+  1558) <a name="l1558" style="background-color: #ffcccc"></a>
+  1559) <a name="l1559" style="background-color: #ffcccc">            do j = jlo, jhi</a>
+  1560) <a name="l1560" style="background-color: #ffcccc">            do i = ilo, ihi</a>
+  1561) <a name="l1561" style="background-color: #ffcccc">               if (aim(i,j) &gt; puny) then </a>
+  1562) <a name="l1562" style="background-color: #ffcccc">                  l_check(i,j) = .true.</a>
+  1563) <a name="l1563" style="background-color: #ffcccc">               else</a>
+  1564) <a name="l1564" style="background-color: #ffcccc">                  l_check(i,j) = .false.</a>
+  1565) <a name="l1565" style="background-color: #ffcccc">               endif</a>
+  1566) <a name="l1566" style="background-color: #ffcccc">            enddo</a>
+  1567) <a name="l1567" style="background-color: #ffcccc">            enddo</a>
+  1568) <a name="l1568" style="background-color: #ffcccc"></a>
+  1569) <a name="l1569" style="background-color: #ffcccc">         elseif (tracer_type(nt)==2) then ! depends on another tracer</a>
+  1570) <a name="l1570" style="background-color: #ffcccc"></a>
+  1571) <a name="l1571" style="background-color: #ffcccc">            nt1 = depend(nt)</a>
+  1572) <a name="l1572" style="background-color: #ffcccc">            do j = jlo, jhi</a>
+  1573) <a name="l1573" style="background-color: #ffcccc">            do i = ilo, ihi</a>
+  1574) <a name="l1574" style="background-color: #ffcccc">               if (abs(trm(i,j,nt1)) &gt; puny .and. aim(i,j) &gt; puny) then</a>
+  1575) <a name="l1575" style="background-color: #ffcccc">                  l_check(i,j) = .true.</a>
+  1576) <a name="l1576" style="background-color: #ffcccc">               else</a>
+  1577) <a name="l1577" style="background-color: #ffcccc">                  l_check(i,j) = .false.</a>
+  1578) <a name="l1578" style="background-color: #ffcccc">               endif</a>
+  1579) <a name="l1579" style="background-color: #ffcccc">            enddo</a>
+  1580) <a name="l1580" style="background-color: #ffcccc">            enddo</a>
+  1581) <a name="l1581" style="background-color: #ffcccc"></a>
+  1582) <a name="l1582" style="background-color: #ffcccc">         elseif (tracer_type(nt)==3) then ! depends on two tracers</a>
+  1583) <a name="l1583" style="background-color: #ffcccc"></a>
+  1584) <a name="l1584" style="background-color: #ffcccc">            nt1 = depend(nt)</a>
+  1585) <a name="l1585" style="background-color: #ffcccc">            nt2 = depend(nt1)</a>
+  1586) <a name="l1586" style="background-color: #ffcccc">            do j = jlo, jhi</a>
+  1587) <a name="l1587" style="background-color: #ffcccc">            do i = ilo, ihi</a>
+  1588) <a name="l1588" style="background-color: #ffcccc">               if (abs(trm(i,j,nt1)) &gt; puny .and.     &amp;</a>
+  1589) <a name="l1589" style="background-color: #ffcccc">                   abs(trm(i,j,nt2)) &gt; puny .and. aim(i,j) &gt; puny) then</a>
+  1590) <a name="l1590" style="background-color: #ffcccc">                  l_check(i,j) = .true.</a>
+  1591) <a name="l1591" style="background-color: #ffcccc">               else</a>
+  1592) <a name="l1592" style="background-color: #ffcccc">                  l_check(i,j) = .false.</a>
+  1593) <a name="l1593" style="background-color: #ffcccc">               endif</a>
+  1594) <a name="l1594" style="background-color: #ffcccc">            enddo</a>
+  1595) <a name="l1595" style="background-color: #ffcccc">            enddo</a>
+  1596) <a name="l1596" style="background-color: #ffcccc">         endif</a>
+  1597) <a name="l1597" style="background-color: #ffcccc"></a>
+  1598) <a name="l1598" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+  1599) <a name="l1599" style="background-color: #ffcccc">    ! Make sure new values lie between tmin and tmax</a>
+  1600) <a name="l1600" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+  1601) <a name="l1601" style="background-color: #ffcccc"></a>
+  1602) <a name="l1602" style="background-color: #ffcccc">         do j = jlo, jhi</a>
+  1603) <a name="l1603" style="background-color: #ffcccc">         do i = ilo, ihi</a>
+  1604) <a name="l1604" style="background-color: #ffcccc"></a>
+  1605) <a name="l1605" style="background-color: #ffcccc">            if (l_check(i,j)) then</a>
+  1606) <a name="l1606" style="background-color: #ffcccc">               ! w1 and w2 allow for roundoff error when abs(trm) is big</a>
+  1607) <a name="l1607" style="background-color: #ffcccc">               w1 = max(c1, abs(tmin(i,j,nt)))</a>
+  1608) <a name="l1608" style="background-color: #ffcccc">               w2 = max(c1, abs(tmax(i,j,nt)))</a>
+  1609) <a name="l1609" style="background-color: #ffcccc">               if (trm(i,j,nt) &lt; tmin(i,j,nt)-w1*puny) then</a>
+  1610) <a name="l1610" style="background-color: #ffcccc">                  l_stop = .true.</a>
+  1611) <a name="l1611" style="background-color: #ffcccc">                  istop = i</a>
+  1612) <a name="l1612" style="background-color: #ffcccc">                  jstop = j</a>
+  1613) <a name="l1613" style="background-color: #ffcccc">                  write (nu_diag,*) ' '</a>
+  1614) <a name="l1614" style="background-color: #ffcccc">                  write (nu_diag,*) 'new tracer &lt; tmin'</a>
+  1615) <a name="l1615" style="background-color: #ffcccc">                  write (nu_diag,*) 'i, j, nt =', i, j, nt</a>
+  1616) <a name="l1616" style="background-color: #ffcccc">                  write (nu_diag,*) 'new tracer =', trm (i,j,nt)</a>
+  1617) <a name="l1617" style="background-color: #ffcccc">                  write (nu_diag,*) 'tmin ='      , tmin(i,j,nt)</a>
+  1618) <a name="l1618" style="background-color: #ffcccc">                  write (nu_diag,*) 'ice area ='  , aim(i,j)</a>
+  1619) <a name="l1619" style="background-color: #ffcccc">               elseif (trm(i,j,nt) &gt; tmax(i,j,nt)+w2*puny) then</a>
+  1620) <a name="l1620" style="background-color: #ffcccc">                  l_stop = .true.</a>
+  1621) <a name="l1621" style="background-color: #ffcccc">                  istop = i</a>
+  1622) <a name="l1622" style="background-color: #ffcccc">                  jstop = j</a>
+  1623) <a name="l1623" style="background-color: #ffcccc">                  write (nu_diag,*) ' '</a>
+  1624) <a name="l1624" style="background-color: #ffcccc">                  write (nu_diag,*) 'new tracer &gt; tmax'</a>
+  1625) <a name="l1625" style="background-color: #ffcccc">                  write (nu_diag,*) 'i, j, nt =', i, j, nt</a>
+  1626) <a name="l1626" style="background-color: #ffcccc">                  write (nu_diag,*) 'new tracer =', trm (i,j,nt)</a>
+  1627) <a name="l1627" style="background-color: #ffcccc">                  write (nu_diag,*) 'tmax ='      , tmax(i,j,nt)</a>
+  1628) <a name="l1628" style="background-color: #ffcccc">                  write (nu_diag,*) 'ice area ='  , aim(i,j)</a>
+  1629) <a name="l1629" style="background-color: #ffcccc">               endif</a>
+  1630) <a name="l1630" style="background-color: #ffcccc">            endif</a>
+  1631) <a name="l1631" style="background-color: #ffcccc"></a>
+  1632) <a name="l1632" style="background-color: #ffcccc">         enddo                  ! i</a>
+  1633) <a name="l1633" style="background-color: #ffcccc">         enddo                  ! j</a>
+  1634) <a name="l1634" style="background-color: #ffcccc"></a>
+  1635) <a name="l1635" style="background-color: #ffcccc">      enddo                     ! nt</a>
+  1636) <a name="l1636" style="background-color: #ffcccc"></a>
+  1637) <a name="l1637" style="background-color: #ffcccc">      end subroutine check_monotonicity</a>
+  1638) <a name="l1638" style="background-color: #ffffff"></a>
+  1639) <a name="l1639" style="background-color: #ffffff">!=======================================================================</a>
+  1640) <a name="l1640" style="background-color: #ffffff">! The remaining subroutines are called by transport_upwind.</a>
+  1641) <a name="l1641" style="background-color: #ffffff">!=======================================================================</a>
+  1642) <a name="l1642" style="background-color: #ffffff">!BOP</a>
+  1643) <a name="l1643" style="background-color: #ffffff">!</a>
+  1644) <a name="l1644" style="background-color: #ffffff">! !IROUTINE: state_to_work - fill work arrays with state variables</a>
+  1645) <a name="l1645" style="background-color: #ffffff">!</a>
+  1646) <a name="l1646" style="background-color: #ffffff">! !INTERFACE:</a>
+  1647) <a name="l1647" style="background-color: #ffffff">!</a>
+  1648) <a name="l1648" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">state_to_work (nx_block, ny_block,        &amp;</a>
+  1649) <a name="l1649" style="background-color: #ffcccc">                                ntrcr,                     &amp;</a>
+  1650) <a name="l1650" style="background-color: #ffcccc">                                narr,     trcr_depend,     &amp;</a>
+  1651) <a name="l1651" style="background-color: #ffcccc">                                aicen,    trcrn,           &amp;</a>
+  1652) <a name="l1652" style="background-color: #ffcccc">                                vicen,    vsnon,           &amp;</a>
+  1653) <a name="l1653" style="background-color: #ffcccc">                                aice0,    works)</a>
+  1654) <a name="l1654" style="background-color: #ffcccc"></a>
+  1655) <a name="l1655" style="background-color: #ffcccc">!</a>
+  1656) <a name="l1656" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+  1657) <a name="l1657" style="background-color: #ffcccc">!</a>
+  1658) <a name="l1658" style="background-color: #ffcccc">! Fill work array with state variables in preparation for upwind transport</a>
+  1659) <a name="l1659" style="background-color: #ffcccc">!</a>
+  1660) <a name="l1660" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+  1661) <a name="l1661" style="background-color: #ffcccc">!</a>
+  1662) <a name="l1662" style="background-color: #ffcccc">! same as module</a>
+  1663) <a name="l1663" style="background-color: #ffcccc">!</a>
+  1664) <a name="l1664" style="background-color: #ffcccc">! !USES:</a>
+  1665) <a name="l1665" style="background-color: #ffcccc">!</a>
+  1666) <a name="l1666" style="background-color: #ffcccc">      use ice_itd, only: ilyr1, slyr1</a>
+  1667) <a name="l1667" style="background-color: #ffcccc">!</a>
+  1668) <a name="l1668" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+  1669) <a name="l1669" style="background-color: #ffcccc">!</a>
+  1670) <a name="l1670" style="background-color: #ffcccc">      integer (kind=int_kind), intent(in) ::     &amp;</a>
+  1671) <a name="l1671" style="background-color: #ffcccc">         nx_block, ny_block ,&amp;! block dimensions</a>
+  1672) <a name="l1672" style="background-color: #ffcccc">         ntrcr             , &amp; ! number of tracers in use</a>
+  1673) <a name="l1673" style="background-color: #ffcccc">         narr        ! number of 2D state variable arrays in works array</a>
+  1674) <a name="l1674" style="background-color: #ffcccc"></a>
+  1675) <a name="l1675" style="background-color: #ffcccc">      integer (kind=int_kind), dimension (max_ntrcr), intent(in) ::     &amp;</a>
+  1676) <a name="l1676" style="background-color: #ffcccc">         trcr_depend ! = 0 for aicen tracers, 1 for vicen, 2 for vsnon</a>
+  1677) <a name="l1677" style="background-color: #ffcccc"></a>
+  1678) <a name="l1678" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,ncat),     &amp;</a>
+  1679) <a name="l1679" style="background-color: #ffcccc">         intent(in) ::     &amp;</a>
+  1680) <a name="l1680" style="background-color: #ffcccc">         aicen   ,&amp;! concentration of ice</a>
+  1681) <a name="l1681" style="background-color: #ffcccc">         vicen   ,&amp;! volume per unit area of ice          (m)</a>
+  1682) <a name="l1682" style="background-color: #ffcccc">         vsnon     ! volume per unit area of snow         (m)</a>
+  1683) <a name="l1683" style="background-color: #ffcccc"></a>
+  1684) <a name="l1684" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,max_ntrcr,ncat),     &amp;</a>
+  1685) <a name="l1685" style="background-color: #ffcccc">         intent(in) ::     &amp;</a>
+  1686) <a name="l1686" style="background-color: #ffcccc">         trcrn     ! ice tracers</a>
+  1687) <a name="l1687" style="background-color: #ffcccc"></a>
+  1688) <a name="l1688" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block),         &amp;</a>
+  1689) <a name="l1689" style="background-color: #ffcccc">         intent(in) ::        &amp;</a>
+  1690) <a name="l1690" style="background-color: #ffcccc">         aice0     ! concentration of open water</a>
+  1691) <a name="l1691" style="background-color: #ffcccc"></a>
+  1692) <a name="l1692" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension(nx_block,ny_block,narr),     &amp;</a>
+  1693) <a name="l1693" style="background-color: #ffcccc">         intent (out) ::      &amp;</a>
+  1694) <a name="l1694" style="background-color: #ffcccc">         works     ! work array</a>
+  1695) <a name="l1695" style="background-color: #ffcccc">!</a>
+  1696) <a name="l1696" style="background-color: #ffcccc">!EOP</a>
+  1697) <a name="l1697" style="background-color: #ffcccc">!</a>
+  1698) <a name="l1698" style="background-color: #ffcccc">      integer (kind=int_kind) ::      &amp;</a>
+  1699) <a name="l1699" style="background-color: #ffcccc">         i, j, k, n, it ,&amp;! counting indices</a>
+  1700) <a name="l1700" style="background-color: #ffcccc">         narrays          ! counter for number of state variable arrays</a>
+  1701) <a name="l1701" style="background-color: #ffcccc"></a>
+  1702) <a name="l1702" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+  1703) <a name="l1703" style="background-color: #ffcccc">      ! This array is used for performance (balance memory/cache vs</a>
+  1704) <a name="l1704" style="background-color: #ffcccc">      ! number of bound calls);  a different number of arrays may perform</a>
+  1705) <a name="l1705" style="background-color: #ffcccc">      ! better depending on the machine used, number of processors, etc.</a>
+  1706) <a name="l1706" style="background-color: #ffcccc">      ! --tested on SGI R2000, using 4 pes for the ice model under MPI</a>
+  1707) <a name="l1707" style="background-color: #ffcccc">      !-----------------------------------------------------------------</a>
+  1708) <a name="l1708" style="background-color: #ffcccc"></a>
+  1709) <a name="l1709" style="background-color: #ffcccc">      do j = 1, ny_block</a>
+  1710) <a name="l1710" style="background-color: #ffcccc">      do i = 1, nx_block</a>
+  1711) <a name="l1711" style="background-color: #ffcccc">         works(i,j,1) = aice0(i,j)</a>
+  1712) <a name="l1712" style="background-color: #ffcccc">      enddo</a>
+  1713) <a name="l1713" style="background-color: #ffcccc">      enddo</a>
+  1714) <a name="l1714" style="background-color: #ffcccc">      narrays = 1</a>
+  1715) <a name="l1715" style="background-color: #ffcccc"></a>
+  1716) <a name="l1716" style="background-color: #ffcccc">      do n=1, ncat</a>
+  1717) <a name="l1717" style="background-color: #ffcccc"></a>
+  1718) <a name="l1718" style="background-color: #ffcccc">         do j = 1, ny_block</a>
+  1719) <a name="l1719" style="background-color: #ffcccc">         do i = 1, nx_block</a>
+  1720) <a name="l1720" style="background-color: #ffcccc">            works(i,j,narrays+1) = aicen(i,j,n)</a>
+  1721) <a name="l1721" style="background-color: #ffcccc">            works(i,j,narrays+2) = vicen(i,j,n)</a>
+  1722) <a name="l1722" style="background-color: #ffcccc">            works(i,j,narrays+3) = vsnon(i,j,n)</a>
+  1723) <a name="l1723" style="background-color: #ffcccc">         enddo                  ! i</a>
+  1724) <a name="l1724" style="background-color: #ffcccc">         enddo                  ! j</a>
+  1725) <a name="l1725" style="background-color: #ffcccc">         narrays = narrays + 3</a>
+  1726) <a name="l1726" style="background-color: #ffcccc"></a>
+  1727) <a name="l1727" style="background-color: #ffcccc">         do it = 1, ntrcr</a>
+  1728) <a name="l1728" style="background-color: #ffcccc">            if (trcr_depend(it) == 0) then</a>
+  1729) <a name="l1729" style="background-color: #ffcccc">               do j = 1, ny_block</a>
+  1730) <a name="l1730" style="background-color: #ffcccc">               do i = 1, nx_block</a>
+  1731) <a name="l1731" style="background-color: #ffcccc">                  works(i,j,narrays+it) = aicen(i,j,n)*trcrn(i,j,it,n)</a>
+  1732) <a name="l1732" style="background-color: #ffcccc">               enddo</a>
+  1733) <a name="l1733" style="background-color: #ffcccc">               enddo</a>
+  1734) <a name="l1734" style="background-color: #ffcccc">            elseif (trcr_depend(it) == 1) then</a>
+  1735) <a name="l1735" style="background-color: #ffcccc">               do j = 1, ny_block</a>
+  1736) <a name="l1736" style="background-color: #ffcccc">               do i = 1, nx_block</a>
+  1737) <a name="l1737" style="background-color: #ffcccc">                  works(i,j,narrays+it) = vicen(i,j,n)*trcrn(i,j,it,n)</a>
+  1738) <a name="l1738" style="background-color: #ffcccc">               enddo</a>
+  1739) <a name="l1739" style="background-color: #ffcccc">               enddo</a>
+  1740) <a name="l1740" style="background-color: #ffcccc">            elseif (trcr_depend(it) == 2) then</a>
+  1741) <a name="l1741" style="background-color: #ffcccc">               do j = 1, ny_block</a>
+  1742) <a name="l1742" style="background-color: #ffcccc">               do i = 1, nx_block</a>
+  1743) <a name="l1743" style="background-color: #ffcccc">                  works(i,j,narrays+it) = vsnon(i,j,n)*trcrn(i,j,it,n)</a>
+  1744) <a name="l1744" style="background-color: #ffcccc">               enddo</a>
+  1745) <a name="l1745" style="background-color: #ffcccc">               enddo</a>
+  1746) <a name="l1746" style="background-color: #ffcccc">            endif</a>
+  1747) <a name="l1747" style="background-color: #ffcccc">         enddo</a>
+  1748) <a name="l1748" style="background-color: #ffcccc">         narrays = narrays + ntrcr</a>
+  1749) <a name="l1749" style="background-color: #ffcccc"></a>
+  1750) <a name="l1750" style="background-color: #ffcccc">      enddo                     ! n</a>
+  1751) <a name="l1751" style="background-color: #ffcccc"></a>
+  1752) <a name="l1752" style="background-color: #ffcccc">      if (narr /= narrays) write(nu_diag,*)      &amp;</a>
+  1753) <a name="l1753" style="background-color: #ffcccc">           &quot;Wrong number of arrays in transport bound call&quot;</a>
+  1754) <a name="l1754" style="background-color: #ffcccc"></a>
+  1755) <a name="l1755" style="background-color: #ffcccc">      end subroutine state_to_work</a>
+  1756) <a name="l1756" style="background-color: #ffffff"></a>
+  1757) <a name="l1757" style="background-color: #ffffff">!=======================================================================</a>
+  1758) <a name="l1758" style="background-color: #ffffff">!BOP</a>
+  1759) <a name="l1759" style="background-color: #ffffff">!</a>
+  1760) <a name="l1760" style="background-color: #ffffff">! !IROUTINE: work_to_state - convert work arrays back to state variables</a>
+  1761) <a name="l1761" style="background-color: #ffffff">!</a>
+  1762) <a name="l1762" style="background-color: #ffffff">! !INTERFACE:</a>
+  1763) <a name="l1763" style="background-color: #ffffff">!</a>
+  1764) <a name="l1764" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">work_to_state (nx_block, ny_block,        &amp;</a>
+  1765) <a name="l1765" style="background-color: #ffcccc">                                ntrcr,                     &amp;</a>
+  1766) <a name="l1766" style="background-color: #ffcccc">                                narr,     trcr_depend,     &amp;</a>
+  1767) <a name="l1767" style="background-color: #ffcccc">                                aicen,    trcrn,           &amp;</a>
+  1768) <a name="l1768" style="background-color: #ffcccc">                                vicen,    vsnon,           &amp;</a>
+  1769) <a name="l1769" style="background-color: #ffcccc">                                aice0,    works)</a>
+  1770) <a name="l1770" style="background-color: #ffcccc"></a>
+  1771) <a name="l1771" style="background-color: #ffcccc">!</a>
+  1772) <a name="l1772" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+  1773) <a name="l1773" style="background-color: #ffcccc">!</a>
+  1774) <a name="l1774" style="background-color: #ffcccc">! Convert work array back to state variables</a>
+  1775) <a name="l1775" style="background-color: #ffcccc">!</a>
+  1776) <a name="l1776" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+  1777) <a name="l1777" style="background-color: #ffcccc">!</a>
+  1778) <a name="l1778" style="background-color: #ffcccc">! same as module</a>
+  1779) <a name="l1779" style="background-color: #ffcccc">!</a>
+  1780) <a name="l1780" style="background-color: #ffcccc">! !USES:</a>
+  1781) <a name="l1781" style="background-color: #ffcccc">!</a>
+  1782) <a name="l1782" style="background-color: #ffcccc">      use ice_itd, only: ilyr1, slyr1, compute_tracers</a>
+  1783) <a name="l1783" style="background-color: #ffcccc">!</a>
+  1784) <a name="l1784" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+  1785) <a name="l1785" style="background-color: #ffcccc">!</a>
+  1786) <a name="l1786" style="background-color: #ffcccc">      integer (kind=int_kind), intent (in) ::                       &amp;</a>
+  1787) <a name="l1787" style="background-color: #ffcccc">         nx_block, ny_block, &amp; ! block dimensions</a>
+  1788) <a name="l1788" style="background-color: #ffcccc">         ntrcr             , &amp; ! number of tracers in use</a>
+  1789) <a name="l1789" style="background-color: #ffcccc">         narr        ! number of 2D state variable arrays in works array</a>
+  1790) <a name="l1790" style="background-color: #ffcccc"></a>
+  1791) <a name="l1791" style="background-color: #ffcccc">      integer (kind=int_kind), dimension (max_ntrcr), intent(in) ::     &amp;</a>
+  1792) <a name="l1792" style="background-color: #ffcccc">         trcr_depend ! = 0 for aicen tracers, 1 for vicen, 2 for vsnon</a>
+  1793) <a name="l1793" style="background-color: #ffcccc"></a>
+  1794) <a name="l1794" style="background-color: #ffcccc">      real (kind=dbl_kind), intent (in) ::                          &amp;</a>
+  1795) <a name="l1795" style="background-color: #ffcccc">         works (nx_block,ny_block,narr)</a>
+  1796) <a name="l1796" style="background-color: #ffcccc"></a>
+  1797) <a name="l1797" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,ncat),     &amp;</a>
+  1798) <a name="l1798" style="background-color: #ffcccc">         intent(out) ::     &amp;</a>
+  1799) <a name="l1799" style="background-color: #ffcccc">         aicen   ,&amp;! concentration of ice</a>
+  1800) <a name="l1800" style="background-color: #ffcccc">         vicen   ,&amp;! volume per unit area of ice          (m)</a>
+  1801) <a name="l1801" style="background-color: #ffcccc">         vsnon     ! volume per unit area of snow         (m)</a>
+  1802) <a name="l1802" style="background-color: #ffcccc"></a>
+  1803) <a name="l1803" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block,max_ntrcr,ncat), &amp;</a>
+  1804) <a name="l1804" style="background-color: #ffcccc">         intent(out) ::     &amp;</a>
+  1805) <a name="l1805" style="background-color: #ffcccc">         trcrn     ! ice tracers</a>
+  1806) <a name="l1806" style="background-color: #ffcccc"></a>
+  1807) <a name="l1807" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block),          &amp;</a>
+  1808) <a name="l1808" style="background-color: #ffcccc">         intent(out) ::     &amp;</a>
+  1809) <a name="l1809" style="background-color: #ffcccc">         aice0     ! concentration of open water</a>
+  1810) <a name="l1810" style="background-color: #ffcccc">!</a>
+  1811) <a name="l1811" style="background-color: #ffcccc">!EOP</a>
+  1812) <a name="l1812" style="background-color: #ffcccc">!</a>
+  1813) <a name="l1813" style="background-color: #ffcccc">      integer (kind=int_kind) ::      &amp;</a>
+  1814) <a name="l1814" style="background-color: #ffcccc">         i, j, k, n , it,&amp;! counting indices</a>
+  1815) <a name="l1815" style="background-color: #ffcccc">         narrays        ,&amp;! counter for number of state variable arrays</a>
+  1816) <a name="l1816" style="background-color: #ffcccc">         icells           ! number of ocean/ice cells</a>
+  1817) <a name="l1817" style="background-color: #ffcccc"></a>
+  1818) <a name="l1818" style="background-color: #ffcccc">      integer (kind=int_kind), dimension (nx_block*ny_block) ::        &amp;</a>
+  1819) <a name="l1819" style="background-color: #ffcccc">        indxi, indxj</a>
+  1820) <a name="l1820" style="background-color: #ffcccc"></a>
+  1821) <a name="l1821" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block*ny_block,narr) ::      &amp;</a>
+  1822) <a name="l1822" style="background-color: #ffcccc">         work </a>
+  1823) <a name="l1823" style="background-color: #ffcccc"></a>
+  1824) <a name="l1824" style="background-color: #ffcccc">      ! for call to compute_tracers</a>
+  1825) <a name="l1825" style="background-color: #ffcccc">      icells = 0</a>
+  1826) <a name="l1826" style="background-color: #ffcccc">      do j = 1, ny_block</a>
+  1827) <a name="l1827" style="background-color: #ffcccc">      do i = 1, nx_block</a>
+  1828) <a name="l1828" style="background-color: #ffcccc">         icells = icells + 1</a>
+  1829) <a name="l1829" style="background-color: #ffcccc">         indxi(icells) = i</a>
+  1830) <a name="l1830" style="background-color: #ffcccc">         indxj(icells) = j</a>
+  1831) <a name="l1831" style="background-color: #ffcccc">         work (icells,:) = works(i,j,:)</a>
+  1832) <a name="l1832" style="background-color: #ffcccc">      enddo</a>
+  1833) <a name="l1833" style="background-color: #ffcccc">      enddo</a>
+  1834) <a name="l1834" style="background-color: #ffcccc"></a>
+  1835) <a name="l1835" style="background-color: #ffcccc">      do j=1,ny_block</a>
+  1836) <a name="l1836" style="background-color: #ffcccc">      do i=1,nx_block</a>
+  1837) <a name="l1837" style="background-color: #ffcccc">         aice0(i,j) = works(i,j,1)</a>
+  1838) <a name="l1838" style="background-color: #ffcccc">      enddo</a>
+  1839) <a name="l1839" style="background-color: #ffcccc">      enddo</a>
+  1840) <a name="l1840" style="background-color: #ffcccc">      narrays = 1               ! aice0 is first array</a>
+  1841) <a name="l1841" style="background-color: #ffcccc"></a>
+  1842) <a name="l1842" style="background-color: #ffcccc">      do n=1,ncat</a>
+  1843) <a name="l1843" style="background-color: #ffcccc"></a>
+  1844) <a name="l1844" style="background-color: #ffcccc">         do j=1,ny_block</a>
+  1845) <a name="l1845" style="background-color: #ffcccc">         do i=1,nx_block</a>
+  1846) <a name="l1846" style="background-color: #ffcccc">            aicen(i,j,n) = works(i,j,narrays+1)</a>
+  1847) <a name="l1847" style="background-color: #ffcccc">            vicen(i,j,n) = works(i,j,narrays+2)</a>
+  1848) <a name="l1848" style="background-color: #ffcccc">            vsnon(i,j,n) = works(i,j,narrays+3)</a>
+  1849) <a name="l1849" style="background-color: #ffcccc">         enddo</a>
+  1850) <a name="l1850" style="background-color: #ffcccc">         enddo</a>
+  1851) <a name="l1851" style="background-color: #ffcccc">         narrays = narrays + 3</a>
+  1852) <a name="l1852" style="background-color: #ffcccc"></a>
+  1853) <a name="l1853" style="background-color: #ffcccc">         call compute_tracers (nx_block,     ny_block,               &amp;</a>
+  1854) <a name="l1854" style="background-color: #ffcccc">                               icells,       indxi,   indxj,         &amp;</a>
+  1855) <a name="l1855" style="background-color: #ffcccc">                               ntrcr,        trcr_depend,            &amp;</a>
+  1856) <a name="l1856" style="background-color: #ffcccc">                               work (:,narrays+1:narrays+ntrcr),     &amp;</a>
+  1857) <a name="l1857" style="background-color: #ffcccc">                               aicen(:,:,n),                         &amp;</a>
+  1858) <a name="l1858" style="background-color: #ffcccc">                               vicen(:,:,n), vsnon(:,:,n),           &amp;</a>
+  1859) <a name="l1859" style="background-color: #ffcccc">                               trcrn(:,:,:,n))</a>
+  1860) <a name="l1860" style="background-color: #ffcccc"></a>
+  1861) <a name="l1861" style="background-color: #ffcccc">         narrays = narrays + ntrcr</a>
+  1862) <a name="l1862" style="background-color: #ffcccc"></a>
+  1863) <a name="l1863" style="background-color: #ffcccc">      enddo                     ! ncat</a>
+  1864) <a name="l1864" style="background-color: #ffcccc"></a>
+  1865) <a name="l1865" style="background-color: #ffcccc">      end subroutine work_to_state</a>
+  1866) <a name="l1866" style="background-color: #ffffff"></a>
+  1867) <a name="l1867" style="background-color: #ffffff">!=======================================================================</a>
+  1868) <a name="l1868" style="background-color: #ffffff">!BOP</a>
+  1869) <a name="l1869" style="background-color: #ffffff">!</a>
+  1870) <a name="l1870" style="background-color: #ffffff">! !IROUTINE: upwind_field - advection according to upwind</a>
+  1871) <a name="l1871" style="background-color: #ffffff">!</a>
+  1872) <a name="l1872" style="background-color: #ffffff">! !INTERFACE:</a>
+  1873) <a name="l1873" style="background-color: #ffffff">!</a>
+  1874) <a name="l1874" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">upwind_field (nx_block, ny_block,   &amp;</a>
+  1875) <a name="l1875" style="background-color: #ffcccc">                               ilo, ihi, jlo, jhi,   &amp;</a>
+  1876) <a name="l1876" style="background-color: #ffcccc">                               dt,                   &amp;</a>
+  1877) <a name="l1877" style="background-color: #ffcccc">                               narrays,  phi,        &amp;</a>
+  1878) <a name="l1878" style="background-color: #ffcccc">                               uee,      vnn,        &amp;</a>
+  1879) <a name="l1879" style="background-color: #ffcccc">                               HTE,      HTN,        &amp;</a>
+  1880) <a name="l1880" style="background-color: #ffcccc">                               tarea)</a>
+  1881) <a name="l1881" style="background-color: #ffcccc">!</a>
+  1882) <a name="l1882" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+  1883) <a name="l1883" style="background-color: #ffcccc">!</a>
+  1884) <a name="l1884" style="background-color: #ffcccc">! upwind transport algorithm</a>
+  1885) <a name="l1885" style="background-color: #ffcccc">!</a>
+  1886) <a name="l1886" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+  1887) <a name="l1887" style="background-color: #ffcccc">!</a>
+  1888) <a name="l1888" style="background-color: #ffcccc">! same as module</a>
+  1889) <a name="l1889" style="background-color: #ffcccc">!</a>
+  1890) <a name="l1890" style="background-color: #ffcccc">! !USES:</a>
+  1891) <a name="l1891" style="background-color: #ffcccc">!</a>
+  1892) <a name="l1892" style="background-color: #ffcccc">!</a>
+  1893) <a name="l1893" style="background-color: #ffcccc">! !INPUT/OUTPUT PARAMETERS:</a>
+  1894) <a name="l1894" style="background-color: #ffcccc">!</a>
+  1895) <a name="l1895" style="background-color: #ffcccc">      integer (kind=int_kind), intent (in) ::     &amp;</a>
+  1896) <a name="l1896" style="background-color: #ffcccc">         nx_block, ny_block ,&amp;! block dimensions</a>
+  1897) <a name="l1897" style="background-color: #ffcccc">         ilo,ihi,jlo,jhi    ,&amp;! beginning and end of physical domain</a>
+  1898) <a name="l1898" style="background-color: #ffcccc">         narrays              ! number of 2D arrays to be transported</a>
+  1899) <a name="l1899" style="background-color: #ffcccc"></a>
+  1900) <a name="l1900" style="background-color: #ffcccc">      real (kind=dbl_kind), intent(in) ::         &amp;</a>
+  1901) <a name="l1901" style="background-color: #ffcccc">         dt                   ! time step</a>
+  1902) <a name="l1902" style="background-color: #ffcccc"></a>
+  1903) <a name="l1903" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension(nx_block,ny_block,narrays), &amp;</a>
+  1904) <a name="l1904" style="background-color: #ffcccc">         intent(inout) ::                                         &amp;</a>
+  1905) <a name="l1905" style="background-color: #ffcccc">         phi                  ! scalar field</a>
+  1906) <a name="l1906" style="background-color: #ffcccc"></a>
+  1907) <a name="l1907" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension(nx_block,ny_block),         &amp;</a>
+  1908) <a name="l1908" style="background-color: #ffcccc">         intent(in)::     &amp;</a>
+  1909) <a name="l1909" style="background-color: #ffcccc">         uee, vnn             ! cell edge velocities</a>
+  1910) <a name="l1910" style="background-color: #ffcccc"></a>
+  1911) <a name="l1911" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension(nx_block,ny_block), intent(in) :: &amp;</a>
+  1912) <a name="l1912" style="background-color: #ffcccc">         HTE                ,&amp;! length of east cell edge </a>
+  1913) <a name="l1913" style="background-color: #ffcccc">         HTN                ,&amp;! length of north cell edge</a>
+  1914) <a name="l1914" style="background-color: #ffcccc">         tarea                ! grid cell area</a>
+  1915) <a name="l1915" style="background-color: #ffcccc">!</a>
+  1916) <a name="l1916" style="background-color: #ffcccc">!EOP</a>
+  1917) <a name="l1917" style="background-color: #ffcccc">!</a>
+  1918) <a name="l1918" style="background-color: #ffcccc">      integer (kind=int_kind) ::     &amp;</a>
+  1919) <a name="l1919" style="background-color: #ffcccc">         i, j, k, n           ! standard indices</a>
+  1920) <a name="l1920" style="background-color: #ffcccc"></a>
+  1921) <a name="l1921" style="background-color: #ffcccc">      real (kind=dbl_kind) ::        &amp;</a>
+  1922) <a name="l1922" style="background-color: #ffcccc">         upwind, y1, y2, a, h   ! function</a>
+  1923) <a name="l1923" style="background-color: #ffcccc"></a>
+  1924) <a name="l1924" style="background-color: #ffcccc">      real (kind=dbl_kind), dimension (nx_block,ny_block) :: &amp;</a>
+  1925) <a name="l1925" style="background-color: #ffcccc">         worka, &amp;</a>
+  1926) <a name="l1926" style="background-color: #ffcccc">         workb</a>
+  1927) <a name="l1927" style="background-color: #ffcccc"></a>
+  1928) <a name="l1928" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+  1929) <a name="l1929" style="background-color: #ffcccc">    ! Define upwind function</a>
+  1930) <a name="l1930" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+  1931) <a name="l1931" style="background-color: #ffcccc"></a>
+  1932) <a name="l1932" style="background-color: #ffcccc">      upwind(y1,y2,a,h) = p5*dt*h*((a+abs(a))*y1+(a-abs(a))*y2)</a>
+  1933) <a name="l1933" style="background-color: #ffcccc"></a>
+  1934) <a name="l1934" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+  1935) <a name="l1935" style="background-color: #ffcccc">    ! upwind transport</a>
+  1936) <a name="l1936" style="background-color: #ffcccc">    !-------------------------------------------------------------------</a>
+  1937) <a name="l1937" style="background-color: #ffcccc"></a>
+  1938) <a name="l1938" style="background-color: #ffcccc">      worka(:,:) = c0</a>
+  1939) <a name="l1939" style="background-color: #ffcccc">      workb(:,:) = c0</a>
+  1940) <a name="l1940" style="background-color: #ffcccc"></a>
+  1941) <a name="l1941" style="background-color: #ffcccc">      do n = 1, narrays</a>
+  1942) <a name="l1942" style="background-color: #ffcccc"></a>
+  1943) <a name="l1943" style="background-color: #ffcccc">         do j = 1, jhi</a>
+  1944) <a name="l1944" style="background-color: #ffcccc">         do i = 1, ihi</a>
+  1945) <a name="l1945" style="background-color: #ffcccc">            worka(i,j)=     &amp;</a>
+  1946) <a name="l1946" style="background-color: #ffcccc">               upwind(phi(i,j,n),phi(i+1,j,n),uee(i,j),HTE(i,j))</a>
+  1947) <a name="l1947" style="background-color: #ffcccc">            workb(i,j)=     &amp;</a>
+  1948) <a name="l1948" style="background-color: #ffcccc">               upwind(phi(i,j,n),phi(i,j+1,n),vnn(i,j),HTN(i,j))</a>
+  1949) <a name="l1949" style="background-color: #ffcccc">         enddo</a>
+  1950) <a name="l1950" style="background-color: #ffcccc">         enddo</a>
+  1951) <a name="l1951" style="background-color: #ffcccc"></a>
+  1952) <a name="l1952" style="background-color: #ffcccc">         do j = jlo, jhi</a>
+  1953) <a name="l1953" style="background-color: #ffcccc">         do i = ilo, ihi</a>
+  1954) <a name="l1954" style="background-color: #ffcccc">            phi(i,j,n) = phi(i,j,n) - ( worka(i,j)-worka(i-1,j)      &amp;</a>
+  1955) <a name="l1955" style="background-color: #ffcccc">                                      + workb(i,j)-workb(i,j-1) )    &amp;</a>
+  1956) <a name="l1956" style="background-color: #ffcccc">                                      / tarea(i,j)</a>
+  1957) <a name="l1957" style="background-color: #ffcccc">         enddo</a>
+  1958) <a name="l1958" style="background-color: #ffcccc">         enddo</a>
+  1959) <a name="l1959" style="background-color: #ffcccc"></a>
+  1960) <a name="l1960" style="background-color: #ffcccc">      enddo                     ! narrays</a>
+  1961) <a name="l1961" style="background-color: #ffcccc"></a>
+  1962) <a name="l1962" style="background-color: #ffcccc">      end subroutine upwind_field</a>
+  1963) <a name="l1963" style="background-color: #ffffff"></a>
+  1964) <a name="l1964" style="background-color: #ffffff">!=======================================================================</a>
+  1965) <a name="l1965" style="background-color: #ffffff"></a>
+  1966) <a name="l1966" style="background-color: #ffffff">      end module ice_transport_driver</a>
+  1967) <a name="l1967" style="background-color: #ffffff"></a>
+  1968) <a name="l1968" style="background-color: #ffffff">!=======================================================================</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

@@ -1,0 +1,1768 @@
+<html>
+<head>
+<title>Listing of mo_neu_wetdep.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;mo_neu_wetdep.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 85.71&#160;%func&#160;&#160;&#160;&#160; 53.62&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!</a>
+     2) <a name="l2" style="background-color: #ffffff">! code written by J.-F. Lamarque, S. Walters and F. Vitt</a>
+     3) <a name="l3" style="background-color: #ffffff">! based on the original code from J. Neu developed for UC Irvine</a>
+     4) <a name="l4" style="background-color: #ffffff">! model</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">module mo_neu_wetdep</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">  use shr_kind_mod, only : r8 =&gt; shr_kind_r8</a>
+     9) <a name="l9" style="background-color: #ffffff">  use cam_logfile,  only : iulog</a>
+    10) <a name="l10" style="background-color: #ffffff">  use constituents, only : pcnst</a>
+    11) <a name="l11" style="background-color: #ffffff">  use spmd_utils,   only : masterproc</a>
+    12) <a name="l12" style="background-color: #ffffff">  use abortutils,   only : endrun</a>
+    13) <a name="l13" style="background-color: #ffffff">  use seq_drydep_mod, only : n_species_table, species_name_table, dheff</a>
+    14) <a name="l14" style="background-color: #ffffff">  use gas_wetdep_opts,only : gas_wetdep_method, gas_wetdep_list, gas_wetdep_cnt</a>
+    15) <a name="l15" style="background-color: #ffffff">!</a>
+    16) <a name="l16" style="background-color: #ffffff">  implicit none</a>
+    17) <a name="l17" style="background-color: #ffffff">!</a>
+    18) <a name="l18" style="background-color: #ffffff">  private</a>
+    19) <a name="l19" style="background-color: #ffffff">  public :: neu_wetdep_init</a>
+    20) <a name="l20" style="background-color: #ffffff">  public :: neu_wetdep_tend</a>
+    21) <a name="l21" style="background-color: #ffffff">  public :: do_neu_wetdep</a>
+    22) <a name="l22" style="background-color: #ffffff">!</a>
+    23) <a name="l23" style="background-color: #ffffff">  save</a>
+    24) <a name="l24" style="background-color: #ffffff">!</a>
+    25) <a name="l25" style="background-color: #ffffff">  integer, allocatable, dimension(:) :: mapping_to_heff,mapping_to_mmr</a>
+    26) <a name="l26" style="background-color: #ffffff">  real(r8),allocatable, dimension(:) :: mol_weight</a>
+    27) <a name="l27" style="background-color: #ffffff">  logical ,allocatable, dimension(:) :: ice_uptake</a>
+    28) <a name="l28" style="background-color: #ffffff">  integer                     :: index_cldice,index_cldliq,nh3_ndx,co2_ndx</a>
+    29) <a name="l29" style="background-color: #ffffff">  logical                     :: debug   = .false.</a>
+    30) <a name="l30" style="background-color: #ffffff">  integer                     :: hno3_ndx = 0</a>
+    31) <a name="l31" style="background-color: #ffffff">!</a>
+    32) <a name="l32" style="background-color: #ffffff">! diagnostics</a>
+    33) <a name="l33" style="background-color: #ffffff">!</a>
+    34) <a name="l34" style="background-color: #ffffff">  logical                     :: do_diag = .false.</a>
+    35) <a name="l35" style="background-color: #ffffff">  integer, parameter          :: kdiag = 18</a>
+    36) <a name="l36" style="background-color: #ffffff">!</a>
+    37) <a name="l37" style="background-color: #ffffff">  real(r8), parameter :: zero = 0._r8</a>
+    38) <a name="l38" style="background-color: #ffffff">  real(r8), parameter :: one  = 1._r8</a>
+    39) <a name="l39" style="background-color: #ffffff">!</a>
+    40) <a name="l40" style="background-color: #ffffff">  logical :: do_neu_wetdep</a>
+    41) <a name="l41" style="background-color: #ffffff">!</a>
+    42) <a name="l42" style="background-color: #ffffff">  real(r8), parameter  :: TICE=263._r8</a>
+    43) <a name="l43" style="background-color: #ffffff"></a>
+    44) <a name="l44" style="background-color: #ffffff">contains</a>
+    45) <a name="l45" style="background-color: #ffffff"></a>
+    46) <a name="l46" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    47) <a name="l47" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    48) <a name="l48" style="background-color: #ffffff">!</a>
+    49) <a name="l49" style="background-color: #ffffff">subroutine neu_wetdep_init</a>
+    50) <a name="l50" style="background-color: #ffffff">!</a>
+    51) <a name="l51" style="background-color: #ffffff">  use constituents, only : cnst_get_ind,cnst_mw</a>
+    52) <a name="l52" style="background-color: #ffffff">  use cam_history,  only : addfld, add_default, phys_decomp</a>
+    53) <a name="l53" style="background-color: #ffffff">  use ppgrid,       only : pver</a>
+    54) <a name="l54" style="background-color: #ffffff">  use phys_control, only : phys_getopts</a>
+    55) <a name="l55" style="background-color: #ffffff">!</a>
+    56) <a name="l56" style="background-color: #ffffff">  integer :: m,l</a>
+    57) <a name="l57" style="background-color: #ffffff">  character*20 :: test_name</a>
+    58) <a name="l58" style="background-color: #ffffff"></a>
+    59) <a name="l59" style="background-color: #ffffff">  logical :: history_chemistry</a>
+    60) <a name="l60" style="background-color: #ffffff"></a>
+    61) <a name="l61" style="background-color: #ffffff">  call phys_getopts(history_chemistry_out=history_chemistry)</a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">  do_neu_wetdep = gas_wetdep_method </a><a style="background-color: #fafad2">== 'NEU' .and. gas_wetdep_cnt&gt;0</a>
+    64) <a name="l64" style="background-color: #fafad2"></a>
+    65) <a name="l65" style="background-color: #fafad2">  if (.not.do_neu_wetdep) return</a>
+    66) <a name="l66" style="background-color: #fafad2"></a>
+    67) <a name="l67" style="background-color: #fafad2">  allocate( mapping_to_heff(gas_wetdep_cnt) )</a>
+    68) <a name="l68" style="background-color: #fafad2">  allocate( mapping_to_mmr(gas_wetdep_cnt) )</a>
+    69) <a name="l69" style="background-color: #fafad2">  allocate( ice_uptake(gas_wetdep_cnt) )</a>
+    70) <a name="l70" style="background-color: #fafad2">  allocate( mol_weight(gas_wetdep_cnt) )</a>
+    71) <a name="l71" style="background-color: #fafad2"></a>
+    72) <a name="l72" style="background-color: #fafad2">!</a>
+    73) <a name="l73" style="background-color: #fafad2">! find mapping to heff table</a>
+    74) <a name="l74" style="background-color: #fafad2">!</a>
+    75) <a name="l75" style="background-color: #ffffff">  if ( debug ) then</a>
+    76) <a name="l76" style="background-color: #ffff99">    print '(a,i4)','gas_wetdep_cnt=',gas_wetdep_cnt</a>
+    77) <a name="l77" style="background-color: #ffff99">    print '(a,i4)','n_species_table=',n_species_table</a>
+    78) <a name="l78" style="background-color: #ffff99">  end if</a>
+    79) <a name="l79" style="background-color: #ffffff">  mapping_to_heff = -99</a>
+    80) <a name="l80" style="background-color: #ffffff">  do m=1,gas_wetdep_cnt</a>
+    81) <a name="l81" style="background-color: #ffffff">!</a>
+    82) <a name="l82" style="background-color: #ffffff">    test_name = gas_wetdep_list(m)</a>
+    83) <a name="l83" style="background-color: #ffffff">    if ( debug ) </a><a style="background-color: #ffff99">print '(i4,a)',m,trim(test_name)</a>
+    84) <a name="l84" style="background-color: #ffff99">!</a>
+    85) <a name="l85" style="background-color: #ffff99">! mapping based on the MOZART4 wet removal subroutine;</a>
+    86) <a name="l86" style="background-color: #ffff99">! this might need to be redone (JFL: Sep 2010)</a>
+    87) <a name="l87" style="background-color: #ffff99">!</a>
+    88) <a name="l88" style="background-color: #ffff99">    select case( </a><a style="background-color: #ffffff">trim(test_name) )</a>
+    89) <a name="l89" style="background-color: #ffffff">!</a>
+    90) <a name="l90" style="background-color: #ffffff">! CCMI: added SO2t and NH_50W</a>
+    91) <a name="l91" style="background-color: #ffffff">!       </a>
+    92) <a name="l92" style="background-color: #ffffff">      case( 'HYAC', 'CH3COOH' , 'HCOOH', 'EOOH' )</a>
+    93) <a name="l93" style="background-color: #ffff99">         test_name = 'CH2O'</a>
+    94) <a name="l94" style="background-color: #ffff99">      case ( </a><a style="background-color: #ffffff">'SOGB','SOGI','SOGM','SOGT','SOGX' )</a>
+    95) <a name="l95" style="background-color: #ffff99">         test_name = 'H2O2'</a>
+    96) <a name="l96" style="background-color: #ffff99">      case ( </a><a style="background-color: #ffffff">'SO2t' )</a>
+    97) <a name="l97" style="background-color: #ffff99">         test_name = 'SO2'</a>
+    98) <a name="l98" style="background-color: #ffff99">      case ( </a><a style="background-color: #ffffff">'CLONO2','BRONO2','HCL','HOCL','HOBR','HBR', 'Pb', 'MACROOH', 'ISOPOOH', 'XOOH', 'H2SO4', 'HF', 'COF2', 'COFCL')</a>
+    99) <a name="l99" style="background-color: #ffffff">         test_name = 'HNO3'</a>
+   100) <a name="l100" style="background-color: #ffffff">      case ( 'NH_50W' ) </a>
+   101) <a name="l101" style="background-color: #ffff99">         test_name = 'HNO3'</a>
+   102) <a name="l102" style="background-color: #ffff99">      case ( </a><a style="background-color: #ffffff">'ALKOOH', 'MEKOOH', 'TOLOOH', 'TERPOOH' )</a>
+   103) <a name="l103" style="background-color: #fafad2">         test_name = 'CH3OOH'        </a>
+   104) <a name="l104" style="background-color: #fafad2"></a>
+   105) <a name="l105" style="background-color: #fafad2">    end select</a>
+   106) <a name="l106" style="background-color: #fafad2">!</a>
+   107) <a name="l107" style="background-color: #ffffff">    do l = 1,n_species_table</a>
+   108) <a name="l108" style="background-color: #ffffff">!</a>
+   109) <a name="l109" style="background-color: #ffffff">!      if ( debug ) print '(i4,a)',l,trim(species_name_table(l))</a>
+   110) <a name="l110" style="background-color: #ffffff">!</a>
+   111) <a name="l111" style="background-color: #ffffff">       if( trim(test_name) == trim( species_name_table(l) ) ) then</a>
+   112) <a name="l112" style="background-color: #ffffff">          mapping_to_heff(m)  = l</a>
+   113) <a name="l113" style="background-color: #ffffff">          if ( debug ) </a><a style="background-color: #ffff99">print '(a,a,i4)','mapping to heff of ',trim(species_name_table(l)),l</a>
+   114) <a name="l114" style="background-color: #ffff99">          exit</a>
+   115) <a name="l115" style="background-color: #ffff99">       end if</a>
+   116) <a name="l116" style="background-color: #ffff99">    end do</a>
+   117) <a name="l117" style="background-color: #ffffff">    if ( mapping_to_heff(m) == -99 ) then</a>
+   118) <a name="l118" style="background-color: #ffff99">      if (masterproc) print *,'problem with mapping_to_heff of ',trim(test_name)</a>
+   119) <a name="l119" style="background-color: #ffff99">!      call endrun()</a>
+   120) <a name="l120" style="background-color: #ffff99">    end if</a>
+   121) <a name="l121" style="background-color: #ffff99">!</a>
+   122) <a name="l122" style="background-color: #ffff99">! special cases for NH3 and CO2</a>
+   123) <a name="l123" style="background-color: #ffff99">!</a>
+   124) <a name="l124" style="background-color: #ffff99">    if ( </a><a style="background-color: #ffffff">trim(test_name) == 'NH3' ) then</a>
+   125) <a name="l125" style="background-color: #ffff99">      nh3_ndx = m</a>
+   126) <a name="l126" style="background-color: #ffff99">    end if</a>
+   127) <a name="l127" style="background-color: #ffff99">    if ( </a><a style="background-color: #ffffff">trim(test_name) == 'CO2' ) then</a>
+   128) <a name="l128" style="background-color: #ffff99">      co2_ndx = m</a>
+   129) <a name="l129" style="background-color: #ffff99">    end if</a>
+   130) <a name="l130" style="background-color: #ffff99">    if ( </a><a style="background-color: #ffffff">trim(test_name) == 'HNO3' ) then</a>
+   131) <a name="l131" style="background-color: #ffffff">      hno3_ndx = m</a>
+   132) <a name="l132" style="background-color: #ffffff">    end if</a>
+   133) <a name="l133" style="background-color: #ffffff">!</a>
+   134) <a name="l134" style="background-color: #ffffff">  end do</a>
+   135) <a name="l135" style="background-color: #ffffff">   </a>
+   136) <a name="l136" style="background-color: #ffffff">   if (any ( mapping_to_heff(:) </a><a style="background-color: #fafad2">== -99 ))  </a><a style="background-color: #ffff99">call endrun('mo_neu_wet-&gt;depwetdep_init: unmapped species error' )</a>
+   137) <a name="l137" style="background-color: #ffff99">!</a>
+   138) <a name="l138" style="background-color: #ffffff">  if ( debug ) then</a>
+   139) <a name="l139" style="background-color: #ffff99">    print '(a,i4)','co2_ndx',co2_ndx</a>
+   140) <a name="l140" style="background-color: #ffff99">    print '(a,i4)','nh3_ndx',nh3_ndx</a>
+   141) <a name="l141" style="background-color: #ffff99">  end if</a>
+   142) <a name="l142" style="background-color: #ffff99">!</a>
+   143) <a name="l143" style="background-color: #ffff99">! find mapping to species</a>
+   144) <a name="l144" style="background-color: #ffff99">!</a>
+   145) <a name="l145" style="background-color: #ffffff">  mapping_to_mmr = -99</a>
+   146) <a name="l146" style="background-color: #ffffff">  do m=1,gas_wetdep_cnt</a>
+   147) <a name="l147" style="background-color: #ffffff">    if ( debug ) </a><a style="background-color: #ffff99">print '(i4,a)',m,trim(gas_wetdep_list(m))</a>
+   148) <a name="l148" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">cnst_get_ind(gas_wetdep_list(m), mapping_to_mmr(m), abort=.false. )</a>
+   149) <a name="l149" style="background-color: #ffffff">    if ( debug ) </a><a style="background-color: #ffff99">print '(a,i4)','mapping_to_mmr ',mapping_to_mmr(m)</a>
+   150) <a name="l150" style="background-color: #ffffff">    if ( mapping_to_mmr(m) &lt;= 0 ) then</a>
+   151) <a name="l151" style="background-color: #ffff99">      print *,'problem with mapping_to_mmr of ',gas_wetdep_list(m)</a>
+   152) <a name="l152" style="background-color: #ffff99">      call endrun('problem with mapping_to_mmr of '//trim(gas_wetdep_list(m)))</a>
+   153) <a name="l153" style="background-color: #ffff99">    end if</a>
+   154) <a name="l154" style="background-color: #ffff99">  end do</a>
+   155) <a name="l155" style="background-color: #ffff99">!</a>
+   156) <a name="l156" style="background-color: #ffff99">! define specie-dependent arrays</a>
+   157) <a name="l157" style="background-color: #ffff99">!</a>
+   158) <a name="l158" style="background-color: #ffffff">  do m=1,gas_wetdep_cnt</a>
+   159) <a name="l159" style="background-color: #ffffff">!</a>
+   160) <a name="l160" style="background-color: #ffffff">    mol_weight     (m) = cnst_mw(mapping_to_mmr(m))</a>
+   161) <a name="l161" style="background-color: #ffffff">    if ( debug ) </a><a style="background-color: #ffff99">print '(i4,a,f8.4)',m,' mol_weight ',mol_weight(m)</a>
+   162) <a name="l162" style="background-color: #ffffff">    ice_uptake(m) = .false.</a>
+   163) <a name="l163" style="background-color: #ffffff">    if ( trim(gas_wetdep_list(m)) == 'HNO3' ) then</a>
+   164) <a name="l164" style="background-color: #ffff99">      ice_uptake(m) = .true.</a>
+   165) <a name="l165" style="background-color: #ffff99">    end if</a>
+   166) <a name="l166" style="background-color: #ffff99">!</a>
+   167) <a name="l167" style="background-color: #ffff99">  end do</a>
+   168) <a name="l168" style="background-color: #ffff99">!</a>
+   169) <a name="l169" style="background-color: #ffff99">! indices for cloud quantities</a>
+   170) <a name="l170" style="background-color: #ffff99">!</a>
+   171) <a name="l171" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">cnst_get_ind( 'CLDICE', index_cldice )</a>
+   172) <a name="l172" style="background-color: #ffffff">  call cnst_get_ind( 'CLDLIQ', index_cldliq )</a>
+   173) <a name="l173" style="background-color: #ffffff">!</a>
+   174) <a name="l174" style="background-color: #ffffff">! define output</a>
+   175) <a name="l175" style="background-color: #ffffff">!</a>
+   176) <a name="l176" style="background-color: #ffffff">  do m=1,gas_wetdep_cnt</a>
+   177) <a name="l177" style="background-color: #ffffff">    call addfld     ('DTWR_'//trim(gas_wetdep_list(m)),'mol/mol/s',pver, 'A','wet removal Neu scheme tendency',phys_decomp)</a>
+   178) <a name="l178" style="background-color: #ffffff">    if (history_chemistry) then</a>
+   179) <a name="l179" style="background-color: #ffffff">       call add_default('DTWR_'//trim(gas_wetdep_list(m)), 1, ' ')</a>
+   180) <a name="l180" style="background-color: #ffffff">    end if</a>
+   181) <a name="l181" style="background-color: #ffffff">  end do</a>
+   182) <a name="l182" style="background-color: #ffffff">!</a>
+   183) <a name="l183" style="background-color: #ffffff">  if ( do_diag ) then</a>
+   184) <a name="l184" style="background-color: #ffffff">    call </a><a style="background-color: #ffff99">addfld     ('QT_RAIN_HNO3','mol/mol/s',pver, 'A','wet removal Neu scheme rain tendency',phys_decomp)</a>
+   185) <a name="l185" style="background-color: #ffff99">    call addfld     ('QT_RIME_HNO3','mol/mol/s',pver, 'A','wet removal Neu scheme rain tendency',phys_decomp)</a>
+   186) <a name="l186" style="background-color: #ffff99">    call addfld     ('QT_WASH_HNO3','mol/mol/s',pver, 'A','wet removal Neu scheme rain tendency',phys_decomp)</a>
+   187) <a name="l187" style="background-color: #ffff99">    call addfld     ('QT_EVAP_HNO3','mol/mol/s',pver, 'A','wet removal Neu scheme rain tendency',phys_decomp)</a>
+   188) <a name="l188" style="background-color: #ffff99">    if (history_chemistry) then</a>
+   189) <a name="l189" style="background-color: #ffff99">       call add_default('QT_RAIN_HNO3',1,' ')</a>
+   190) <a name="l190" style="background-color: #ffff99">       call add_default('QT_RIME_HNO3',1,' ')</a>
+   191) <a name="l191" style="background-color: #ffff99">       call add_default('QT_WASH_HNO3',1,' ')</a>
+   192) <a name="l192" style="background-color: #ffff99">       call add_default('QT_EVAP_HNO3',1,' ')</a>
+   193) <a name="l193" style="background-color: #ffff99">    end if</a>
+   194) <a name="l194" style="background-color: #ffff99">  end if</a>
+   195) <a name="l195" style="background-color: #ffff99">!</a>
+   196) <a name="l196" style="background-color: #ffff99">  return</a>
+   197) <a name="l197" style="background-color: #ffff99">!</a>
+   198) <a name="l198" style="background-color: #ffffff">end subroutine neu_wetdep_init</a>
+   199) <a name="l199" style="background-color: #ffffff">!</a>
+   200) <a name="l200" style="background-color: #ffffff">subroutine neu_wetdep_tend(lchnk,ncol,mmr,pmid,pdel,zint,tfld,delt, &amp;</a>
+   201) <a name="l201" style="background-color: #ffffff">     prain, nevapr, cld, cmfdqr, wd_tend)</a>
+   202) <a name="l202" style="background-color: #ffffff">!</a>
+   203) <a name="l203" style="background-color: #ffffff">  use ppgrid,           only : pcols, pver</a>
+   204) <a name="l204" style="background-color: #ffffff">!!DEK  </a>
+   205) <a name="l205" style="background-color: #ffffff">  use phys_grid,        only : get_area_all_p, get_rlat_all_p</a>
+   206) <a name="l206" style="background-color: #ffffff">  use shr_const_mod,    only : SHR_CONST_REARTH,SHR_CONST_G</a>
+   207) <a name="l207" style="background-color: #ffffff">  use cam_history,      only : outfld</a>
+   208) <a name="l208" style="background-color: #ffffff">!</a>
+   209) <a name="l209" style="background-color: #ffffff">  implicit none</a>
+   210) <a name="l210" style="background-color: #ffffff">!</a>
+   211) <a name="l211" style="background-color: #ffffff">  integer,        intent(in)    :: lchnk,ncol</a>
+   212) <a name="l212" style="background-color: #ffffff">  real(r8),       intent(in)    :: mmr(pcols,pver,pcnst)    ! mass mixing ratio (kg/kg)</a>
+   213) <a name="l213" style="background-color: #ffffff">  real(r8),       intent(in)    :: pmid(pcols,pver)         ! midpoint pressures (Pa)</a>
+   214) <a name="l214" style="background-color: #ffffff">  real(r8),       intent(in)    :: pdel(pcols,pver)         ! pressure delta about midpoints (Pa)</a>
+   215) <a name="l215" style="background-color: #ffffff">  real(r8),       intent(in)    :: zint(pcols,pver+1)       ! interface geopotential height above the surface (m)</a>
+   216) <a name="l216" style="background-color: #ffffff">  real(r8),       intent(in)    :: tfld(pcols,pver)         ! midpoint temperature (K)</a>
+   217) <a name="l217" style="background-color: #ffffff">  real(r8),       intent(in)    :: delt                     ! timestep (s)</a>
+   218) <a name="l218" style="background-color: #ffffff">!  </a>
+   219) <a name="l219" style="background-color: #ffffff"></a>
+   220) <a name="l220" style="background-color: #ffffff">  real(r8),       intent(in)    :: prain(ncol, pver)</a>
+   221) <a name="l221" style="background-color: #ffffff">  real(r8),       intent(in)    :: nevapr(ncol, pver)</a>
+   222) <a name="l222" style="background-color: #ffffff">  real(r8),       intent(in)    :: cld(ncol, pver)</a>
+   223) <a name="l223" style="background-color: #ffffff">  real(r8),       intent(in)    :: cmfdqr(ncol, pver)</a>
+   224) <a name="l224" style="background-color: #ffffff"></a>
+   225) <a name="l225" style="background-color: #ffffff">  real(r8),       intent(inout) :: wd_tend(pcols,pver,pcnst)</a>
+   226) <a name="l226" style="background-color: #ffffff"></a>
+   227) <a name="l227" style="background-color: #ffffff"></a>
+   228) <a name="l228" style="background-color: #ffffff"></a>
+   229) <a name="l229" style="background-color: #ffffff">!</a>
+   230) <a name="l230" style="background-color: #ffffff">! local arrays and variables</a>
+   231) <a name="l231" style="background-color: #ffffff">!</a>
+   232) <a name="l232" style="background-color: #ffffff">  integer :: i,k,l,kk,m,id</a>
+   233) <a name="l233" style="background-color: #ffffff">  real(r8), parameter                       :: rearth = SHR_CONST_REARTH    ! radius earth (m)</a>
+   234) <a name="l234" style="background-color: #ffffff">  real(r8), parameter                       :: gravit = SHR_CONST_G         ! m/s^2</a>
+   235) <a name="l235" style="background-color: #ffffff">  real(r8), dimension(ncol)                 :: area</a>
+   236) <a name="l236" style="background-color: #ffffff">  real(r8), dimension(ncol,pver)            :: cldice,cldliq,cldfrc,totprec,totevap,delz,delp,p</a>
+   237) <a name="l237" style="background-color: #ffffff">  real(r8), dimension(ncol,pver)            :: rls,evaprate,mass_in_layer,temp</a>
+   238) <a name="l238" style="background-color: #ffffff">  real(r8), dimension(ncol,pver,gas_wetdep_cnt) :: trc_mass,heff,dtwr</a>
+   239) <a name="l239" style="background-color: #ffffff">  real(r8), dimension(ncol,pver,gas_wetdep_cnt) :: wd_mmr</a>
+   240) <a name="l240" style="background-color: #ffffff">  logical , dimension(gas_wetdep_cnt)           :: tckaqb</a>
+   241) <a name="l241" style="background-color: #ffffff">  integer , dimension(ncol)                 :: test_flag</a>
+   242) <a name="l242" style="background-color: #ffffff">!</a>
+   243) <a name="l243" style="background-color: #ffffff">! arrays for HNO3 diagnostics</a>
+   244) <a name="l244" style="background-color: #ffffff">!</a>
+   245) <a name="l245" style="background-color: #ffffff">  real(r8), dimension(ncol,pver)            :: qt_rain,qt_rime,qt_wash,qt_evap</a>
+   246) <a name="l246" style="background-color: #ffffff">!</a>
+   247) <a name="l247" style="background-color: #ffffff">! for Henry's law calculations</a>
+   248) <a name="l248" style="background-color: #ffffff">!</a>
+   249) <a name="l249" style="background-color: #ffffff">  real(r8), parameter       :: t0     = 298._r8</a>
+   250) <a name="l250" style="background-color: #ffffff">  real(r8), parameter       :: ph     = 1.e-5_r8</a>
+   251) <a name="l251" style="background-color: #ffffff">  real(r8), parameter       :: ph_inv = 1._r8/ph</a>
+   252) <a name="l252" style="background-color: #ffffff">  real(r8)                  :: e298, dhr</a>
+   253) <a name="l253" style="background-color: #ffffff">  real(r8), dimension(ncol) :: dk1s,dk2s,wrk</a>
+   254) <a name="l254" style="background-color: #ffffff">!!DEK</a>
+   255) <a name="l255" style="background-color: #ffffff">  real(r8) :: pi</a>
+   256) <a name="l256" style="background-color: #ffffff">  real(r8) :: lats(pcols)</a>
+   257) <a name="l257" style="background-color: #ffffff">!</a>
+   258) <a name="l258" style="background-color: #ffffff">! from cam/src/physics/cam/stratiform.F90</a>
+   259) <a name="l259" style="background-color: #ffffff">!</a>
+   260) <a name="l260" style="background-color: #ffffff">!!DEK</a>
+   261) <a name="l261" style="background-color: #ffffff">  pi = 4._r8*atan(1.0_r8)</a>
+   262) <a name="l262" style="background-color: #ffffff"></a>
+   263) <a name="l263" style="background-color: #ffffff">  if (.not.do_neu_wetdep) return</a>
+   264) <a name="l264" style="background-color: #ffffff">!</a>
+   265) <a name="l265" style="background-color: #ffffff">! don't do anything if there are no species to be removed</a>
+   266) <a name="l266" style="background-color: #ffffff">!</a>
+   267) <a name="l267" style="background-color: #ffffff">  if ( gas_wetdep_cnt == 0 ) return</a>
+   268) <a name="l268" style="background-color: #ffffff">!</a>
+   269) <a name="l269" style="background-color: #ffffff">! reset output variables</a>
+   270) <a name="l270" style="background-color: #ffffff">!</a>
+   271) <a name="l271" style="background-color: #ffffff">!  wd_tend = 0._r8</a>
+   272) <a name="l272" style="background-color: #ffffff">!</a>
+   273) <a name="l273" style="background-color: #ffffff">! get area (in radians square)</a>
+   274) <a name="l274" style="background-color: #ffffff">!</a>
+   275) <a name="l275" style="background-color: #ffffff">  call get_area_all_p(lchnk, ncol, area)</a>
+   276) <a name="l276" style="background-color: #ffffff">  area = area * rearth**2                     ! in m^2</a>
+   277) <a name="l277" style="background-color: #ffffff">!</a>
+   278) <a name="l278" style="background-color: #ffffff">! reverse order along the vertical before calling</a>
+   279) <a name="l279" style="background-color: #ffffff">! J. Neu's wet removal subroutine</a>
+   280) <a name="l280" style="background-color: #ffffff">!</a>
+   281) <a name="l281" style="background-color: #ffffff">  do k=1,pver</a>
+   282) <a name="l282" style="background-color: #ffffff">    kk = pver - k + 1</a>
+   283) <a name="l283" style="background-color: #ffffff">    do i=1,ncol</a>
+   284) <a name="l284" style="background-color: #ffffff">!</a>
+   285) <a name="l285" style="background-color: #ffffff">      mass_in_layer(i,k) = area(i) * pdel(i,kk)/gravit          ! kg</a>
+   286) <a name="l286" style="background-color: #ffffff">!</a>
+   287) <a name="l287" style="background-color: #ffffff">      cldice (i,k) = mmr(i,kk,index_cldice)                     ! kg/kg</a>
+   288) <a name="l288" style="background-color: #ffffff">      cldliq (i,k) = mmr(i,kk,index_cldliq)                     ! kg/kg</a>
+   289) <a name="l289" style="background-color: #ffffff">      cldfrc (i,k) = cld(i,kk)                                  ! unitless</a>
+   290) <a name="l290" style="background-color: #ffffff">!</a>
+   291) <a name="l291" style="background-color: #ffffff">      totprec(i,k) = (prain(i,kk)+cmfdqr(i,kk)) &amp;</a>
+   292) <a name="l292" style="background-color: #ffffff">                                  * mass_in_layer(i,k)          ! kg/s</a>
+   293) <a name="l293" style="background-color: #ffffff">      totevap(i,k) = nevapr(i,kk) * mass_in_layer(i,k)          ! kg/s</a>
+   294) <a name="l294" style="background-color: #ffffff">!</a>
+   295) <a name="l295" style="background-color: #ffffff">      delz(i,k) = zint(i,kk) - zint(i,kk+1)                     ! in m</a>
+   296) <a name="l296" style="background-color: #ffffff">!</a>
+   297) <a name="l297" style="background-color: #ffffff">      temp(i,k) = tfld(i,kk)</a>
+   298) <a name="l298" style="background-color: #ffffff">!</a>
+   299) <a name="l299" style="background-color: #ffffff">! convert tracer mass to kg</a>
+   300) <a name="l300" style="background-color: #ffffff">!</a>
+   301) <a name="l301" style="background-color: #ffffff">      trc_mass(i,k,:) = mmr(i,kk,mapping_to_mmr(:)) * mass_in_layer(i,k)</a>
+   302) <a name="l302" style="background-color: #ffffff">!</a>
+   303) <a name="l303" style="background-color: #ffffff">      delp(i,k) = pdel(i,kk) * 0.01_r8          ! in hPa</a>
+   304) <a name="l304" style="background-color: #ffffff">      p   (i,k) = pmid(i,kk) * 0.01_r8          ! in hPa</a>
+   305) <a name="l305" style="background-color: #ffffff">!</a>
+   306) <a name="l306" style="background-color: #ffffff">    end do</a>
+   307) <a name="l307" style="background-color: #ffffff">  end do</a>
+   308) <a name="l308" style="background-color: #ffffff">!</a>
+   309) <a name="l309" style="background-color: #ffffff">! define array for tendency calculation (on model grid)</a>
+   310) <a name="l310" style="background-color: #ffffff">!</a>
+   311) <a name="l311" style="background-color: #ffffff">  dtwr(1:ncol,:,:) = mmr(1:ncol,:,mapping_to_mmr(:))</a>
+   312) <a name="l312" style="background-color: #ffffff">!</a>
+   313) <a name="l313" style="background-color: #ffffff">! compute 1) integrated precipitation flux across the interfaces (rls)</a>
+   314) <a name="l314" style="background-color: #ffffff">!         2) evaporation rate</a>
+   315) <a name="l315" style="background-color: #ffffff">!</a>
+   316) <a name="l316" style="background-color: #ffffff">  rls      (:,pver) = 0._r8</a>
+   317) <a name="l317" style="background-color: #ffffff">  evaprate (:,pver) = 0._r8</a>
+   318) <a name="l318" style="background-color: #ffffff">  do k=pver-1,1,-1</a>
+   319) <a name="l319" style="background-color: #ffffff">    rls     (:,k) = max(0._r8,totprec(:,k)-totevap(:,k)+rls(:,k+1))</a>
+   320) <a name="l320" style="background-color: #ffffff">    !evaprate(:,k) = min(1._r8,totevap(:,k)/(rls(:,k+1)+totprec(:,k)+1.e-36_r8))</a>
+   321) <a name="l321" style="background-color: #ffffff">    evaprate(:,k) = min(1._r8,totevap(:,k)/(rls(:,k+1)+1.e-36_r8)) </a>
+   322) <a name="l322" style="background-color: #ffffff">  end do</a>
+   323) <a name="l323" style="background-color: #ffffff">!</a>
+   324) <a name="l324" style="background-color: #ffffff">! compute effective Henry's law coefficients</a>
+   325) <a name="l325" style="background-color: #ffffff">! code taken from models/drv/shr/seq_drydep_mod.F90</a>
+   326) <a name="l326" style="background-color: #ffffff">!</a>
+   327) <a name="l327" style="background-color: #ffffff">  heff = 0._r8</a>
+   328) <a name="l328" style="background-color: #ffffff">  do k=1,pver</a>
+   329) <a name="l329" style="background-color: #ffffff">!</a>
+   330) <a name="l330" style="background-color: #ffffff">    kk = pver - k + 1</a>
+   331) <a name="l331" style="background-color: #ffffff">!</a>
+   332) <a name="l332" style="background-color: #ffffff">    wrk(:) = (t0-tfld(1:ncol,kk))/(t0*tfld(1:ncol,kk))</a>
+   333) <a name="l333" style="background-color: #ffffff">!</a>
+   334) <a name="l334" style="background-color: #ffffff">    do m=1,gas_wetdep_cnt</a>
+   335) <a name="l335" style="background-color: #ffffff">!</a>
+   336) <a name="l336" style="background-color: #ffffff">      l    = mapping_to_heff(m)</a>
+   337) <a name="l337" style="background-color: #ffffff">      id   = 6*(l - 1)</a>
+   338) <a name="l338" style="background-color: #ffffff">      e298 = dheff(id+1)</a>
+   339) <a name="l339" style="background-color: #ffffff">      dhr  = dheff(id+2)</a>
+   340) <a name="l340" style="background-color: #ffffff">      heff(:,k,m) = e298*exp( dhr*wrk(:) )</a>
+   341) <a name="l341" style="background-color: #ffffff">      test_flag = -99</a>
+   342) <a name="l342" style="background-color: #ffffff">      if( dheff(id+3) /= 0._r8 .and. dheff(id+5) == 0._r8 ) then</a>
+   343) <a name="l343" style="background-color: #ffffff">        e298 = dheff(id+3)</a>
+   344) <a name="l344" style="background-color: #ffffff">        dhr  = dheff(id+4)</a>
+   345) <a name="l345" style="background-color: #ffffff">        dk1s(:) = e298*exp( dhr*wrk(:) )</a>
+   346) <a name="l346" style="background-color: #ffffff">        where( heff(:,k,m) /= 0._r8 )</a>
+   347) <a name="l347" style="background-color: #ffffff">          heff(:,k,m) = heff(:,k,m)*(1._r8 + dk1s(:)*ph_inv)</a>
+   348) <a name="l348" style="background-color: #ffffff">        elsewhere</a>
+   349) <a name="l349" style="background-color: #ffffff">          test_flag = 1</a>
+   350) <a name="l350" style="background-color: #ffffff">          heff(:,k,m) = dk1s(:)*ph_inv</a>
+   351) <a name="l351" style="background-color: #ffffff">        endwhere</a>
+   352) <a name="l352" style="background-color: #ffffff">      end if</a>
+   353) <a name="l353" style="background-color: #ffffff">!</a>
+   354) <a name="l354" style="background-color: #ffffff">      if (k.eq.1 .and. maxval(test_flag) &gt; 0 .and. debug ) </a><a style="background-color: #ffff99">print '(a,i4)','heff for m=',m</a>
+   355) <a name="l355" style="background-color: #ffff99">!</a>
+   356) <a name="l356" style="background-color: #ffffff">      if( dheff(id+5) /= 0._r8 ) then</a>
+   357) <a name="l357" style="background-color: #ffff99">        if( nh3_ndx &gt; 0 .or. co2_ndx &gt; 0 ) then</a>
+   358) <a name="l358" style="background-color: #ffff99">          e298 = dheff(id+3)</a>
+   359) <a name="l359" style="background-color: #ffff99">          dhr  = dheff(id+4)</a>
+   360) <a name="l360" style="background-color: #ffff99">          dk1s(:) = e298*exp( dhr*wrk(:) )</a>
+   361) <a name="l361" style="background-color: #ffff99">          e298 = dheff(id+5)</a>
+   362) <a name="l362" style="background-color: #ffff99">          dhr  = dheff(id+6)</a>
+   363) <a name="l363" style="background-color: #ffff99">          dk2s(:) = e298*exp( dhr*wrk(:) )</a>
+   364) <a name="l364" style="background-color: #ffff99">          if( m == co2_ndx ) then</a>
+   365) <a name="l365" style="background-color: #ffff99">             heff(:,k,m) = heff(:,k,m)*(1._r8 + dk1s(:)*ph_inv)*(1._r8 + dk2s(:)*ph_inv)</a>
+   366) <a name="l366" style="background-color: #ffff99">          else if( m == nh3_ndx ) then</a>
+   367) <a name="l367" style="background-color: #ffff99">             heff(:,k,m) = heff(:,k,m)*(1._r8 + dk1s(:)*ph/dk2s(:))</a>
+   368) <a name="l368" style="background-color: #ffff99">          else</a>
+   369) <a name="l369" style="background-color: #ffff99">             write(iulog,*) 'error in assigning henrys law coefficients'</a>
+   370) <a name="l370" style="background-color: #ffff99">             write(iulog,*) 'species ',m</a>
+   371) <a name="l371" style="background-color: #ffff99">          end if</a>
+   372) <a name="l372" style="background-color: #ffff99">        end if</a>
+   373) <a name="l373" style="background-color: #ffff99">      end if</a>
+   374) <a name="l374" style="background-color: #ffff99">!</a>
+   375) <a name="l375" style="background-color: #ffff99">    end do</a>
+   376) <a name="l376" style="background-color: #ffff99">  end do</a>
+   377) <a name="l377" style="background-color: #ffff99">!</a>
+   378) <a name="l378" style="background-color: #ffff99">! define flag for high effective Henry's law</a>
+   379) <a name="l379" style="background-color: #ffff99">!</a>
+   380) <a name="l380" style="background-color: #ffffff">  do m=1,gas_wetdep_cnt</a>
+   381) <a name="l381" style="background-color: #ffffff">    if ( </a><a style="background-color: #fafad2">maxval(heff(:,:,m)) &gt; 1.e4_r8 ) then</a>
+   382) <a name="l382" style="background-color: #ffffff">      tckaqb(m) = .true.</a>
+   383) <a name="l383" style="background-color: #ffffff">    else</a>
+   384) <a name="l384" style="background-color: #ffff99">      tckaqb(m) = .false.</a>
+   385) <a name="l385" style="background-color: #ffff99">    end if</a>
+   386) <a name="l386" style="background-color: #ffff99">  end do</a>
+   387) <a name="l387" style="background-color: #ffff99">!</a>
+   388) <a name="l388" style="background-color: #ffffff">  if ( debug ) then</a>
+   389) <a name="l389" style="background-color: #ffff99">    print '(a,50f8.2)','tckaqb     ',tckaqb</a>
+   390) <a name="l390" style="background-color: #ffff99">    print '(a,50e12.4)','heff      ',heff(1,1,:)</a>
+   391) <a name="l391" style="background-color: #ffff99">    print '(a,50i4)'  ,'ice_uptake ',ice_uptake</a>
+   392) <a name="l392" style="background-color: #ffff99">    print '(a,50f8.2)','mol_weight ',mol_weight(:)</a>
+   393) <a name="l393" style="background-color: #ffff99">    print '(a,50f8.2)','temp       ',temp(1,:)</a>
+   394) <a name="l394" style="background-color: #ffff99">    print '(a,50f8.2)','p          ',p   (1,:)</a>
+   395) <a name="l395" style="background-color: #ffff99">  end if</a>
+   396) <a name="l396" style="background-color: #ffff99">!</a>
+   397) <a name="l397" style="background-color: #ffff99">! call J. Neu's subroutine</a>
+   398) <a name="l398" style="background-color: #ffff99">!</a>
+   399) <a name="l399" style="background-color: #ffffff">  do i=1,ncol</a>
+   400) <a name="l400" style="background-color: #ffffff">!</a>
+   401) <a name="l401" style="background-color: #ffffff">    call washo(pver,gas_wetdep_cnt,delt,trc_mass(i,:,:),mass_in_layer(i,:),p(i,:),delz(i,:) &amp;</a>
+   402) <a name="l402" style="background-color: #ffffff">              ,rls(i,:),cldliq(i,:),cldice(i,:),cldfrc(i,:),temp(i,:),evaprate(i,:) &amp;</a>
+   403) <a name="l403" style="background-color: #ffffff">              ,area(i),heff(i,:,:),mol_weight(:),tckaqb(:),ice_uptake(:) &amp;</a>
+   404) <a name="l404" style="background-color: #ffffff">              ,qt_rain(i,:),qt_rime(i,:),qt_wash(i,:),qt_evap(i,:) )</a>
+   405) <a name="l405" style="background-color: #ffffff">!</a>
+   406) <a name="l406" style="background-color: #ffffff">  end do</a>
+   407) <a name="l407" style="background-color: #ffffff">!</a>
+   408) <a name="l408" style="background-color: #ffffff">! compute tendencies and convert back to mmr</a>
+   409) <a name="l409" style="background-color: #ffffff">! on original vertical grid</a>
+   410) <a name="l410" style="background-color: #ffffff">!</a>
+   411) <a name="l411" style="background-color: #ffffff">  do k=1,pver</a>
+   412) <a name="l412" style="background-color: #ffffff">    kk = pver - k + 1</a>
+   413) <a name="l413" style="background-color: #ffffff">    do i=1,ncol</a>
+   414) <a name="l414" style="background-color: #ffffff">!</a>
+   415) <a name="l415" style="background-color: #ffffff">! convert tracer mass from kg</a>
+   416) <a name="l416" style="background-color: #ffffff">!</a>
+   417) <a name="l417" style="background-color: #ffffff">      wd_mmr(i,kk,:) = trc_mass(i,k,:) / mass_in_layer(i,k)</a>
+   418) <a name="l418" style="background-color: #ffffff">!</a>
+   419) <a name="l419" style="background-color: #ffffff">    end do</a>
+   420) <a name="l420" style="background-color: #ffffff">  end do</a>
+   421) <a name="l421" style="background-color: #ffffff">!</a>
+   422) <a name="l422" style="background-color: #ffffff">! tendency calculation (on model grid)</a>
+   423) <a name="l423" style="background-color: #ffffff">!</a>
+   424) <a name="l424" style="background-color: #ffffff">  dtwr(1:ncol,:,:) = wd_mmr(1:ncol,:,:) - dtwr(1:ncol,:,:)</a>
+   425) <a name="l425" style="background-color: #ffffff">  dtwr(1:ncol,:,:) = dtwr(1:ncol,:,:) / delt </a>
+   426) <a name="l426" style="background-color: #ffffff"></a>
+   427) <a name="l427" style="background-color: #ffffff">!!DEK polarward of 60S, 60N and &lt;200hPa set to zero!</a>
+   428) <a name="l428" style="background-color: #ffffff">  call get_rlat_all_p(lchnk, pcols, lats )</a>
+   429) <a name="l429" style="background-color: #ffffff">  do k = 1, pver</a>
+   430) <a name="l430" style="background-color: #ffffff">    do i= 1, ncol</a>
+   431) <a name="l431" style="background-color: #ffffff">      if ( abs( lats(i)*180._r8/pi ) &gt; 60._r8 ) then</a>
+   432) <a name="l432" style="background-color: #ffffff">        if ( pmid(i,k) &lt; 20000._r8) then</a>
+   433) <a name="l433" style="background-color: #ffffff">           dtwr(i,k,:) = 0._r8</a>
+   434) <a name="l434" style="background-color: #ffffff">        endif </a>
+   435) <a name="l435" style="background-color: #ffffff">      endif</a>
+   436) <a name="l436" style="background-color: #ffffff">    end do</a>
+   437) <a name="l437" style="background-color: #ffffff">  end do</a>
+   438) <a name="l438" style="background-color: #ffffff">!</a>
+   439) <a name="l439" style="background-color: #ffffff">! output tendencies</a>
+   440) <a name="l440" style="background-color: #ffffff">!</a>
+   441) <a name="l441" style="background-color: #ffffff">  do m=1,gas_wetdep_cnt</a>
+   442) <a name="l442" style="background-color: #ffffff">    wd_tend(1:ncol,:,mapping_to_mmr(m)) = wd_tend(1:ncol,:,mapping_to_mmr(m)) + dtwr(1:ncol,:,m)</a>
+   443) <a name="l443" style="background-color: #ffffff">    call outfld( 'DTWR_'//trim(gas_wetdep_list(m)),dtwr(:,:,m),ncol,lchnk )</a>
+   444) <a name="l444" style="background-color: #ffffff">  end do</a>
+   445) <a name="l445" style="background-color: #ffffff">!</a>
+   446) <a name="l446" style="background-color: #ffffff">  if ( do_diag ) then</a>
+   447) <a name="l447" style="background-color: #ffffff">    call </a><a style="background-color: #ffff99">outfld('QT_RAIN_HNO3', qt_rain, ncol, lchnk )</a>
+   448) <a name="l448" style="background-color: #ffff99">    call outfld('QT_RIME_HNO3', qt_rime, ncol, lchnk )</a>
+   449) <a name="l449" style="background-color: #ffff99">    call outfld('QT_WASH_HNO3', qt_wash, ncol, lchnk )</a>
+   450) <a name="l450" style="background-color: #ffff99">    call outfld('QT_EVAP_HNO3', qt_evap, ncol, lchnk )</a>
+   451) <a name="l451" style="background-color: #ffff99">  end if</a>
+   452) <a name="l452" style="background-color: #ffff99">!</a>
+   453) <a name="l453" style="background-color: #ffff99">  return</a>
+   454) <a name="l454" style="background-color: #ffff99">end subroutine neu_wetdep_tend</a>
+   455) <a name="l455" style="background-color: #ffffff"></a>
+   456) <a name="l456" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   457) <a name="l457" style="background-color: #ffffff">!</a>
+   458) <a name="l458" style="background-color: #ffffff">! Original code from Jessica Neu</a>
+   459) <a name="l459" style="background-color: #ffffff">! Updated by S. Walters and J.-F. Lamarque (March-April 2011)</a>
+   460) <a name="l460" style="background-color: #ffffff">!</a>
+   461) <a name="l461" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   462) <a name="l462" style="background-color: #ffffff"></a>
+   463) <a name="l463" style="background-color: #ffffff">      subroutine WASHO(LPAR,NTRACE,DTSCAV,QTTJFL,QM,POFL,DELZ,  &amp;</a>
+   464) <a name="l464" style="background-color: #ffffff">      RLS,CLWC,CIWC,CFR,TEM,EVAPRATE,GAREA,HSTAR,TCMASS,TCKAQB, &amp;</a>
+   465) <a name="l465" style="background-color: #ffffff">      TCNION, qt_rain, qt_rime, qt_wash, qt_evap)</a>
+   466) <a name="l466" style="background-color: #ffffff">!</a>
+   467) <a name="l467" style="background-color: #ffffff">      implicit none</a>
+   468) <a name="l468" style="background-color: #ffffff"></a>
+   469) <a name="l469" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   470) <a name="l470" style="background-color: #ffffff">!---p-conde 5.4 (2007)   -----called from main-----</a>
+   471) <a name="l471" style="background-color: #ffffff">!---called from pmain to calculate rainout and washout of tracers</a>
+   472) <a name="l472" style="background-color: #ffffff">!---revised by JNEU 8/2007</a>
+   473) <a name="l473" style="background-color: #ffffff">!---</a>
+   474) <a name="l474" style="background-color: #ffffff">!-LAER has been removed - no scavenging for aerosols</a>
+   475) <a name="l475" style="background-color: #ffffff">!-LAER could be used as LWASHTYP</a>
+   476) <a name="l476" style="background-color: #ffffff">!---WILL THIS WORK FOR T42-&gt;T21???????????</a>
+   477) <a name="l477" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   478) <a name="l478" style="background-color: #ffffff">      </a>
+   479) <a name="l479" style="background-color: #ffffff">      integer LPAR, NTRACE</a>
+   480) <a name="l480" style="background-color: #ffffff">      real(r8),  intent(inout) ::  QTTJFL(LPAR,NTRACE)</a>
+   481) <a name="l481" style="background-color: #ffffff">      real(r8),  intent(in) :: DTSCAV, QM(LPAR),POFL(LPAR),DELZ(LPAR),GAREA</a>
+   482) <a name="l482" style="background-color: #ffffff">      real(r8),  intent(in) :: RLS(LPAR),CLWC(LPAR),CIWC(LPAR),CFR(LPAR),TEM(LPAR),      &amp;</a>
+   483) <a name="l483" style="background-color: #ffffff">                               EVAPRATE(LPAR)</a>
+   484) <a name="l484" style="background-color: #ffffff">      real(r8),  intent(in) :: HSTAR(LPAR,NTRACE),TCMASS(NTRACE)</a>
+   485) <a name="l485" style="background-color: #ffffff">      logical ,  intent(in) :: TCKAQB(NTRACE),TCNION(NTRACE) </a>
+   486) <a name="l486" style="background-color: #ffffff">!</a>
+   487) <a name="l487" style="background-color: #ffffff">      real(r8),  intent(inout) :: qt_rain(lpar)</a>
+   488) <a name="l488" style="background-color: #ffffff">      real(r8),  intent(inout) :: qt_rime(lpar)</a>
+   489) <a name="l489" style="background-color: #ffffff">      real(r8),  intent(inout) :: qt_wash(lpar)</a>
+   490) <a name="l490" style="background-color: #ffffff">      real(r8),  intent(inout) :: qt_evap(lpar)</a>
+   491) <a name="l491" style="background-color: #ffffff">!</a>
+   492) <a name="l492" style="background-color: #ffffff">      integer I,J,L,N,LE, LM1</a>
+   493) <a name="l493" style="background-color: #ffffff">      real(r8), dimension(LPAR) :: CFXX</a>
+   494) <a name="l494" style="background-color: #ffffff">      real(r8), dimension(LPAR) :: QTT, QTTNEW</a>
+   495) <a name="l495" style="background-color: #ffffff"></a>
+   496) <a name="l496" style="background-color: #ffffff">      real(r8) WRK, RNEW_TST</a>
+   497) <a name="l497" style="background-color: #ffffff">      real(r8) CLWX</a>
+   498) <a name="l498" style="background-color: #ffffff">      real(r8) RNEW,RPRECIP,DELTARIMEMASS,DELTARIME,RAMPCT</a>
+   499) <a name="l499" style="background-color: #ffffff">      real(r8) MASSLOSS</a>
+   500) <a name="l500" style="background-color: #ffffff">      real(r8) DOR,DNEW,DEMP,COLEFFSNOW,RHOSNOW</a>
+   501) <a name="l501" style="background-color: #ffffff">      real(r8) WEMP,REMP,RRAIN,RWASH</a>
+   502) <a name="l502" style="background-color: #ffffff">      real(r8) QTPRECIP,QTRAIN,QTCXA,QTAX,QTOC</a>
+   503) <a name="l503" style="background-color: #ffffff"></a>
+   504) <a name="l504" style="background-color: #ffffff">      real(r8) FAMA,RAMA,DAMA,FCA,RCA,DCA</a>
+   505) <a name="l505" style="background-color: #ffffff">      real(r8) FAX,RAX,DAX,FCXA,RCXA,DCXA,FCXB,RCXB,DCXB</a>
+   506) <a name="l506" style="background-color: #ffffff">      real(r8) RAXADJ,FAXADJ,RAXADJF</a>
+   507) <a name="l507" style="background-color: #ffffff">      real(r8) QTDISCF,QTDISRIME,QTDISCXA</a>
+   508) <a name="l508" style="background-color: #ffffff">      real(r8) QTEVAPAXP,QTEVAPAXW,QTEVAPAX</a>
+   509) <a name="l509" style="background-color: #ffffff">      real(r8) QTWASHAX</a>
+   510) <a name="l510" style="background-color: #ffffff">      real(r8) QTEVAPCXAP,QTEVAPCXAW,QTEVAPCXA</a>
+   511) <a name="l511" style="background-color: #ffffff">      real(r8) QTWASHCXA,QTRIMECXA</a>
+   512) <a name="l512" style="background-color: #ffffff">      real(r8) QTRAINCXA,QTRAINCXB</a>
+   513) <a name="l513" style="background-color: #ffffff">      real(r8) QTTOPCA,QTTOPAA,QTTOPCAX,QTTOPAAX</a>
+   514) <a name="l514" style="background-color: #ffffff"></a>
+   515) <a name="l515" style="background-color: #ffffff">      real(r8) AMPCT,AMCLPCT,CLNEWPCT,CLNEWAMPCT,CLOLDPCT,CLOLDAMPCT</a>
+   516) <a name="l516" style="background-color: #ffffff">      real(r8) RAXLOC,RCXALOC,RCXBLOC,RCALOC,RAMALOC,RCXPCT</a>
+   517) <a name="l517" style="background-color: #ffffff"></a>
+   518) <a name="l518" style="background-color: #ffffff">      real(r8) QTNETLCXA,QTNETLCXB,QTNETLAX,QTNETL</a>
+   519) <a name="l519" style="background-color: #ffffff">      real(r8) QTDISSTAR</a>
+   520) <a name="l520" style="background-color: #ffffff">      </a>
+   521) <a name="l521" style="background-color: #ffffff"></a>
+   522) <a name="l522" style="background-color: #ffffff">      real(r8), parameter  :: CFMIN=0.1_r8</a>
+   523) <a name="l523" style="background-color: #ffffff">      real(r8), parameter  :: CWMIN=1.0e-5_r8</a>
+   524) <a name="l524" style="background-color: #ffffff">      real(r8), parameter  :: DMIN=1.0e-1_r8       !mm</a>
+   525) <a name="l525" style="background-color: #ffffff">      real(r8), parameter  :: VOLPOW=1._r8/3._r8</a>
+   526) <a name="l526" style="background-color: #ffffff">      real(r8), parameter  :: RHORAIN=1.0e3_r8     !kg/m3</a>
+   527) <a name="l527" style="background-color: #ffffff">      real(r8), parameter  :: RHOSNOWFIX=1.0e2_r8     !kg/m3</a>
+   528) <a name="l528" style="background-color: #ffffff">      real(r8), parameter  :: COLEFFRAIN=0.7_r8</a>
+   529) <a name="l529" style="background-color: #ffffff">      real(r8), parameter  :: TMIX=258._r8</a>
+   530) <a name="l530" style="background-color: #ffffff">      real(r8), parameter  :: TFROZ=240._r8</a>
+   531) <a name="l531" style="background-color: #ffffff">      real(r8), parameter  :: COLEFFAER=0.05_r8</a>
+   532) <a name="l532" style="background-color: #ffffff">!</a>
+   533) <a name="l533" style="background-color: #ffffff">! additional work arrays and diagnostics</a>
+   534) <a name="l534" style="background-color: #ffffff">!</a>
+   535) <a name="l535" style="background-color: #ffffff">      real(r8) :: rls_wrk(lpar)</a>
+   536) <a name="l536" style="background-color: #ffffff">      real(r8) :: rnew_wrk(lpar)</a>
+   537) <a name="l537" style="background-color: #ffffff">      real(r8) :: rca_wrk(lpar)</a>
+   538) <a name="l538" style="background-color: #ffffff">      real(r8) :: fca_wrk(lpar)</a>
+   539) <a name="l539" style="background-color: #ffffff">      real(r8) :: rcxa_wrk(lpar)</a>
+   540) <a name="l540" style="background-color: #ffffff">      real(r8) :: fcxa_wrk(lpar)</a>
+   541) <a name="l541" style="background-color: #ffffff">      real(r8) :: rcxb_wrk(lpar)</a>
+   542) <a name="l542" style="background-color: #ffffff">      real(r8) :: fcxb_wrk(lpar)</a>
+   543) <a name="l543" style="background-color: #ffffff">      real(r8) :: rax_wrk(lpar,2)</a>
+   544) <a name="l544" style="background-color: #ffffff">      real(r8) :: fax_wrk(lpar,2)</a>
+   545) <a name="l545" style="background-color: #ffffff">      real(r8) :: rama_wrk(lpar)</a>
+   546) <a name="l546" style="background-color: #ffffff">      real(r8) :: fama_wrk(lpar)</a>
+   547) <a name="l547" style="background-color: #ffffff">      real(r8) :: deltarime_wrk(lpar)</a>
+   548) <a name="l548" style="background-color: #ffffff">      real(r8) :: clwx_wrk(lpar)</a>
+   549) <a name="l549" style="background-color: #ffffff">      real(r8) :: frc(lpar,3)</a>
+   550) <a name="l550" style="background-color: #ffffff">      real(r8) :: rlsog(lpar)</a>
+   551) <a name="l551" style="background-color: #ffffff">!</a>
+   552) <a name="l552" style="background-color: #ffffff">      logical :: is_hno3</a>
+   553) <a name="l553" style="background-color: #ffffff">      logical :: rls_flag(lpar)</a>
+   554) <a name="l554" style="background-color: #ffffff">      logical :: rnew_flag(lpar)</a>
+   555) <a name="l555" style="background-color: #ffffff">      logical :: cf_trigger(lpar)</a>
+   556) <a name="l556" style="background-color: #ffffff">      logical :: freezing(lpar)</a>
+   557) <a name="l557" style="background-color: #ffffff">!</a>
+   558) <a name="l558" style="background-color: #ffffff">      real(r8), parameter :: four = 4._r8</a>
+   559) <a name="l559" style="background-color: #ffffff">      real(r8), parameter :: adj_factor = one + 10._r8*epsilon( one )</a>
+   560) <a name="l560" style="background-color: #ffffff">!</a>
+   561) <a name="l561" style="background-color: #ffffff">      integer :: LWASHTYP,LICETYP</a>
+   562) <a name="l562" style="background-color: #ffffff">!</a>
+   563) <a name="l563" style="background-color: #ffffff">      if ( debug ) then</a>
+   564) <a name="l564" style="background-color: #ffff99">        print '(a,50f8.2)','tckaqb     ',tckaqb</a>
+   565) <a name="l565" style="background-color: #ffff99">        print '(a,50e12.4)','hstar     ',hstar(1,:)</a>
+   566) <a name="l566" style="background-color: #ffff99">        print '(a,50i4)'  ,'ice_uptake ',TCNION</a>
+   567) <a name="l567" style="background-color: #ffff99">        print '(a,50f8.2)','mol_weight ',TCMASS(:)</a>
+   568) <a name="l568" style="background-color: #ffff99">        print '(a,50f8.2)','temp       ',tem(:)</a>
+   569) <a name="l569" style="background-color: #ffff99">        print '(a,50f8.2)','p          ',pofl(:)</a>
+   570) <a name="l570" style="background-color: #ffff99">      end if</a>
+   571) <a name="l571" style="background-color: #ffff99"></a>
+   572) <a name="l572" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+   573) <a name="l573" style="background-color: #ffffff">      LE = LPAR-1   </a>
+   574) <a name="l574" style="background-color: #ffffff">!</a>
+   575) <a name="l575" style="background-color: #ffffff">      rls_flag(1:le) = rls(1:le) &gt; zero </a>
+   576) <a name="l576" style="background-color: #ffffff">      freezing(1:le) = tem(1:le) &lt; tice</a>
+   577) <a name="l577" style="background-color: #ffffff">      rlsog(1:le) = rls(1:le)/garea</a>
+   578) <a name="l578" style="background-color: #ffffff">!</a>
+   579) <a name="l579" style="background-color: #ffffff">species_loop : &amp;</a>
+   580) <a name="l580" style="background-color: #ffffff">     do N = 1,NTRACE</a>
+   581) <a name="l581" style="background-color: #ffffff">       QTT(:lpar)    = QTTJFL(:lpar,N)</a>
+   582) <a name="l582" style="background-color: #ffffff">       QTTNEW(:lpar) = QTTJFL(:lpar,N)</a>
+   583) <a name="l583" style="background-color: #ffffff">       is_hno3 = n == hno3_ndx</a>
+   584) <a name="l584" style="background-color: #ffffff">       if( is_hno3 ) then</a>
+   585) <a name="l585" style="background-color: #ffffff">         qt_rain(:lpar) = zero</a>
+   586) <a name="l586" style="background-color: #ffffff">         qt_rime(:lpar) = zero</a>
+   587) <a name="l587" style="background-color: #ffffff">         qt_wash(:lpar) = zero</a>
+   588) <a name="l588" style="background-color: #ffffff">         qt_evap(:lpar) = zero</a>
+   589) <a name="l589" style="background-color: #ffffff">         rca_wrk(:lpar) = zero</a>
+   590) <a name="l590" style="background-color: #ffffff">         fca_wrk(:lpar) = zero</a>
+   591) <a name="l591" style="background-color: #ffffff">         rcxa_wrk(:lpar) = zero</a>
+   592) <a name="l592" style="background-color: #ffffff">         fcxa_wrk(:lpar) = zero</a>
+   593) <a name="l593" style="background-color: #ffffff">         rcxb_wrk(:lpar) = zero</a>
+   594) <a name="l594" style="background-color: #ffffff">         fcxb_wrk(:lpar) = zero</a>
+   595) <a name="l595" style="background-color: #ffffff">         rls_wrk(:lpar) = zero</a>
+   596) <a name="l596" style="background-color: #ffffff">         rnew_wrk(:lpar) = zero</a>
+   597) <a name="l597" style="background-color: #ffffff">         cf_trigger(:lpar) = .false.</a>
+   598) <a name="l598" style="background-color: #ffffff">         clwx_wrk(:lpar) = -9999._r8</a>
+   599) <a name="l599" style="background-color: #ffffff">         deltarime_wrk(:lpar) = -9999._r8</a>
+   600) <a name="l600" style="background-color: #ffffff">         rax_wrk(:lpar,:) = zero</a>
+   601) <a name="l601" style="background-color: #ffffff">         fax_wrk(:lpar,:) = zero</a>
+   602) <a name="l602" style="background-color: #ffffff">       endif</a>
+   603) <a name="l603" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   604) <a name="l604" style="background-color: #ffffff">!  calculate scavenging by large-scale stratiform precipitation</a>
+   605) <a name="l605" style="background-color: #ffffff">!  check whether mass-limited or henry's law</a>
+   606) <a name="l606" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   607) <a name="l607" style="background-color: #ffffff">       if( TCKAQB(N) ) then</a>
+   608) <a name="l608" style="background-color: #ffffff">         LWASHTYP = 1</a>
+   609) <a name="l609" style="background-color: #ffffff">       else</a>
+   610) <a name="l610" style="background-color: #ffff99">         LWASHTYP = 2</a>
+   611) <a name="l611" style="background-color: #ffff99">       end if</a>
+   612) <a name="l612" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+   613) <a name="l613" style="background-color: #ffff99">!  check whether soluble in ice</a>
+   614) <a name="l614" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+   615) <a name="l615" style="background-color: #ffffff">       if( TCNION(N) ) then</a>
+   616) <a name="l616" style="background-color: #ffff99">         LICETYP = 1</a>
+   617) <a name="l617" style="background-color: #ffff99">       else</a>
+   618) <a name="l618" style="background-color: #ffffff">         LICETYP = 2</a>
+   619) <a name="l619" style="background-color: #ffffff">       end if</a>
+   620) <a name="l620" style="background-color: #ffffff"></a>
+   621) <a name="l621" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   622) <a name="l622" style="background-color: #ffffff">!  initialization</a>
+   623) <a name="l623" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   624) <a name="l624" style="background-color: #ffffff">       QTTOPAA = zero</a>
+   625) <a name="l625" style="background-color: #ffffff">       QTTOPCA = zero</a>
+   626) <a name="l626" style="background-color: #ffffff"></a>
+   627) <a name="l627" style="background-color: #ffffff">       RCA  = zero</a>
+   628) <a name="l628" style="background-color: #ffffff">       FCA  = zero</a>
+   629) <a name="l629" style="background-color: #ffffff">       DCA  = zero</a>
+   630) <a name="l630" style="background-color: #ffffff">       RAMA = zero</a>
+   631) <a name="l631" style="background-color: #ffffff">       FAMA = zero</a>
+   632) <a name="l632" style="background-color: #ffffff">       DAMA = zero</a>
+   633) <a name="l633" style="background-color: #ffffff"></a>
+   634) <a name="l634" style="background-color: #ffffff">       AMPCT      = zero</a>
+   635) <a name="l635" style="background-color: #ffffff">       AMCLPCT    = zero</a>
+   636) <a name="l636" style="background-color: #ffffff">       CLNEWPCT   = zero</a>
+   637) <a name="l637" style="background-color: #ffffff">       CLNEWAMPCT = zero</a>
+   638) <a name="l638" style="background-color: #ffffff">       CLOLDPCT   = zero</a>
+   639) <a name="l639" style="background-color: #ffffff">       CLOLDAMPCT = zero</a>
+   640) <a name="l640" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   641) <a name="l641" style="background-color: #ffffff">!  Check whether precip in top layer - if so, require CF ge 0.2</a>
+   642) <a name="l642" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   643) <a name="l643" style="background-color: #ffffff">       if( RLS(LE) &gt; zero ) then</a>
+   644) <a name="l644" style="background-color: #ffff99">         CFXX(LE) = max( CFMIN,CFR(LE) )</a>
+   645) <a name="l645" style="background-color: #ffff99">       else</a>
+   646) <a name="l646" style="background-color: #ffffff">         CFXX(LE) = CFR(LE)</a>
+   647) <a name="l647" style="background-color: #ffffff">       endif</a>
+   648) <a name="l648" style="background-color: #ffffff"></a>
+   649) <a name="l649" style="background-color: #ffffff">       rnew_flag(1:le) = .false.</a>
+   650) <a name="l650" style="background-color: #ffffff"></a>
+   651) <a name="l651" style="background-color: #ffffff">level_loop : &amp;</a>
+   652) <a name="l652" style="background-color: #ffffff">       do L = LE,1,-1</a>
+   653) <a name="l653" style="background-color: #ffffff">         LM1  = L - 1</a>
+   654) <a name="l654" style="background-color: #ffffff">         FAX  = zero</a>
+   655) <a name="l655" style="background-color: #ffffff">         RAX  = zero</a>
+   656) <a name="l656" style="background-color: #ffffff">         DAX  = zero</a>
+   657) <a name="l657" style="background-color: #ffffff">         FCXA = zero</a>
+   658) <a name="l658" style="background-color: #ffffff">         FCXB = zero</a>
+   659) <a name="l659" style="background-color: #ffffff">         DCXA = zero</a>
+   660) <a name="l660" style="background-color: #ffffff">         DCXB = zero</a>
+   661) <a name="l661" style="background-color: #ffffff">         RCXA = zero</a>
+   662) <a name="l662" style="background-color: #ffffff">         RCXB = zero</a>
+   663) <a name="l663" style="background-color: #ffffff"></a>
+   664) <a name="l664" style="background-color: #ffffff">         QTDISCF   = zero</a>
+   665) <a name="l665" style="background-color: #ffffff">         QTDISRIME = zero</a>
+   666) <a name="l666" style="background-color: #ffffff">         QTDISCXA  = zero</a>
+   667) <a name="l667" style="background-color: #ffffff"></a>
+   668) <a name="l668" style="background-color: #ffffff">         QTEVAPAXP = zero</a>
+   669) <a name="l669" style="background-color: #ffffff">         QTEVAPAXW = zero</a>
+   670) <a name="l670" style="background-color: #ffffff">         QTEVAPAX  = zero</a>
+   671) <a name="l671" style="background-color: #ffffff">         QTWASHAX  = zero</a>
+   672) <a name="l672" style="background-color: #ffffff"></a>
+   673) <a name="l673" style="background-color: #ffffff">         QTEVAPCXAP = zero</a>
+   674) <a name="l674" style="background-color: #ffffff">         QTEVAPCXAW = zero</a>
+   675) <a name="l675" style="background-color: #ffffff">         QTEVAPCXA  = zero</a>
+   676) <a name="l676" style="background-color: #ffffff">         QTRIMECXA  = zero</a>
+   677) <a name="l677" style="background-color: #ffffff">         QTWASHCXA  = zero</a>
+   678) <a name="l678" style="background-color: #ffffff">         QTRAINCXA  = zero</a>
+   679) <a name="l679" style="background-color: #ffffff">         QTRAINCXB  = zero</a>
+   680) <a name="l680" style="background-color: #ffffff">         </a>
+   681) <a name="l681" style="background-color: #ffffff">         RAMPCT = zero</a>
+   682) <a name="l682" style="background-color: #ffffff">         RCXPCT = zero</a>
+   683) <a name="l683" style="background-color: #ffffff"></a>
+   684) <a name="l684" style="background-color: #ffffff">         RCXALOC = zero</a>
+   685) <a name="l685" style="background-color: #ffffff">         RCXBLOC = zero</a>
+   686) <a name="l686" style="background-color: #ffffff">         RAXLOC  = zero</a>
+   687) <a name="l687" style="background-color: #ffffff">         RAMALOC = zero</a>
+   688) <a name="l688" style="background-color: #ffffff">         RCALOC  = zero</a>
+   689) <a name="l689" style="background-color: #ffffff"></a>
+   690) <a name="l690" style="background-color: #ffffff">         RPRECIP       = zero</a>
+   691) <a name="l691" style="background-color: #ffffff">         DELTARIMEMASS = zero</a>
+   692) <a name="l692" style="background-color: #ffffff">         DELTARIME     = zero</a>
+   693) <a name="l693" style="background-color: #ffffff">         DOR           = zero</a>
+   694) <a name="l694" style="background-color: #ffffff">         DNEW          = zero</a>
+   695) <a name="l695" style="background-color: #ffffff"></a>
+   696) <a name="l696" style="background-color: #ffffff">         QTTOPAAX = zero</a>
+   697) <a name="l697" style="background-color: #ffffff">         QTTOPCAX = zero</a>
+   698) <a name="l698" style="background-color: #ffffff"></a>
+   699) <a name="l699" style="background-color: #ffffff">has_rls : &amp;</a>
+   700) <a name="l700" style="background-color: #ffffff">         if( rls_flag(l) ) then</a>
+   701) <a name="l701" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   702) <a name="l702" style="background-color: #ffffff">!-----Evaporate ambient precip and decrease area-------------------------</a>
+   703) <a name="l703" style="background-color: #ffffff">!-----If ice, diam=diam falling from above  If rain, diam=4mm (not used)</a>
+   704) <a name="l704" style="background-color: #ffffff">!-----Evaporate tracer contained in evaporated precip</a>
+   705) <a name="l705" style="background-color: #ffffff">!-----Can't evaporate more than we start with-----------------------------</a>
+   706) <a name="l706" style="background-color: #ffffff">!-----Don't do washout until we adjust ambient precip to match Rbot if needed</a>
+   707) <a name="l707" style="background-color: #ffffff">!------(after RNEW if statements)</a>
+   708) <a name="l708" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   709) <a name="l709" style="background-color: #ffffff">           FAX = max( zero,FAMA*(one - evaprate(l)) )</a>
+   710) <a name="l710" style="background-color: #ffffff">           RAX = RAMA								     !kg/m2/s</a>
+   711) <a name="l711" style="background-color: #ffffff">           if ( debug ) then</a>
+   712) <a name="l712" style="background-color: #ffff99">             if( (l == 3 .or. l == 2) ) then</a>
+   713) <a name="l713" style="background-color: #ffff99">               write(*,*) 'washout: l,rls,fax = ',l,rls(l),fax</a>
+   714) <a name="l714" style="background-color: #ffff99">             endif</a>
+   715) <a name="l715" style="background-color: #ffff99">           endif</a>
+   716) <a name="l716" style="background-color: #ffffff">           if( FAMA &gt; zero ) then</a>
+   717) <a name="l717" style="background-color: #ffffff">             if( freezing(l) ) then</a>
+   718) <a name="l718" style="background-color: #ffffff">               DAX = DAMA      !mm</a>
+   719) <a name="l719" style="background-color: #ffffff">             else</a>
+   720) <a name="l720" style="background-color: #ffffff">               DAX = four    !mm - not necessary</a>
+   721) <a name="l721" style="background-color: #ffffff">             endif</a>
+   722) <a name="l722" style="background-color: #ffffff">           else</a>
+   723) <a name="l723" style="background-color: #ffffff">             DAX = zero</a>
+   724) <a name="l724" style="background-color: #ffffff">           endif</a>
+   725) <a name="l725" style="background-color: #ffffff"></a>
+   726) <a name="l726" style="background-color: #ffffff">           if( RAMA &gt; zero ) then</a>
+   727) <a name="l727" style="background-color: #ffffff">             QTEVAPAXP = min( QTTOPAA,EVAPRATE(L)*QTTOPAA )</a>
+   728) <a name="l728" style="background-color: #ffffff">           else</a>
+   729) <a name="l729" style="background-color: #ffffff">             QTEVAPAXP = zero</a>
+   730) <a name="l730" style="background-color: #ffffff">           endif</a>
+   731) <a name="l731" style="background-color: #ffffff">           if( is_hno3 ) then</a>
+   732) <a name="l732" style="background-color: #ffffff">             rax_wrk(l,1) = rax</a>
+   733) <a name="l733" style="background-color: #ffffff">             fax_wrk(l,1) = fax</a>
+   734) <a name="l734" style="background-color: #ffffff">           endif</a>
+   735) <a name="l735" style="background-color: #ffffff"></a>
+   736) <a name="l736" style="background-color: #ffffff"></a>
+   737) <a name="l737" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   738) <a name="l738" style="background-color: #ffffff">!  Determine how much the in-cloud precip rate has increased------</a>
+   739) <a name="l739" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   740) <a name="l740" style="background-color: #ffffff">           WRK = RAX*FAX + RCA*FCA</a>
+   741) <a name="l741" style="background-color: #ffffff">           if( WRK &gt; 0._r8 ) then</a>
+   742) <a name="l742" style="background-color: #ffffff">             RNEW_TST = RLS(L)/(GAREA * WRK)</a>
+   743) <a name="l743" style="background-color: #ffffff">           else</a>
+   744) <a name="l744" style="background-color: #ffffff">             RNEW_TST = 10._r8</a>
+   745) <a name="l745" style="background-color: #ffffff">           endif</a>
+   746) <a name="l746" style="background-color: #ffffff">           RNEW = RLSOG(L) - (RAX*FAX + RCA*FCA)     !GBA*CF</a>
+   747) <a name="l747" style="background-color: #ffffff">           rnew_wrk(l) = rnew_tst</a>
+   748) <a name="l748" style="background-color: #ffffff">           if ( debug ) then</a>
+   749) <a name="l749" style="background-color: #ffff99">             if( is_hno3 .and. l == kdiag-1 ) then</a>
+   750) <a name="l750" style="background-color: #ffff99">               write(*,*) ' '</a>
+   751) <a name="l751" style="background-color: #ffff99">               write(*,*) 'washout: rls,rax,fax,rca,fca'</a>
+   752) <a name="l752" style="background-color: #ffff99">               write(*,'(1p,5g15.7)') rls(l),rax,fax,rca,fca</a>
+   753) <a name="l753" style="background-color: #ffff99">               write(*,*) ' '</a>
+   754) <a name="l754" style="background-color: #ffff99">             endif</a>
+   755) <a name="l755" style="background-color: #ffff99">           endif</a>
+   756) <a name="l756" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+   757) <a name="l757" style="background-color: #ffff99">!  if RNEW&gt;0, there is growth and/or new precip formation</a>
+   758) <a name="l758" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+   759) <a name="l759" style="background-color: #ffffff">has_rnew:  if( rlsog(l) &gt; adj_factor*(rax*fax + rca*fca) ) then</a>
+   760) <a name="l760" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   761) <a name="l761" style="background-color: #ffffff">!  Min cloudwater requirement for cloud with new precip</a>
+   762) <a name="l762" style="background-color: #ffffff">!  Min CF is set at top for LE, at end for other levels</a>
+   763) <a name="l763" style="background-color: #ffffff">!  CWMIN is only needed for new precip formation - do not need for RNEW&lt;0</a>
+   764) <a name="l764" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   765) <a name="l765" style="background-color: #ffffff">             if( cfxx(l) == zero ) then</a>
+   766) <a name="l766" style="background-color: #ffff99">               if ( do_diag ) then</a>
+   767) <a name="l767" style="background-color: #ffff99">                 write(*,*) 'cfxx(l) == zero',l</a>
+   768) <a name="l768" style="background-color: #ffff99">                 write(*,*) qttjfl(:,n)</a>
+   769) <a name="l769" style="background-color: #ffff99">                 write(*,*) qm(:)</a>
+   770) <a name="l770" style="background-color: #ffff99">                 write(*,*) pofl(:)</a>
+   771) <a name="l771" style="background-color: #ffff99">                 write(*,*) delz(:)</a>
+   772) <a name="l772" style="background-color: #ffff99">                 write(*,*) rls(:)</a>
+   773) <a name="l773" style="background-color: #ffff99">                 write(*,*) clwc(:)</a>
+   774) <a name="l774" style="background-color: #ffff99">                 write(*,*) ciwc(:)</a>
+   775) <a name="l775" style="background-color: #ffff99">                 write(*,*) cfr(:)</a>
+   776) <a name="l776" style="background-color: #ffff99">                 write(*,*) tem(:)</a>
+   777) <a name="l777" style="background-color: #ffff99">                 write(*,*) evaprate(:)</a>
+   778) <a name="l778" style="background-color: #ffff99">                 write(*,*) hstar(:,n)</a>
+   779) <a name="l779" style="background-color: #ffff99">               end if</a>
+   780) <a name="l780" style="background-color: #ffff99">!</a>
+   781) <a name="l781" style="background-color: #ffff99">! if we are here,, that means that there is</a>
+   782) <a name="l782" style="background-color: #ffff99">! a inconsistency and this will lead to a division</a>
+   783) <a name="l783" style="background-color: #ffff99">! by 0 later on! This column should then be skipped</a>
+   784) <a name="l784" style="background-color: #ffff99">!</a>
+   785) <a name="l785" style="background-color: #ffff99">               QTTJFL(:lpar,n) = QTT(:lpar)</a>
+   786) <a name="l786" style="background-color: #ffff99">               cycle species_loop</a>
+   787) <a name="l787" style="background-color: #ffff99">!</a>
+   788) <a name="l788" style="background-color: #ffff99">!              call endrun()</a>
+   789) <a name="l789" style="background-color: #ffff99">!</a>
+   790) <a name="l790" style="background-color: #ffff99">             endif</a>
+   791) <a name="l791" style="background-color: #ffffff">             rnew_flag(l) = .true.</a>
+   792) <a name="l792" style="background-color: #ffffff">             CLWX = max( CLWC(L)+CIWC(L),CWMIN*CFXX(L) )</a>
+   793) <a name="l793" style="background-color: #ffffff">             if( is_hno3 ) then</a>
+   794) <a name="l794" style="background-color: #ffffff">               clwx_wrk(l) = clwx</a>
+   795) <a name="l795" style="background-color: #ffffff">             endif</a>
+   796) <a name="l796" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   797) <a name="l797" style="background-color: #ffffff">!  Area of old cloud and new cloud</a>
+   798) <a name="l798" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   799) <a name="l799" style="background-color: #ffffff">             FCXA = FCA</a>
+   800) <a name="l800" style="background-color: #ffffff">             FCXB = max( zero,CFXX(L)-FCXA )</a>
+   801) <a name="l801" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   802) <a name="l802" style="background-color: #ffffff">!                           ICE</a>
+   803) <a name="l803" style="background-color: #ffffff">!  For ice and mixed phase, grow precip in old cloud by riming</a>
+   804) <a name="l804" style="background-color: #ffffff">!  Use only portion of cloudwater in old cloud fraction</a>
+   805) <a name="l805" style="background-color: #ffffff">!  and rain above old cloud fraction</a>
+   806) <a name="l806" style="background-color: #ffffff">!  COLEFF from Lohmann and Roeckner (1996), Loss rate from Rotstayn (1997)</a>
+   807) <a name="l807" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   808) <a name="l808" style="background-color: #ffffff">is_freezing : &amp;</a>
+   809) <a name="l809" style="background-color: #ffffff">             if( freezing(l) ) then</a>
+   810) <a name="l810" style="background-color: #ffffff">               COLEFFSNOW = exp( 2.5e-2_r8*(TEM(L) - TICE) )</a>
+   811) <a name="l811" style="background-color: #ffffff">               if( TEM(L) &lt;= TFROZ ) then</a>
+   812) <a name="l812" style="background-color: #ffffff">                 RHOSNOW = RHOSNOWFIX</a>
+   813) <a name="l813" style="background-color: #ffffff">               else</a>
+   814) <a name="l814" style="background-color: #ffffff">                 RHOSNOW = 0.303_r8*(TEM(L) - TFROZ)*RHOSNOWFIX</a>
+   815) <a name="l815" style="background-color: #ffffff">               endif</a>
+   816) <a name="l816" style="background-color: #ffffff">               if( FCXA &gt; zero ) then</a>
+   817) <a name="l817" style="background-color: #ffffff">                 if( DCA &gt; zero ) then</a>
+   818) <a name="l818" style="background-color: #ffffff">                   DELTARIMEMASS = CLWX*QM(L)*(FCXA/CFXX(L))* &amp;</a>
+   819) <a name="l819" style="background-color: #ffffff">                     (one - exp( (-COLEFFSNOW/(DCA*1.e-3_r8))*((RCA)/(2._r8*RHOSNOW))*DTSCAV ))   !uses GBA R</a>
+   820) <a name="l820" style="background-color: #ffffff">                 else</a>
+   821) <a name="l821" style="background-color: #ffff99">                   DELTARIMEMASS = zero</a>
+   822) <a name="l822" style="background-color: #ffff99">                 endif</a>
+   823) <a name="l823" style="background-color: #ffff99">               else</a>
+   824) <a name="l824" style="background-color: #ffffff">                 DELTARIMEMASS = zero</a>
+   825) <a name="l825" style="background-color: #ffffff">               endif</a>
+   826) <a name="l826" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   827) <a name="l827" style="background-color: #ffffff">!  Increase in precip rate due to riming (kg/m2/s):</a>
+   828) <a name="l828" style="background-color: #ffffff">!  Limit to total increase in R in cloud</a>
+   829) <a name="l829" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   830) <a name="l830" style="background-color: #ffffff">               if( FCXA &gt; zero ) then</a>
+   831) <a name="l831" style="background-color: #ffffff">                 DELTARIME = min( RNEW/FCXA,DELTARIMEMASS/(FCXA*GAREA*DTSCAV) ) !GBA</a>
+   832) <a name="l832" style="background-color: #ffffff">               else</a>
+   833) <a name="l833" style="background-color: #ffffff">                 DELTARIME = zero</a>
+   834) <a name="l834" style="background-color: #ffffff">               endif</a>
+   835) <a name="l835" style="background-color: #ffffff">               if( is_hno3 ) then</a>
+   836) <a name="l836" style="background-color: #ffffff">                 deltarime_wrk(l) = deltarime</a>
+   837) <a name="l837" style="background-color: #ffffff">               endif</a>
+   838) <a name="l838" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   839) <a name="l839" style="background-color: #ffffff">!  Find diameter of rimed precip, must be at least .1mm</a>
+   840) <a name="l840" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   841) <a name="l841" style="background-color: #ffffff">               if( RCA &gt; zero ) then</a>
+   842) <a name="l842" style="background-color: #ffffff">                 DOR = max( DMIN,(((RCA+DELTARIME)/RCA)**VOLPOW)*DCA )</a>
+   843) <a name="l843" style="background-color: #ffffff">               else</a>
+   844) <a name="l844" style="background-color: #ffffff">                 DOR = zero</a>
+   845) <a name="l845" style="background-color: #ffffff">               endif</a>
+   846) <a name="l846" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   847) <a name="l847" style="background-color: #ffffff">!  If there is some in-cloud precip left, we have new precip formation</a>
+   848) <a name="l848" style="background-color: #ffffff">!  Will be spread over whole cloud fraction </a>
+   849) <a name="l849" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   850) <a name="l850" style="background-color: #ffffff">!  Calculate precip rate in old and new cloud fractions</a>
+   851) <a name="l851" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   852) <a name="l852" style="background-color: #ffffff">               RPRECIP = (RNEW-(DELTARIME*FCXA))/CFXX(L) !kg/m2/s    !GBA</a>
+   853) <a name="l853" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   854) <a name="l854" style="background-color: #ffffff">!  Calculate precip rate in old and new cloud fractions</a>
+   855) <a name="l855" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   856) <a name="l856" style="background-color: #ffffff">               RCXA = RCA + DELTARIME + RPRECIP          !kg/m2/s GBA</a>
+   857) <a name="l857" style="background-color: #ffffff">               RCXB = RPRECIP                            !kg/m2/s GBA</a>
+   858) <a name="l858" style="background-color: #ffffff"></a>
+   859) <a name="l859" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   860) <a name="l860" style="background-color: #ffffff">!  Find diameter of new precip from empirical relation using Rprecip</a>
+   861) <a name="l861" style="background-color: #ffffff">!  in given area of box- use density of water, not snow, to convert kg/s</a>
+   862) <a name="l862" style="background-color: #ffffff">!  to mm/s -&gt; as given in Field and Heymsfield</a>
+   863) <a name="l863" style="background-color: #ffffff">!  Also calculate diameter of mixed precip,DCXA, from empirical relation</a>
+   864) <a name="l864" style="background-color: #ffffff">!  using total R in FCXA - this will give larger particles than averaging DOR and</a>
+   865) <a name="l865" style="background-color: #ffffff">!  DNEW in the next level</a>
+   866) <a name="l866" style="background-color: #ffffff">!  DNEW and DCXA must be at least .1mm</a>
+   867) <a name="l867" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   868) <a name="l868" style="background-color: #ffffff">               if( RPRECIP &gt; zero ) then</a>
+   869) <a name="l869" style="background-color: #ffffff">                 WEMP = (CLWX*QM(L))/(GAREA*CFXX(L)*DELZ(L)) !kg/m3</a>
+   870) <a name="l870" style="background-color: #ffffff">                 REMP = RPRECIP/((RHORAIN/1.e3_r8))             !mm/s local</a>
+   871) <a name="l871" style="background-color: #ffffff">                 DNEW = DEMPIRICAL( WEMP, REMP )</a>
+   872) <a name="l872" style="background-color: #ffffff">                 if ( debug ) then</a>
+   873) <a name="l873" style="background-color: #ffff99">                   if( is_hno3 .and. l &gt;= 15 ) then</a>
+   874) <a name="l874" style="background-color: #ffff99">                     write(*,*) ' '</a>
+   875) <a name="l875" style="background-color: #ffff99">                     write(*,*) 'washout: wemp,remp.dnew @ l = ',l</a>
+   876) <a name="l876" style="background-color: #ffff99">                     write(*,'(1p,3g15.7)') wemp,remp,dnew</a>
+   877) <a name="l877" style="background-color: #ffff99">                     write(*,*) ' '</a>
+   878) <a name="l878" style="background-color: #ffff99">                   endif</a>
+   879) <a name="l879" style="background-color: #ffff99">                 endif</a>
+   880) <a name="l880" style="background-color: #ffffff">                 DNEW = max( DMIN,DNEW )</a>
+   881) <a name="l881" style="background-color: #ffffff">                 if( FCXB &gt; zero ) then</a>
+   882) <a name="l882" style="background-color: #ffffff">                   DCXB = DNEW</a>
+   883) <a name="l883" style="background-color: #ffffff">                 else</a>
+   884) <a name="l884" style="background-color: #ffffff">                   DCXB = zero</a>
+   885) <a name="l885" style="background-color: #ffffff">                 endif</a>
+   886) <a name="l886" style="background-color: #ffffff">               else</a>
+   887) <a name="l887" style="background-color: #ffffff">                 DCXB = zero</a>
+   888) <a name="l888" style="background-color: #ffffff">               endif</a>
+   889) <a name="l889" style="background-color: #ffffff"></a>
+   890) <a name="l890" style="background-color: #ffffff">               if( FCXA &gt; zero ) then</a>
+   891) <a name="l891" style="background-color: #ffffff">                 WEMP = (CLWX*QM(L)*(FCXA/CFXX(L)))/(GAREA*FCXA*DELZ(L)) !kg/m3</a>
+   892) <a name="l892" style="background-color: #ffffff">                 REMP = RCXA/((RHORAIN/1.e3_r8))                         !mm/s local</a>
+   893) <a name="l893" style="background-color: #ffffff">                 DEMP = DEMPIRICAL( WEMP, REMP )</a>
+   894) <a name="l894" style="background-color: #ffffff">                 DCXA = ((RCA+DELTARIME)/RCXA)*DOR + (RPRECIP/RCXA)*DNEW</a>
+   895) <a name="l895" style="background-color: #ffffff">                 DCXA = max( DEMP,DCXA )</a>
+   896) <a name="l896" style="background-color: #ffffff">                 DCXA = max( DMIN,DCXA )</a>
+   897) <a name="l897" style="background-color: #ffffff">               else</a>
+   898) <a name="l898" style="background-color: #ffffff">                 DCXA = zero</a>
+   899) <a name="l899" style="background-color: #ffffff">               endif</a>
+   900) <a name="l900" style="background-color: #ffffff">               if ( debug ) then</a>
+   901) <a name="l901" style="background-color: #ffff99">                 if( is_hno3 .and. l &gt;= 15 ) then</a>
+   902) <a name="l902" style="background-color: #ffff99">                   write(*,*) ' '</a>
+   903) <a name="l903" style="background-color: #ffff99">                   write(*,*) 'washout: rca,rcxa,deltarime,dor,rprecip,dnew @ l = ',l</a>
+   904) <a name="l904" style="background-color: #ffff99">                   write(*,'(1p,6g15.7)') rca,rcxa,deltarime,dor,rprecip,dnew </a>
+   905) <a name="l905" style="background-color: #ffff99">                   write(*,*) 'washout: dcxa,dcxb,wemp,remp,demp'</a>
+   906) <a name="l906" style="background-color: #ffff99">                   write(*,'(1p,5g15.7)') dcxa,dcxb,wemp,remp,demp</a>
+   907) <a name="l907" style="background-color: #ffff99">                   write(*,*) ' '</a>
+   908) <a name="l908" style="background-color: #ffff99">                 end if</a>
+   909) <a name="l909" style="background-color: #ffff99">               endif</a>
+   910) <a name="l910" style="background-color: #ffff99"></a>
+   911) <a name="l911" style="background-color: #ffffff">               if( QTT(L) &gt; zero ) then   </a>
+   912) <a name="l912" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   913) <a name="l913" style="background-color: #ffffff">!                       ICE SCAVENGING</a>
+   914) <a name="l914" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   915) <a name="l915" style="background-color: #ffffff">!  For ice, rainout only hno3/aerosols using new precip</a>
+   916) <a name="l916" style="background-color: #ffffff">!  Tracer dissolved given by Kaercher and Voigt (2006) for T&lt;258K</a>
+   917) <a name="l917" style="background-color: #ffffff">!  For T&gt;258K, use Henry's Law with Retention coefficient</a>
+   918) <a name="l918" style="background-color: #ffffff">!  Rain out in whole CF</a>
+   919) <a name="l919" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   920) <a name="l920" style="background-color: #ffffff">                 if( RPRECIP &gt; zero ) then</a>
+   921) <a name="l921" style="background-color: #ffffff">                   if( LICETYP == 1 ) then</a>
+   922) <a name="l922" style="background-color: #ffff99">                     RRAIN = RPRECIP*GAREA                                  !kg/s local</a>
+   923) <a name="l923" style="background-color: #ffff99">                     call DISGAS( CLWX, CFXX(L), TCMASS(N), HSTAR(L,N), &amp;</a>
+   924) <a name="l924" style="background-color: #ffff99">                                  TEM(L),POFL(L),QM(L),                 &amp;</a>
+   925) <a name="l925" style="background-color: #ffff99">                                  QTT(L)*CFXX(L),QTDISCF )</a>
+   926) <a name="l926" style="background-color: #ffff99">                     call RAINGAS( RRAIN, DTSCAV, CLWX, CFXX(L),        &amp;</a>
+   927) <a name="l927" style="background-color: #ffff99">                                   QM(L), QTT(L), QTDISCF, QTRAIN )</a>
+   928) <a name="l928" style="background-color: #ffff99">                     WRK       = QTRAIN/CFXX(L)</a>
+   929) <a name="l929" style="background-color: #ffff99">                     QTRAINCXA = FCXA*WRK</a>
+   930) <a name="l930" style="background-color: #ffff99">                     QTRAINCXB = FCXB*WRK</a>
+   931) <a name="l931" style="background-color: #ffff99">                   elseif( LICETYP == 2 ) then</a>
+   932) <a name="l932" style="background-color: #ffffff">                     QTRAINCXA = zero</a>
+   933) <a name="l933" style="background-color: #ffffff">                     QTRAINCXB = zero</a>
+   934) <a name="l934" style="background-color: #ffffff">                   endif</a>
+   935) <a name="l935" style="background-color: #ffffff">                   if( </a><a style="background-color: #ffff99">debug .and. is_hno3 .and. l == kdiag ) then</a>
+   936) <a name="l936" style="background-color: #ffff99">                     write(*,*) ' '</a>
+   937) <a name="l937" style="background-color: #ffff99">                     write(*,*) 'washout: Ice Scavenging'</a>
+   938) <a name="l938" style="background-color: #ffff99">                     write(*,*) 'washout: qtraincxa, qtraincxb, fcxa, fcxb, qt_rain, cfxx(l), wrk @ level = ',l</a>
+   939) <a name="l939" style="background-color: #ffff99">                     write(*,'(1p,7g15.7)') qtraincxa, qtraincxb, fcxa, fcxb, qt_rain(l), cfxx(l), wrk</a>
+   940) <a name="l940" style="background-color: #ffff99">                     write(*,*) ' '</a>
+   941) <a name="l941" style="background-color: #ffff99">                   endif</a>
+   942) <a name="l942" style="background-color: #ffff99">                 endif</a>
+   943) <a name="l943" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+   944) <a name="l944" style="background-color: #ffff99">!  For ice, accretion removal for hno3 and aerosols is propotional to riming, </a>
+   945) <a name="l945" style="background-color: #ffff99">!  no accretion removal for gases</a>
+   946) <a name="l946" style="background-color: #ffff99">!  remove only in mixed portion of cloud</a>
+   947) <a name="l947" style="background-color: #ffff99">!  Limit DELTARIMEMASS to RNEW*DTSCAV for ice - evaporation of rimed ice to match</a>
+   948) <a name="l948" style="background-color: #ffff99">!  RNEW precip rate would result in HNO3 escaping from ice (no trapping) </a>
+   949) <a name="l949" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+   950) <a name="l950" style="background-color: #ffffff">                 if( DELTARIME &gt; zero ) then</a>
+   951) <a name="l951" style="background-color: #ffffff">                   if( LICETYP == 1 ) then</a>
+   952) <a name="l952" style="background-color: #ffff99">                     if( TEM(L) &lt;= TFROZ ) then</a>
+   953) <a name="l953" style="background-color: #ffff99">                       RHOSNOW = RHOSNOWFIX</a>
+   954) <a name="l954" style="background-color: #ffff99">                     else</a>
+   955) <a name="l955" style="background-color: #ffff99">                       RHOSNOW = 0.303_r8*(TEM(L) - TFROZ)*RHOSNOWFIX</a>
+   956) <a name="l956" style="background-color: #ffff99">                     endif</a>
+   957) <a name="l957" style="background-color: #ffff99">                     QTCXA = QTT(L)*FCXA</a>
+   958) <a name="l958" style="background-color: #ffff99">                     call DISGAS( CLWX*(FCXA/CFXX(L)), FCXA, TCMASS(N),   &amp;</a>
+   959) <a name="l959" style="background-color: #ffff99">                                  HSTAR(L,N), TEM(L), POFL(L),            &amp;</a>
+   960) <a name="l960" style="background-color: #ffff99">                                  QM(L), QTCXA, QTDISRIME )       </a>
+   961) <a name="l961" style="background-color: #ffff99">                     QTDISSTAR = (QTDISRIME*QTCXA)/(QTDISRIME + QTCXA)</a>
+   962) <a name="l962" style="background-color: #ffff99">                     if ( debug ) then</a>
+   963) <a name="l963" style="background-color: #ffff99">                       if( is_hno3 .and. l &gt;= 15 ) then</a>
+   964) <a name="l964" style="background-color: #ffff99">                         write(*,*) ' '</a>
+   965) <a name="l965" style="background-color: #ffff99">                         write(*,*) 'washout: fcxa,dca,rca,qtdisstar @ l = ',l</a>
+   966) <a name="l966" style="background-color: #ffff99">                         write(*,'(1p,4g15.7)') fcxa,dca,rca,qtdisstar</a>
+   967) <a name="l967" style="background-color: #ffff99">                         write(*,*) ' '</a>
+   968) <a name="l968" style="background-color: #ffff99">                       endif</a>
+   969) <a name="l969" style="background-color: #ffff99">                     endif</a>
+   970) <a name="l970" style="background-color: #ffff99">                     QTRIMECXA = QTCXA*                             &amp;</a>
+   971) <a name="l971" style="background-color: #ffff99">                        (one - exp((-COLEFFSNOW/(DCA*1.e-3_r8))*       &amp;</a>
+   972) <a name="l972" style="background-color: #ffff99">                        (RCA/(2._r8*RHOSNOW))*                         &amp;  !uses GBA R    </a>
+   973) <a name="l973" style="background-color: #ffff99">                        (QTDISSTAR/QTCXA)*DTSCAV))</a>
+   974) <a name="l974" style="background-color: #ffff99">                     QTRIMECXA = min( QTRIMECXA, &amp;               </a>
+   975) <a name="l975" style="background-color: #ffff99">                        ((RNEW*GAREA*DTSCAV)/(CLWX*QM(L)*(FCXA/CFXX(L))))*QTDISSTAR)</a>
+   976) <a name="l976" style="background-color: #ffff99">                   elseif( LICETYP == 2 ) then</a>
+   977) <a name="l977" style="background-color: #ffffff">                     QTRIMECXA = zero</a>
+   978) <a name="l978" style="background-color: #ffffff">                   endif</a>
+   979) <a name="l979" style="background-color: #ffffff">                 endif</a>
+   980) <a name="l980" style="background-color: #ffffff">               else</a>
+   981) <a name="l981" style="background-color: #ffff99">                 QTRAINCXA = zero</a>
+   982) <a name="l982" style="background-color: #ffff99">                 QTRAINCXB = zero</a>
+   983) <a name="l983" style="background-color: #ffff99">                 QTRIMECXA = zero</a>
+   984) <a name="l984" style="background-color: #ffff99">               endif</a>
+   985) <a name="l985" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+   986) <a name="l986" style="background-color: #ffff99">!  For ice, no washout in interstitial cloud air</a>
+   987) <a name="l987" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+   988) <a name="l988" style="background-color: #ffffff">               QTWASHCXA = zero</a>
+   989) <a name="l989" style="background-color: #ffffff">               QTEVAPCXA = zero</a>
+   990) <a name="l990" style="background-color: #ffffff"></a>
+   991) <a name="l991" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   992) <a name="l992" style="background-color: #ffffff">!                      RAIN</a>
+   993) <a name="l993" style="background-color: #ffffff">!  For rain, accretion increases rain rate but diameter remains constant</a>
+   994) <a name="l994" style="background-color: #ffffff">!  Diameter is 4mm (not used)</a>
+   995) <a name="l995" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   996) <a name="l996" style="background-color: #ffffff">             else is_freezing</a>
+   997) <a name="l997" style="background-color: #ffffff">               if( FCXA &gt; zero ) then</a>
+   998) <a name="l998" style="background-color: #ffffff">                 DELTARIMEMASS = (CLWX*QM(L))*(FCXA/CFXX(L))*           &amp;</a>
+   999) <a name="l999" style="background-color: #ffffff">                   (one - exp( -0.24_r8*COLEFFRAIN*((RCA)**0.75_r8)*DTSCAV ))  !local</a>
+  1000) <a name="l1000" style="background-color: #ffffff">               else</a>
+  1001) <a name="l1001" style="background-color: #ffffff">                 DELTARIMEMASS = zero</a>
+  1002) <a name="l1002" style="background-color: #ffffff">               endif</a>
+  1003) <a name="l1003" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1004) <a name="l1004" style="background-color: #ffffff">!  Increase in precip rate due to riming (kg/m2/s):</a>
+  1005) <a name="l1005" style="background-color: #ffffff">!  Limit to total increase in R in cloud</a>
+  1006) <a name="l1006" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1007) <a name="l1007" style="background-color: #ffffff">               if( FCXA &gt; zero ) then</a>
+  1008) <a name="l1008" style="background-color: #ffffff">                 DELTARIME = min( RNEW/FCXA,DELTARIMEMASS/(FCXA*GAREA*DTSCAV) ) !GBA</a>
+  1009) <a name="l1009" style="background-color: #ffffff">               else</a>
+  1010) <a name="l1010" style="background-color: #ffffff">                 DELTARIME = zero</a>
+  1011) <a name="l1011" style="background-color: #ffffff">               endif</a>
+  1012) <a name="l1012" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1013) <a name="l1013" style="background-color: #ffffff">!  If there is some in-cloud precip left, we have new precip formation </a>
+  1014) <a name="l1014" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1015) <a name="l1015" style="background-color: #ffffff">               RPRECIP = (RNEW-(DELTARIME*FCXA))/CFXX(L)       !GBA</a>
+  1016) <a name="l1016" style="background-color: #ffffff"></a>
+  1017) <a name="l1017" style="background-color: #ffffff">               RCXA = RCA + DELTARIME + RPRECIP            !kg/m2/s GBA</a>
+  1018) <a name="l1018" style="background-color: #ffffff">               RCXB = RPRECIP                              !kg/m2/s GBA</a>
+  1019) <a name="l1019" style="background-color: #ffffff">               DCXA = FOUR  </a>
+  1020) <a name="l1020" style="background-color: #ffffff">               if( FCXB &gt; zero ) then</a>
+  1021) <a name="l1021" style="background-color: #ffffff">                 DCXB = FOUR</a>
+  1022) <a name="l1022" style="background-color: #ffffff">               else</a>
+  1023) <a name="l1023" style="background-color: #ffffff">                 DCXB = zero</a>
+  1024) <a name="l1024" style="background-color: #ffffff">               endif</a>
+  1025) <a name="l1025" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1026) <a name="l1026" style="background-color: #ffffff">!                         RAIN SCAVENGING</a>
+  1027) <a name="l1027" style="background-color: #ffffff">!  For rain, rainout both hno3/aerosols and gases using new precip</a>
+  1028) <a name="l1028" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1029) <a name="l1029" style="background-color: #ffffff">               if( QTT(L) &gt; zero ) then</a>
+  1030) <a name="l1030" style="background-color: #ffffff">                 if( RPRECIP &gt; zero ) then</a>
+  1031) <a name="l1031" style="background-color: #ffffff">                   RRAIN = (RPRECIP*GAREA) !kg/s local</a>
+  1032) <a name="l1032" style="background-color: #ffffff">                   call DISGAS( CLWX, CFXX(L), TCMASS(N), HSTAR(L,N), &amp;</a>
+  1033) <a name="l1033" style="background-color: #ffffff">                                TEM(L), POFL(L), QM(L),               &amp;</a>
+  1034) <a name="l1034" style="background-color: #ffffff">                                QTT(L)*CFXX(L), QTDISCF )</a>
+  1035) <a name="l1035" style="background-color: #ffffff">                   call RAINGAS( RRAIN, DTSCAV, CLWX, CFXX(L),        &amp;</a>
+  1036) <a name="l1036" style="background-color: #ffffff">                                 QM(L), QTT(L), QTDISCF, QTRAIN )</a>
+  1037) <a name="l1037" style="background-color: #ffffff">                   WRK       = QTRAIN/CFXX(L)</a>
+  1038) <a name="l1038" style="background-color: #ffffff">                   QTRAINCXA = FCXA*WRK</a>
+  1039) <a name="l1039" style="background-color: #ffffff">                   QTRAINCXB = FCXB*WRK</a>
+  1040) <a name="l1040" style="background-color: #ffffff">                   if( </a><a style="background-color: #ffff99">debug .and. is_hno3 .and. l == kdiag ) then</a>
+  1041) <a name="l1041" style="background-color: #ffff99">                     write(*,*) ' '</a>
+  1042) <a name="l1042" style="background-color: #ffff99">                     write(*,*) 'washout: Rain Scavenging'</a>
+  1043) <a name="l1043" style="background-color: #ffff99">                     write(*,*) 'washout: qtraincxa, qtraincxb, fcxa, fcxb, qt_rain, cfxx(l), wrk @ level = ',l</a>
+  1044) <a name="l1044" style="background-color: #ffff99">                     write(*,'(1p,7g15.7)') qtraincxa, qtraincxb, fcxa, fcxb, qt_rain(l), cfxx(l), wrk</a>
+  1045) <a name="l1045" style="background-color: #ffff99">                     write(*,*) ' '</a>
+  1046) <a name="l1046" style="background-color: #ffff99">                   endif</a>
+  1047) <a name="l1047" style="background-color: #ffff99">                 endif</a>
+  1048) <a name="l1048" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1049) <a name="l1049" style="background-color: #ffff99">!  For rain, accretion removal is propotional to riming</a>
+  1050) <a name="l1050" style="background-color: #ffff99">!  caclulate for hno3/aerosols and gases</a>
+  1051) <a name="l1051" style="background-color: #ffff99">!  Remove only in mixed portion of cloud</a>
+  1052) <a name="l1052" style="background-color: #ffff99">!  Limit DELTARIMEMASS to RNEW*DTSCAV</a>
+  1053) <a name="l1053" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1054) <a name="l1054" style="background-color: #ffffff">                 if( DELTARIME &gt; zero ) then</a>
+  1055) <a name="l1055" style="background-color: #ffffff">                   QTCXA = QTT(L)*FCXA</a>
+  1056) <a name="l1056" style="background-color: #ffffff">                   call DISGAS( CLWX*(FCXA/CFXX(L)), FCXA, TCMASS(N),    &amp;</a>
+  1057) <a name="l1057" style="background-color: #ffffff">                                HSTAR(L,N), TEM(L), POFL(L),             &amp;</a>
+  1058) <a name="l1058" style="background-color: #ffffff">                                QM(L), QTCXA, QTDISRIME )</a>
+  1059) <a name="l1059" style="background-color: #ffffff">                   QTDISSTAR = (QTDISRIME*QTCXA)/(QTDISRIME + QTCXA)</a>
+  1060) <a name="l1060" style="background-color: #ffffff">                   QTRIMECXA = QTCXA*                              &amp;</a>
+  1061) <a name="l1061" style="background-color: #ffffff">                      (one - exp(-0.24_r8*COLEFFRAIN*                 &amp;</a>
+  1062) <a name="l1062" style="background-color: #ffffff">                      ((RCA)**0.75_r8)*                               &amp; !local </a>
+  1063) <a name="l1063" style="background-color: #ffffff">                      (QTDISSTAR/QTCXA)*DTSCAV))               </a>
+  1064) <a name="l1064" style="background-color: #ffffff">                   QTRIMECXA = min( QTRIMECXA, &amp;</a>
+  1065) <a name="l1065" style="background-color: #ffffff">                      ((RNEW*GAREA*DTSCAV)/(CLWX*QM(L)*(FCXA/CFXX(L))))*QTDISSTAR)</a>
+  1066) <a name="l1066" style="background-color: #ffffff">                 else</a>
+  1067) <a name="l1067" style="background-color: #ffffff">                   QTRIMECXA = zero</a>
+  1068) <a name="l1068" style="background-color: #ffffff">                 endif</a>
+  1069) <a name="l1069" style="background-color: #ffffff">               else</a>
+  1070) <a name="l1070" style="background-color: #ffff99">                 QTRAINCXA = zero</a>
+  1071) <a name="l1071" style="background-color: #ffff99">                 QTRAINCXB = zero</a>
+  1072) <a name="l1072" style="background-color: #ffff99">                 QTRIMECXA = zero</a>
+  1073) <a name="l1073" style="background-color: #ffff99">               endif</a>
+  1074) <a name="l1074" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1075) <a name="l1075" style="background-color: #ffff99">!  For rain, washout gases and HNO3/aerosols using rain from above old cloud</a>
+  1076) <a name="l1076" style="background-color: #ffff99">!  Washout for HNO3/aerosols is only on non-dissolved portion, impaction-style</a>
+  1077) <a name="l1077" style="background-color: #ffff99">!  Washout for gases is on non-dissolved portion, limited by QTTOP+QTRIME</a>
+  1078) <a name="l1078" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1079) <a name="l1079" style="background-color: #ffffff">               if( RCA &gt; zero ) then</a>
+  1080) <a name="l1080" style="background-color: #ffffff">                 QTPRECIP = FCXA*QTT(L) - QTDISRIME</a>
+  1081) <a name="l1081" style="background-color: #ffffff">                 if( LWASHTYP == 1 ) then</a>
+  1082) <a name="l1082" style="background-color: #ffffff">                   if( QTPRECIP &gt; zero ) then</a>
+  1083) <a name="l1083" style="background-color: #ffffff">                     QTWASHCXA = QTPRECIP*(one - exp( -0.24_r8*COLEFFAER*((RCA)**0.75_r8)*DTSCAV ))   !local</a>
+  1084) <a name="l1084" style="background-color: #ffffff">                   else</a>
+  1085) <a name="l1085" style="background-color: #ffffff">                     QTWASHCXA = zero</a>
+  1086) <a name="l1086" style="background-color: #ffffff">                   endif</a>
+  1087) <a name="l1087" style="background-color: #ffffff">                   QTEVAPCXA = zero</a>
+  1088) <a name="l1088" style="background-color: #ffffff">                 elseif( LWASHTYP == 2 ) then</a>
+  1089) <a name="l1089" style="background-color: #ffff99">                   RWASH = RCA*GAREA                                !kg/s local</a>
+  1090) <a name="l1090" style="background-color: #ffff99">                   if( QTPRECIP &gt; zero ) then</a>
+  1091) <a name="l1091" style="background-color: #ffff99">                     call WASHGAS( RWASH, FCA, DTSCAV, QTTOPCA+QTRIMECXA, &amp;</a>
+  1092) <a name="l1092" style="background-color: #ffff99">                                   HSTAR(L,N), TEM(L), POFL(L),           &amp;</a>
+  1093) <a name="l1093" style="background-color: #ffff99">                                   QM(L), QTPRECIP, QTWASHCXA, QTEVAPCXA )</a>
+  1094) <a name="l1094" style="background-color: #ffff99">                   else</a>
+  1095) <a name="l1095" style="background-color: #ffff99">                     QTWASHCXA = zero</a>
+  1096) <a name="l1096" style="background-color: #ffff99">                     QTEVAPCXA = zero</a>
+  1097) <a name="l1097" style="background-color: #ffff99">                   endif</a>
+  1098) <a name="l1098" style="background-color: #ffff99">                 endif</a>
+  1099) <a name="l1099" style="background-color: #ffff99">               endif</a>
+  1100) <a name="l1100" style="background-color: #ffff99">             endif is_freezing</a>
+  1101) <a name="l1101" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1102) <a name="l1102" style="background-color: #ffff99">!  If RNEW&lt;O, confine precip to area of cloud above</a>
+  1103) <a name="l1103" style="background-color: #ffff99">!  FCXA does not require a minimum (could be zero if R(L).le.what</a>
+  1104) <a name="l1104" style="background-color: #ffff99">!  evaporated in ambient)</a>
+  1105) <a name="l1105" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1106) <a name="l1106" style="background-color: #ffff99">           else has_rnew</a>
+  1107) <a name="l1107" style="background-color: #ffffff">             CLWX = CLWC(L) + CIWC(L)</a>
+  1108) <a name="l1108" style="background-color: #ffffff">             if( is_hno3 ) then</a>
+  1109) <a name="l1109" style="background-color: #ffffff">               clwx_wrk(l) = clwx</a>
+  1110) <a name="l1110" style="background-color: #ffffff">             endif</a>
+  1111) <a name="l1111" style="background-color: #ffffff">             FCXA = FCA</a>
+  1112) <a name="l1112" style="background-color: #ffffff">             FCXB = max( zero,CFXX(L)-FCXA )</a>
+  1113) <a name="l1113" style="background-color: #ffffff">             RCXB = zero</a>
+  1114) <a name="l1114" style="background-color: #ffffff">             DCXB = zero</a>
+  1115) <a name="l1115" style="background-color: #ffffff">             QTRAINCXA = zero</a>
+  1116) <a name="l1116" style="background-color: #ffffff">             QTRAINCXB = zero</a>
+  1117) <a name="l1117" style="background-color: #ffffff">             QTRIMECXA = zero</a>
+  1118) <a name="l1118" style="background-color: #ffffff"></a>
+  1119) <a name="l1119" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1120) <a name="l1120" style="background-color: #ffffff">!  Put rain into cloud up to RCA so that we evaporate</a>
+  1121) <a name="l1121" style="background-color: #ffffff">!  from ambient first</a>
+  1122) <a name="l1122" style="background-color: #ffffff">!  Adjust ambient to try to match RLS(L)</a>
+  1123) <a name="l1123" style="background-color: #ffffff">!  If no cloud, RAX=R(L)</a>
+  1124) <a name="l1124" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1125) <a name="l1125" style="background-color: #ffffff">             if( FCXA &gt; zero ) then</a>
+  1126) <a name="l1126" style="background-color: #ffffff">               RCXA = min( RCA,RLS(L)/(GAREA*FCXA) )     !kg/m2/s  GBA</a>
+  1127) <a name="l1127" style="background-color: #ffffff">               if( FAX &gt; zero .and. ((RCXA+1.e-12_r8) &lt; RLS(L)/(GAREA*FCXA)) ) then</a>
+  1128) <a name="l1128" style="background-color: #ffffff">                 RAXADJF = RLS(L)/GAREA - RCXA*FCXA</a>
+  1129) <a name="l1129" style="background-color: #ffffff">                 RAMPCT = RAXADJF/(RAX*FAX)</a>
+  1130) <a name="l1130" style="background-color: #ffffff">                 FAXADJ = RAMPCT*FAX</a>
+  1131) <a name="l1131" style="background-color: #ffffff">                 if( FAXADJ &gt; zero ) then</a>
+  1132) <a name="l1132" style="background-color: #ffffff">                   RAXADJ = RAXADJF/FAXADJ</a>
+  1133) <a name="l1133" style="background-color: #ffffff">                 else</a>
+  1134) <a name="l1134" style="background-color: #ffff99">                   RAXADJ = zero</a>
+  1135) <a name="l1135" style="background-color: #ffff99">                 endif</a>
+  1136) <a name="l1136" style="background-color: #ffff99">               else</a>
+  1137) <a name="l1137" style="background-color: #ffffff">                 RAXADJ = zero</a>
+  1138) <a name="l1138" style="background-color: #ffffff">                 RAMPCT = zero</a>
+  1139) <a name="l1139" style="background-color: #ffffff">                 FAXADJ = zero</a>
+  1140) <a name="l1140" style="background-color: #ffffff">               endif</a>
+  1141) <a name="l1141" style="background-color: #ffffff">             else</a>
+  1142) <a name="l1142" style="background-color: #ffffff">               RCXA = zero</a>
+  1143) <a name="l1143" style="background-color: #ffffff">               if( FAX &gt; zero ) then</a>
+  1144) <a name="l1144" style="background-color: #ffffff">                 RAXADJF = RLS(L)/GAREA</a>
+  1145) <a name="l1145" style="background-color: #ffffff">                 RAMPCT = RAXADJF/(RAX*FAX)</a>
+  1146) <a name="l1146" style="background-color: #ffffff">                 FAXADJ = RAMPCT*FAX</a>
+  1147) <a name="l1147" style="background-color: #ffffff">                 if( FAXADJ &gt; zero ) then</a>
+  1148) <a name="l1148" style="background-color: #ffffff">                   RAXADJ = RAXADJF/FAXADJ</a>
+  1149) <a name="l1149" style="background-color: #ffffff">                 else</a>
+  1150) <a name="l1150" style="background-color: #ffff99">                   RAXADJ = zero</a>
+  1151) <a name="l1151" style="background-color: #ffff99">                 endif              </a>
+  1152) <a name="l1152" style="background-color: #ffff99">               else</a>
+  1153) <a name="l1153" style="background-color: #ffff99">                 RAXADJ = zero</a>
+  1154) <a name="l1154" style="background-color: #ffff99">                 RAMPCT = zero</a>
+  1155) <a name="l1155" style="background-color: #ffff99">                 FAXADJ = zero</a>
+  1156) <a name="l1156" style="background-color: #ffff99">               endif</a>
+  1157) <a name="l1157" style="background-color: #ffff99">             endif</a>
+  1158) <a name="l1158" style="background-color: #ffff99">  </a>
+  1159) <a name="l1159" style="background-color: #ffffff">             QTEVAPAXP = min( QTTOPAA,QTTOPAA - (RAMPCT*(QTTOPAA-QTEVAPAXP)) )</a>
+  1160) <a name="l1160" style="background-color: #ffffff">             FAX = FAXADJ</a>
+  1161) <a name="l1161" style="background-color: #ffffff">             RAX = RAXADJ</a>
+  1162) <a name="l1162" style="background-color: #ffffff">             if ( debug ) then</a>
+  1163) <a name="l1163" style="background-color: #ffff99">               if( (l == 3 .or. l == 2) ) then</a>
+  1164) <a name="l1164" style="background-color: #ffff99">                 write(*,*) 'washout: l,fcxa,fax = ',l,fcxa,fax</a>
+  1165) <a name="l1165" style="background-color: #ffff99">               endif</a>
+  1166) <a name="l1166" style="background-color: #ffff99">             endif</a>
+  1167) <a name="l1167" style="background-color: #ffff99"></a>
+  1168) <a name="l1168" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1169) <a name="l1169" style="background-color: #ffff99">!                IN-CLOUD EVAPORATION/WASHOUT</a>
+  1170) <a name="l1170" style="background-color: #ffff99">!  If precip out the bottom of the cloud is 0, evaporate everything</a>
+  1171) <a name="l1171" style="background-color: #ffff99">!  If there is no cloud, QTTOPCA=0, so nothing happens</a>
+  1172) <a name="l1172" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1173) <a name="l1173" style="background-color: #ffffff">             if( RCXA &lt;= zero ) then</a>
+  1174) <a name="l1174" style="background-color: #ffffff">               QTEVAPCXA = QTTOPCA</a>
+  1175) <a name="l1175" style="background-color: #ffffff">               RCXA = zero</a>
+  1176) <a name="l1176" style="background-color: #ffffff">               DCXA = zero</a>
+  1177) <a name="l1177" style="background-color: #ffffff">             else</a>
+  1178) <a name="l1178" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1179) <a name="l1179" style="background-color: #ffffff">!  If rain out the bottom of the cloud is &gt;0 (but .le. RCA):</a>
+  1180) <a name="l1180" style="background-color: #ffffff">!  For ice, decrease particle size,</a>
+  1181) <a name="l1181" style="background-color: #ffffff">!  no washout</a>
+  1182) <a name="l1182" style="background-color: #ffffff">!  no evap for non-ice gases (b/c there is nothing in ice)</a>
+  1183) <a name="l1183" style="background-color: #ffffff">!  T&lt;Tmix,release hno3&amp; aerosols</a>
+  1184) <a name="l1184" style="background-color: #ffffff">!  release is amount dissolved in ice mass released</a>
+  1185) <a name="l1185" style="background-color: #ffffff">!  T&gt;Tmix, hno3&amp;aerosols are incorporated into ice structure:</a>
+  1186) <a name="l1186" style="background-color: #ffffff">!  do not release</a>
+  1187) <a name="l1187" style="background-color: #ffffff">!  For rain, assume full evaporation of some raindrops</a>
+  1188) <a name="l1188" style="background-color: #ffffff">!  proportional evaporation for all species </a>
+  1189) <a name="l1189" style="background-color: #ffffff">!  washout for gases using Rbot </a>
+  1190) <a name="l1190" style="background-color: #ffffff">!  impact washout for hno3/aerosol portion in gas phase              </a>
+  1191) <a name="l1191" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1192) <a name="l1192" style="background-color: #ffffff">!              if (TEM(L) &lt; TICE ) then</a>
+  1193) <a name="l1193" style="background-color: #ffffff">is_freezing_a : &amp;</a>
+  1194) <a name="l1194" style="background-color: #ffffff">               if( freezing(l) ) then</a>
+  1195) <a name="l1195" style="background-color: #ffffff">                 QTWASHCXA = zero</a>
+  1196) <a name="l1196" style="background-color: #ffffff">                 DCXA = ((RCXA/RCA)**VOLPOW)*DCA</a>
+  1197) <a name="l1197" style="background-color: #ffffff">                 if( LICETYP == 1 ) then</a>
+  1198) <a name="l1198" style="background-color: #ffff99">                   if( TEM(L) &lt;= TMIX ) then</a>
+  1199) <a name="l1199" style="background-color: #ffff99">                     MASSLOSS = (RCA-RCXA)*FCXA*GAREA*DTSCAV</a>
+  1200) <a name="l1200" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1201) <a name="l1201" style="background-color: #ffff99">!  note-QTT doesn't matter b/c T&lt;258K</a>
+  1202) <a name="l1202" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1203) <a name="l1203" style="background-color: #ffff99">                     call DISGAS( (MASSLOSS/QM(L)), FCXA, TCMASS(N),   &amp;</a>
+  1204) <a name="l1204" style="background-color: #ffff99">                                   HSTAR(L,N), TEM(L), POFL(L),        &amp;</a>
+  1205) <a name="l1205" style="background-color: #ffff99">                                   QM(L), QTT(L), QTEVAPCXA )</a>
+  1206) <a name="l1206" style="background-color: #ffff99">                     QTEVAPCXA = min( QTTOPCA,QTEVAPCXA )</a>
+  1207) <a name="l1207" style="background-color: #ffff99">                   else</a>
+  1208) <a name="l1208" style="background-color: #ffff99">                     QTEVAPCXA = zero</a>
+  1209) <a name="l1209" style="background-color: #ffff99">                   endif</a>
+  1210) <a name="l1210" style="background-color: #ffff99">                 elseif( LICETYP == 2 ) then   </a>
+  1211) <a name="l1211" style="background-color: #ffffff">                   QTEVAPCXA = zero</a>
+  1212) <a name="l1212" style="background-color: #ffffff">                 endif</a>
+  1213) <a name="l1213" style="background-color: #ffffff">               else is_freezing_a</a>
+  1214) <a name="l1214" style="background-color: #ffffff">                 QTEVAPCXAP = (RCA - RCXA)/RCA*QTTOPCA</a>
+  1215) <a name="l1215" style="background-color: #ffffff">                 DCXA = FOUR</a>
+  1216) <a name="l1216" style="background-color: #ffffff">                 QTCXA = FCXA*QTT(L)</a>
+  1217) <a name="l1217" style="background-color: #ffffff">                 if( LWASHTYP == 1 ) then</a>
+  1218) <a name="l1218" style="background-color: #ffffff">                   if( QTT(L) &gt; zero ) then</a>
+  1219) <a name="l1219" style="background-color: #ffffff">                     call DISGAS( CLWX*(FCXA/CFXX(L)), FCXA, TCMASS(N),   &amp;</a>
+  1220) <a name="l1220" style="background-color: #ffffff">                                  HSTAR(L,N), TEM(L), POFL(L),            &amp;</a>
+  1221) <a name="l1221" style="background-color: #ffffff">                                  QM(L), QTCXA, QTDISCXA )</a>
+  1222) <a name="l1222" style="background-color: #ffffff">                     if( QTCXA &gt; QTDISCXA ) then</a>
+  1223) <a name="l1223" style="background-color: #ffffff">                       QTWASHCXA = (QTCXA - QTDISCXA)*(one - exp( -0.24_r8*COLEFFAER*((RCXA)**0.75_r8)*DTSCAV )) !local</a>
+  1224) <a name="l1224" style="background-color: #ffffff">                     else</a>
+  1225) <a name="l1225" style="background-color: #ffffff">                       QTWASHCXA = zero</a>
+  1226) <a name="l1226" style="background-color: #ffffff">                     endif</a>
+  1227) <a name="l1227" style="background-color: #ffffff">                     QTEVAPCXAW = zero</a>
+  1228) <a name="l1228" style="background-color: #ffffff">                   else</a>
+  1229) <a name="l1229" style="background-color: #ffff99">                     QTWASHCXA  = zero</a>
+  1230) <a name="l1230" style="background-color: #ffff99">                     QTEVAPCXAW = zero</a>
+  1231) <a name="l1231" style="background-color: #ffff99">                   endif</a>
+  1232) <a name="l1232" style="background-color: #ffff99">                 elseif (LWASHTYP == 2 ) then</a>
+  1233) <a name="l1233" style="background-color: #ffff99">                   RWASH = RCXA*GAREA                         !kg/s local</a>
+  1234) <a name="l1234" style="background-color: #ffff99">                   call WASHGAS( RWASH, FCXA, DTSCAV, QTTOPCA, HSTAR(L,N), &amp;</a>
+  1235) <a name="l1235" style="background-color: #ffff99">                                 TEM(L), POFL(L), QM(L),                   &amp;</a>
+  1236) <a name="l1236" style="background-color: #ffff99">                                 QTCXA-QTDISCXA, QTWASHCXA, QTEVAPCXAW )</a>
+  1237) <a name="l1237" style="background-color: #ffff99">                 endif</a>
+  1238) <a name="l1238" style="background-color: #ffffff">                 QTEVAPCXA = QTEVAPCXAP + QTEVAPCXAW</a>
+  1239) <a name="l1239" style="background-color: #ffffff">               endif is_freezing_a</a>
+  1240) <a name="l1240" style="background-color: #ffffff">             endif</a>
+  1241) <a name="l1241" style="background-color: #ffffff">           endif has_rnew</a>
+  1242) <a name="l1242" style="background-color: #ffffff"></a>
+  1243) <a name="l1243" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1244) <a name="l1244" style="background-color: #ffffff">!                 AMBIENT WASHOUT</a>
+  1245) <a name="l1245" style="background-color: #ffffff">!  Ambient precip is finalized - if it is rain, washout</a>
+  1246) <a name="l1246" style="background-color: #ffffff">!  no ambient washout for ice, since gases are in vapor phase</a>
+  1247) <a name="l1247" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1248) <a name="l1248" style="background-color: #ffffff">           if( RAX &gt; zero ) then</a>
+  1249) <a name="l1249" style="background-color: #ffffff">             if( .not. freezing(l) ) then</a>
+  1250) <a name="l1250" style="background-color: #ffffff">               QTAX = FAX*QTT(L)</a>
+  1251) <a name="l1251" style="background-color: #ffffff">               if( LWASHTYP == 1 ) then</a>
+  1252) <a name="l1252" style="background-color: #ffffff">                 QTWASHAX = QTAX*                        &amp;</a>
+  1253) <a name="l1253" style="background-color: #ffffff">                    (one - exp(-0.24_r8*COLEFFAER*       &amp;</a>
+  1254) <a name="l1254" style="background-color: #ffffff">                   ((RAX)**0.75_r8)*DTSCAV))  !local</a>
+  1255) <a name="l1255" style="background-color: #ffffff">                 QTEVAPAXW = zero</a>
+  1256) <a name="l1256" style="background-color: #ffffff">               elseif( LWASHTYP == 2 ) then</a>
+  1257) <a name="l1257" style="background-color: #ffff99">                 RWASH = RAX*GAREA   !kg/s local</a>
+  1258) <a name="l1258" style="background-color: #ffff99">                 call WASHGAS( RWASH, FAX, DTSCAV, QTTOPAA, HSTAR(L,N), &amp;</a>
+  1259) <a name="l1259" style="background-color: #ffff99">                               TEM(L), POFL(L), QM(L), QTAX,            &amp;</a>
+  1260) <a name="l1260" style="background-color: #ffff99">                               QTWASHAX, QTEVAPAXW )</a>
+  1261) <a name="l1261" style="background-color: #ffff99">               endif</a>
+  1262) <a name="l1262" style="background-color: #ffff99">             else</a>
+  1263) <a name="l1263" style="background-color: #ffffff">               QTEVAPAXW = zero</a>
+  1264) <a name="l1264" style="background-color: #ffffff">               QTWASHAX  = zero</a>
+  1265) <a name="l1265" style="background-color: #ffffff">             endif</a>
+  1266) <a name="l1266" style="background-color: #ffffff">           else</a>
+  1267) <a name="l1267" style="background-color: #ffffff">             QTEVAPAXW = zero</a>
+  1268) <a name="l1268" style="background-color: #ffffff">             QTWASHAX  = zero</a>
+  1269) <a name="l1269" style="background-color: #ffffff">           endif</a>
+  1270) <a name="l1270" style="background-color: #ffffff">           QTEVAPAX = QTEVAPAXP + QTEVAPAXW</a>
+  1271) <a name="l1271" style="background-color: #ffffff"></a>
+  1272) <a name="l1272" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1273) <a name="l1273" style="background-color: #ffffff">!                  END SCAVENGING</a>
+  1274) <a name="l1274" style="background-color: #ffffff">!  Require CF if our ambient evaporation rate would give less </a>
+  1275) <a name="l1275" style="background-color: #ffffff">!  precip than R from model.</a>
+  1276) <a name="l1276" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1277) <a name="l1277" style="background-color: #ffffff">           if( </a><a style="background-color: #ffff99">do_diag .and. is_hno3 ) then</a>
+  1278) <a name="l1278" style="background-color: #ffff99">             rls_wrk(l) = rls(l)/garea</a>
+  1279) <a name="l1279" style="background-color: #ffff99">             rca_wrk(l) = rca</a>
+  1280) <a name="l1280" style="background-color: #ffff99">             fca_wrk(l) = fca</a>
+  1281) <a name="l1281" style="background-color: #ffff99">             rcxa_wrk(l) = rcxa</a>
+  1282) <a name="l1282" style="background-color: #ffff99">             fcxa_wrk(l) = fcxa</a>
+  1283) <a name="l1283" style="background-color: #ffff99">             rcxb_wrk(l) = rcxb</a>
+  1284) <a name="l1284" style="background-color: #ffff99">             fcxb_wrk(l) = fcxb</a>
+  1285) <a name="l1285" style="background-color: #ffff99">             rax_wrk(l,2) = rax</a>
+  1286) <a name="l1286" style="background-color: #ffff99">             fax_wrk(l,2) = fax</a>
+  1287) <a name="l1287" style="background-color: #ffff99">           endif</a>
+  1288) <a name="l1288" style="background-color: #ffffff">upper_level : &amp;</a>
+  1289) <a name="l1289" style="background-color: #ffffff">           if( L &gt; 1 ) then</a>
+  1290) <a name="l1290" style="background-color: #ffffff">             FAMA = max( FCXA + FCXB + FAX - CFR(LM1),zero )</a>
+  1291) <a name="l1291" style="background-color: #ffffff">             if( FAX &gt; zero ) then</a>
+  1292) <a name="l1292" style="background-color: #ffffff">               RAXLOC = RAX/FAX</a>
+  1293) <a name="l1293" style="background-color: #ffffff">             else</a>
+  1294) <a name="l1294" style="background-color: #ffffff">               RAXLOC = zero</a>
+  1295) <a name="l1295" style="background-color: #ffffff">             endif</a>
+  1296) <a name="l1296" style="background-color: #ffffff">             if( FCXA &gt; zero ) then</a>
+  1297) <a name="l1297" style="background-color: #ffffff">               RCXALOC = RCXA/FCXA</a>
+  1298) <a name="l1298" style="background-color: #ffffff">             else</a>
+  1299) <a name="l1299" style="background-color: #ffffff">               RCXALOC = zero</a>
+  1300) <a name="l1300" style="background-color: #ffffff">             endif</a>
+  1301) <a name="l1301" style="background-color: #ffffff">             if( FCXB &gt; zero ) then</a>
+  1302) <a name="l1302" style="background-color: #ffffff">               RCXBLOC = RCXB/FCXB</a>
+  1303) <a name="l1303" style="background-color: #ffffff">             else</a>
+  1304) <a name="l1304" style="background-color: #ffffff">               RCXBLOC = zero</a>
+  1305) <a name="l1305" style="background-color: #ffffff">             endif</a>
+  1306) <a name="l1306" style="background-color: #ffffff"></a>
+  1307) <a name="l1307" style="background-color: #ffffff">             if( CFR(LM1) &gt;= CFMIN ) then</a>
+  1308) <a name="l1308" style="background-color: #ffffff">               CFXX(LM1) = CFR(LM1)</a>
+  1309) <a name="l1309" style="background-color: #ffffff">             else</a>
+  1310) <a name="l1310" style="background-color: #ffffff">               if( adj_factor*RLSOG(LM1) &gt;= (RCXA*FCXA + RCXB*FCXB + RAX*FAX)*(one - EVAPRATE(LM1)) ) then</a>
+  1311) <a name="l1311" style="background-color: #ffffff">                 CFXX(LM1) = CFMIN</a>
+  1312) <a name="l1312" style="background-color: #ffffff">                 cf_trigger(lm1) = .true.</a>
+  1313) <a name="l1313" style="background-color: #ffffff">               else</a>
+  1314) <a name="l1314" style="background-color: #ffffff">                 CFXX(LM1) = CFR(LM1)</a>
+  1315) <a name="l1315" style="background-color: #ffffff">               endif</a>
+  1316) <a name="l1316" style="background-color: #ffffff">               if( is_hno3 .and. lm1 == kdiag .and. debug ) then</a>
+  1317) <a name="l1317" style="background-color: #ffff99">                 write(*,*) ' '</a>
+  1318) <a name="l1318" style="background-color: #ffff99">                 write(*,*) 'washout: rls,garea,rcxa,fcxa,rcxb,fcxb,rax,fax'</a>
+  1319) <a name="l1319" style="background-color: #ffff99">                 write(*,'(1p,8g15.7)') rls(lm1),garea,rcxa,fcxa,rcxb,fcxb,rax,fax</a>
+  1320) <a name="l1320" style="background-color: #ffff99">                 write(*,*) ' '</a>
+  1321) <a name="l1321" style="background-color: #ffff99">               endif</a>
+  1322) <a name="l1322" style="background-color: #ffff99">             endif</a>
+  1323) <a name="l1323" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1324) <a name="l1324" style="background-color: #ffff99">!  Figure out what will go into ambient and cloud below</a>
+  1325) <a name="l1325" style="background-color: #ffff99">!  Don't do for lowest level</a>
+  1326) <a name="l1326" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1327) <a name="l1327" style="background-color: #ffffff">             if( FAX &gt; zero ) then</a>
+  1328) <a name="l1328" style="background-color: #ffffff">               RAXLOC = RAX/FAX</a>
+  1329) <a name="l1329" style="background-color: #ffffff">               AMPCT = max( zero,min( one,(CFXX(L) + FAX - CFXX(LM1))/FAX ) )</a>
+  1330) <a name="l1330" style="background-color: #ffffff">               AMCLPCT = one - AMPCT</a>
+  1331) <a name="l1331" style="background-color: #ffffff">             else</a>
+  1332) <a name="l1332" style="background-color: #ffffff">               RAXLOC  = zero</a>
+  1333) <a name="l1333" style="background-color: #ffffff">               AMPCT   = zero</a>
+  1334) <a name="l1334" style="background-color: #ffffff">               AMCLPCT = zero</a>
+  1335) <a name="l1335" style="background-color: #ffffff">             endif</a>
+  1336) <a name="l1336" style="background-color: #ffffff">             if( FCXB &gt; zero ) then</a>
+  1337) <a name="l1337" style="background-color: #ffffff">               RCXBLOC = RCXB/FCXB</a>
+  1338) <a name="l1338" style="background-color: #ffffff">               CLNEWPCT = max( zero,min( (CFXX(LM1) - FCXA)/FCXB,one ) )</a>
+  1339) <a name="l1339" style="background-color: #ffffff">               CLNEWAMPCT = one - CLNEWPCT</a>
+  1340) <a name="l1340" style="background-color: #ffffff">             else</a>
+  1341) <a name="l1341" style="background-color: #ffffff">               RCXBLOC    = zero</a>
+  1342) <a name="l1342" style="background-color: #ffffff">               CLNEWPCT   = zero</a>
+  1343) <a name="l1343" style="background-color: #ffffff">               CLNEWAMPCT = zero</a>
+  1344) <a name="l1344" style="background-color: #ffffff">             endif</a>
+  1345) <a name="l1345" style="background-color: #ffffff">             if( FCXA &gt; zero ) then</a>
+  1346) <a name="l1346" style="background-color: #ffffff">               RCXALOC = RCXA/FCXA</a>
+  1347) <a name="l1347" style="background-color: #ffffff">               CLOLDPCT = max( zero,min( CFXX(LM1)/FCXA,one ) )</a>
+  1348) <a name="l1348" style="background-color: #ffffff">               CLOLDAMPCT = one - CLOLDPCT</a>
+  1349) <a name="l1349" style="background-color: #ffffff">             else</a>
+  1350) <a name="l1350" style="background-color: #ffffff">               RCXALOC    = zero</a>
+  1351) <a name="l1351" style="background-color: #ffffff">               CLOLDPCT   = zero</a>
+  1352) <a name="l1352" style="background-color: #ffffff">               CLOLDAMPCT = zero</a>
+  1353) <a name="l1353" style="background-color: #ffffff">             endif</a>
+  1354) <a name="l1354" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1355) <a name="l1355" style="background-color: #ffffff">!  Remix everything for the next level</a>
+  1356) <a name="l1356" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1357) <a name="l1357" style="background-color: #ffffff">             FCA = min( CFXX(LM1),FCXA*CLOLDPCT + CLNEWPCT*FCXB + AMCLPCT*FAX )</a>
+  1358) <a name="l1358" style="background-color: #ffffff">             if( FCA &gt; zero ) then</a>
+  1359) <a name="l1359" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1360) <a name="l1360" style="background-color: #ffffff">!  Maintain cloud core by reducing NC and AM area going into cloud below</a>
+  1361) <a name="l1361" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1362) <a name="l1362" style="background-color: #ffffff">               RCA = (RCXA*FCXA*CLOLDPCT + RCXB*FCXB*CLNEWPCT + RAX*FAX*AMCLPCT)/FCA</a>
+  1363) <a name="l1363" style="background-color: #ffffff">               if ( debug ) then</a>
+  1364) <a name="l1364" style="background-color: #ffff99">                 if( is_hno3 ) then</a>
+  1365) <a name="l1365" style="background-color: #ffff99">                   write(*,*) ' '</a>
+  1366) <a name="l1366" style="background-color: #ffff99">                   write(*,*) 'washout: rcxa,fcxa,cloldpctrca,rca,fca,dcxa @ l = ',l</a>
+  1367) <a name="l1367" style="background-color: #ffff99">                   write(*,'(1p,6g15.7)') rcxa,fcxa,cloldpct,rca,fca,dcxa</a>
+  1368) <a name="l1368" style="background-color: #ffff99">                   write(*,*) 'washout: rcxb,fcxb,clnewpct,dcxb'</a>
+  1369) <a name="l1369" style="background-color: #ffff99">                   write(*,'(1p,4g15.7)') rcxb,fcxb,clnewpct,dcxb</a>
+  1370) <a name="l1370" style="background-color: #ffff99">                   write(*,*) 'washout: rax,fax,amclpct,dax'</a>
+  1371) <a name="l1371" style="background-color: #ffff99">                   write(*,'(1p,4g15.7)') rax,fax,amclpct,dax</a>
+  1372) <a name="l1372" style="background-color: #ffff99">                   write(*,*) ' '</a>
+  1373) <a name="l1373" style="background-color: #ffff99">                 endif</a>
+  1374) <a name="l1374" style="background-color: #ffff99">               endif</a>
+  1375) <a name="l1375" style="background-color: #ffffff">               DCA = (RCXA*FCXA*CLOLDPCT)/(RCA*FCA)*DCXA + &amp; </a>
+  1376) <a name="l1376" style="background-color: #ffffff">                     (RCXB*FCXB*CLNEWPCT)/(RCA*FCA)*DCXB + &amp;</a>
+  1377) <a name="l1377" style="background-color: #ffffff">                     (RAX*FAX*AMCLPCT)/(RCA*FCA)*DAX</a>
+  1378) <a name="l1378" style="background-color: #ffffff">             else</a>
+  1379) <a name="l1379" style="background-color: #ffffff">               FCA = zero</a>
+  1380) <a name="l1380" style="background-color: #ffffff">               DCA = zero</a>
+  1381) <a name="l1381" style="background-color: #ffffff">               RCA = zero</a>
+  1382) <a name="l1382" style="background-color: #ffffff">             endif</a>
+  1383) <a name="l1383" style="background-color: #ffffff"></a>
+  1384) <a name="l1384" style="background-color: #ffffff">             FAMA = FCXA + FCXB + FAX - CFXX(LM1)</a>
+  1385) <a name="l1385" style="background-color: #ffffff">             if( FAMA &gt; zero ) then</a>
+  1386) <a name="l1386" style="background-color: #ffffff">               RAMA = (RCXA*FCXA*CLOLDAMPCT + RCXB*FCXB*CLNEWAMPCT + RAX*FAX*AMPCT)/FAMA</a>
+  1387) <a name="l1387" style="background-color: #ffffff">	       if( RAMA &gt; zero ) then</a>
+  1388) <a name="l1388" style="background-color: #ffffff">                 DAMA = (RCXA*FCXA*CLOLDAMPCT)/(RAMA*FAMA)*DCXA +  &amp;</a>
+  1389) <a name="l1389" style="background-color: #ffffff">                        (RCXB*FCXB*CLNEWAMPCT)/(RAMA*FAMA)*DCXB +  &amp;</a>
+  1390) <a name="l1390" style="background-color: #ffffff">                        (RAX*FAX*AMPCT)/(RAMA*FAMA)*DAX</a>
+  1391) <a name="l1391" style="background-color: #ffffff">	       else</a>
+  1392) <a name="l1392" style="background-color: #ffffff">		  FAMA = zero</a>
+  1393) <a name="l1393" style="background-color: #ffffff">                  DAMA = zero</a>
+  1394) <a name="l1394" style="background-color: #ffffff">	       endif</a>
+  1395) <a name="l1395" style="background-color: #ffffff">             else</a>
+  1396) <a name="l1396" style="background-color: #ffffff">               FAMA = zero</a>
+  1397) <a name="l1397" style="background-color: #ffffff">               DAMA = zero</a>
+  1398) <a name="l1398" style="background-color: #ffffff">               RAMA = zero</a>
+  1399) <a name="l1399" style="background-color: #ffffff">             endif</a>
+  1400) <a name="l1400" style="background-color: #ffffff">           else upper_level</a>
+  1401) <a name="l1401" style="background-color: #ffffff">             AMPCT      = zero</a>
+  1402) <a name="l1402" style="background-color: #ffffff">             AMCLPCT    = zero</a>
+  1403) <a name="l1403" style="background-color: #ffffff">             CLNEWPCT   = zero</a>
+  1404) <a name="l1404" style="background-color: #ffffff">             CLNEWAMPCT = zero</a>
+  1405) <a name="l1405" style="background-color: #ffffff">             CLOLDPCT   = zero</a>
+  1406) <a name="l1406" style="background-color: #ffffff">             CLOLDAMPCT = zero</a>
+  1407) <a name="l1407" style="background-color: #ffffff">           endif upper_level</a>
+  1408) <a name="l1408" style="background-color: #ffffff">         else has_rls</a>
+  1409) <a name="l1409" style="background-color: #ffffff">	   RNEW = zero</a>
+  1410) <a name="l1410" style="background-color: #ffffff">           QTEVAPCXA = QTTOPCA</a>
+  1411) <a name="l1411" style="background-color: #ffffff">           QTEVAPAX = QTTOPAA</a>
+  1412) <a name="l1412" style="background-color: #ffffff">           if( L &gt; 1 ) then</a>
+  1413) <a name="l1413" style="background-color: #ffffff">             if( RLS(LM1) &gt; zero ) then</a>
+  1414) <a name="l1414" style="background-color: #ffffff">               CFXX(LM1) = max( CFMIN,CFR(LM1) )</a>
+  1415) <a name="l1415" style="background-color: #ffffff">!              if( CFR(LM1) &gt;= CFMIN ) then</a>
+  1416) <a name="l1416" style="background-color: #ffffff">!                CFXX(LM1) = CFR(LM1)</a>
+  1417) <a name="l1417" style="background-color: #ffffff">!              else</a>
+  1418) <a name="l1418" style="background-color: #ffffff">!                CFXX(LM1) = CFMIN</a>
+  1419) <a name="l1419" style="background-color: #ffffff">!              endif</a>
+  1420) <a name="l1420" style="background-color: #ffffff">             else</a>
+  1421) <a name="l1421" style="background-color: #ffffff">               CFXX(LM1) = CFR(LM1)</a>
+  1422) <a name="l1422" style="background-color: #ffffff">             endif</a>
+  1423) <a name="l1423" style="background-color: #ffffff">           endif</a>
+  1424) <a name="l1424" style="background-color: #ffffff">           AMPCT      = zero</a>
+  1425) <a name="l1425" style="background-color: #ffffff">           AMCLPCT    = zero</a>
+  1426) <a name="l1426" style="background-color: #ffffff">           CLNEWPCT   = zero</a>
+  1427) <a name="l1427" style="background-color: #ffffff">           CLNEWAMPCT = zero</a>
+  1428) <a name="l1428" style="background-color: #ffffff">           CLOLDPCT   = zero</a>
+  1429) <a name="l1429" style="background-color: #ffffff">           CLOLDAMPCT = zero</a>
+  1430) <a name="l1430" style="background-color: #ffffff">           RCA        = zero</a>
+  1431) <a name="l1431" style="background-color: #ffffff">           RAMA       = zero</a>
+  1432) <a name="l1432" style="background-color: #ffffff">           FCA        = zero</a>
+  1433) <a name="l1433" style="background-color: #ffffff">           FAMA       = zero</a>
+  1434) <a name="l1434" style="background-color: #ffffff">           DCA        = zero</a>
+  1435) <a name="l1435" style="background-color: #ffffff">           DAMA       = zero</a>
+  1436) <a name="l1436" style="background-color: #ffffff">         endif has_rls</a>
+  1437) <a name="l1437" style="background-color: #ffffff"></a>
+  1438) <a name="l1438" style="background-color: #ffffff">         if( </a><a style="background-color: #ffff99">do_diag .and. is_hno3 ) then</a>
+  1439) <a name="l1439" style="background-color: #ffff99">           fama_wrk(l) = fama</a>
+  1440) <a name="l1440" style="background-color: #ffff99">           rama_wrk(l) = rama</a>
+  1441) <a name="l1441" style="background-color: #ffff99">         endif</a>
+  1442) <a name="l1442" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1443) <a name="l1443" style="background-color: #ffff99">!  Net loss can not exceed QTT in each region</a>
+  1444) <a name="l1444" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1445) <a name="l1445" style="background-color: #ffffff">         QTNETLCXA = QTRAINCXA + QTRIMECXA + QTWASHCXA - QTEVAPCXA</a>
+  1446) <a name="l1446" style="background-color: #ffffff">         QTNETLCXA = min( QTT(L)*FCXA,QTNETLCXA )</a>
+  1447) <a name="l1447" style="background-color: #ffffff">   </a>
+  1448) <a name="l1448" style="background-color: #ffffff">         QTNETLCXB =QTRAINCXB</a>
+  1449) <a name="l1449" style="background-color: #ffffff">         QTNETLCXB = min( QTT(L)*FCXB,QTNETLCXB )</a>
+  1450) <a name="l1450" style="background-color: #ffffff"></a>
+  1451) <a name="l1451" style="background-color: #ffffff">         QTNETLAX = QTWASHAX - QTEVAPAX</a>
+  1452) <a name="l1452" style="background-color: #ffffff">         QTNETLAX = min( QTT(L)*FAX,QTNETLAX )</a>
+  1453) <a name="l1453" style="background-color: #ffffff">              </a>
+  1454) <a name="l1454" style="background-color: #ffffff">         QTTNEW(L) = QTT(L) - (QTNETLCXA + QTNETLCXB + QTNETLAX)</a>
+  1455) <a name="l1455" style="background-color: #ffffff"></a>
+  1456) <a name="l1456" style="background-color: #ffffff">         if( </a><a style="background-color: #ffff99">do_diag .and. is_hno3 ) then</a>
+  1457) <a name="l1457" style="background-color: #ffff99">           qt_rain(l) = qtraincxa + qtraincxb</a>
+  1458) <a name="l1458" style="background-color: #ffff99">           qt_rime(l) = qtrimecxa</a>
+  1459) <a name="l1459" style="background-color: #ffff99">           qt_wash(l) = qtwashcxa + qtwashax</a>
+  1460) <a name="l1460" style="background-color: #ffff99">           qt_evap(l) = qtevapcxa + qtevapax</a>
+  1461) <a name="l1461" style="background-color: #ffff99">           frc(l,1) = qtnetlcxa</a>
+  1462) <a name="l1462" style="background-color: #ffff99">           frc(l,2) = qtnetlcxb</a>
+  1463) <a name="l1463" style="background-color: #ffff99">           frc(l,3) = qtnetlax</a>
+  1464) <a name="l1464" style="background-color: #ffff99">         endif</a>
+  1465) <a name="l1465" style="background-color: #ffffff">         if( </a><a style="background-color: #ffff99">debug .and. is_hno3 .and. l == kdiag ) then</a>
+  1466) <a name="l1466" style="background-color: #ffff99">           write(*,*) ' '</a>
+  1467) <a name="l1467" style="background-color: #ffff99">           write(*,*) 'washout: qtraincxa, qtraincxb, qtrimecxa @ level = ',l</a>
+  1468) <a name="l1468" style="background-color: #ffff99">           write(*,'(1p,3g15.7)') qtraincxa, qtraincxb, qtrimecxa</a>
+  1469) <a name="l1469" style="background-color: #ffff99">           write(*,*) ' '</a>
+  1470) <a name="l1470" style="background-color: #ffff99">         endif</a>
+  1471) <a name="l1471" style="background-color: #ffffff">         if ( debug ) then</a>
+  1472) <a name="l1472" style="background-color: #ffff99">           if( (l == 3 .or. l == 2) ) then</a>
+  1473) <a name="l1473" style="background-color: #ffff99">             write(*,*) 'washout: hno3, hno3, qtnetlca,b, qtnetlax @ level = ',l</a>
+  1474) <a name="l1474" style="background-color: #ffff99">             write(*,'(1p,5g15.7)') qttnew(l), qtt(l), qtnetlcxa, qtnetlcxb, qtnetlax</a>
+  1475) <a name="l1475" style="background-color: #ffff99">             write(*,*) 'washout: qtwashax, qtevapax,fax,fama'</a>
+  1476) <a name="l1476" style="background-color: #ffff99">             write(*,'(1p,5g15.7)') qtwashax, qtevapax, fax, fama</a>
+  1477) <a name="l1477" style="background-color: #ffff99">           endif</a>
+  1478) <a name="l1478" style="background-color: #ffff99">         endif</a>
+  1479) <a name="l1479" style="background-color: #ffff99"></a>
+  1480) <a name="l1480" style="background-color: #ffff99">         QTTOPCAX = (QTTOPCA + QTNETLCXA)*CLOLDPCT + QTNETLCXB*CLNEWPCT + (QTTOPAA + QTNETLAX)*AMCLPCT</a>
+  1481) <a name="l1481" style="background-color: #ffff99">         QTTOPAAX = (QTTOPCA + QTNETLCXA)*CLOLDAMPCT + QTNETLCXB*CLNEWAMPCT + (QTTOPAA + QTNETLAX)*AMPCT</a>
+  1482) <a name="l1482" style="background-color: #ffff99">         QTTOPCA = QTTOPCAX</a>
+  1483) <a name="l1483" style="background-color: #ffff99">         QTTOPAA = QTTOPAAX</a>
+  1484) <a name="l1484" style="background-color: #ffff99">       end do level_loop</a>
+  1485) <a name="l1485" style="background-color: #ffff99"></a>
+  1486) <a name="l1486" style="background-color: #ffffff">       if ( debug ) then</a>
+  1487) <a name="l1487" style="background-color: #ffff99">         if( is_hno3 ) then</a>
+  1488) <a name="l1488" style="background-color: #ffff99">           write(*,*) ' '</a>
+  1489) <a name="l1489" style="background-color: #ffff99">           write(*,*) 'washout: clwx_wrk'</a>
+  1490) <a name="l1490" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') clwx_wrk(1:le)</a>
+  1491) <a name="l1491" style="background-color: #ffff99">           write(*,*) 'washout: cfr'</a>
+  1492) <a name="l1492" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') cfr(1:le)</a>
+  1493) <a name="l1493" style="background-color: #ffff99">           write(*,*) 'washout: cfxx'</a>
+  1494) <a name="l1494" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') cfxx(1:le)</a>
+  1495) <a name="l1495" style="background-color: #ffff99">           write(*,*) 'washout: cf trigger'</a>
+  1496) <a name="l1496" style="background-color: #ffff99">           write(*,'(10l4)') cf_trigger(1:le)</a>
+  1497) <a name="l1497" style="background-color: #ffff99">           write(*,*) 'washout: evaprate'</a>
+  1498) <a name="l1498" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') evaprate(1:le)</a>
+  1499) <a name="l1499" style="background-color: #ffff99">           write(*,*) 'washout: rls'</a>
+  1500) <a name="l1500" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') rls(1:le)</a>
+  1501) <a name="l1501" style="background-color: #ffff99">           write(*,*) 'washout: rls/garea'</a>
+  1502) <a name="l1502" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') rls_wrk(1:le)</a>
+  1503) <a name="l1503" style="background-color: #ffff99">           write(*,*) 'washout: rnew_wrk'</a>
+  1504) <a name="l1504" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') rnew_wrk(1:le)</a>
+  1505) <a name="l1505" style="background-color: #ffff99">           write(*,*) 'washout: rnew_flag'</a>
+  1506) <a name="l1506" style="background-color: #ffff99">           write(*,'(10l4)') rnew_flag(1:le)</a>
+  1507) <a name="l1507" style="background-color: #ffff99">           write(*,*) 'washout: deltarime_wrk'</a>
+  1508) <a name="l1508" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') deltarime_wrk(1:le)</a>
+  1509) <a name="l1509" style="background-color: #ffff99">           write(*,*) 'washout: rama_wrk'</a>
+  1510) <a name="l1510" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') rama_wrk(1:le)</a>
+  1511) <a name="l1511" style="background-color: #ffff99">           write(*,*) 'washout: fama_wrk'</a>
+  1512) <a name="l1512" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') fama_wrk(1:le)</a>
+  1513) <a name="l1513" style="background-color: #ffff99">           write(*,*) 'washout: rca_wrk'</a>
+  1514) <a name="l1514" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') rca_wrk(1:le)</a>
+  1515) <a name="l1515" style="background-color: #ffff99">           write(*,*) 'washout: fca_wrk'</a>
+  1516) <a name="l1516" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') fca_wrk(1:le)</a>
+  1517) <a name="l1517" style="background-color: #ffff99">           write(*,*) 'washout: rcxa_wrk'</a>
+  1518) <a name="l1518" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') rcxa_wrk(1:le)</a>
+  1519) <a name="l1519" style="background-color: #ffff99">           write(*,*) 'washout: fcxa_wrk'</a>
+  1520) <a name="l1520" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') fcxa_wrk(1:le)</a>
+  1521) <a name="l1521" style="background-color: #ffff99">           write(*,*) 'washout: rcxb_wrk'</a>
+  1522) <a name="l1522" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') rcxb_wrk(1:le)</a>
+  1523) <a name="l1523" style="background-color: #ffff99">           write(*,*) 'washout: fcxb_wrk'</a>
+  1524) <a name="l1524" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') fcxb_wrk(1:le)</a>
+  1525) <a name="l1525" style="background-color: #ffff99">           write(*,*) 'washout: rax1_wrk'</a>
+  1526) <a name="l1526" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') rax_wrk(1:le,1)</a>
+  1527) <a name="l1527" style="background-color: #ffff99">           write(*,*) 'washout: fax1_wrk'</a>
+  1528) <a name="l1528" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') fax_wrk(1:le,1)</a>
+  1529) <a name="l1529" style="background-color: #ffff99">           write(*,*) 'washout: rax2_wrk'</a>
+  1530) <a name="l1530" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') rax_wrk(1:le,2)</a>
+  1531) <a name="l1531" style="background-color: #ffff99">           write(*,*) 'washout: fax2_wrk'</a>
+  1532) <a name="l1532" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') fax_wrk(1:le,2)</a>
+  1533) <a name="l1533" style="background-color: #ffff99">           write(*,*) 'washout: rls_flag'</a>
+  1534) <a name="l1534" style="background-color: #ffff99">           write(*,'(1p,10l4)') rls_flag(1:le)</a>
+  1535) <a name="l1535" style="background-color: #ffff99">           write(*,*) 'washout: freezing'</a>
+  1536) <a name="l1536" style="background-color: #ffff99">           write(*,'(1p,10l4)') freezing(1:le)</a>
+  1537) <a name="l1537" style="background-color: #ffff99">           write(*,*) 'washout: qtnetlcxa'</a>
+  1538) <a name="l1538" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') frc(1:le,1)</a>
+  1539) <a name="l1539" style="background-color: #ffff99">           write(*,*) 'washout: qtnetlcxb'</a>
+  1540) <a name="l1540" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') frc(1:le,2)</a>
+  1541) <a name="l1541" style="background-color: #ffff99">           write(*,*) 'washout: qtnetlax'</a>
+  1542) <a name="l1542" style="background-color: #ffff99">           write(*,'(1p,5g15.7)') frc(1:le,3)</a>
+  1543) <a name="l1543" style="background-color: #ffff99">           write(*,*) ' '</a>
+  1544) <a name="l1544" style="background-color: #ffff99">         endif</a>
+  1545) <a name="l1545" style="background-color: #ffff99">       endif</a>
+  1546) <a name="l1546" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1547) <a name="l1547" style="background-color: #ffff99">!  reload new tracer mass and rescale moments: check upper limits (LE) </a>
+  1548) <a name="l1548" style="background-color: #ffff99">!-----------------------------------------------------------------------</a>
+  1549) <a name="l1549" style="background-color: #ffffff">       QTTJFL(:le,N) = QTTNEW(:le)</a>
+  1550) <a name="l1550" style="background-color: #ffffff"></a>
+  1551) <a name="l1551" style="background-color: #ffffff">     end do species_loop</a>
+  1552) <a name="l1552" style="background-color: #ffffff">!</a>
+  1553) <a name="l1553" style="background-color: #ffffff">     return</a>
+  1554) <a name="l1554" style="background-color: #ffffff">   end subroutine washo</a>
+  1555) <a name="l1555" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+  1556) <a name="l1556" style="background-color: #ffffff">      subroutine DISGAS (CLWX,CFX,MOLMASS,HSTAR,TM,PR,QM,QT,QTDIS)</a>
+  1557) <a name="l1557" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+  1558) <a name="l1558" style="background-color: #ffffff">      implicit none</a>
+  1559) <a name="l1559" style="background-color: #ffffff">      real(r8), intent(in) :: CLWX,CFX    !cloud water,cloud fraction </a>
+  1560) <a name="l1560" style="background-color: #ffffff">      real(r8), intent(in) :: MOLMASS     !molecular mass of tracer</a>
+  1561) <a name="l1561" style="background-color: #ffffff">      real(r8), intent(in) :: HSTAR       !Henry's Law coeffs A*exp(-B/T)</a>
+  1562) <a name="l1562" style="background-color: #ffffff">      real(r8), intent(in) :: TM          !temperature of box (K)</a>
+  1563) <a name="l1563" style="background-color: #ffffff">      real(r8), intent(in) :: PR          !pressure of box (hPa)</a>
+  1564) <a name="l1564" style="background-color: #ffffff">      real(r8), intent(in) :: QM          !air mass in box (kg)</a>
+  1565) <a name="l1565" style="background-color: #ffffff">      real(r8), intent(in) :: QT          !tracer in box (kg)</a>
+  1566) <a name="l1566" style="background-color: #ffffff">      real(r8), intent(out) :: QTDIS      !tracer dissolved in aqueous phase </a>
+  1567) <a name="l1567" style="background-color: #ffffff"> </a>
+  1568) <a name="l1568" style="background-color: #ffffff">      real(r8)  MUEMP</a>
+  1569) <a name="l1569" style="background-color: #ffffff">      real(r8), parameter :: INV298 = 1._r8/298._r8</a>
+  1570) <a name="l1570" style="background-color: #ffffff">      real(r8), parameter  :: TMIX=258._r8</a>
+  1571) <a name="l1571" style="background-color: #ffffff">      real(r8), parameter  :: RETEFF=0.5_r8</a>
+  1572) <a name="l1572" style="background-color: #ffffff">!---Next calculate rate of uptake of tracer</a>
+  1573) <a name="l1573" style="background-color: #ffffff"></a>
+  1574) <a name="l1574" style="background-color: #ffffff">!---effective Henry's Law constant: H* = moles-T / liter-precip / press(atm-T)</a>
+  1575) <a name="l1575" style="background-color: #ffffff">!---p(atm of tracer-T) = (QT/QM) * (.029/MolWt-T) * pressr(hPa)/1000</a>
+  1576) <a name="l1576" style="background-color: #ffffff">!---limit temperature effects to T above freezing</a>
+  1577) <a name="l1577" style="background-color: #ffffff">!----MU from fit to Kaercher and Voigt (2006)</a>
+  1578) <a name="l1578" style="background-color: #ffffff"></a>
+  1579) <a name="l1579" style="background-color: #ffffff">      if(TM .ge. TICE) then</a>
+  1580) <a name="l1580" style="background-color: #ffffff">         QTDIS=(HSTAR*(QT/(QM*CFX))*0.029_r8*(PR/1.0e3_r8))*(CLWX*QM)</a>
+  1581) <a name="l1581" style="background-color: #ffff99">      elseif (TM .le. TMIX) then</a>
+  1582) <a name="l1582" style="background-color: #ffff99">         MUEMP=exp(-14.2252_r8+(1.55704e-1_r8*TM)-(7.1929e-4_r8*(TM**2.0_r8)))</a>
+  1583) <a name="l1583" style="background-color: #ffff99">         QTDIS=MUEMP*(MOLMASS/18._r8)*(CLWX*QM)</a>
+  1584) <a name="l1584" style="background-color: #ffff99">      else</a>
+  1585) <a name="l1585" style="background-color: #ffff99">       QTDIS=RETEFF*((HSTAR*(QT/(QM*CFX))*0.029_r8*(PR/1.0e3_r8))*(CLWX*QM))</a>
+  1586) <a name="l1586" style="background-color: #ffff99">      endif</a>
+  1587) <a name="l1587" style="background-color: #ffff99"></a>
+  1588) <a name="l1588" style="background-color: #ffff99">      return</a>
+  1589) <a name="l1589" style="background-color: #ffffff">      end subroutine DISGAS</a>
+  1590) <a name="l1590" style="background-color: #ffffff"></a>
+  1591) <a name="l1591" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1592) <a name="l1592" style="background-color: #ffffff">      subroutine RAINGAS (RRAIN,DTSCAV,CLWX,CFX,QM,QT,QTDIS,QTRAIN)</a>
+  1593) <a name="l1593" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1594) <a name="l1594" style="background-color: #ffffff">!---New trace-gas rainout from large-scale precip with two time scales,</a>
+  1595) <a name="l1595" style="background-color: #ffffff">!---one based on precip formation from cloud water and one based on </a>
+  1596) <a name="l1596" style="background-color: #ffffff">!---Henry's Law solubility: correct limit for delta-t</a>
+  1597) <a name="l1597" style="background-color: #ffffff">!---    </a>
+  1598) <a name="l1598" style="background-color: #ffffff">!---NB this code does not consider the aqueous dissociation (eg, C-q) </a>
+  1599) <a name="l1599" style="background-color: #ffffff">!---   that makes uptake of HNO3 and H2SO4 so complete.  To do so would</a>
+  1600) <a name="l1600" style="background-color: #ffffff">!---   require that we keep track of the pH of the falling rain.</a>
+  1601) <a name="l1601" style="background-color: #ffffff">!---THUS the Henry's Law coefficient KHA needs to be enhanced to incldue this!</a>
+  1602) <a name="l1602" style="background-color: #ffffff">!---ALSO the possible formation of other soluble species from, eg, CH2O, H2O2</a>
+  1603) <a name="l1603" style="background-color: #ffffff">!---   can be considered with enhanced values of KHA.</a>
+  1604) <a name="l1604" style="background-color: #ffffff">!---</a>
+  1605) <a name="l1605" style="background-color: #ffffff">!---Does NOT now use RMC (moist conv rain) but could, assuming 30% coverage</a>
+  1606) <a name="l1606" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1607) <a name="l1607" style="background-color: #ffffff">      implicit none</a>
+  1608) <a name="l1608" style="background-color: #ffffff">      real(r8), intent(in) :: RRAIN       !new rain formation in box (kg/s)</a>
+  1609) <a name="l1609" style="background-color: #ffffff">      real(r8), intent(in) :: DTSCAV      !time step (s)</a>
+  1610) <a name="l1610" style="background-color: #ffffff">      real(r8), intent(in) :: CLWX,CFX !cloud water and cloud fraction</a>
+  1611) <a name="l1611" style="background-color: #ffffff">      real(r8), intent(in) :: QM          !air mass in box (kg)</a>
+  1612) <a name="l1612" style="background-color: #ffffff">      real(r8), intent(in) :: QT          !tracer in box (kg) </a>
+  1613) <a name="l1613" style="background-color: #ffffff">      real(r8), intent(in) :: QTDIS          !tracer in aqueous phase (kg) </a>
+  1614) <a name="l1614" style="background-color: #ffffff">      real(r8), intent(out) :: QTRAIN      !tracer picked up by new rain  </a>
+  1615) <a name="l1615" style="background-color: #ffffff"></a>
+  1616) <a name="l1616" style="background-color: #ffffff">      real(r8)   QTLF,QTDISSTAR</a>
+  1617) <a name="l1617" style="background-color: #ffffff"></a>
+  1618) <a name="l1618" style="background-color: #ffffff"></a>
+  1619) <a name="l1619" style="background-color: #ffffff"></a>
+  1620) <a name="l1620" style="background-color: #ffffff"></a>
+  1621) <a name="l1621" style="background-color: #ffffff"></a>
+  1622) <a name="l1622" style="background-color: #ffffff">      QTDISSTAR=(QTDIS*(QT*CFX))/(QTDIS+(QT*CFX))</a>
+  1623) <a name="l1623" style="background-color: #ffffff"> </a>
+  1624) <a name="l1624" style="background-color: #ffffff">!---Tracer Loss frequency (1/s) within cloud fraction:</a>
+  1625) <a name="l1625" style="background-color: #ffffff">      QTLF = (RRAIN*QTDISSTAR)/(CLWX*QM*QT*CFX)</a>
+  1626) <a name="l1626" style="background-color: #ffffff"></a>
+  1627) <a name="l1627" style="background-color: #ffffff">!---in time = DTSCAV, the amount of QTT scavenged is calculated </a>
+  1628) <a name="l1628" style="background-color: #ffffff">!---from CF*AMOUNT OF UPTAKE </a>
+  1629) <a name="l1629" style="background-color: #ffffff">      QTRAIN = QT*CFX*(1._r8 - exp(-DTSCAV*QTLF))</a>
+  1630) <a name="l1630" style="background-color: #ffffff"></a>
+  1631) <a name="l1631" style="background-color: #ffffff">      return</a>
+  1632) <a name="l1632" style="background-color: #ffffff">      end subroutine RAINGAS</a>
+  1633) <a name="l1633" style="background-color: #ffffff"></a>
+  1634) <a name="l1634" style="background-color: #ffffff"></a>
+  1635) <a name="l1635" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1636) <a name="l1636" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">WASHGAS (RWASH,BOXF,DTSCAV,QTRTOP,HSTAR,TM,PR,QM, &amp;</a>
+  1637) <a name="l1637" style="background-color: #ffcccc">                            QT,QTWASH,QTEVAP)</a>
+  1638) <a name="l1638" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1639) <a name="l1639" style="background-color: #ffcccc">!---for most gases below-cloud washout assume Henry-Law equilib with precip</a>
+  1640) <a name="l1640" style="background-color: #ffcccc">!---assumes that precip is liquid, if frozen, do not call this sub</a>
+  1641) <a name="l1641" style="background-color: #ffcccc">!---since solubility is moderate, fraction of box with rain does not matter</a>
+  1642) <a name="l1642" style="background-color: #ffcccc">!---NB this code does not consider the aqueous dissociation (eg, C-q) </a>
+  1643) <a name="l1643" style="background-color: #ffcccc">!---   that makes uptake of HNO3 and H2SO4 so complete.  To do so would</a>
+  1644) <a name="l1644" style="background-color: #ffcccc">!---   require that we keep track of the pH of the falling rain.</a>
+  1645) <a name="l1645" style="background-color: #ffcccc">!---THUS the Henry's Law coefficient KHA needs to be enhanced to incldue this!</a>
+  1646) <a name="l1646" style="background-color: #ffcccc">!---ALSO the possible formation of other soluble species from, eg, CH2O, H2O2</a>
+  1647) <a name="l1647" style="background-color: #ffcccc">!---   can be considered with enhanced values of KHA.</a>
+  1648) <a name="l1648" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1649) <a name="l1649" style="background-color: #ffcccc">      implicit none</a>
+  1650) <a name="l1650" style="background-color: #ffcccc">      real(r8), intent(in)  :: RWASH   ! precip leaving bottom of box (kg/s)</a>
+  1651) <a name="l1651" style="background-color: #ffcccc">      real(r8), intent(in)  :: BOXF   ! fraction of box with washout</a>
+  1652) <a name="l1652" style="background-color: #ffcccc">      real(r8), intent(in)  :: DTSCAV  ! time step (s)</a>
+  1653) <a name="l1653" style="background-color: #ffcccc">      real(r8), intent(in)  :: QTRTOP  ! tracer-T in rain entering top of box </a>
+  1654) <a name="l1654" style="background-color: #ffcccc">!                                              over time step (kg)</a>
+  1655) <a name="l1655" style="background-color: #ffcccc">      real(r8), intent(in)  :: HSTAR ! Henry's Law coeffs A*exp(-B/T)</a>
+  1656) <a name="l1656" style="background-color: #ffcccc">      real(r8), intent(in)  :: TM      ! temperature of box (K)</a>
+  1657) <a name="l1657" style="background-color: #ffcccc">      real(r8), intent(in)  :: PR      ! pressure of box (hPa)</a>
+  1658) <a name="l1658" style="background-color: #ffcccc">      real(r8), intent(in)  :: QT      ! tracer in box (kg)</a>
+  1659) <a name="l1659" style="background-color: #ffcccc">      real(r8), intent(in)  :: QM      ! air mass in box (kg)</a>
+  1660) <a name="l1660" style="background-color: #ffcccc">      real(r8), intent(out) :: QTWASH  ! tracer picked up by precip (kg)</a>
+  1661) <a name="l1661" style="background-color: #ffcccc">      real(r8), intent(out) :: QTEVAP  ! tracer evaporated from precip (kg)</a>
+  1662) <a name="l1662" style="background-color: #ffcccc">      </a>
+  1663) <a name="l1663" style="background-color: #ffcccc">      real(r8), parameter :: INV298 = 1._r8/298._r8</a>
+  1664) <a name="l1664" style="background-color: #ffcccc">      real(r8)            :: FWASH, QTMAX, QTDIF</a>
+  1665) <a name="l1665" style="background-color: #ffcccc"></a>
+  1666) <a name="l1666" style="background-color: #ffcccc">!---effective Henry's Law constant: H* = moles-T / liter-precip / press(atm-T)</a>
+  1667) <a name="l1667" style="background-color: #ffcccc">!---p(atm of tracer-T) = (QT/QM) * (.029/MolWt-T) * pressr(hPa)/1000</a>
+  1668) <a name="l1668" style="background-color: #ffcccc">!---limit temperature effects to T above freezing</a>
+  1669) <a name="l1669" style="background-color: #ffcccc"></a>
+  1670) <a name="l1670" style="background-color: #ffcccc">!</a>
+  1671) <a name="l1671" style="background-color: #ffcccc">! jfl</a>
+  1672) <a name="l1672" style="background-color: #ffcccc">!</a>
+  1673) <a name="l1673" style="background-color: #ffcccc">! added test for BOXF = 0.</a>
+  1674) <a name="l1674" style="background-color: #ffcccc">!</a>
+  1675) <a name="l1675" style="background-color: #ffcccc">      if ( BOXF == 0._r8 ) then</a>
+  1676) <a name="l1676" style="background-color: #ffcccc">        QTWASH = 0._r8</a>
+  1677) <a name="l1677" style="background-color: #ffcccc">        QTEVAP = 0._r8</a>
+  1678) <a name="l1678" style="background-color: #ffcccc">        return</a>
+  1679) <a name="l1679" style="background-color: #ffcccc">      end if</a>
+  1680) <a name="l1680" style="background-color: #ffcccc"></a>
+  1681) <a name="l1681" style="background-color: #ffcccc">!---effective washout frequency (1/s):</a>
+  1682) <a name="l1682" style="background-color: #ffcccc">        FWASH = (RWASH*HSTAR*29.e-6_r8*PR)/(QM*BOXF)</a>
+  1683) <a name="l1683" style="background-color: #ffcccc">!---equilib amount of T (kg) in rain thru bottom of box over time step</a>
+  1684) <a name="l1684" style="background-color: #ffcccc">        QTMAX = QT*FWASH*DTSCAV</a>
+  1685) <a name="l1685" style="background-color: #ffcccc">      if (QTMAX .gt. QTRTOP) then</a>
+  1686) <a name="l1686" style="background-color: #ffcccc">!---more of tracer T can go into rain</a>
+  1687) <a name="l1687" style="background-color: #ffcccc">         QTDIF = min (QT, QTMAX-QTRTOP)</a>
+  1688) <a name="l1688" style="background-color: #ffcccc">         QTWASH = QTDIF * (1._r8 - exp(-DTSCAV*FWASH))</a>
+  1689) <a name="l1689" style="background-color: #ffcccc">         QTEVAP=0._r8</a>
+  1690) <a name="l1690" style="background-color: #ffcccc">      else</a>
+  1691) <a name="l1691" style="background-color: #ffcccc">!--too much of T in rain, must degas/evap T</a>
+  1692) <a name="l1692" style="background-color: #ffcccc">         QTWASH = 0._r8</a>
+  1693) <a name="l1693" style="background-color: #ffcccc">         QTEVAP = QTRTOP - QTMAX</a>
+  1694) <a name="l1694" style="background-color: #ffcccc">      endif</a>
+  1695) <a name="l1695" style="background-color: #ffcccc">     </a>
+  1696) <a name="l1696" style="background-color: #ffcccc">      return</a>
+  1697) <a name="l1697" style="background-color: #ffcccc">      end subroutine WASHGAS</a>
+  1698) <a name="l1698" style="background-color: #ffffff"></a>
+  1699) <a name="l1699" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1700) <a name="l1700" style="background-color: #ffffff">      function DEMPIRICAL (CWATER,RRATE)</a>
+  1701) <a name="l1701" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1702) <a name="l1702" style="background-color: #ffffff">      use shr_spfn_mod, only: shr_spfn_gamma</a>
+  1703) <a name="l1703" style="background-color: #ffffff"></a>
+  1704) <a name="l1704" style="background-color: #ffffff">      implicit none</a>
+  1705) <a name="l1705" style="background-color: #ffffff">      real(r8), intent(in)  :: CWATER   </a>
+  1706) <a name="l1706" style="background-color: #ffffff">      real(r8), intent(in)  :: RRATE</a>
+  1707) <a name="l1707" style="background-color: #ffffff"></a>
+  1708) <a name="l1708" style="background-color: #ffffff">      real(r8) :: DEMPIRICAL</a>
+  1709) <a name="l1709" style="background-color: #ffffff"> </a>
+  1710) <a name="l1710" style="background-color: #ffffff">      real(r8) RRATEX,WX,THETA,PHI,ETA,BETA,ALPHA,BEE</a>
+  1711) <a name="l1711" style="background-color: #ffffff">      real(r8) GAMTHETA,GAMBETA</a>
+  1712) <a name="l1712" style="background-color: #ffffff">  </a>
+  1713) <a name="l1713" style="background-color: #ffffff"></a>
+  1714) <a name="l1714" style="background-color: #ffffff"></a>
+  1715) <a name="l1715" style="background-color: #ffffff">      RRATEX=RRATE*3600._r8       !mm/hr</a>
+  1716) <a name="l1716" style="background-color: #ffffff">      WX=CWATER*1.0e3_r8  !g/m3</a>
+  1717) <a name="l1717" style="background-color: #ffffff"></a>
+  1718) <a name="l1718" style="background-color: #ffffff">      if(RRATEX .gt. 0.04_r8) then</a>
+  1719) <a name="l1719" style="background-color: #ffffff">         THETA=exp(-1.43_r8*dlog10(7._r8*RRATEX))+2.8_r8</a>
+  1720) <a name="l1720" style="background-color: #ffffff">      else</a>
+  1721) <a name="l1721" style="background-color: #ffffff">         THETA=5._r8</a>
+  1722) <a name="l1722" style="background-color: #ffffff">      endif</a>
+  1723) <a name="l1723" style="background-color: #ffffff">      PHI=RRATEX/(3600._r8*10._r8) !cgs units</a>
+  1724) <a name="l1724" style="background-color: #ffffff">      ETA=exp((3.01_r8*THETA)-10.5_r8)</a>
+  1725) <a name="l1725" style="background-color: #ffffff">      BETA=THETA/(1._r8+0.638_r8)</a>
+  1726) <a name="l1726" style="background-color: #ffffff">      ALPHA=exp(4._r8*(BETA-3.5_r8))</a>
+  1727) <a name="l1727" style="background-color: #ffffff">      BEE=(.638_r8*THETA/(1._r8+.638_r8))-1.0_r8</a>
+  1728) <a name="l1728" style="background-color: #ffffff">      GAMTHETA = shr_spfn_gamma(THETA)</a>
+  1729) <a name="l1729" style="background-color: #ffffff">      GAMBETA  = shr_spfn_gamma(BETA+1._r8)</a>
+  1730) <a name="l1730" style="background-color: #ffffff">      DEMPIRICAL=(((WX*ETA*GAMTHETA)/(1.0e6_r8*ALPHA*PHI*GAMBETA))** &amp;</a>
+  1731) <a name="l1731" style="background-color: #ffffff">                 (-1._r8/BEE))*10._r8      ! in mm (wx/1e6 for cgs)</a>
+  1732) <a name="l1732" style="background-color: #ffffff">      </a>
+  1733) <a name="l1733" style="background-color: #ffffff"></a>
+  1734) <a name="l1734" style="background-color: #ffffff">      return</a>
+  1735) <a name="l1735" style="background-color: #ffffff">      end function DEMPIRICAL</a>
+  1736) <a name="l1736" style="background-color: #ffffff">!</a>
+  1737) <a name="l1737" style="background-color: #ffffff">end module mo_neu_wetdep</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

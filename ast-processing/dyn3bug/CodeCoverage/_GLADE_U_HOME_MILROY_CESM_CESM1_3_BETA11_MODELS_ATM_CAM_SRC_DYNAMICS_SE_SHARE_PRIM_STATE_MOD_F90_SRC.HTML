@@ -1,0 +1,1001 @@
+<html>
+<head>
+<title>Listing of prim_state_mod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;prim_state_mod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 50.00&#160;%func&#160;&#160;&#160;&#160; 58.34&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">#ifdef HAVE_CONFIG_H</a>
+     2) <a name="l2" style="background-color: #ffffff">#include &quot;config.h&quot;</a>
+     3) <a name="l3" style="background-color: #ffffff">#endif</a>
+     4) <a name="l4" style="background-color: #ffffff"></a>
+     5) <a name="l5" style="background-color: #ffffff">module prim_state_mod</a>
+     6) <a name="l6" style="background-color: #ffffff">  ! ------------------------------</a>
+     7) <a name="l7" style="background-color: #ffffff">  use kinds, only : real_kind, iulog</a>
+     8) <a name="l8" style="background-color: #ffffff">  ! ------------------------------</a>
+     9) <a name="l9" style="background-color: #ffffff">  use dimensions_mod, only : nlev, np, qsize_d, qsize, nelemd, ntrac, ntrac_d</a>
+    10) <a name="l10" style="background-color: #ffffff">  ! ------------------------------</a>
+    11) <a name="l11" style="background-color: #ffffff">  use parallel_mod, only :  ordered, parallel_t, syncmp</a>
+    12) <a name="l12" style="background-color: #ffffff">  use parallel_mod, only: global_shared_buf, global_shared_sum</a>
+    13) <a name="l13" style="background-color: #ffffff">  ! ------------------------------</a>
+    14) <a name="l14" style="background-color: #ffffff">  use global_norms_mod, only: wrap_repro_sum</a>
+    15) <a name="l15" style="background-color: #ffffff">  ! ------------------------------</a>
+    16) <a name="l16" style="background-color: #ffffff">  use hybrid_mod, only : hybrid_t</a>
+    17) <a name="l17" style="background-color: #ffffff">  ! ------------------------------</a>
+    18) <a name="l18" style="background-color: #ffffff">  use physical_constants, only : p0,Cp,g</a>
+    19) <a name="l19" style="background-color: #ffffff">  ! ------------------------------</a>
+    20) <a name="l20" style="background-color: #ffffff">  use time_mod, only : tstep, secpday, timelevel_t, TimeLevel_Qdp, time_at</a>
+    21) <a name="l21" style="background-color: #ffffff">  ! ------------------------------</a>
+    22) <a name="l22" style="background-color: #ffffff">  use control_mod, only : integration, test_case, runtype, moisture, &amp;</a>
+    23) <a name="l23" style="background-color: #ffffff">       tstep_type,energy_fixer, qsplit, ftype, use_cpstar, rsplit</a>
+    24) <a name="l24" style="background-color: #ffffff">  ! ------------------------------</a>
+    25) <a name="l25" style="background-color: #ffffff">  use hybvcoord_mod, only : hvcoord_t </a>
+    26) <a name="l26" style="background-color: #ffffff">  ! ------------------------------</a>
+    27) <a name="l27" style="background-color: #ffffff">  use global_norms_mod, only : global_integral </a>
+    28) <a name="l28" style="background-color: #ffffff">  ! ------------------------------</a>
+    29) <a name="l29" style="background-color: #ffffff">  use element_mod, only : element_t</a>
+    30) <a name="l30" style="background-color: #ffffff">  ! ------------------------------</a>
+    31) <a name="l31" style="background-color: #ffffff">  use fvm_control_volume_mod, only : fvm_struct</a>
+    32) <a name="l32" style="background-color: #ffffff">  use spelt_mod, only : spelt_struct</a>
+    33) <a name="l33" style="background-color: #ffffff">  ! ------------------------------</a>
+    34) <a name="l34" style="background-color: #ffffff">  use viscosity_mod, only : compute_zeta_C0_2d</a>
+    35) <a name="l35" style="background-color: #ffffff">  ! ------------------------------</a>
+    36) <a name="l36" style="background-color: #ffffff">  use reduction_mod, only : parallelmax,parallelmin</a>
+    37) <a name="l37" style="background-color: #ffffff">  ! ------------------------------</a>
+    38) <a name="l38" style="background-color: #ffffff">implicit none</a>
+    39) <a name="l39" style="background-color: #ffffff">private</a>
+    40) <a name="l40" style="background-color: #ffffff">  character(len=*), private, parameter :: massfname = &quot;mass.out&quot;</a>
+    41) <a name="l41" style="background-color: #ffffff"></a>
+    42) <a name="l42" style="background-color: #ffffff">  integer, public :: naccum</a>
+    43) <a name="l43" style="background-color: #ffffff"></a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">  public :: prim_printstate</a>
+    46) <a name="l46" style="background-color: #ffffff">  public :: prim_printstate_init</a>
+    47) <a name="l47" style="background-color: #ffffff">  public :: prim_energy_halftimes</a>
+    48) <a name="l48" style="background-color: #ffffff">  public :: prim_diag_scalars</a>
+    49) <a name="l49" style="background-color: #ffffff"></a>
+    50) <a name="l50" style="background-color: #ffffff">contains</a>
+    51) <a name="l51" style="background-color: #ffffff">!=======================================================================================================! </a>
+    52) <a name="l52" style="background-color: #ffffff"></a>
+    53) <a name="l53" style="background-color: #ffffff"></a>
+    54) <a name="l54" style="background-color: #ffffff">  subroutine prim_printstate_init(par)</a>
+    55) <a name="l55" style="background-color: #ffffff">    type (parallel_t) :: par</a>
+    56) <a name="l56" style="background-color: #ffffff"></a>
+    57) <a name="l57" style="background-color: #ffffff">    real (kind=real_kind) :: time</a>
+    58) <a name="l58" style="background-color: #ffffff">    integer               :: c0</a>
+    59) <a name="l59" style="background-color: #ffffff"></a>
+    60) <a name="l60" style="background-color: #ffffff">    if (par%masterproc) then</a>
+    61) <a name="l61" style="background-color: #ffffff">       time=0.0D0</a>
+    62) <a name="l62" style="background-color: #ffffff">       c0  =0.0D0</a>
+    63) <a name="l63" style="background-color: #ffffff"></a>
+    64) <a name="l64" style="background-color: #ffffff">#ifndef CAM</a>
+    65) <a name="l65" style="background-color: #ffffff">#ifndef _BGL</a>
+    66) <a name="l66" style="background-color: #ffffff">       open(unit=10,file=massfname,form=&quot;formatted&quot;,status=&quot;replace&quot;)</a>
+    67) <a name="l67" style="background-color: #ffffff">!       write(10,*)time,c0</a>
+    68) <a name="l68" style="background-color: #ffffff">       close(10)</a>
+    69) <a name="l69" style="background-color: #ffffff">#endif</a>
+    70) <a name="l70" style="background-color: #ffffff">#endif</a>
+    71) <a name="l71" style="background-color: #ffffff">    end if</a>
+    72) <a name="l72" style="background-color: #ffffff"></a>
+    73) <a name="l73" style="background-color: #ffffff">  end subroutine prim_printstate_init</a>
+    74) <a name="l74" style="background-color: #ffffff">!=======================================================================================================! </a>
+    75) <a name="l75" style="background-color: #ffffff"></a>
+    76) <a name="l76" style="background-color: #ffffff">  subroutine prim_printstate(elem, tl,hybrid,hvcoord,nets,nete, fvm)</a>
+    77) <a name="l77" style="background-color: #ffffff">    type (element_t), intent(in) :: elem(:)</a>
+    78) <a name="l78" style="background-color: #ffffff">    </a>
+    79) <a name="l79" style="background-color: #ffffff">#if defined(_SPELT)</a>
+    80) <a name="l80" style="background-color: #ffffff">      type(spelt_struct), optional, intent(in) :: fvm(:)</a>
+    81) <a name="l81" style="background-color: #ffffff">#else</a>
+    82) <a name="l82" style="background-color: #ffffff">      type(fvm_struct), optional, intent(in) :: fvm(:)</a>
+    83) <a name="l83" style="background-color: #ffffff">#endif</a>
+    84) <a name="l84" style="background-color: #ffffff">    type (TimeLevel_t), target, intent(in) :: tl</a>
+    85) <a name="l85" style="background-color: #ffffff">    type (hybrid_t),intent(in)     :: hybrid</a>
+    86) <a name="l86" style="background-color: #ffffff">    type (hvcoord_t), intent(in)   :: hvcoord</a>
+    87) <a name="l87" style="background-color: #ffffff">    integer,intent(in)             :: nets,nete</a>
+    88) <a name="l88" style="background-color: #ffffff"></a>
+    89) <a name="l89" style="background-color: #ffffff"></a>
+    90) <a name="l90" style="background-color: #ffffff"></a>
+    91) <a name="l91" style="background-color: #ffffff">    ! Local variables...</a>
+    92) <a name="l92" style="background-color: #ffffff">    integer :: i,j,k,ie</a>
+    93) <a name="l93" style="background-color: #ffffff">    integer,parameter  :: type=ORDERED</a>
+    94) <a name="l94" style="background-color: #ffffff"></a>
+    95) <a name="l95" style="background-color: #ffffff">    real (kind=real_kind)  :: Mass2,Mass</a>
+    96) <a name="l96" style="background-color: #ffffff">    real (kind=real_kind)  :: TOTE(4),KEner(4),PEner(4),IEner(4),IEner_wet(4)</a>
+    97) <a name="l97" style="background-color: #ffffff">    real (kind=real_kind)  :: Qvar(qsize_d,4),Qmass(qsize_d,4),Q1mass(qsize_d)</a>
+    98) <a name="l98" style="background-color: #ffffff">    real (kind=real_kind),save  :: time0</a>
+    99) <a name="l99" style="background-color: #ffffff">    real (kind=real_kind),save  :: TOTE0=0,Qmass0(qsize_d)=0</a>
+   100) <a name="l100" style="background-color: #ffffff">    real (kind=real_kind)  :: I_div(nlev)</a>
+   101) <a name="l101" style="background-color: #ffffff">    real (kind=real_kind)  :: I_vort(nlev)</a>
+   102) <a name="l102" style="background-color: #ffffff"></a>
+   103) <a name="l103" style="background-color: #ffffff">    real (kind=real_kind)  :: tmp(np,np,nets:nete)</a>
+   104) <a name="l104" style="background-color: #ffffff">    real (kind=real_kind)  :: tmp1(nets:nete)</a>
+   105) <a name="l105" style="background-color: #ffffff">    real (kind=real_kind)  :: ps(np,np)</a>
+   106) <a name="l106" style="background-color: #ffffff">    real (kind=real_kind)  :: dp(np,np)</a>
+   107) <a name="l107" style="background-color: #ffffff">    !    real (kind=real_kind)  :: E(np,np)</a>
+   108) <a name="l108" style="background-color: #ffffff"></a>
+   109) <a name="l109" style="background-color: #ffffff"></a>
+   110) <a name="l110" style="background-color: #ffffff">    real (kind=real_kind) :: umin_local(nets:nete), umax_local(nets:nete), usum_local(nets:nete), &amp;</a>
+   111) <a name="l111" style="background-color: #ffffff">         vmin_local(nets:nete), vmax_local(nets:nete), vsum_local(nets:nete), &amp;</a>
+   112) <a name="l112" style="background-color: #ffffff">         tmin_local(nets:nete), tmax_local(nets:nete), tsum_local(nets:nete), &amp;</a>
+   113) <a name="l113" style="background-color: #ffffff">         psmin_local(nets:nete),psmax_local(nets:nete),pssum_local(nets:nete), &amp;</a>
+   114) <a name="l114" style="background-color: #ffffff">         fumin_local(nets:nete),fumax_local(nets:nete),fusum_local(nets:nete), &amp;</a>
+   115) <a name="l115" style="background-color: #ffffff">         fvmin_local(nets:nete),fvmax_local(nets:nete),fvsum_local(nets:nete), &amp;</a>
+   116) <a name="l116" style="background-color: #ffffff">         ftmin_local(nets:nete),ftmax_local(nets:nete),ftsum_local(nets:nete), &amp;</a>
+   117) <a name="l117" style="background-color: #ffffff">         fqmin_local(nets:nete),fqmax_local(nets:nete),fqsum_local(nets:nete), &amp;</a>
+   118) <a name="l118" style="background-color: #ffffff">         omegamin_local(nets:nete),omegamax_local(nets:nete),omegasum_local(nets:nete),&amp;</a>
+   119) <a name="l119" style="background-color: #ffffff">         dpmin_local(nets:nete), dpmax_local(nets:nete), dpsum_local(nets:nete)</a>
+   120) <a name="l120" style="background-color: #ffffff"></a>
+   121) <a name="l121" style="background-color: #ffffff"></a>
+   122) <a name="l122" style="background-color: #ffffff">    real (kind=real_kind) :: umin_p, vmin_p, tmin_p, qvmin_p(qsize_d), cmin(ntrac_d),&amp;</a>
+   123) <a name="l123" style="background-color: #ffffff">         psmin_p, dpmin_p</a>
+   124) <a name="l124" style="background-color: #ffffff"></a>
+   125) <a name="l125" style="background-color: #ffffff"></a>
+   126) <a name="l126" style="background-color: #ffffff">    real (kind=real_kind) :: umax_p, vmax_p, tmax_p, qvmax_p(qsize_d), cmax(ntrac_d),&amp;</a>
+   127) <a name="l127" style="background-color: #ffffff">         psmax_p, dpmax_p</a>
+   128) <a name="l128" style="background-color: #ffffff"></a>
+   129) <a name="l129" style="background-color: #ffffff">    real (kind=real_kind) :: usum_p, vsum_p, tsum_p, qvsum_p(qsize_d), csum(ntrac_d),&amp;</a>
+   130) <a name="l130" style="background-color: #ffffff">         pssum_p, dpsum_p</a>
+   131) <a name="l131" style="background-color: #ffffff"></a>
+   132) <a name="l132" style="background-color: #ffffff">    real (kind=real_kind) :: fusum_p, fvsum_p, ftsum_p, fqsum_p</a>
+   133) <a name="l133" style="background-color: #ffffff">    real (kind=real_kind) :: fumin_p, fvmin_p, ftmin_p, fqmin_p</a>
+   134) <a name="l134" style="background-color: #ffffff">    real (kind=real_kind) :: fumax_p, fvmax_p, ftmax_p, fqmax_p</a>
+   135) <a name="l135" style="background-color: #ffffff">    real (kind=real_kind) :: omegamax_p, omegamin_p, omegasum_p</a>
+   136) <a name="l136" style="background-color: #ffffff"></a>
+   137) <a name="l137" style="background-color: #ffffff"></a>
+   138) <a name="l138" style="background-color: #ffffff">    real(kind=real_kind) :: vsum_t(1), relvort</a>
+   139) <a name="l139" style="background-color: #ffffff">    real(kind=real_kind) :: v1, v2, vco(np,np,2,nlev)</a>
+   140) <a name="l140" style="background-color: #ffffff"></a>
+   141) <a name="l141" style="background-color: #ffffff">    real (kind=real_kind) :: time, time2,time1, scale, dt, dt_split</a>
+   142) <a name="l142" style="background-color: #ffffff">    real (kind=real_kind) :: KEvert,IEvert,T1,T2,T2_s,T2_m,S1,S2,S1_wet</a>
+   143) <a name="l143" style="background-color: #ffffff">    real (kind=real_kind) :: KEhorz,IEhorz,IEhorz_wet,IEvert_wet</a>
+   144) <a name="l144" style="background-color: #ffffff">    real (kind=real_kind) :: ddt_tot,ddt_diss</a>
+   145) <a name="l145" style="background-color: #ffffff">    integer               :: n0, nm1, pnm1, np1</a>
+   146) <a name="l146" style="background-color: #ffffff">    integer               :: npts,n,q</a>
+   147) <a name="l147" style="background-color: #ffffff">    </a>
+   148) <a name="l148" style="background-color: #ffffff">    if (hybrid%masterthread) then </a>
+   149) <a name="l149" style="background-color: #ffffff">       write(iulog,*) &quot;nstep=&quot;,tl%nstep,&quot; time=&quot;,Time_at(tl%nstep)/(24*3600),&quot; [day]&quot;</a>
+   150) <a name="l150" style="background-color: #ffffff">    end if</a>
+   151) <a name="l151" style="background-color: #ffffff">    if (</a><a style="background-color: #ffff99">.not. </a><a style="background-color: #fafad2">present(fvm) .and. ntrac&gt;0) then</a>
+   152) <a name="l152" style="background-color: #ffff99">       print *,'ERROR: prim_state_mod.F90: optional fvm argument required if ntrac&gt;0'</a>
+   153) <a name="l153" style="background-color: #ffff99">    endif</a>
+   154) <a name="l154" style="background-color: #ffff99"></a>
+   155) <a name="l155" style="background-color: #ffffff">    TOTE     = 0</a>
+   156) <a name="l156" style="background-color: #ffffff">    KEner    = 0</a>
+   157) <a name="l157" style="background-color: #ffffff">    PEner    = 0</a>
+   158) <a name="l158" style="background-color: #ffffff">    IEner    = 0</a>
+   159) <a name="l159" style="background-color: #ffffff">    IEner_wet = 0</a>
+   160) <a name="l160" style="background-color: #ffffff">    ! dynamics timelevels</a>
+   161) <a name="l161" style="background-color: #ffffff">    n0=tl%n0</a>
+   162) <a name="l162" style="background-color: #ffffff">    nm1=tl%nm1</a>
+   163) <a name="l163" style="background-color: #ffffff">    np1=tl%np1</a>
+   164) <a name="l164" style="background-color: #ffffff"></a>
+   165) <a name="l165" style="background-color: #ffffff">    ! forcing timelevel</a>
+   166) <a name="l166" style="background-color: #ffffff">#ifdef CAM</a>
+   167) <a name="l167" style="background-color: #ffffff">    pnm1 = 1</a>
+   168) <a name="l168" style="background-color: #ffffff">#else</a>
+   169) <a name="l169" style="background-color: #ffffff">    pnm1=tl%nm1  </a>
+   170) <a name="l170" style="background-color: #ffffff">#endif</a>
+   171) <a name="l171" style="background-color: #ffffff"></a>
+   172) <a name="l172" style="background-color: #ffffff">    dt=tstep*qsplit</a>
+   173) <a name="l173" style="background-color: #ffffff">    if (rsplit&gt;0) dt = tstep*qsplit*rsplit  ! vertical REMAP timestep </a>
+   174) <a name="l174" style="background-color: #ffffff">    !</a>
+   175) <a name="l175" style="background-color: #ffffff">    !   dynamics variables in n0 are at time =  'time' </a>
+   176) <a name="l176" style="background-color: #ffffff">    !</a>
+   177) <a name="l177" style="background-color: #ffffff">    !   Diagnostics computed a 4 different levels during one compute REMAP step</a>
+   178) <a name="l178" style="background-color: #ffffff">    ! in RK code:</a>
+   179) <a name="l179" style="background-color: #ffffff">    !   E(:,:,2)-E(:,:,1)   change due to dynamics step  from time-dt to time</a>
+   180) <a name="l180" style="background-color: #ffffff">    !   E(:,:,3)-E(:,:,2)   change due to energy fixer   </a>
+   181) <a name="l181" style="background-color: #ffffff">    !   E(:,:,1)-E(:,:,4)   impact of forcing</a>
+   182) <a name="l182" style="background-color: #ffffff">    !</a>
+   183) <a name="l183" style="background-color: #ffffff">    ! Dissipation rates were computed during the first dynamics timstep, and represent</a>
+   184) <a name="l184" style="background-color: #ffffff">    ! the change going from 'time-dt' to 'time-dt+tstep' (one dynamics step)</a>
+   185) <a name="l185" style="background-color: #ffffff">    !</a>
+   186) <a name="l186" style="background-color: #ffffff">    time=tl%nstep*tstep</a>
+   187) <a name="l187" style="background-color: #ffffff">    time2 = time </a>
+   188) <a name="l188" style="background-color: #ffffff">    time1 = time - dt</a>
+   189) <a name="l189" style="background-color: #ffffff"></a>
+   190) <a name="l190" style="background-color: #ffffff"></a>
+   191) <a name="l191" style="background-color: #ffffff">    vsum_t(1) = 0.0D0</a>
+   192) <a name="l192" style="background-color: #ffffff"></a>
+   193) <a name="l193" style="background-color: #ffffff">    ! npts = np</a>
+   194) <a name="l194" style="background-color: #ffffff">    npts=SIZE(elem(1)%state%lnps(:,:,n0),1)</a>
+   195) <a name="l195" style="background-color: #ffffff"></a>
+   196) <a name="l196" style="background-color: #ffffff">    do q=1,qsize</a>
+   197) <a name="l197" style="background-color: #ffffff">       do ie=nets,nete</a>
+   198) <a name="l198" style="background-color: #ffffff">          tmp1(ie) = </a><a style="background-color: #fafad2">MINVAL(elem(ie)%state%Q(:,:,:,q))</a>
+   199) <a name="l199" style="background-color: #fafad2">       enddo</a>
+   200) <a name="l200" style="background-color: #ffffff">       qvmin_p(q) = ParallelMin(tmp1,hybrid)</a>
+   201) <a name="l201" style="background-color: #ffffff">       do ie=nets,nete</a>
+   202) <a name="l202" style="background-color: #ffffff">          tmp1(ie) = </a><a style="background-color: #fafad2">MAXVAL(elem(ie)%state%Q(:,:,:,q))</a>
+   203) <a name="l203" style="background-color: #fafad2">       enddo</a>
+   204) <a name="l204" style="background-color: #fafad2"></a>
+   205) <a name="l205" style="background-color: #ffffff">       qvmax_p(q) = ParallelMax(tmp1,hybrid)</a>
+   206) <a name="l206" style="background-color: #ffffff"></a>
+   207) <a name="l207" style="background-color: #ffffff">       do ie=nets,nete</a>
+   208) <a name="l208" style="background-color: #ffffff">          global_shared_buf(ie,1) = SUM(elem(ie)%state%Q(:,:,:,q))</a>
+   209) <a name="l209" style="background-color: #ffffff">       enddo</a>
+   210) <a name="l210" style="background-color: #ffffff">       call wrap_repro_sum(nvars=1, comm=hybrid%par%comm)</a>
+   211) <a name="l211" style="background-color: #ffffff">       qvsum_p(q) = global_shared_sum(1)</a>
+   212) <a name="l212" style="background-color: #ffffff">    enddo</a>
+   213) <a name="l213" style="background-color: #fafad2">    do q=1,ntrac</a>
+   214) <a name="l214" style="background-color: #ffff99">       do ie=nets,nete</a>
+   215) <a name="l215" style="background-color: #ffff99">          tmp1(ie) = MINVAL(fvm(ie)%c(:,:,:,q,n0))</a>
+   216) <a name="l216" style="background-color: #ffff99">       enddo</a>
+   217) <a name="l217" style="background-color: #ffff99">       cmin(q) = ParallelMin(tmp1,hybrid)</a>
+   218) <a name="l218" style="background-color: #ffff99">       do ie=nets,nete</a>
+   219) <a name="l219" style="background-color: #ffff99">          tmp1(ie) = MAXVAL(fvm(ie)%c(:,:,:,q,n0))</a>
+   220) <a name="l220" style="background-color: #ffff99">       enddo</a>
+   221) <a name="l221" style="background-color: #ffff99">       cmax(q) = ParallelMax(tmp1,hybrid)</a>
+   222) <a name="l222" style="background-color: #ffff99">       do ie=nets,nete</a>
+   223) <a name="l223" style="background-color: #ffff99">          global_shared_buf(ie,1) = SUM(fvm(ie)%c(:,:,:,q,n0))</a>
+   224) <a name="l224" style="background-color: #ffff99">       enddo</a>
+   225) <a name="l225" style="background-color: #ffff99">       call wrap_repro_sum(nvars=1, comm=hybrid%par%comm)</a>
+   226) <a name="l226" style="background-color: #ffff99">       csum(q) = global_shared_sum(1)</a>
+   227) <a name="l227" style="background-color: #ffff99">    enddo</a>
+   228) <a name="l228" style="background-color: #ffff99"></a>
+   229) <a name="l229" style="background-color: #ffffff">    do ie=nets,nete</a>
+   230) <a name="l230" style="background-color: #ffffff"></a>
+   231) <a name="l231" style="background-color: #ffffff">       tmp(:,:,ie)=elem(ie)%state%ps_v(:,:,n0)</a>
+   232) <a name="l232" style="background-color: #ffffff">       !       tmp(:,:,ie)=EXP(elem(ie)%state%lnps(:,:,n0))</a>
+   233) <a name="l233" style="background-color: #ffffff"></a>
+   234) <a name="l234" style="background-color: #ffffff"></a>
+   235) <a name="l235" style="background-color: #ffffff">       !======================================================  </a>
+   236) <a name="l236" style="background-color: #ffffff">       umax_local(ie)    = </a><a style="background-color: #fafad2">MAXVAL(elem(ie)%state%v(:,:,1,:,n0))</a>
+   237) <a name="l237" style="background-color: #ffffff">       vmax_local(ie)    = </a><a style="background-color: #fafad2">MAXVAL(elem(ie)%state%v(:,:,2,:,n0))</a>
+   238) <a name="l238" style="background-color: #fafad2"></a>
+   239) <a name="l239" style="background-color: #ffffff">       fumax_local(ie)    = </a><a style="background-color: #fafad2">MAXVAL(elem(ie)%derived%FM(:,:,1,:,pnm1))</a>
+   240) <a name="l240" style="background-color: #ffffff">       fvmax_local(ie)    = </a><a style="background-color: #fafad2">MAXVAL(elem(ie)%derived%FM(:,:,2,:,pnm1))</a>
+   241) <a name="l241" style="background-color: #fafad2"></a>
+   242) <a name="l242" style="background-color: #ffffff">       tmax_local(ie)    = </a><a style="background-color: #fafad2">MAXVAL(elem(ie)%state%T(:,:,:,n0))</a>
+   243) <a name="l243" style="background-color: #fafad2"></a>
+   244) <a name="l244" style="background-color: #fafad2">       if (rsplit&gt;0) &amp;</a>
+   245) <a name="l245" style="background-color: #ffffff">            dpmax_local(ie)    = </a><a style="background-color: #fafad2">MAXVAL(elem(ie)%state%dp3d(:,:,:,n0))</a>
+   246) <a name="l246" style="background-color: #fafad2"></a>
+   247) <a name="l247" style="background-color: #ffffff">       psmax_local(ie) = </a><a style="background-color: #fafad2">MAXVAL(tmp(:,:,ie))</a>
+   248) <a name="l248" style="background-color: #ffffff">       ftmax_local(ie)    = </a><a style="background-color: #fafad2">MAXVAL(elem(ie)%derived%FT(:,:,:,pnm1))</a>
+   249) <a name="l249" style="background-color: #ffffff">       fqmax_local(ie)    = </a><a style="background-color: #fafad2">MAXVAL(elem(ie)%derived%FQ(:,:,:,1,pnm1))</a>
+   250) <a name="l250" style="background-color: #ffffff">       omegamax_local(ie)    = </a><a style="background-color: #fafad2">MAXVAL(elem(ie)%derived%Omega_p(:,:,:))</a>
+   251) <a name="l251" style="background-color: #fafad2">       !======================================================</a>
+   252) <a name="l252" style="background-color: #fafad2"></a>
+   253) <a name="l253" style="background-color: #ffffff">       umin_local(ie)    = </a><a style="background-color: #fafad2">MINVAL(elem(ie)%state%v(:,:,1,:,n0))</a>
+   254) <a name="l254" style="background-color: #ffffff">       vmin_local(ie)    = </a><a style="background-color: #fafad2">MINVAL(elem(ie)%state%v(:,:,2,:,n0))</a>
+   255) <a name="l255" style="background-color: #fafad2"></a>
+   256) <a name="l256" style="background-color: #ffffff">       Fumin_local(ie)    = </a><a style="background-color: #fafad2">MINVAL(elem(ie)%derived%FM(:,:,1,:,pnm1))</a>
+   257) <a name="l257" style="background-color: #ffffff">       Fvmin_local(ie)    = </a><a style="background-color: #fafad2">MINVAL(elem(ie)%derived%FM(:,:,2,:,pnm1))</a>
+   258) <a name="l258" style="background-color: #fafad2"></a>
+   259) <a name="l259" style="background-color: #ffffff">       tmin_local(ie)    = </a><a style="background-color: #fafad2">MINVAL(elem(ie)%state%T(:,:,:,n0))</a>
+   260) <a name="l260" style="background-color: #fafad2"></a>
+   261) <a name="l261" style="background-color: #fafad2">       if (rsplit&gt;0) &amp;</a>
+   262) <a name="l262" style="background-color: #ffffff">            dpmin_local(ie)    = </a><a style="background-color: #fafad2">MINVAL(elem(ie)%state%dp3d(:,:,:,n0))</a>
+   263) <a name="l263" style="background-color: #fafad2"></a>
+   264) <a name="l264" style="background-color: #ffffff">       Ftmin_local(ie)    = </a><a style="background-color: #fafad2">MINVAL(elem(ie)%derived%FT(:,:,:,pnm1))</a>
+   265) <a name="l265" style="background-color: #ffffff">       Fqmin_local(ie) = </a><a style="background-color: #fafad2">MINVAL(elem(ie)%derived%FQ(:,:,:,1,pnm1))</a>
+   266) <a name="l266" style="background-color: #ffffff">       Omegamin_local(ie) = </a><a style="background-color: #fafad2">MINVAL(elem(ie)%derived%Omega_p(:,:,:))</a>
+   267) <a name="l267" style="background-color: #fafad2"></a>
+   268) <a name="l268" style="background-color: #fafad2"></a>
+   269) <a name="l269" style="background-color: #ffffff">       psmin_local(ie) = </a><a style="background-color: #fafad2">MINVAL(tmp(:,:,ie))</a>
+   270) <a name="l270" style="background-color: #fafad2">       !======================================================</a>
+   271) <a name="l271" style="background-color: #fafad2"></a>
+   272) <a name="l272" style="background-color: #ffffff">       usum_local(ie)    = SUM(elem(ie)%state%v(:,:,1,:,n0))</a>
+   273) <a name="l273" style="background-color: #ffffff">       vsum_local(ie)    = SUM(elem(ie)%state%v(:,:,2,:,n0))</a>
+   274) <a name="l274" style="background-color: #ffffff">       Fusum_local(ie)    = SUM(elem(ie)%derived%FM(:,:,1,:,pnm1))</a>
+   275) <a name="l275" style="background-color: #ffffff">       Fvsum_local(ie)    = SUM(elem(ie)%derived%FM(:,:,2,:,pnm1))</a>
+   276) <a name="l276" style="background-color: #ffffff"></a>
+   277) <a name="l277" style="background-color: #ffffff">       tsum_local(ie)    = SUM(elem(ie)%state%t(:,:,:,n0))</a>
+   278) <a name="l278" style="background-color: #ffffff">       if (rsplit&gt;0) then</a>
+   279) <a name="l279" style="background-color: #ffffff">          dpsum_local(ie)    = SUM(elem(ie)%state%dp3d(:,:,:,n0))</a>
+   280) <a name="l280" style="background-color: #ffffff">       else</a>
+   281) <a name="l281" style="background-color: #ffffff">          ! Make sure to initialize this to prevent possible</a>
+   282) <a name="l282" style="background-color: #ffffff">          ! floating point exceptions.</a>
+   283) <a name="l283" style="background-color: #ffff99">          dpsum_local(ie)    = 0.0D0</a>
+   284) <a name="l284" style="background-color: #ffff99">       end if</a>
+   285) <a name="l285" style="background-color: #ffff99"></a>
+   286) <a name="l286" style="background-color: #ffffff">       Ftsum_local(ie)    = SUM(elem(ie)%derived%FT(:,:,:,pnm1))</a>
+   287) <a name="l287" style="background-color: #ffffff">       FQsum_local(ie) = SUM(elem(ie)%derived%FQ(:,:,:,1,pnm1))</a>
+   288) <a name="l288" style="background-color: #ffffff">       Omegasum_local(ie) = SUM(elem(ie)%derived%Omega_p(:,:,:))</a>
+   289) <a name="l289" style="background-color: #ffffff"></a>
+   290) <a name="l290" style="background-color: #ffffff">       pssum_local(ie) = SUM(tmp(:,:,ie))</a>
+   291) <a name="l291" style="background-color: #ffffff">       !======================================================</a>
+   292) <a name="l292" style="background-color: #ffffff"></a>
+   293) <a name="l293" style="background-color: #ffffff">       global_shared_buf(ie,1) = usum_local(ie)</a>
+   294) <a name="l294" style="background-color: #ffffff">       global_shared_buf(ie,2) = vsum_local(ie)</a>
+   295) <a name="l295" style="background-color: #ffffff">       global_shared_buf(ie,3) = tsum_local(ie)</a>
+   296) <a name="l296" style="background-color: #ffffff">       global_shared_buf(ie,4) = pssum_local(ie)</a>
+   297) <a name="l297" style="background-color: #ffffff">       global_shared_buf(ie,5) = FUsum_local(ie)</a>
+   298) <a name="l298" style="background-color: #ffffff">       global_shared_buf(ie,6) = FVsum_local(ie)</a>
+   299) <a name="l299" style="background-color: #ffffff">       global_shared_buf(ie,7) = FTsum_local(ie)</a>
+   300) <a name="l300" style="background-color: #ffffff">       global_shared_buf(ie,8) = FQsum_local(ie)</a>
+   301) <a name="l301" style="background-color: #ffffff">       global_shared_buf(ie,9) = Omegasum_local(ie)</a>
+   302) <a name="l302" style="background-color: #ffffff">       global_shared_buf(ie,10) = dpsum_local(ie)</a>
+   303) <a name="l303" style="background-color: #ffffff">    end do</a>
+   304) <a name="l304" style="background-color: #ffffff"></a>
+   305) <a name="l305" style="background-color: #ffffff">    !JMD This is a Thread Safe Reduction </a>
+   306) <a name="l306" style="background-color: #ffffff">    umin_p = ParallelMin(umin_local,hybrid)</a>
+   307) <a name="l307" style="background-color: #ffffff">    umax_p = ParallelMax(umax_local,hybrid)</a>
+   308) <a name="l308" style="background-color: #ffffff"></a>
+   309) <a name="l309" style="background-color: #ffffff">    vmin_p = ParallelMin(vmin_local,hybrid)</a>
+   310) <a name="l310" style="background-color: #ffffff">    vmax_p = ParallelMax(vmax_local,hybrid)</a>
+   311) <a name="l311" style="background-color: #ffffff"></a>
+   312) <a name="l312" style="background-color: #ffffff">    tmin_p = ParallelMin(tmin_local,hybrid)</a>
+   313) <a name="l313" style="background-color: #ffffff">    tmax_p = ParallelMax(tmax_local,hybrid)</a>
+   314) <a name="l314" style="background-color: #ffffff">    </a>
+   315) <a name="l315" style="background-color: #ffffff">    if (rsplit&gt;0)then</a>
+   316) <a name="l316" style="background-color: #ffffff">       dpmin_p = ParallelMin(dpmin_local,hybrid)</a>
+   317) <a name="l317" style="background-color: #ffffff">       dpmax_p = ParallelMax(dpmax_local,hybrid)</a>
+   318) <a name="l318" style="background-color: #ffffff">    endif</a>
+   319) <a name="l319" style="background-color: #ffffff"></a>
+   320) <a name="l320" style="background-color: #ffffff">    psmin_p = ParallelMin(psmin_local,hybrid)</a>
+   321) <a name="l321" style="background-color: #ffffff">    psmax_p = ParallelMax(psmax_local,hybrid)</a>
+   322) <a name="l322" style="background-color: #ffffff"></a>
+   323) <a name="l323" style="background-color: #ffffff">    FUmin_p = ParallelMin(FUmin_local,hybrid)</a>
+   324) <a name="l324" style="background-color: #ffffff">    FUmax_p = ParallelMax(FUmax_local,hybrid)</a>
+   325) <a name="l325" style="background-color: #ffffff"></a>
+   326) <a name="l326" style="background-color: #ffffff">    FVmin_p = ParallelMin(FVmin_local,hybrid)</a>
+   327) <a name="l327" style="background-color: #ffffff">    FVmax_p = ParallelMax(FVmax_local,hybrid)</a>
+   328) <a name="l328" style="background-color: #ffffff"></a>
+   329) <a name="l329" style="background-color: #ffffff">    FTmin_p = ParallelMin(FTmin_local,hybrid)</a>
+   330) <a name="l330" style="background-color: #ffffff">    FTmax_p = ParallelMax(FTmax_local,hybrid)</a>
+   331) <a name="l331" style="background-color: #ffffff"></a>
+   332) <a name="l332" style="background-color: #ffffff">    FQmin_p = ParallelMin(FQmin_local,hybrid)</a>
+   333) <a name="l333" style="background-color: #ffffff">    FQmax_p = ParallelMax(FQmax_local,hybrid)</a>
+   334) <a name="l334" style="background-color: #ffffff"></a>
+   335) <a name="l335" style="background-color: #ffffff">    Omegamin_p = ParallelMin(Omegamin_local,hybrid)</a>
+   336) <a name="l336" style="background-color: #ffffff">    Omegamax_p = ParallelMax(Omegamax_local,hybrid)</a>
+   337) <a name="l337" style="background-color: #ffffff"></a>
+   338) <a name="l338" style="background-color: #ffffff">    call wrap_repro_sum(nvars=10, comm=hybrid%par%comm)</a>
+   339) <a name="l339" style="background-color: #ffffff">    usum_p = global_shared_sum(1)</a>
+   340) <a name="l340" style="background-color: #ffffff">    vsum_p = global_shared_sum(2)</a>
+   341) <a name="l341" style="background-color: #ffffff">    tsum_p = global_shared_sum(3)</a>
+   342) <a name="l342" style="background-color: #ffffff">    pssum_p = global_shared_sum(4)</a>
+   343) <a name="l343" style="background-color: #ffffff">    FUsum_p = global_shared_sum(5)</a>
+   344) <a name="l344" style="background-color: #ffffff">    FVsum_p = global_shared_sum(6)</a>
+   345) <a name="l345" style="background-color: #ffffff">    FTsum_p = global_shared_sum(7)</a>
+   346) <a name="l346" style="background-color: #ffffff">    FQsum_p = global_shared_sum(8)</a>
+   347) <a name="l347" style="background-color: #ffffff">    Omegasum_p = global_shared_sum(9)</a>
+   348) <a name="l348" style="background-color: #ffffff">    dpsum_p = global_shared_sum(10)</a>
+   349) <a name="l349" style="background-color: #ffffff"></a>
+   350) <a name="l350" style="background-color: #ffffff">    scale=1/g                                  ! assume code is using Pa</a>
+   351) <a name="l351" style="background-color: #ffffff">    if (hvcoord%ps0 &lt;  2000 ) </a><a style="background-color: #ffff99">scale=100*scale  ! code is using mb</a>
+   352) <a name="l352" style="background-color: #ffff99">    ! after scaling, Energy is in J/m**2,  Mass kg/m**2</a>
+   353) <a name="l353" style="background-color: #ffff99">    ! so rate of changes are W/m**2</a>
+   354) <a name="l354" style="background-color: #ffff99"></a>
+   355) <a name="l355" style="background-color: #ffff99"></a>
+   356) <a name="l356" style="background-color: #ffff99">    !   mass = integral( ps-p(top) )</a>
+   357) <a name="l357" style="background-color: #ffffff">    do ie=nets,nete</a>
+   358) <a name="l358" style="background-color: #ffffff">       tmp(:,:,ie)=elem(ie)%state%ps_v(:,:,n0) </a>
+   359) <a name="l359" style="background-color: #ffffff">    enddo</a>
+   360) <a name="l360" style="background-color: #ffffff">    Mass2 = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   361) <a name="l361" style="background-color: #ffffff">    do ie=nets,nete</a>
+   362) <a name="l362" style="background-color: #ffffff">       tmp(:,:,ie)=elem(ie)%state%ps_v(:,:,np1) </a>
+   363) <a name="l363" style="background-color: #ffffff">    enddo</a>
+   364) <a name="l364" style="background-color: #ffffff"></a>
+   365) <a name="l365" style="background-color: #ffffff">    !</a>
+   366) <a name="l366" style="background-color: #ffffff">    !   ptop =  hvcoord%hyai(1)*hvcoord%ps0)  + hvcoord%hybi(1)*ps(i,j)</a>
+   367) <a name="l367" style="background-color: #ffffff">    !   but we assume hybi(1) is zero at top of atmosphere (pure pressure coordinates)</a>
+   368) <a name="l368" style="background-color: #ffffff">    !    Mass = (Mass2-(hvcoord%hyai(1)*hvcoord%ps0) )*scale  ! this correction is a constant,</a>
+   369) <a name="l369" style="background-color: #ffffff">    !                                                         ! ~20 kg/m^2 (effects 4th digit of Mass)</a>
+   370) <a name="l370" style="background-color: #ffffff">    !   BUT: CAM EUL defines mass as integral( ps ), so to be consistent, ignore ptop contribution; </a>
+   371) <a name="l371" style="background-color: #ffffff">    Mass = Mass2*scale</a>
+   372) <a name="l372" style="background-color: #ffffff"></a>
+   373) <a name="l373" style="background-color: #ffffff"></a>
+   374) <a name="l374" style="background-color: #ffffff"></a>
+   375) <a name="l375" style="background-color: #ffffff"></a>
+   376) <a name="l376" style="background-color: #ffffff">    if(hybrid%masterthread) then</a>
+   377) <a name="l377" style="background-color: #ffffff">       write(iulog,100) &quot;u     = &quot;,umin_p,umax_p,usum_p</a>
+   378) <a name="l378" style="background-color: #ffffff">       write(iulog,100) &quot;v     = &quot;,vmin_p,vmax_p,vsum_p</a>
+   379) <a name="l379" style="background-color: #ffffff">       write(iulog,100) &quot;omega = &quot;,omegamin_p,omegamax_p,omegasum_p</a>
+   380) <a name="l380" style="background-color: #ffffff">       write(iulog,100) &quot;t     = &quot;,tmin_p,tmax_p,tsum_p</a>
+   381) <a name="l381" style="background-color: #ffffff">       if (rsplit&gt;0) &amp;</a>
+   382) <a name="l382" style="background-color: #ffffff">       write(iulog,100) &quot;dp    = &quot;,dpmin_p,dpmax_p,dpsum_p</a>
+   383) <a name="l383" style="background-color: #ffffff"></a>
+   384) <a name="l384" style="background-color: #ffffff">       if (tstep_type&gt;0) then  !no longer support tracer advection with tstep_type = 0</a>
+   385) <a name="l385" style="background-color: #ffffff">          do q=1,qsize</a>
+   386) <a name="l386" style="background-color: #ffffff">             write(iulog,100) &quot;qv= &quot;,qvmin_p(q), qvmax_p(q), qvsum_p(q)</a>
+   387) <a name="l387" style="background-color: #ffffff">          enddo</a>
+   388) <a name="l388" style="background-color: #ffffff">       endif</a>
+   389) <a name="l389" style="background-color: #ffffff"></a>
+   390) <a name="l390" style="background-color: #fafad2">       do q=1,ntrac</a>
+   391) <a name="l391" style="background-color: #ffff99">          write(iulog,100) &quot; c= &quot;,cmin(q), cmax(q), csum(q)</a>
+   392) <a name="l392" style="background-color: #ffff99">       enddo</a>
+   393) <a name="l393" style="background-color: #ffffff">       write(iulog,100) &quot;ps= &quot;,psmin_p,psmax_p,pssum_p</a>
+   394) <a name="l394" style="background-color: #ffffff">       write(iulog,'(a,E23.15,a,E23.15,a)') &quot;      M = &quot;,Mass,' kg/m^2',Mass2,' mb     '</a>
+   395) <a name="l395" style="background-color: #ffffff"></a>
+   396) <a name="l396" style="background-color: #ffffff">       if(fumin_p.ne.fumax_p) </a><a style="background-color: #ffff99">write(iulog,100) &quot;fu = &quot;,fumin_p,fumax_p,fusum_p</a>
+   397) <a name="l397" style="background-color: #ffffff">       if(fvmin_p.ne.fvmax_p) </a><a style="background-color: #ffff99">write(iulog,100) &quot;fv = &quot;,fvmin_p,fvmax_p,fvsum_p</a>
+   398) <a name="l398" style="background-color: #ffffff">       if(ftmin_p.ne.ftmax_p) </a><a style="background-color: #ffff99">write(iulog,100) &quot;ft = &quot;,ftmin_p,ftmax_p,ftsum_p</a>
+   399) <a name="l399" style="background-color: #ffffff">       if(fqmin_p.ne.fqmax_p) </a><a style="background-color: #ffff99">write(iulog,100) &quot;fq = &quot;,fqmin_p, fqmax_p, fqsum_p</a>
+   400) <a name="l400" style="background-color: #ffff99">    endif</a>
+   401) <a name="l401" style="background-color: #ffff99"> </a>
+   402) <a name="l402" style="background-color: #ffff99"></a>
+   403) <a name="l403" style="background-color: #ffffff">    if ( test_case(1:10) == &quot;baroclinic&quot; ) then</a>
+   404) <a name="l404" style="background-color: #ffffff">       ! zeta does not need to be made continious, but we  </a>
+   405) <a name="l405" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">compute_zeta_C0_2d(tmp,elem,hybrid,nets,nete,n0,nlev)</a>
+   406) <a name="l406" style="background-color: #ffff99">       tmp=tmp**2</a>
+   407) <a name="l407" style="background-color: #ffff99">       relvort = SQRT(global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete))</a>
+   408) <a name="l408" style="background-color: #ffff99">    endif</a>
+   409) <a name="l409" style="background-color: #ffff99"></a>
+   410) <a name="l410" style="background-color: #ffffff">    if(hybrid%par%masterproc .and. hybrid%ithr==0) then </a>
+   411) <a name="l411" style="background-color: #ffffff">       if ( test_case(1:10) == &quot;baroclinic&quot; ) then</a>
+   412) <a name="l412" style="background-color: #ffff99">          write(iulog,101) &quot;2-norm relative vorticity = &quot;,relvort</a>
+   413) <a name="l413" style="background-color: #ffff99">101       format (A30,E24.15)</a>
+   414) <a name="l414" style="background-color: #ffff99"></a>
+   415) <a name="l415" style="background-color: #ffff99">          open(unit=10,file=massfname,form=&quot;formatted&quot;,position=&quot;append&quot;)</a>
+   416) <a name="l416" style="background-color: #ffff99">          write(10,'(99E24.15)')time/secpday,Mass,time2/secpday,KEner(2),IEner(2),PEner(2)</a>
+   417) <a name="l417" style="background-color: #ffff99">          close(10)</a>
+   418) <a name="l418" style="background-color: #ffff99"></a>
+   419) <a name="l419" style="background-color: #ffff99">       else</a>
+   420) <a name="l420" style="background-color: #ffff99">#ifndef CAM</a>
+   421) <a name="l421" style="background-color: #ffff99">#ifndef _BGL</a>
+   422) <a name="l422" style="background-color: #ffff99">          open(unit=10,file=massfname,form=&quot;formatted&quot;,position=&quot;append&quot;)</a>
+   423) <a name="l423" style="background-color: #ffff99">          write(10,*)time/secpday,(Mass2-hvcoord%ps0)/hvcoord%ps0</a>
+   424) <a name="l424" style="background-color: #ffff99">          close(10)</a>
+   425) <a name="l425" style="background-color: #ffff99">#endif</a>
+   426) <a name="l426" style="background-color: #ffff99">#endif</a>
+   427) <a name="l427" style="background-color: #ffff99">       end if</a>
+   428) <a name="l428" style="background-color: #ffff99">    endif</a>
+   429) <a name="l429" style="background-color: #ffff99"></a>
+   430) <a name="l430" style="background-color: #ffff99"></a>
+   431) <a name="l431" style="background-color: #ffffff">    if (tl%nstep &lt; tl%nstep0) return</a>
+   432) <a name="l432" style="background-color: #ffffff"></a>
+   433) <a name="l433" style="background-color: #ffffff">    ! ====================================================================</a>
+   434) <a name="l434" style="background-color: #ffffff">    !	</a>
+   435) <a name="l435" style="background-color: #ffffff">    !   Detailed diagnostics.  Computed with quantities computed by </a>
+   436) <a name="l436" style="background-color: #ffffff">    !   prim_advance() and prim_advection()</a>
+   437) <a name="l437" style="background-color: #ffffff">    !</a>
+   438) <a name="l438" style="background-color: #ffffff">    !   only compute on full leapfrog timesteps (tl%nstep &gt;= tl%nstep2)</a>
+   439) <a name="l439" style="background-color: #ffffff">    ! ====================================================================</a>
+   440) <a name="l440" style="background-color: #ffffff"></a>
+   441) <a name="l441" style="background-color: #ffffff">!   Compute Energies at time1 and time2 (half levels between leapfrog steps)</a>
+   442) <a name="l442" style="background-color: #ffffff">    do n=1,4</a>
+   443) <a name="l443" style="background-color: #ffffff">       </a>
+   444) <a name="l444" style="background-color: #ffffff">       do ie=nets,nete</a>
+   445) <a name="l445" style="background-color: #ffffff">          tmp(:,:,ie)=elem(ie)%accum%IEner(:,:,n)</a>
+   446) <a name="l446" style="background-color: #ffffff">       enddo</a>
+   447) <a name="l447" style="background-color: #ffffff">       IEner(n) = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   448) <a name="l448" style="background-color: #ffffff">       IEner(n) = IEner(n)*scale</a>
+   449) <a name="l449" style="background-color: #ffffff">       </a>
+   450) <a name="l450" style="background-color: #ffffff">       do ie=nets,nete</a>
+   451) <a name="l451" style="background-color: #ffffff">          tmp(:,:,ie)=elem(ie)%accum%IEner_wet(:,:,n)</a>
+   452) <a name="l452" style="background-color: #ffffff">       enddo</a>
+   453) <a name="l453" style="background-color: #ffffff">       IEner_wet(n) = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   454) <a name="l454" style="background-color: #ffffff">       IEner_wet(n) = IEner_wet(n)*scale</a>
+   455) <a name="l455" style="background-color: #ffffff">       </a>
+   456) <a name="l456" style="background-color: #ffffff">       do ie=nets,nete</a>
+   457) <a name="l457" style="background-color: #ffffff">          tmp(:,:,ie)=elem(ie)%accum%KEner(:,:,n)</a>
+   458) <a name="l458" style="background-color: #ffffff">       enddo</a>
+   459) <a name="l459" style="background-color: #ffffff">       KEner(n) = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   460) <a name="l460" style="background-color: #ffffff">       KEner(n) = KEner(n)*scale</a>
+   461) <a name="l461" style="background-color: #ffffff">       </a>
+   462) <a name="l462" style="background-color: #ffffff">       do ie=nets,nete</a>
+   463) <a name="l463" style="background-color: #ffffff">          tmp(:,:,ie)=elem(ie)%accum%PEner(:,:,n)</a>
+   464) <a name="l464" style="background-color: #ffffff">       enddo</a>
+   465) <a name="l465" style="background-color: #ffffff">       PEner(n) = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   466) <a name="l466" style="background-color: #ffffff">       PEner(n) = PEner(n)*scale</a>
+   467) <a name="l467" style="background-color: #ffffff">       TOTE(n)=IEner(n)+PEner(n)+KEner(n)</a>
+   468) <a name="l468" style="background-color: #ffffff">       </a>
+   469) <a name="l469" style="background-color: #ffffff">       </a>
+   470) <a name="l470" style="background-color: #ffffff">       do q=1,qsize</a>
+   471) <a name="l471" style="background-color: #ffffff">          do ie=nets,nete</a>
+   472) <a name="l472" style="background-color: #ffffff">             tmp(:,:,ie)=elem(ie)%accum%Qvar(:,:,q,n)</a>
+   473) <a name="l473" style="background-color: #ffffff">          enddo</a>
+   474) <a name="l474" style="background-color: #ffffff">          Qvar(q,n) = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   475) <a name="l475" style="background-color: #ffffff">          Qvar(q,n) = Qvar(q,n)*scale</a>
+   476) <a name="l476" style="background-color: #ffffff">          </a>
+   477) <a name="l477" style="background-color: #ffffff">          do ie=nets,nete</a>
+   478) <a name="l478" style="background-color: #ffffff">             tmp(:,:,ie)=elem(ie)%accum%Qmass(:,:,q,n)</a>
+   479) <a name="l479" style="background-color: #ffffff">          enddo</a>
+   480) <a name="l480" style="background-color: #ffffff">          Qmass(q,n) = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   481) <a name="l481" style="background-color: #ffffff">          Qmass(q,n) = Qmass(q,n)*scale</a>
+   482) <a name="l482" style="background-color: #ffffff">          </a>
+   483) <a name="l483" style="background-color: #ffffff">          if (n==2) then</a>
+   484) <a name="l484" style="background-color: #ffffff">             do ie=nets,nete</a>
+   485) <a name="l485" style="background-color: #ffffff">                tmp(:,:,ie)=elem(ie)%accum%Q1mass(:,:,q)</a>
+   486) <a name="l486" style="background-color: #ffffff">             enddo</a>
+   487) <a name="l487" style="background-color: #ffffff">             Q1mass(q) = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   488) <a name="l488" style="background-color: #ffffff">             Q1mass(q) = Q1mass(q)*scale</a>
+   489) <a name="l489" style="background-color: #ffffff">          endif</a>
+   490) <a name="l490" style="background-color: #ffffff">       enddo</a>
+   491) <a name="l491" style="background-color: #ffffff">       </a>
+   492) <a name="l492" style="background-color: #ffffff">    enddo</a>
+   493) <a name="l493" style="background-color: #ffffff">    </a>
+   494) <a name="l494" style="background-color: #ffffff"></a>
+   495) <a name="l495" style="background-color: #ffffff"></a>
+   496) <a name="l496" style="background-color: #ffffff">    !</a>
+   497) <a name="l497" style="background-color: #ffffff">    !   All of these transport terms are at time-tstep = (time1+time2)/2</a>
+   498) <a name="l498" style="background-color: #ffffff">    !   Vertical transport terms</a>
+   499) <a name="l499" style="background-color: #ffffff">#ifdef ENERGY_DIAGNOSTICS</a>
+   500) <a name="l500" style="background-color: #ffffff">    do ie=nets,nete</a>
+   501) <a name="l501" style="background-color: #ffffff">       tmp(:,:,ie) = elem(ie)%accum%KEvert1 + elem(ie)%accum%KEvert2</a>
+   502) <a name="l502" style="background-color: #ffffff">    enddo</a>
+   503) <a name="l503" style="background-color: #ffffff">    KEvert = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   504) <a name="l504" style="background-color: #ffffff">    KEvert = KEvert*scale</a>
+   505) <a name="l505" style="background-color: #ffffff">    do ie=nets,nete</a>
+   506) <a name="l506" style="background-color: #ffffff">       tmp(:,:,ie) = elem(ie)%accum%IEvert1 + elem(ie)%accum%IEvert2</a>
+   507) <a name="l507" style="background-color: #ffffff">    enddo</a>
+   508) <a name="l508" style="background-color: #ffffff">    IEvert = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   509) <a name="l509" style="background-color: #ffffff">    IEvert = IEvert*scale</a>
+   510) <a name="l510" style="background-color: #ffffff"></a>
+   511) <a name="l511" style="background-color: #ffffff">    do ie=nets,nete</a>
+   512) <a name="l512" style="background-color: #ffffff">       tmp(:,:,ie) = elem(ie)%accum%KEhorz1 + elem(ie)%accum%KEhorz2</a>
+   513) <a name="l513" style="background-color: #ffffff">    enddo</a>
+   514) <a name="l514" style="background-color: #ffffff">    KEhorz = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   515) <a name="l515" style="background-color: #ffffff">    KEhorz = KEhorz*scale</a>
+   516) <a name="l516" style="background-color: #ffffff">    do ie=nets,nete</a>
+   517) <a name="l517" style="background-color: #ffffff">       tmp(:,:,ie) = elem(ie)%accum%IEhorz1 + elem(ie)%accum%IEhorz2</a>
+   518) <a name="l518" style="background-color: #ffffff">    enddo</a>
+   519) <a name="l519" style="background-color: #ffffff">    IEhorz = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   520) <a name="l520" style="background-color: #ffffff">    IEhorz = IEhorz*scale</a>
+   521) <a name="l521" style="background-color: #ffffff"></a>
+   522) <a name="l522" style="background-color: #ffffff">    do ie=nets,nete</a>
+   523) <a name="l523" style="background-color: #ffffff">       tmp(:,:,ie) = elem(ie)%accum%IEhorz1_wet + elem(ie)%accum%IEhorz2_wet</a>
+   524) <a name="l524" style="background-color: #ffffff">    enddo</a>
+   525) <a name="l525" style="background-color: #ffffff">    IEhorz_wet = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   526) <a name="l526" style="background-color: #ffffff">    IEhorz_wet = IEhorz_wet*scale</a>
+   527) <a name="l527" style="background-color: #ffffff"></a>
+   528) <a name="l528" style="background-color: #ffffff">    do ie=nets,nete</a>
+   529) <a name="l529" style="background-color: #ffffff">       tmp(:,:,ie) = elem(ie)%accum%IEvert1_wet + elem(ie)%accum%IEvert2_wet</a>
+   530) <a name="l530" style="background-color: #ffffff">    enddo</a>
+   531) <a name="l531" style="background-color: #ffffff">    IEvert_wet = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   532) <a name="l532" style="background-color: #ffffff">    IEvert_wet = IEvert_wet*scale</a>
+   533) <a name="l533" style="background-color: #ffffff"></a>
+   534) <a name="l534" style="background-color: #ffffff">    !   KE-&gt;PE</a>
+   535) <a name="l535" style="background-color: #ffffff">    do ie=nets,nete</a>
+   536) <a name="l536" style="background-color: #ffffff">       tmp(:,:,ie) = elem(ie)%accum%T1</a>
+   537) <a name="l537" style="background-color: #ffffff">    enddo</a>
+   538) <a name="l538" style="background-color: #ffffff">    T1 = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   539) <a name="l539" style="background-color: #ffffff">    T1 = T1*scale</a>
+   540) <a name="l540" style="background-color: #ffffff"></a>
+   541) <a name="l541" style="background-color: #ffffff">    do ie=nets,nete</a>
+   542) <a name="l542" style="background-color: #ffffff">       tmp(:,:,ie) = elem(ie)%accum%T2</a>
+   543) <a name="l543" style="background-color: #ffffff">    enddo</a>
+   544) <a name="l544" style="background-color: #ffffff">    T2 = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   545) <a name="l545" style="background-color: #ffffff">    T2 = T2*scale</a>
+   546) <a name="l546" style="background-color: #ffffff"></a>
+   547) <a name="l547" style="background-color: #ffffff">    do ie=nets,nete</a>
+   548) <a name="l548" style="background-color: #ffffff">       tmp(:,:,ie) = elem(ie)%accum%T2_s</a>
+   549) <a name="l549" style="background-color: #ffffff">    enddo</a>
+   550) <a name="l550" style="background-color: #ffffff">    T2_s = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   551) <a name="l551" style="background-color: #ffffff">    T2_s = T2_s*scale</a>
+   552) <a name="l552" style="background-color: #ffffff">    T2_m = T2 - T2_s</a>
+   553) <a name="l553" style="background-color: #ffffff"></a>
+   554) <a name="l554" style="background-color: #ffffff">    do ie=nets,nete</a>
+   555) <a name="l555" style="background-color: #ffffff">       tmp(:,:,ie) = elem(ie)%accum%S1</a>
+   556) <a name="l556" style="background-color: #ffffff">    enddo</a>
+   557) <a name="l557" style="background-color: #ffffff">    S1 = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   558) <a name="l558" style="background-color: #ffffff">    S1 = S1*scale</a>
+   559) <a name="l559" style="background-color: #ffffff"></a>
+   560) <a name="l560" style="background-color: #ffffff">    do ie=nets,nete</a>
+   561) <a name="l561" style="background-color: #ffffff">       tmp(:,:,ie) = elem(ie)%accum%S1_wet</a>
+   562) <a name="l562" style="background-color: #ffffff">    enddo</a>
+   563) <a name="l563" style="background-color: #ffffff">    S1_wet = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   564) <a name="l564" style="background-color: #ffffff">    S1_wet = S1_wet*scale</a>
+   565) <a name="l565" style="background-color: #ffffff"></a>
+   566) <a name="l566" style="background-color: #ffffff">    do ie=nets,nete</a>
+   567) <a name="l567" style="background-color: #ffffff">       tmp(:,:,ie) = elem(ie)%accum%S2</a>
+   568) <a name="l568" style="background-color: #ffffff">    enddo</a>
+   569) <a name="l569" style="background-color: #ffffff">    S2 = global_integral(elem, tmp(:,:,nets:nete),hybrid,npts,nets,nete)</a>
+   570) <a name="l570" style="background-color: #ffffff">    S2 = S2*scale</a>
+   571) <a name="l571" style="background-color: #ffffff"></a>
+   572) <a name="l572" style="background-color: #ffffff"></a>
+   573) <a name="l573" style="background-color: #ffffff">#else</a>
+   574) <a name="l574" style="background-color: #ffffff">    T1=0; T2=0; T2_s=0; T2_m=0; S1_wet = 0; S1=0; S2=0; KEvert=0; IEvert=0; KEhorz=0; IEhorz=0</a>
+   575) <a name="l575" style="background-color: #ffffff">#endif</a>
+   576) <a name="l576" style="background-color: #ffffff"></a>
+   577) <a name="l577" style="background-color: #ffffff"></a>
+   578) <a name="l578" style="background-color: #ffffff">    if(hybrid%par%masterproc .and. hybrid%ithr==0) then </a>
+   579) <a name="l579" style="background-color: #ffffff">       if(moisture /= &quot;dry&quot;)then</a>
+   580) <a name="l580" style="background-color: #ffffff">          if (qsize&gt;=1) then</a>
+   581) <a name="l581" style="background-color: #ffffff">             write(iulog,'(a,E23.15,a,E23.15,a)') &quot;    dry M = &quot;,Mass-Q1mass(1),' kg/m^2'</a>
+   582) <a name="l582" style="background-color: #ffffff">          endif</a>
+   583) <a name="l583" style="background-color: #ffffff">       endif</a>
+   584) <a name="l584" style="background-color: #ffffff">       </a>
+   585) <a name="l585" style="background-color: #ffffff">       ! note: diagnostics not yet coded for semi-implicit </a>
+   586) <a name="l586" style="background-color: #ffffff">       if (integration == &quot;explicit&quot;) then</a>
+   587) <a name="l587" style="background-color: #ffffff">          </a>
+   588) <a name="l588" style="background-color: #ffffff">          write(iulog,'(3a25)') &quot;**DYNAMICS**        J/m^2&quot;,&quot;   W/m^2&quot;,&quot;W/m^2    &quot;</a>
+   589) <a name="l589" style="background-color: #ffffff">#ifdef ENERGY_DIAGNOSTICS</a>
+   590) <a name="l590" style="background-color: #ffffff">          ! terms computed during prim_advance, if ENERGY_DIAGNOSTICS is enabled</a>
+   591) <a name="l591" style="background-color: #ffffff">          write(iulog,'(a,2e22.14)') 'Tot KE advection horiz, vert:      ',-KEhorz,-KEvert</a>
+   592) <a name="l592" style="background-color: #ffffff">          write(iulog,'(a,2e22.14)') 'Tot IE dry advection horiz, vert:  ',-IEhorz,-IEvert</a>
+   593) <a name="l593" style="background-color: #ffffff">          if (use_cpstar==1) then</a>
+   594) <a name="l594" style="background-color: #ffffff">             write(iulog,'(a,2e22.14)') 'Tot IE wet advection horiz, vert:  ',-IEhorz_wet,-IEvert_wet</a>
+   595) <a name="l595" style="background-color: #ffffff">          endif</a>
+   596) <a name="l596" style="background-color: #ffffff">          </a>
+   597) <a name="l597" style="background-color: #ffffff">          write(iulog,'(a,2e22.14)') 'Transfer:   KE-&gt;IE, KE-&gt;PE:        ',-(T1+T2_m), -T2_s</a>
+   598) <a name="l598" style="background-color: #ffffff">          write(iulog,'(a,2e22.14)') 'Transfer:   IE-&gt;KE, PE-&gt;KE:        ',-S1,-S2</a>
+   599) <a name="l599" style="background-color: #ffffff">          if (use_cpstar==1) then</a>
+   600) <a name="l600" style="background-color: #ffffff">             write(iulog,'(a,2e22.14)') 'Transfer:   IE-&gt;KE(wet only):      ',-S1_wet</a>
+   601) <a name="l601" style="background-color: #ffffff">          endif</a>
+   602) <a name="l602" style="background-color: #ffffff">          </a>
+   603) <a name="l603" style="background-color: #ffffff">          ddt_tot =  (KEner(2)-KEner(1))/(dt)</a>
+   604) <a name="l604" style="background-color: #ffffff">          ddt_diss = ddt_tot -(T1+T2) </a>
+   605) <a name="l605" style="background-color: #ffffff">          write(iulog,'(a,3E22.14)') &quot;KE,d/dt,diss:&quot;,KEner(2),ddt_tot,ddt_diss</a>
+   606) <a name="l606" style="background-color: #ffffff">          </a>
+   607) <a name="l607" style="background-color: #ffffff">          if (use_cpstar==1) then</a>
+   608) <a name="l608" style="background-color: #ffffff">             ddt_tot =  ( (IEner(2)-IEner_wet(2)) - (IEner(1)-IEner_wet(1))  )/dt</a>
+   609) <a name="l609" style="background-color: #ffffff">             ddt_diss = ddt_tot - (S1 -S1_wet)</a>
+   610) <a name="l610" style="background-color: #ffffff">             write(iulog,'(a,3E22.14,a)') &quot;IE,d/dt,diss:&quot;,IEner(2)-IEner_wet(2),ddt_tot,ddt_diss,' (dry)'</a>
+   611) <a name="l611" style="background-color: #ffffff">             ddt_tot =  ( IEner_wet(2) - IEner_wet(1) )/dt </a>
+   612) <a name="l612" style="background-color: #ffffff">             ddt_diss =  ddt_tot - S1_wet</a>
+   613) <a name="l613" style="background-color: #ffffff">             write(iulog,'(a,3E22.14,a)') &quot;IE,d/dt,diss:&quot;,IEner_wet(2),ddt_tot,ddt_diss,' (wet)'</a>
+   614) <a name="l614" style="background-color: #ffffff">          else</a>
+   615) <a name="l615" style="background-color: #ffffff">             ddt_tot =  (IEner(2)-IEner(1))/(dt)</a>
+   616) <a name="l616" style="background-color: #ffffff">             ddt_diss = ddt_tot - S1 </a>
+   617) <a name="l617" style="background-color: #ffffff">             write(iulog,'(a,3E22.14)') &quot;IE,d/dt,diss:&quot;,IEner(2),ddt_tot,ddt_diss</a>
+   618) <a name="l618" style="background-color: #ffffff">          endif</a>
+   619) <a name="l619" style="background-color: #ffffff">          </a>
+   620) <a name="l620" style="background-color: #ffffff">          ddt_tot = (PEner(2)-PEner(1))/(dt)</a>
+   621) <a name="l621" style="background-color: #ffffff">          ddt_diss = ddt_tot - S2</a>
+   622) <a name="l622" style="background-color: #ffffff">          write(iulog,'(a,3E22.14)') &quot;PE,d/dt,diss:&quot;,PEner(2),ddt_tot,ddt_diss</a>
+   623) <a name="l623" style="background-color: #ffffff">#else</a>
+   624) <a name="l624" style="background-color: #ffffff">          write(iulog,'(a,3E22.14)') &quot;KE,d/dt      &quot;,KEner(2),(KEner(2)-KEner(1))/(dt)</a>
+   625) <a name="l625" style="background-color: #ffffff">          write(iulog,'(a,3E22.14)') &quot;IE,d/dt      &quot;,IEner(2),(IEner(2)-IEner(1))/(dt)</a>
+   626) <a name="l626" style="background-color: #ffffff">          write(iulog,'(a,3E22.14)') &quot;PE,d/dt      &quot;,PEner(2),(PEner(2)-PEner(1))/(dt)</a>
+   627) <a name="l627" style="background-color: #ffffff">#endif</a>
+   628) <a name="l628" style="background-color: #ffffff">          ddt_tot = (TOTE(2)-TOTE(1))/(dt)</a>
+   629) <a name="l629" style="background-color: #ffffff">          write(iulog,'(a,3E22.14)') &quot; E,dE/dt     &quot;,TOTE(2),ddt_tot</a>
+   630) <a name="l630" style="background-color: #ffffff">          </a>
+   631) <a name="l631" style="background-color: #ffffff">          if (tstep_type&gt;0) then  !no longer support tracer advection with tstep_type = 0</a>
+   632) <a name="l632" style="background-color: #ffffff">             do q=1,qsize</a>
+   633) <a name="l633" style="background-color: #ffffff">                write(iulog,'(a,i1,a,E22.14,a,2E15.7)') &quot;Q&quot;,q,&quot;,Q diss, dQ^2/dt:&quot;,Qmass(q,2),&quot; kg/m^2&quot;,&amp;</a>
+   634) <a name="l634" style="background-color: #ffffff">                     (Qmass(q,2)-Qmass(q,1))/dt,(Qvar(q,2)-Qvar(q,1))/dt</a>
+   635) <a name="l635" style="background-color: #ffffff">             enddo</a>
+   636) <a name="l636" style="background-color: #ffffff">          endif</a>
+   637) <a name="l637" style="background-color: #ffffff"></a>
+   638) <a name="l638" style="background-color: #ffffff">          ! LF code diagnostics</a>
+   639) <a name="l639" style="background-color: #ffffff">          if (tstep_type==0) then  ! leapfrog</a>
+   640) <a name="l640" style="background-color: #ffff99">             write(iulog,'(a)') 'Robert filter, Physics (except adjustments):'</a>
+   641) <a name="l641" style="background-color: #ffff99">             write(iulog,'(a,2e15.7)') 'dKE/dt(W/m^2): ',(KEner(4)-KEner(3))/dt,(KEner(3)-KEner(2))/dt</a>
+   642) <a name="l642" style="background-color: #ffff99">             write(iulog,'(a,2e15.7)') 'dIE/dt(W/m^2): ',(IEner(4)-IEner(3))/dt,(IEner(3)-IEner(2))/dt</a>
+   643) <a name="l643" style="background-color: #ffff99">             write(iulog,'(a,2e15.7)') 'dPE/dt(W/m^2): ',(PEner(4)-PEner(3))/dt,(PEner(3)-PEner(2))/dt</a>
+   644) <a name="l644" style="background-color: #ffff99">          else</a>
+   645) <a name="l645" style="background-color: #ffffff">             write(iulog,'(a)') 'Energy Fixer, Physics (except adjustments):'</a>
+   646) <a name="l646" style="background-color: #ffffff">             write(iulog,'(a,2e15.7)') 'dKE/dt(W/m^2): ',(KEner(3)-KEner(2))/dt,(KEner(1)-KEner(4))/dt</a>
+   647) <a name="l647" style="background-color: #ffffff">             write(iulog,'(a,2e15.7)') 'dIE/dt(W/m^2): ',(IEner(3)-IEner(2))/dt,(IEner(1)-IEner(4))/dt</a>
+   648) <a name="l648" style="background-color: #ffffff">             write(iulog,'(a,2e15.7)') 'dPE/dt(W/m^2): ',(PEner(3)-PEner(2))/dt,(PEner(1)-PEner(4))/dt</a>
+   649) <a name="l649" style="background-color: #ffffff">          endif</a>
+   650) <a name="l650" style="background-color: #ffffff">       endif</a>
+   651) <a name="l651" style="background-color: #ffffff"></a>
+   652) <a name="l652" style="background-color: #ffffff">       ! Print change in energy and tracer mass from the start of the simulation</a>
+   653) <a name="l653" style="background-color: #ffffff">#ifdef CAM</a>
+   654) <a name="l654" style="background-color: #ffffff">       ! for cam, this information only makes sense for short test runs with</a>
+   655) <a name="l655" style="background-color: #ffffff">       ! physics disabled (ftype&lt;0).  So disable this diagnostic if ftype&gt;=0:</a>
+   656) <a name="l656" style="background-color: #ffffff">       if (ftype&gt;=0) TOTE0=-1  </a>
+   657) <a name="l657" style="background-color: #ffffff">#endif       </a>
+   658) <a name="l658" style="background-color: #ffffff">       if (TOTE0&gt;0) then</a>
+   659) <a name="l659" style="background-color: #ffff99">          write(iulog,100) &quot;(E-E0)/E0    &quot;,(TOTE(4)-TOTE0)/TOTE0</a>
+   660) <a name="l660" style="background-color: #ffff99">          if (tstep_type&gt;0) then  !no longer support tracer advection with tstep_type = 0</a>
+   661) <a name="l661" style="background-color: #ffff99">             do q=1,qsize</a>
+   662) <a name="l662" style="background-color: #ffff99">                if(Qmass0(q)&gt;0.0D0) then</a>
+   663) <a name="l663" style="background-color: #ffff99">                   write(iulog,'(a,E23.15,a,i1)') &quot;(Q-Q0)/Q0 &quot;,(Qmass(q,2)-Qmass0(q))/Qmass0(q),&quot;   Q&quot;,q</a>
+   664) <a name="l664" style="background-color: #ffff99">                end if</a>
+   665) <a name="l665" style="background-color: #ffff99">             enddo</a>
+   666) <a name="l666" style="background-color: #ffff99">          endif</a>
+   667) <a name="l667" style="background-color: #ffff99">       endif</a>
+   668) <a name="l668" style="background-color: #ffff99">    endif</a>
+   669) <a name="l669" style="background-color: #ffff99">    </a>
+   670) <a name="l670" style="background-color: #ffff99">100 format (A10,3(E23.15))</a>
+   671) <a name="l671" style="background-color: #ffff99">    </a>
+   672) <a name="l672" style="background-color: #ffff99">    </a>
+   673) <a name="l673" style="background-color: #ffff99">    ! initialize &quot;E0&quot; for printout of E-E0/E0</a>
+   674) <a name="l674" style="background-color: #ffff99">    ! energy is computed in timestep loop.  Save the value </a>
+   675) <a name="l675" style="background-color: #ffff99">    ! after the first real timestep, not the half-timesteps used</a>
+   676) <a name="l676" style="background-color: #ffff99">    ! to bootstrap leapfrog: </a>
+   677) <a name="l677" style="background-color: #ffffff">    if (tl%nstep &gt;= tl%nstep0 .and. TOTE0==0 ) then  </a>
+   678) <a name="l678" style="background-color: #ffffff">       TOTE0=TOTE(4)</a>
+   679) <a name="l679" style="background-color: #ffffff">       do q=1,qsize</a>
+   680) <a name="l680" style="background-color: #ffffff">          Qmass0(q)=Qmass(q,1)</a>
+   681) <a name="l681" style="background-color: #ffffff">       enddo</a>
+   682) <a name="l682" style="background-color: #ffffff">       time0=time1</a>
+   683) <a name="l683" style="background-color: #ffffff">    endif</a>
+   684) <a name="l684" style="background-color: #ffffff"></a>
+   685) <a name="l685" style="background-color: #ffffff">  end subroutine prim_printstate</a>
+   686) <a name="l686" style="background-color: #ffffff">   </a>
+   687) <a name="l687" style="background-color: #ffffff">   </a>
+   688) <a name="l688" style="background-color: #ffffff"></a>
+   689) <a name="l689" style="background-color: #ffffff">!=======================================================================================================! </a>
+   690) <a name="l690" style="background-color: #ffffff"></a>
+   691) <a name="l691" style="background-color: #ffffff"></a>
+   692) <a name="l692" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">prim_energy_halftimes(elem,hvcoord,tl,n,t_before_advance,nets,nete)</a>
+   693) <a name="l693" style="background-color: #ffcccc">! </a>
+   694) <a name="l694" style="background-color: #ffcccc">!  called at the end of a timestep, before timelevel update.  Solution known at</a>
+   695) <a name="l695" style="background-color: #ffcccc">!  dynamics:     nm1,  n0,  np1.  </a>
+   696) <a name="l696" style="background-color: #ffcccc">!</a>
+   697) <a name="l697" style="background-color: #ffcccc">!                                                           LF code            RK code</a>
+   698) <a name="l698" style="background-color: #ffcccc">!  This routine is called 4 times:  n=1:    t1=nm1, t2=n0   start              after forcing, before timestep</a>
+   699) <a name="l699" style="background-color: #ffcccc">!                                   n=2:    t1=n0, t2=np1   after timestep     after timestep, including remap</a>
+   700) <a name="l700" style="background-color: #ffcccc">!                                   n=3:    t1=n0, t2=np1   after forcing      after fixer </a>
+   701) <a name="l701" style="background-color: #ffcccc">!                                   n=4:    t1=n0, t2=np1   after Robert       before forcing</a>
+   702) <a name="l702" style="background-color: #ffcccc">!</a>
+   703) <a name="l703" style="background-color: #ffcccc">! LF case we use staggered formulas:</a>
+   704) <a name="l704" style="background-color: #ffcccc">!  compute the energies at time half way between timelevels t1 and t2,</a>
+   705) <a name="l705" style="background-color: #ffcccc">!  using timelevels t1,t2.  store in location n of our elem()%accum%* variables</a>
+   706) <a name="l706" style="background-color: #ffcccc">!    </a>
+   707) <a name="l707" style="background-color: #ffcccc">!  in the Dry case, PE (and similar for IE) will be conserved exactly by Leapfrog, </a>
+   708) <a name="l708" style="background-color: #ffcccc">!  if it is defined as:</a>
+   709) <a name="l709" style="background-color: #ffcccc">!</a>
+   710) <a name="l710" style="background-color: #ffcccc">!   PE(n+.5)  = .5*(  T(n+1) dp(n) + T(n) dp(n+1) )</a>
+   711) <a name="l711" style="background-color: #ffcccc">!</a>
+   712) <a name="l712" style="background-color: #ffcccc">!  KE cannot be exactly conserved with Leapfrog.  but we still use:</a>
+   713) <a name="l713" style="background-color: #ffcccc">!  </a>
+   714) <a name="l714" style="background-color: #ffcccc">!   KE(n+.5) = .5*(  .5 u(n+1)^2 dp(n) +  .5 u(n)^2 dp(n+1) )</a>
+   715) <a name="l715" style="background-color: #ffcccc">!</a>
+   716) <a name="l716" style="background-color: #ffcccc">!</a>
+   717) <a name="l717" style="background-color: #ffcccc">    use kinds, only : real_kind</a>
+   718) <a name="l718" style="background-color: #ffcccc">    use dimensions_mod, only : np, np, nlev</a>
+   719) <a name="l719" style="background-color: #ffcccc">    use control_mod, only : use_cpstar</a>
+   720) <a name="l720" style="background-color: #ffcccc">    use hybvcoord_mod, only : hvcoord_t</a>
+   721) <a name="l721" style="background-color: #ffcccc">    use element_mod, only : element_t</a>
+   722) <a name="l722" style="background-color: #ffcccc">    use physical_constants, only : Cp, cpwater_vapor</a>
+   723) <a name="l723" style="background-color: #ffcccc">    use physics_mod, only : Virtual_Specific_Heat, Virtual_Temperature</a>
+   724) <a name="l724" style="background-color: #ffcccc">    use prim_si_mod, only : preq_hydrostatic</a>
+   725) <a name="l725" style="background-color: #ffcccc"></a>
+   726) <a name="l726" style="background-color: #ffcccc">    integer :: t1,t2,n,nets,nete</a>
+   727) <a name="l727" style="background-color: #ffcccc">    type (element_t)     , intent(inout), target :: elem(:)</a>
+   728) <a name="l728" style="background-color: #ffcccc">    type (hvcoord_t)                  :: hvcoord</a>
+   729) <a name="l729" style="background-color: #ffcccc">    type (TimeLevel_t), intent(in)       :: tl</a>
+   730) <a name="l730" style="background-color: #ffcccc">    logical :: t_before_advance</a>
+   731) <a name="l731" style="background-color: #ffcccc"></a>
+   732) <a name="l732" style="background-color: #ffcccc">    integer :: ie,k,i,j,nm_f</a>
+   733) <a name="l733" style="background-color: #ffcccc">    real (kind=real_kind), dimension(np,np,nlev)  :: dpt1,dpt2   ! delta pressure</a>
+   734) <a name="l734" style="background-color: #ffcccc">    real (kind=real_kind), dimension(np,np)  :: E</a>
+   735) <a name="l735" style="background-color: #ffcccc">    real (kind=real_kind), dimension(np,np)  :: suml,suml2,v1,v2</a>
+   736) <a name="l736" style="background-color: #ffcccc">    real (kind=real_kind), dimension(np,np,nlev)  :: sumlk, suml2k</a>
+   737) <a name="l737" style="background-color: #ffcccc">    real (kind=real_kind), dimension(np,np,nlev)  :: p,T_v,phi</a>
+   738) <a name="l738" style="background-color: #ffcccc">    real (kind=real_kind) :: cp_star1,cp_star2,qval_t1,qval_t2</a>
+   739) <a name="l739" style="background-color: #ffcccc">    real (kind=real_kind) :: Qt</a>
+   740) <a name="l740" style="background-color: #ffcccc">    logical :: wet</a>
+   741) <a name="l741" style="background-color: #ffcccc"></a>
+   742) <a name="l742" style="background-color: #ffcccc"></a>
+   743) <a name="l743" style="background-color: #ffcccc">    logical tstagger</a>
+   744) <a name="l744" style="background-color: #ffcccc">    integer:: t2_qdp, t1_qdp   ! the time pointers for Qdp are not the same</a>
+   745) <a name="l745" style="background-color: #ffcccc"></a>
+   746) <a name="l746" style="background-color: #ffcccc">    nm_f = 1</a>
+   747) <a name="l747" style="background-color: #ffcccc">    if (t_before_advance) then</a>
+   748) <a name="l748" style="background-color: #ffcccc">       t1=tl%nm1</a>
+   749) <a name="l749" style="background-color: #ffcccc">       t2=tl%n0</a>
+   750) <a name="l750" style="background-color: #ffcccc">       call TimeLevel_Qdp( tl, qsplit, t2_qdp, t1_qdp) !get n0 level into t2_qdp </a>
+   751) <a name="l751" style="background-color: #ffcccc">    else</a>
+   752) <a name="l752" style="background-color: #ffcccc">       t1=tl%n0</a>
+   753) <a name="l753" style="background-color: #ffcccc">       t2=tl%np1</a>
+   754) <a name="l754" style="background-color: #ffcccc">       call TimeLevel_Qdp(tl, qsplit, t1_qdp, t2_qdp) !get np1 into t2_qdp</a>
+   755) <a name="l755" style="background-color: #ffcccc">    endif</a>
+   756) <a name="l756" style="background-color: #ffcccc"></a>
+   757) <a name="l757" style="background-color: #ffcccc"></a>
+   758) <a name="l758" style="background-color: #ffcccc"></a>
+   759) <a name="l759" style="background-color: #ffcccc">! energy_fixer</a>
+   760) <a name="l760" style="background-color: #ffcccc">!     &lt;0         disabled, but compute energy non-staggered in time</a>
+   761) <a name="l761" style="background-color: #ffcccc">!     0          disabled, but compute energy staggered in time (for use with leapfrog code)</a>
+   762) <a name="l762" style="background-color: #ffcccc">!    &gt;0          Enabled.  energy fixer requires dry formulation (use_cpstar=0) and non-staggered in time</a>
+   763) <a name="l763" style="background-color: #ffcccc">!</a>
+   764) <a name="l764" style="background-color: #ffcccc">    tstagger = .false.</a>
+   765) <a name="l765" style="background-color: #ffcccc">    if (energy_fixer==0) tstagger = .true.</a>
+   766) <a name="l766" style="background-color: #ffcccc"></a>
+   767) <a name="l767" style="background-color: #ffcccc"></a>
+   768) <a name="l768" style="background-color: #ffcccc">    !   IE   Cp*dpdn*T  + (Cpv-Cp) Qdpdn*T</a>
+   769) <a name="l769" style="background-color: #ffcccc">    !        Cp*dpdn(n)*T(n+1) + (Cpv-Cp) Qdpdn(n)*T(n+1)</a>
+   770) <a name="l770" style="background-color: #ffcccc">    !        [Cp + (Cpv-Cp) Q(n)] *dpdn(n)*T(n+1) </a>
+   771) <a name="l771" style="background-color: #ffcccc">    do ie=nets,nete</a>
+   772) <a name="l772" style="background-color: #ffcccc"></a>
+   773) <a name="l773" style="background-color: #ffcccc">#if (defined ELEMENT_OPENMP)</a>
+   774) <a name="l774" style="background-color: #ffcccc">!$omp parallel do private(k)</a>
+   775) <a name="l775" style="background-color: #ffcccc">#endif</a>
+   776) <a name="l776" style="background-color: #ffcccc">       do k=1,nlev</a>
+   777) <a name="l777" style="background-color: #ffcccc">          dpt1(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &amp;</a>
+   778) <a name="l778" style="background-color: #ffcccc">               ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,t1)</a>
+   779) <a name="l779" style="background-color: #ffcccc">          dpt2(:,:,k) = ( hvcoord%hyai(k+1) - hvcoord%hyai(k) )*hvcoord%ps0 + &amp;</a>
+   780) <a name="l780" style="background-color: #ffcccc">               ( hvcoord%hybi(k+1) - hvcoord%hybi(k) )*elem(ie)%state%ps_v(:,:,t2)</a>
+   781) <a name="l781" style="background-color: #ffcccc">       enddo</a>
+   782) <a name="l782" style="background-color: #ffcccc"></a>
+   783) <a name="l783" style="background-color: #ffcccc">#if (defined ELEMENT_OPENMP)</a>
+   784) <a name="l784" style="background-color: #ffcccc">!$omp parallel do private(k,i,j,cp_star1,cp_star2,qval_t1,qval_t2)</a>
+   785) <a name="l785" style="background-color: #ffcccc">#endif</a>
+   786) <a name="l786" style="background-color: #ffcccc">       do k=1,nlev</a>
+   787) <a name="l787" style="background-color: #ffcccc">          sumlk(:,:,k)=0</a>
+   788) <a name="l788" style="background-color: #ffcccc">          suml2k(:,:,k)=0</a>
+   789) <a name="l789" style="background-color: #ffcccc">          do i=1,np</a>
+   790) <a name="l790" style="background-color: #ffcccc">          do j=1,np</a>
+   791) <a name="l791" style="background-color: #ffcccc">             if(use_cpstar == 1)  then</a>
+   792) <a name="l792" style="background-color: #ffcccc">                ! Cp_star = cp + (Cpwater_vapor - cp)*qval</a>
+   793) <a name="l793" style="background-color: #ffcccc">                qval_t1 = elem(ie)%state%Qdp(i,j,k,1,t1_qdp)/dpt1(i,j,k)</a>
+   794) <a name="l794" style="background-color: #ffcccc">                qval_t2 = elem(ie)%state%Qdp(i,j,k,1,t2_qdp)/dpt2(i,j,k)</a>
+   795) <a name="l795" style="background-color: #ffcccc">                cp_star1= Virtual_Specific_Heat(qval_t1)</a>
+   796) <a name="l796" style="background-color: #ffcccc">                cp_star2= Virtual_Specific_Heat(qval_t2)</a>
+   797) <a name="l797" style="background-color: #ffcccc">             else</a>
+   798) <a name="l798" style="background-color: #ffcccc">                cp_star1=cp</a>
+   799) <a name="l799" style="background-color: #ffcccc">                cp_star2=cp</a>
+   800) <a name="l800" style="background-color: #ffcccc">             endif</a>
+   801) <a name="l801" style="background-color: #ffcccc">             if (tstagger) then</a>
+   802) <a name="l802" style="background-color: #ffcccc">                sumlk(i,j,k) = sumlk(i,j,k) + cp_star1*elem(ie)%state%T(i,j,k,t2) *dpt1(i,j,k)/2 </a>
+   803) <a name="l803" style="background-color: #ffcccc">                sumlk(i,j,k) = sumlk(i,j,k) + Cp_star2*elem(ie)%state%T(i,j,k,t1) *dpt2(i,j,k)/2</a>
+   804) <a name="l804" style="background-color: #ffcccc">                suml2k(i,j,k) = suml2k(i,j,k) + (cp_star1-cp)*elem(ie)%state%T(i,j,k,t2) *dpt1(i,j,k)/2 </a>
+   805) <a name="l805" style="background-color: #ffcccc">                suml2k(i,j,k) = suml2k(i,j,k) + (cp_star2-cp)*elem(ie)%state%T(i,j,k,t1) *dpt2(i,j,k)/2</a>
+   806) <a name="l806" style="background-color: #ffcccc">             else</a>
+   807) <a name="l807" style="background-color: #ffcccc">                sumlk(i,j,k) = sumlk(i,j,k) + Cp_star2*elem(ie)%state%T(i,j,k,t2) *dpt2(i,j,k)</a>
+   808) <a name="l808" style="background-color: #ffcccc">                suml2k(i,j,k) = suml2k(i,j,k) + (cp_star2-cp)*elem(ie)%state%T(i,j,k,t2) *dpt2(i,j,k)</a>
+   809) <a name="l809" style="background-color: #ffcccc">             endif</a>
+   810) <a name="l810" style="background-color: #ffcccc">          enddo</a>
+   811) <a name="l811" style="background-color: #ffcccc">          enddo</a>
+   812) <a name="l812" style="background-color: #ffcccc">       enddo</a>
+   813) <a name="l813" style="background-color: #ffcccc">       suml=0</a>
+   814) <a name="l814" style="background-color: #ffcccc">       suml2=0</a>
+   815) <a name="l815" style="background-color: #ffcccc">       do k=1,nlev</a>
+   816) <a name="l816" style="background-color: #ffcccc">          suml(:,:) = suml(:,:) + sumlk(:,:,k)</a>
+   817) <a name="l817" style="background-color: #ffcccc">          suml2(:,:) = suml2(:,:) + suml2k(:,:,k)</a>
+   818) <a name="l818" style="background-color: #ffcccc">       enddo</a>
+   819) <a name="l819" style="background-color: #ffcccc">       elem(ie)%accum%IEner(:,:,n)=suml(:,:)</a>
+   820) <a name="l820" style="background-color: #ffcccc">       elem(ie)%accum%IEner_wet(:,:,n)=suml2(:,:)</a>
+   821) <a name="l821" style="background-color: #ffcccc"></a>
+   822) <a name="l822" style="background-color: #ffcccc">    </a>
+   823) <a name="l823" style="background-color: #ffcccc">    !   KE   .5 dp/dn U^2</a>
+   824) <a name="l824" style="background-color: #ffcccc">#if (defined ELEMENT_OPENMP)</a>
+   825) <a name="l825" style="background-color: #ffcccc">!$omp parallel do private(k,E)</a>
+   826) <a name="l826" style="background-color: #ffcccc">#endif</a>
+   827) <a name="l827" style="background-color: #ffcccc">       do k=1,nlev</a>
+   828) <a name="l828" style="background-color: #ffcccc">          if (tstagger) then</a>
+   829) <a name="l829" style="background-color: #ffcccc">             E = (elem(ie)%state%v(:,:,1,k,t2)**2 +  &amp;</a>
+   830) <a name="l830" style="background-color: #ffcccc">                  elem(ie)%state%v(:,:,2,k,t2)**2 ) / 2 </a>
+   831) <a name="l831" style="background-color: #ffcccc">             sumlk(:,:,k) = E*dpt1(:,:,k)/2</a>
+   832) <a name="l832" style="background-color: #ffcccc">             E = (elem(ie)%state%v(:,:,1,k,t1)**2 +  &amp;</a>
+   833) <a name="l833" style="background-color: #ffcccc">                  elem(ie)%state%v(:,:,2,k,t1)**2 ) / 2 </a>
+   834) <a name="l834" style="background-color: #ffcccc">             sumlk(:,:,k) = sumlk(:,:,k) + E*dpt2(:,:,k)/2</a>
+   835) <a name="l835" style="background-color: #ffcccc">          else</a>
+   836) <a name="l836" style="background-color: #ffcccc">             E = (elem(ie)%state%v(:,:,1,k,t2)**2 +  &amp;</a>
+   837) <a name="l837" style="background-color: #ffcccc">                  elem(ie)%state%v(:,:,2,k,t2)**2 ) / 2 </a>
+   838) <a name="l838" style="background-color: #ffcccc">             sumlk(:,:,k) = E*dpt2(:,:,k)</a>
+   839) <a name="l839" style="background-color: #ffcccc">          endif</a>
+   840) <a name="l840" style="background-color: #ffcccc">       enddo</a>
+   841) <a name="l841" style="background-color: #ffcccc">       suml=0</a>
+   842) <a name="l842" style="background-color: #ffcccc">       do k=1,nlev</a>
+   843) <a name="l843" style="background-color: #ffcccc">          suml(:,:) = suml(:,:) + sumlk(:,:,k)</a>
+   844) <a name="l844" style="background-color: #ffcccc">       enddo</a>
+   845) <a name="l845" style="background-color: #ffcccc">       elem(ie)%accum%KEner(:,:,n)=suml(:,:)</a>
+   846) <a name="l846" style="background-color: #ffcccc"></a>
+   847) <a name="l847" style="background-color: #ffcccc"></a>
+   848) <a name="l848" style="background-color: #ffcccc">    </a>
+   849) <a name="l849" style="background-color: #ffcccc">    !   PE   dp/dn PHIs</a>
+   850) <a name="l850" style="background-color: #ffcccc">       suml=0</a>
+   851) <a name="l851" style="background-color: #ffcccc">       do k=1,nlev</a>
+   852) <a name="l852" style="background-color: #ffcccc">          if (tstagger) then</a>
+   853) <a name="l853" style="background-color: #ffcccc">             suml = suml + elem(ie)%state%phis(:,:)*dpt1(:,:,k)/2</a>
+   854) <a name="l854" style="background-color: #ffcccc">             suml = suml + elem(ie)%state%phis(:,:)*dpt2(:,:,k)/2</a>
+   855) <a name="l855" style="background-color: #ffcccc">          else</a>
+   856) <a name="l856" style="background-color: #ffcccc">             suml = suml + elem(ie)%state%phis(:,:)*dpt2(:,:,k)</a>
+   857) <a name="l857" style="background-color: #ffcccc">          endif</a>
+   858) <a name="l858" style="background-color: #ffcccc">       enddo</a>
+   859) <a name="l859" style="background-color: #ffcccc">       elem(ie)%accum%PEner(:,:,n)=suml(:,:)</a>
+   860) <a name="l860" style="background-color: #ffcccc"></a>
+   861) <a name="l861" style="background-color: #ffcccc"></a>
+   862) <a name="l862" style="background-color: #ffcccc"></a>
+   863) <a name="l863" style="background-color: #ffcccc">!      compute alternate PE term which matches what is used in CAM physics</a>
+   864) <a name="l864" style="background-color: #ffcccc">       wet =(moisture /= &quot;dry&quot;)</a>
+   865) <a name="l865" style="background-color: #ffcccc">       do k=1,nlev</a>
+   866) <a name="l866" style="background-color: #ffcccc">          p(:,:,k)   = hvcoord%hyam(k)*hvcoord%ps0 + hvcoord%hybm(k)*elem(ie)%state%ps_v(:,:,t2)</a>
+   867) <a name="l867" style="background-color: #ffcccc">          do j=1,np</a>
+   868) <a name="l868" style="background-color: #ffcccc">             do i=1,np</a>
+   869) <a name="l869" style="background-color: #ffcccc">                if (wet) then</a>
+   870) <a name="l870" style="background-color: #ffcccc">                   Qt = elem(ie)%state%Qdp(i,j,k,1,t2_qdp)/dpt2(i,j,k)</a>
+   871) <a name="l871" style="background-color: #ffcccc">                   T_v(i,j,k) = Virtual_Temperature(elem(ie)%state%T(i,j,k,t2),Qt)</a>
+   872) <a name="l872" style="background-color: #ffcccc">                else</a>
+   873) <a name="l873" style="background-color: #ffcccc">                   T_v(i,j,k) = elem(ie)%state%T(i,j,k,t2)</a>
+   874) <a name="l874" style="background-color: #ffcccc">                endif</a>
+   875) <a name="l875" style="background-color: #ffcccc">             end do</a>
+   876) <a name="l876" style="background-color: #ffcccc">          end do</a>
+   877) <a name="l877" style="background-color: #ffcccc">       end do</a>
+   878) <a name="l878" style="background-color: #ffcccc"></a>
+   879) <a name="l879" style="background-color: #ffcccc">    enddo</a>
+   880) <a name="l880" style="background-color: #ffcccc">    </a>
+   881) <a name="l881" style="background-color: #ffcccc">end subroutine prim_energy_halftimes</a>
+   882) <a name="l882" style="background-color: #ffcccc"></a><a style="background-color: #ffffff">    </a>
+   883) <a name="l883" style="background-color: #ffffff">!=======================================================================================================! </a>
+   884) <a name="l884" style="background-color: #ffffff">  </a>
+   885) <a name="l885" style="background-color: #ffffff"></a>
+   886) <a name="l886" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">prim_diag_scalars(elem,hvcoord,tl,n,t_before_advance,nets,nete)</a>
+   887) <a name="l887" style="background-color: #ffcccc">! </a>
+   888) <a name="l888" style="background-color: #ffcccc">!  called at the end of a timestep, before timelevel update.  Solution known at</a>
+   889) <a name="l889" style="background-color: #ffcccc">!  timelevel nm1,n0,np1.  </a>
+   890) <a name="l890" style="background-color: #ffcccc">!</a>
+   891) <a name="l891" style="background-color: #ffcccc">!  This routine is called twice:  n=1:    t1=nm1, t2=n0</a>
+   892) <a name="l892" style="background-color: #ffcccc">!                                 n=2:    t1=n0, t2=np1</a>
+   893) <a name="l893" style="background-color: #ffcccc">! </a>
+   894) <a name="l894" style="background-color: #ffcccc">!  in all cases:</a>
+   895) <a name="l895" style="background-color: #ffcccc">!     Q1mass(n) = Qdp(t2)    (or:  Q(t2)*dp(t2) )</a>
+   896) <a name="l896" style="background-color: #ffcccc">! </a>
+   897) <a name="l897" style="background-color: #ffcccc">!  We also compute </a>
+   898) <a name="l898" style="background-color: #ffcccc">!     Qmass(n)  = .5*(  Q(t2) dp(t1)  Q(t1) dp(t2) )       Leapfrog, concentration formulation</a>
+   899) <a name="l899" style="background-color: #ffcccc">!     Qmass(n)  = .5*(  Qdp(t1) + Qdp(t2) )                Leapfrog, conservation formulation</a>
+   900) <a name="l900" style="background-color: #ffcccc">!     Qmass(n)  =  Qdp(t2)                                 RK2, conservation formulation</a>
+   901) <a name="l901" style="background-color: #ffcccc">!</a>
+   902) <a name="l902" style="background-color: #ffcccc">!</a>
+   903) <a name="l903" style="background-color: #ffcccc">    use kinds, only : real_kind</a>
+   904) <a name="l904" style="background-color: #ffcccc">    use dimensions_mod, only : np, np, nlev</a>
+   905) <a name="l905" style="background-color: #ffcccc">    use hybvcoord_mod, only : hvcoord_t</a>
+   906) <a name="l906" style="background-color: #ffcccc">    use element_mod, only : element_t</a>
+   907) <a name="l907" style="background-color: #ffcccc"></a>
+   908) <a name="l908" style="background-color: #ffcccc">    integer :: t1,t2,n,nets,nete</a>
+   909) <a name="l909" style="background-color: #ffcccc">    type (element_t)     , intent(inout), target :: elem(:)</a>
+   910) <a name="l910" style="background-color: #ffcccc">    type (hvcoord_t)                  :: hvcoord</a>
+   911) <a name="l911" style="background-color: #ffcccc">    </a>
+   912) <a name="l912" style="background-color: #ffcccc">    integer :: ie,k,q,nm_f</a>
+   913) <a name="l913" style="background-color: #ffcccc">    real (kind=real_kind), dimension(np,np)  :: ps         ! pressure</a>
+   914) <a name="l914" style="background-color: #ffcccc">    real (kind=real_kind), dimension(np,np)  :: dp         ! delta pressure</a>
+   915) <a name="l915" style="background-color: #ffcccc">    real (kind=real_kind), dimension(np,np)  :: E</a>
+   916) <a name="l916" style="background-color: #ffcccc">    real (kind=real_kind), dimension(np,np)  :: suml</a>
+   917) <a name="l917" style="background-color: #ffcccc">    type (TimeLevel_t), intent(in)       :: tl</a>
+   918) <a name="l918" style="background-color: #ffcccc">    logical :: t_before_advance</a>
+   919) <a name="l919" style="background-color: #ffcccc">    integer:: t2_qdp, tmp   ! the time pointer for Qdp are not the same</a>
+   920) <a name="l920" style="background-color: #ffcccc"></a>
+   921) <a name="l921" style="background-color: #ffcccc">    nm_f = 1</a>
+   922) <a name="l922" style="background-color: #ffcccc">    if (t_before_advance) then</a>
+   923) <a name="l923" style="background-color: #ffcccc">       t1=tl%nm1     </a>
+   924) <a name="l924" style="background-color: #ffcccc">       t2=tl%n0</a>
+   925) <a name="l925" style="background-color: #ffcccc">       call TimeLevel_Qdp( tl, qsplit, t2_qdp) !get n0 level into t2_qdp </a>
+   926) <a name="l926" style="background-color: #ffcccc">    else</a>
+   927) <a name="l927" style="background-color: #ffcccc">       t1=tl%n0</a>
+   928) <a name="l928" style="background-color: #ffcccc">       t2=tl%np1</a>
+   929) <a name="l929" style="background-color: #ffcccc">       call TimeLevel_Qdp(tl, qsplit, tmp, t2_qdp) !get np1 into t2_qdp (don't need tmp)</a>
+   930) <a name="l930" style="background-color: #ffcccc">    endif</a>
+   931) <a name="l931" style="background-color: #ffcccc"></a>
+   932) <a name="l932" style="background-color: #ffcccc"></a>
+   933) <a name="l933" style="background-color: #ffcccc">    !</a>
+   934) <a name="l934" style="background-color: #ffcccc">    !  RK2 forward scheme.  compute everything at t2</a>
+   935) <a name="l935" style="background-color: #ffcccc">    !  (used by CAM)</a>
+   936) <a name="l936" style="background-color: #ffcccc">    !   Q has only one time dimension</a>
+   937) <a name="l937" style="background-color: #ffcccc">    if (tstep_type&gt;0) then</a>
+   938) <a name="l938" style="background-color: #ffcccc"></a>
+   939) <a name="l939" style="background-color: #ffcccc">       do ie=nets,nete</a>
+   940) <a name="l940" style="background-color: #ffcccc">#if (defined ELEMENT_OPENMP)</a>
+   941) <a name="l941" style="background-color: #ffcccc">          !$omp parallel do private(q,k,suml)</a>
+   942) <a name="l942" style="background-color: #ffcccc">#endif</a>
+   943) <a name="l943" style="background-color: #ffcccc">          do q=1,qsize</a>
+   944) <a name="l944" style="background-color: #ffcccc">             suml=0</a>
+   945) <a name="l945" style="background-color: #ffcccc">             do k=1,nlev</a>
+   946) <a name="l946" style="background-color: #ffcccc">                suml = suml + elem(ie)%state%Qdp(:,:,k,q,t2_qdp)*elem(ie)%state%Q(:,:,k,q)</a>
+   947) <a name="l947" style="background-color: #ffcccc">             enddo</a>
+   948) <a name="l948" style="background-color: #ffcccc">             elem(ie)%accum%Qvar(:,:,q,n)=suml(:,:)</a>
+   949) <a name="l949" style="background-color: #ffcccc">          enddo</a>
+   950) <a name="l950" style="background-color: #ffcccc">       enddo</a>
+   951) <a name="l951" style="background-color: #ffcccc">       </a>
+   952) <a name="l952" style="background-color: #ffcccc">       do ie=nets,nete</a>
+   953) <a name="l953" style="background-color: #ffcccc">#if (defined ELEMENT_OPENMP)</a>
+   954) <a name="l954" style="background-color: #ffcccc">          !$omp parallel do private(q,k,suml)</a>
+   955) <a name="l955" style="background-color: #ffcccc">#endif</a>
+   956) <a name="l956" style="background-color: #ffcccc">          do q=1,qsize</a>
+   957) <a name="l957" style="background-color: #ffcccc">             suml=0</a>
+   958) <a name="l958" style="background-color: #ffcccc">             do k=1,nlev</a>
+   959) <a name="l959" style="background-color: #ffcccc">                suml = suml + elem(ie)%state%Qdp(:,:,k,q,t2_qdp)</a>
+   960) <a name="l960" style="background-color: #ffcccc">             enddo</a>
+   961) <a name="l961" style="background-color: #ffcccc">             elem(ie)%accum%Q1mass(:,:,q)=suml(:,:)</a>
+   962) <a name="l962" style="background-color: #ffcccc">             elem(ie)%accum%Qmass(:,:,q,n)=suml(:,:)</a>
+   963) <a name="l963" style="background-color: #ffcccc">          enddo</a>
+   964) <a name="l964" style="background-color: #ffcccc">       enddo</a>
+   965) <a name="l965" style="background-color: #ffcccc">    endif</a>
+   966) <a name="l966" style="background-color: #ffcccc"></a>
+   967) <a name="l967" style="background-color: #ffcccc"></a>
+   968) <a name="l968" style="background-color: #ffcccc"></a>
+   969) <a name="l969" style="background-color: #ffcccc">end subroutine prim_diag_scalars</a>
+   970) <a name="l970" style="background-color: #ffffff">end module prim_state_mod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

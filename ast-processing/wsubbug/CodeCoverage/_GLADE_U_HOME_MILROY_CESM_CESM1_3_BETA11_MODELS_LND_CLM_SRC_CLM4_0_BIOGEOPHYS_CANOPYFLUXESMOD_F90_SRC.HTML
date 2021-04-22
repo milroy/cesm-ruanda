@@ -1,0 +1,1465 @@
+<html>
+<head>
+<title>Listing of CanopyFluxesMod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;CanopyFluxesMod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 78.39&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module CanopyFluxesMod</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!------------------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">!BOP</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !MODULE: CanopyFluxesMod</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     9) <a name="l9" style="background-color: #ffffff">! Calculates the leaf temperature and the leaf fluxes,</a>
+    10) <a name="l10" style="background-color: #ffffff">! transpiration, photosynthesis and  updates the dew</a>
+    11) <a name="l11" style="background-color: #ffffff">! accumulation due to evaporation.</a>
+    12) <a name="l12" style="background-color: #ffffff">!</a>
+    13) <a name="l13" style="background-color: #ffffff">! !USES:</a>
+    14) <a name="l14" style="background-color: #ffffff">   use abortutils,   only: endrun</a>
+    15) <a name="l15" style="background-color: #ffffff">   use clm_varctl,   only: iulog, use_c13, use_cn, use_cndv</a>
+    16) <a name="l16" style="background-color: #ffffff">   use shr_sys_mod,  only: shr_sys_flush</a>
+    17) <a name="l17" style="background-color: #ffffff">!</a>
+    18) <a name="l18" style="background-color: #ffffff">! !PUBLIC TYPES:</a>
+    19) <a name="l19" style="background-color: #ffffff">   implicit none</a>
+    20) <a name="l20" style="background-color: #ffffff">   save</a>
+    21) <a name="l21" style="background-color: #ffffff">!</a>
+    22) <a name="l22" style="background-color: #ffffff">! !PUBLIC MEMBER FUNCTIONS:</a>
+    23) <a name="l23" style="background-color: #ffffff">   public :: CanopyFluxes !Calculates the leaf temperature and leaf fluxes</a>
+    24) <a name="l24" style="background-color: #ffffff">!</a>
+    25) <a name="l25" style="background-color: #ffffff">! !PRIVATE MEMBER FUNCTIONS:</a>
+    26) <a name="l26" style="background-color: #ffffff">   private :: Stomata     !Leaf stomatal resistance and leaf photosynthesis</a>
+    27) <a name="l27" style="background-color: #ffffff">!</a>
+    28) <a name="l28" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    29) <a name="l29" style="background-color: #ffffff">! Created by Mariana Vertenstein</a>
+    30) <a name="l30" style="background-color: #ffffff">! 4/25/05, Peter Thornton: replaced old Stomata subroutine with what</a>
+    31) <a name="l31" style="background-color: #ffffff">!   used to be called StomataCN, as part of migration to new sun/shade</a>
+    32) <a name="l32" style="background-color: #ffffff">!   algorithms. </a>
+    33) <a name="l33" style="background-color: #ffffff">!</a>
+    34) <a name="l34" style="background-color: #ffffff">!EOP</a>
+    35) <a name="l35" style="background-color: #ffffff">!------------------------------------------------------------------------------</a>
+    36) <a name="l36" style="background-color: #ffffff"></a>
+    37) <a name="l37" style="background-color: #ffffff">contains</a>
+    38) <a name="l38" style="background-color: #ffffff"></a>
+    39) <a name="l39" style="background-color: #ffffff">!------------------------------------------------------------------------------</a>
+    40) <a name="l40" style="background-color: #ffffff">!BOP</a>
+    41) <a name="l41" style="background-color: #ffffff">!</a>
+    42) <a name="l42" style="background-color: #ffffff">! !IROUTINE: CanopyFluxes </a>
+    43) <a name="l43" style="background-color: #ffffff">!</a>
+    44) <a name="l44" style="background-color: #ffffff">! !INTERFACE:</a>
+    45) <a name="l45" style="background-color: #ffffff">  subroutine CanopyFluxes(lbg, ubg, lbc, ubc, lbp, ubp, &amp;</a>
+    46) <a name="l46" style="background-color: #ffffff">                          num_nolakep, filter_nolakep)</a>
+    47) <a name="l47" style="background-color: #ffffff">!</a>
+    48) <a name="l48" style="background-color: #ffffff">! !DESCRIPTION:</a>
+    49) <a name="l49" style="background-color: #ffffff">! 1. Calculates the leaf temperature:</a>
+    50) <a name="l50" style="background-color: #ffffff">! 2. Calculates the leaf fluxes, transpiration, photosynthesis and</a>
+    51) <a name="l51" style="background-color: #ffffff">!    updates the dew accumulation due to evaporation.</a>
+    52) <a name="l52" style="background-color: #ffffff">!</a>
+    53) <a name="l53" style="background-color: #ffffff">! Method:</a>
+    54) <a name="l54" style="background-color: #ffffff">! Use the Newton-Raphson iteration to solve for the foliage</a>
+    55) <a name="l55" style="background-color: #ffffff">! temperature that balances the surface energy budget:</a>
+    56) <a name="l56" style="background-color: #ffffff">!</a>
+    57) <a name="l57" style="background-color: #ffffff">! f(t_veg) = Net radiation - Sensible - Latent = 0</a>
+    58) <a name="l58" style="background-color: #ffffff">! f(t_veg) + d(f)/d(t_veg) * dt_veg = 0     (*)</a>
+    59) <a name="l59" style="background-color: #ffffff">!</a>
+    60) <a name="l60" style="background-color: #ffffff">! Note:</a>
+    61) <a name="l61" style="background-color: #ffffff">! (1) In solving for t_veg, t_grnd is given from the previous timestep.</a>
+    62) <a name="l62" style="background-color: #ffffff">! (2) The partial derivatives of aerodynamical resistances, which cannot</a>
+    63) <a name="l63" style="background-color: #ffffff">!     be determined analytically, are ignored for d(H)/dT and d(LE)/dT</a>
+    64) <a name="l64" style="background-color: #ffffff">! (3) The weighted stomatal resistance of sunlit and shaded foliage is used</a>
+    65) <a name="l65" style="background-color: #ffffff">! (4) Canopy air temperature and humidity are derived from =&gt; Hc + Hg = Ha</a>
+    66) <a name="l66" style="background-color: #ffffff">!                                                          =&gt; Ec + Eg = Ea</a>
+    67) <a name="l67" style="background-color: #ffffff">! (5) Energy loss is due to: numerical truncation of energy budget equation</a>
+    68) <a name="l68" style="background-color: #ffffff">!     (*); and &quot;ecidif&quot; (see the code) which is dropped into the sensible</a>
+    69) <a name="l69" style="background-color: #ffffff">!     heat</a>
+    70) <a name="l70" style="background-color: #ffffff">! (6) The convergence criteria: the difference, del = t_veg(n+1)-t_veg(n)</a>
+    71) <a name="l71" style="background-color: #ffffff">!     and del2 = t_veg(n)-t_veg(n-1) less than 0.01 K, and the difference</a>
+    72) <a name="l72" style="background-color: #ffffff">!     of water flux from the leaf between the iteration step (n+1) and (n)</a>
+    73) <a name="l73" style="background-color: #ffffff">!     less than 0.1 W/m2; or the iterative steps over 40.</a>
+    74) <a name="l74" style="background-color: #ffffff">!</a>
+    75) <a name="l75" style="background-color: #ffffff">! !USES:</a>
+    76) <a name="l76" style="background-color: #ffffff">    use shr_kind_mod       , only : r8 =&gt; shr_kind_r8</a>
+    77) <a name="l77" style="background-color: #ffffff">    use clmtype</a>
+    78) <a name="l78" style="background-color: #ffffff">    use clm_atmlnd         , only : clm_a2l</a>
+    79) <a name="l79" style="background-color: #ffffff">    use clm_time_manager   , only : get_step_size, get_prev_date</a>
+    80) <a name="l80" style="background-color: #ffffff">    use clm_varpar         , only : nlevgrnd, nlevsno</a>
+    81) <a name="l81" style="background-color: #ffffff">    use clm_varcon         , only : sb, cpair, hvap, vkc, grav, denice, &amp;</a>
+    82) <a name="l82" style="background-color: #ffffff">                                    denh2o, tfrz, csoilc, tlsai_crit, alpha_aero, &amp;</a>
+    83) <a name="l83" style="background-color: #ffffff">                                    isecspday, degpsec</a>
+    84) <a name="l84" style="background-color: #ffffff">    use shr_const_mod      , only : SHR_CONST_TKFRZ</a>
+    85) <a name="l85" style="background-color: #ffffff">    use pftvarcon          , only : nirrig</a>
+    86) <a name="l86" style="background-color: #ffffff">    use QSatMod            , only : QSat</a>
+    87) <a name="l87" style="background-color: #ffffff">    use FrictionVelocityMod, only : FrictionVelocity, MoninObukIni</a>
+    88) <a name="l88" style="background-color: #ffffff">    use spmdMod            , only : masterproc</a>
+    89) <a name="l89" style="background-color: #ffffff">!</a>
+    90) <a name="l90" style="background-color: #ffffff">! !ARGUMENTS:</a>
+    91) <a name="l91" style="background-color: #ffffff">    implicit none</a>
+    92) <a name="l92" style="background-color: #ffffff">    integer, intent(in) :: lbg, ubg                    ! gridcell bounds</a>
+    93) <a name="l93" style="background-color: #ffffff">    integer, intent(in) :: lbc, ubc                    ! column bounds</a>
+    94) <a name="l94" style="background-color: #ffffff">    integer, intent(in) :: lbp, ubp                    ! pft bounds</a>
+    95) <a name="l95" style="background-color: #ffffff">    integer, intent(in) :: num_nolakep                 ! number of column non-lake points in pft filter</a>
+    96) <a name="l96" style="background-color: #ffffff">    integer, intent(in) :: filter_nolakep(ubp-lbp+1)   ! pft filter for non-lake points</a>
+    97) <a name="l97" style="background-color: #ffffff">!</a>
+    98) <a name="l98" style="background-color: #ffffff">! !CALLED FROM:</a>
+    99) <a name="l99" style="background-color: #ffffff">! subroutine Biogeophysics1 in module Biogeophysics1Mod</a>
+   100) <a name="l100" style="background-color: #ffffff">!</a>
+   101) <a name="l101" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   102) <a name="l102" style="background-color: #ffffff">! 15 September 1999: Yongjiu Dai; Initial code</a>
+   103) <a name="l103" style="background-color: #ffffff">! 15 December 1999:  Paul Houser and Jon Radakovich; F90 Revision</a>
+   104) <a name="l104" style="background-color: #ffffff">! 12/19/01, Peter Thornton</a>
+   105) <a name="l105" style="background-color: #ffffff">! Changed tg to t_grnd for consistency with other routines</a>
+   106) <a name="l106" style="background-color: #ffffff">! 1/29/02, Peter Thornton</a>
+   107) <a name="l107" style="background-color: #ffffff">! Migrate to new data structures, new calling protocol. For now co2 and</a>
+   108) <a name="l108" style="background-color: #ffffff">! o2 partial pressures are hardwired, but they should be coming in from</a>
+   109) <a name="l109" style="background-color: #ffffff">! forc_pco2 and forc_po2. Keeping the same hardwired values as in CLM2 to</a>
+   110) <a name="l110" style="background-color: #ffffff">! assure bit-for-bit results in the first comparisons.</a>
+   111) <a name="l111" style="background-color: #ffffff">! 27 February 2008: Keith Oleson; Sparse/dense aerodynamic parameters from</a>
+   112) <a name="l112" style="background-color: #ffffff">! X. Zeng</a>
+   113) <a name="l113" style="background-color: #ffffff">! 6 March 2009: Peter Thornton; Daylength control on Vcmax, from Bill Bauerle</a>
+   114) <a name="l114" style="background-color: #ffffff">!</a>
+   115) <a name="l115" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+   116) <a name="l116" style="background-color: #ffffff">!</a>
+   117) <a name="l117" style="background-color: #ffffff">! local pointers to implicit in variables</a>
+   118) <a name="l118" style="background-color: #ffffff">!</a>
+   119) <a name="l119" style="background-color: #ffffff">   integer , pointer :: frac_veg_nosno(:) ! frac of veg not covered by snow (0 OR 1 now) [-]</a>
+   120) <a name="l120" style="background-color: #ffffff">   integer , pointer :: ivt(:)         ! pft vegetation type</a>
+   121) <a name="l121" style="background-color: #ffffff">   integer , pointer :: pcolumn(:)     ! pft's column index</a>
+   122) <a name="l122" style="background-color: #ffffff">   integer , pointer :: plandunit(:)   ! pft's landunit index</a>
+   123) <a name="l123" style="background-color: #ffffff">   integer , pointer :: pgridcell(:)   ! pft's gridcell index</a>
+   124) <a name="l124" style="background-color: #ffffff">   real(r8), pointer :: forc_th(:)     ! atmospheric potential temperature (Kelvin)</a>
+   125) <a name="l125" style="background-color: #ffffff">   real(r8), pointer :: t_grnd(:)      ! ground surface temperature [K]</a>
+   126) <a name="l126" style="background-color: #ffffff">   real(r8), pointer :: thm(:)         ! intermediate variable (forc_t+0.0098*forc_hgt_t_pft)</a>
+   127) <a name="l127" style="background-color: #ffffff">   real(r8), pointer :: qg(:)          ! specific humidity at ground surface [kg/kg]</a>
+   128) <a name="l128" style="background-color: #ffffff">   real(r8), pointer :: thv(:)         ! virtual potential temperature (kelvin)</a>
+   129) <a name="l129" style="background-color: #ffffff">   real(r8), pointer :: z0mv(:)        ! roughness length over vegetation, momentum [m]</a>
+   130) <a name="l130" style="background-color: #ffffff">   real(r8), pointer :: z0hv(:)        ! roughness length over vegetation, sensible heat [m]</a>
+   131) <a name="l131" style="background-color: #ffffff">   real(r8), pointer :: z0qv(:)        ! roughness length over vegetation, latent heat [m]</a>
+   132) <a name="l132" style="background-color: #ffffff">   real(r8), pointer :: z0mg(:)        ! roughness length of ground, momentum [m]</a>
+   133) <a name="l133" style="background-color: #ffffff">   real(r8), pointer :: dqgdT(:)       ! temperature derivative of &quot;qg&quot;</a>
+   134) <a name="l134" style="background-color: #ffffff">   real(r8), pointer :: htvp(:)        ! latent heat of evaporation (/sublimation) [J/kg]</a>
+   135) <a name="l135" style="background-color: #ffffff">   real(r8), pointer :: emv(:)         ! ground emissivity</a>
+   136) <a name="l136" style="background-color: #ffffff">   real(r8), pointer :: emg(:)         ! vegetation emissivity</a>
+   137) <a name="l137" style="background-color: #ffffff">   real(r8), pointer :: forc_pbot(:)   ! atmospheric pressure (Pa)</a>
+   138) <a name="l138" style="background-color: #ffffff">   real(r8), pointer :: forc_pco2(:)   ! partial pressure co2 (Pa)</a>
+   139) <a name="l139" style="background-color: #ffffff"></a>
+   140) <a name="l140" style="background-color: #ffffff">   ! 4/14/05: PET</a>
+   141) <a name="l141" style="background-color: #ffffff">   ! Adding isotope code</a>
+   142) <a name="l142" style="background-color: #ffffff">   real(r8), pointer :: forc_pc13o2(:) ! partial pressure c13o2 (Pa)</a>
+   143) <a name="l143" style="background-color: #ffffff">   </a>
+   144) <a name="l144" style="background-color: #ffffff">   real(r8), pointer :: forc_po2(:)    ! partial pressure o2 (Pa)</a>
+   145) <a name="l145" style="background-color: #ffffff">   real(r8), pointer :: forc_q(:)      ! atmospheric specific humidity (kg/kg)</a>
+   146) <a name="l146" style="background-color: #ffffff">   real(r8), pointer :: forc_u(:)      ! atmospheric wind speed in east direction (m/s)</a>
+   147) <a name="l147" style="background-color: #ffffff">   real(r8), pointer :: forc_v(:)      ! atmospheric wind speed in north direction (m/s)</a>
+   148) <a name="l148" style="background-color: #ffffff">   real(r8), pointer :: forc_hgt_u_pft(:) !observational height of wind at pft level [m]</a>
+   149) <a name="l149" style="background-color: #ffffff">   real(r8), pointer :: forc_rho(:)    ! density (kg/m**3)</a>
+   150) <a name="l150" style="background-color: #ffffff">   real(r8), pointer :: forc_lwrad(:)  ! downward infrared (longwave) radiation (W/m**2)</a>
+   151) <a name="l151" style="background-color: #ffffff">   real(r8), pointer :: displa(:)      ! displacement height (m)</a>
+   152) <a name="l152" style="background-color: #ffffff">   real(r8), pointer :: elai(:)        ! one-sided leaf area index with burying by snow</a>
+   153) <a name="l153" style="background-color: #ffffff">   real(r8), pointer :: esai(:)        ! one-sided stem area index with burying by snow</a>
+   154) <a name="l154" style="background-color: #ffffff">   real(r8), pointer :: fdry(:)        ! fraction of foliage that is green and dry [-]</a>
+   155) <a name="l155" style="background-color: #ffffff">   real(r8), pointer :: fwet(:)        ! fraction of canopy that is wet (0 to 1)</a>
+   156) <a name="l156" style="background-color: #ffffff">   real(r8), pointer :: laisun(:)      ! sunlit leaf area</a>
+   157) <a name="l157" style="background-color: #ffffff">   real(r8), pointer :: laisha(:)      ! shaded leaf area</a>
+   158) <a name="l158" style="background-color: #ffffff">   real(r8), pointer :: sabv(:)        ! solar radiation absorbed by vegetation (W/m**2)</a>
+   159) <a name="l159" style="background-color: #ffffff">   real(r8), pointer :: watsat(:,:)    ! volumetric soil water at saturation (porosity)</a>
+   160) <a name="l160" style="background-color: #ffffff">   real(r8), pointer :: watdry(:,:)    ! btran parameter for btran=0</a>
+   161) <a name="l161" style="background-color: #ffffff">   real(r8), pointer :: watopt(:,:)    ! btran parameter for btran = 1</a>
+   162) <a name="l162" style="background-color: #ffffff">   real(r8), pointer :: h2osoi_ice(:,:)! ice lens (kg/m2)</a>
+   163) <a name="l163" style="background-color: #ffffff">   real(r8), pointer :: h2osoi_liq(:,:)! liquid water (kg/m2)</a>
+   164) <a name="l164" style="background-color: #ffffff">   real(r8), pointer :: dz(:,:)        ! layer depth (m)</a>
+   165) <a name="l165" style="background-color: #ffffff">   real(r8), pointer :: t_soisno(:,:)  ! soil temperature (Kelvin)</a>
+   166) <a name="l166" style="background-color: #ffffff">   real(r8), pointer :: sucsat(:,:)    ! minimum soil suction (mm)</a>
+   167) <a name="l167" style="background-color: #ffffff">   real(r8), pointer :: bsw(:,:)       ! Clapp and Hornberger &quot;b&quot;</a>
+   168) <a name="l168" style="background-color: #ffffff">   real(r8), pointer :: rootfr(:,:)    ! fraction of roots in each soil layer</a>
+   169) <a name="l169" style="background-color: #ffffff">   real(r8), pointer :: dleaf(:)       ! characteristic leaf dimension (m)</a>
+   170) <a name="l170" style="background-color: #ffffff">   real(r8), pointer :: smpso(:)       ! soil water potential at full stomatal opening (mm)</a>
+   171) <a name="l171" style="background-color: #ffffff">   real(r8), pointer :: smpsc(:)       ! soil water potential at full stomatal closure (mm)</a>
+   172) <a name="l172" style="background-color: #ffffff">   real(r8), pointer :: frac_sno(:)    ! fraction of ground covered by snow (0 to 1)</a>
+   173) <a name="l173" style="background-color: #ffffff">   real(r8), pointer :: htop(:)        ! canopy top(m)</a>
+   174) <a name="l174" style="background-color: #ffffff">   real(r8), pointer :: snowdp(:)      ! snow height (m)</a>
+   175) <a name="l175" style="background-color: #ffffff">   real(r8), pointer :: soilbeta(:)    ! soil wetness relative to field capacity</a>
+   176) <a name="l176" style="background-color: #ffffff">   real(r8), pointer :: lat(:)         ! latitude (radians)</a>
+   177) <a name="l177" style="background-color: #ffffff">   real(r8), pointer :: decl(:)        ! declination angle (radians)</a>
+   178) <a name="l178" style="background-color: #ffffff">   real(r8), pointer :: max_dayl(:)    !maximum daylength for this column (s)</a>
+   179) <a name="l179" style="background-color: #ffffff">   real(r8), pointer :: londeg(:)      ! longitude (degrees) (for calculation of local time)</a>
+   180) <a name="l180" style="background-color: #ffffff">   </a>
+   181) <a name="l181" style="background-color: #ffffff">!</a>
+   182) <a name="l182" style="background-color: #ffffff">! local pointers to implicit inout arguments</a>
+   183) <a name="l183" style="background-color: #ffffff">!</a>
+   184) <a name="l184" style="background-color: #ffffff">   real(r8), pointer :: cgrnds(:)      ! deriv. of soil sensible heat flux wrt soil temp [w/m2/k]</a>
+   185) <a name="l185" style="background-color: #ffffff">   real(r8), pointer :: cgrndl(:)      ! deriv. of soil latent heat flux wrt soil temp [w/m**2/k]</a>
+   186) <a name="l186" style="background-color: #ffffff">   real(r8), pointer :: t_veg(:)       ! vegetation temperature (Kelvin)</a>
+   187) <a name="l187" style="background-color: #ffffff">   real(r8), pointer :: t_ref2m(:)     ! 2 m height surface air temperature (Kelvin)</a>
+   188) <a name="l188" style="background-color: #ffffff">   real(r8), pointer :: q_ref2m(:)     ! 2 m height surface specific humidity (kg/kg)</a>
+   189) <a name="l189" style="background-color: #ffffff">   real(r8), pointer :: t_ref2m_r(:)   ! Rural 2 m height surface air temperature (Kelvin)</a>
+   190) <a name="l190" style="background-color: #ffffff">   real(r8), pointer :: rh_ref2m(:)    ! 2 m height surface relative humidity (%)</a>
+   191) <a name="l191" style="background-color: #ffffff">   real(r8), pointer :: rh_ref2m_r(:)  ! Rural 2 m height surface relative humidity (%)</a>
+   192) <a name="l192" style="background-color: #ffffff">   real(r8), pointer :: h2ocan(:)      ! canopy water (mm H2O)</a>
+   193) <a name="l193" style="background-color: #ffffff">   real(r8), pointer :: cisun(:)       !sunlit intracellular CO2 (Pa)</a>
+   194) <a name="l194" style="background-color: #ffffff">   real(r8), pointer :: cisha(:)       !shaded intracellular CO2 (Pa)</a>
+   195) <a name="l195" style="background-color: #ffffff">!</a>
+   196) <a name="l196" style="background-color: #ffffff">! local pointers to implicit out arguments</a>
+   197) <a name="l197" style="background-color: #ffffff">!</a>
+   198) <a name="l198" style="background-color: #ffffff">   real(r8), pointer :: rb1(:)             ! boundary layer resistance (s/m)</a>
+   199) <a name="l199" style="background-color: #ffffff">   real(r8), pointer :: cgrnd(:)           ! deriv. of soil energy flux wrt to soil temp [w/m2/k]</a>
+   200) <a name="l200" style="background-color: #ffffff">   real(r8), pointer :: dlrad(:)           ! downward longwave radiation below the canopy [W/m2]</a>
+   201) <a name="l201" style="background-color: #ffffff">   real(r8), pointer :: ulrad(:)           ! upward longwave radiation above the canopy [W/m2]</a>
+   202) <a name="l202" style="background-color: #ffffff">   real(r8), pointer :: ram1(:)            ! aerodynamical resistance (s/m)</a>
+   203) <a name="l203" style="background-color: #ffffff">   real(r8), pointer :: btran(:)           ! transpiration wetness factor (0 to 1)</a>
+   204) <a name="l204" style="background-color: #ffffff">   real(r8), pointer :: rssun(:)           ! sunlit stomatal resistance (s/m)</a>
+   205) <a name="l205" style="background-color: #ffffff">   real(r8), pointer :: rssha(:)           ! shaded stomatal resistance (s/m)</a>
+   206) <a name="l206" style="background-color: #ffffff">   real(r8), pointer :: psnsun(:)          ! sunlit leaf photosynthesis (umol CO2 /m**2/ s)</a>
+   207) <a name="l207" style="background-color: #ffffff">   real(r8), pointer :: psnsha(:)          ! shaded leaf photosynthesis (umol CO2 /m**2/ s)</a>
+   208) <a name="l208" style="background-color: #ffffff"></a>
+   209) <a name="l209" style="background-color: #ffffff">   ! 4/14/05: PET</a>
+   210) <a name="l210" style="background-color: #ffffff">   ! Adding isotope code</a>
+   211) <a name="l211" style="background-color: #ffffff">   real(r8), pointer :: c13_psnsun(:)      ! sunlit leaf photosynthesis (umol 13CO2 /m**2/ s)</a>
+   212) <a name="l212" style="background-color: #ffffff">   real(r8), pointer :: c13_psnsha(:)      ! shaded leaf photosynthesis (umol 13CO2 /m**2/ s)</a>
+   213) <a name="l213" style="background-color: #ffffff">   ! 4/21/05: PET</a>
+   214) <a name="l214" style="background-color: #ffffff">   ! Adding isotope code</a>
+   215) <a name="l215" style="background-color: #ffffff">   real(r8), pointer :: rc13_canair(:)     !C13O2/C12O2 in canopy air</a>
+   216) <a name="l216" style="background-color: #ffffff">   real(r8), pointer :: rc13_psnsun(:)     !C13O2/C12O2 in sunlit canopy psn flux</a>
+   217) <a name="l217" style="background-color: #ffffff">   real(r8), pointer :: rc13_psnsha(:)     !C13O2/C12O2 in shaded canopy psn flux</a>
+   218) <a name="l218" style="background-color: #ffffff">   real(r8), pointer :: alphapsnsun(:)     !fractionation factor in sunlit canopy psn flux</a>
+   219) <a name="l219" style="background-color: #ffffff">   real(r8), pointer :: alphapsnsha(:)     !fractionation factor in shaded canopy psn flux</a>
+   220) <a name="l220" style="background-color: #ffffff">   </a>
+   221) <a name="l221" style="background-color: #ffffff">   real(r8), pointer :: qflx_tran_veg(:)   ! vegetation transpiration (mm H2O/s) (+ = to atm)</a>
+   222) <a name="l222" style="background-color: #ffffff">   real(r8), pointer :: dt_veg(:)          ! change in t_veg, last iteration (Kelvin)</a>
+   223) <a name="l223" style="background-color: #ffffff">   real(r8), pointer :: qflx_evap_veg(:)   ! vegetation evaporation (mm H2O/s) (+ = to atm)</a>
+   224) <a name="l224" style="background-color: #ffffff">   real(r8), pointer :: eflx_sh_veg(:)     ! sensible heat flux from leaves (W/m**2) [+ to atm]</a>
+   225) <a name="l225" style="background-color: #ffffff">   real(r8), pointer :: taux(:)            ! wind (shear) stress: e-w (kg/m/s**2)</a>
+   226) <a name="l226" style="background-color: #ffffff">   real(r8), pointer :: tauy(:)            ! wind (shear) stress: n-s (kg/m/s**2)</a>
+   227) <a name="l227" style="background-color: #ffffff">   real(r8), pointer :: eflx_sh_grnd(:)    ! sensible heat flux from ground (W/m**2) [+ to atm]</a>
+   228) <a name="l228" style="background-color: #ffffff">   real(r8), pointer :: qflx_evap_soi(:)   ! soil evaporation (mm H2O/s) (+ = to atm)</a>
+   229) <a name="l229" style="background-color: #ffffff">   real(r8), pointer :: fpsn(:)            ! photosynthesis (umol CO2 /m**2 /s)</a>
+   230) <a name="l230" style="background-color: #ffffff">   real(r8), pointer :: rootr(:,:)         ! effective fraction of roots in each soil layer</a>
+   231) <a name="l231" style="background-color: #ffffff">   real(r8), pointer :: rresis(:,:)        ! root resistance by layer (0-1)  (nlevgrnd)	</a>
+   232) <a name="l232" style="background-color: #ffffff">   real(r8), pointer :: irrig_rate(:)      ! current irrigation rate [mm/s]</a>
+   233) <a name="l233" style="background-color: #ffffff">   integer, pointer  :: n_irrig_steps_left(:) ! # of time steps for which we still need to irrigate today</a>
+   234) <a name="l234" style="background-color: #ffffff">!</a>
+   235) <a name="l235" style="background-color: #ffffff">!</a>
+   236) <a name="l236" style="background-color: #ffffff">! !OTHER LOCAL VARIABLES:</a>
+   237) <a name="l237" style="background-color: #ffffff">!EOP</a>
+   238) <a name="l238" style="background-color: #ffffff">!</a>
+   239) <a name="l239" style="background-color: #ffffff">   real(r8), parameter :: btran0 = 0.0_r8  ! initial value</a>
+   240) <a name="l240" style="background-color: #ffffff">   real(r8), parameter :: zii = 1000.0_r8  ! convective boundary layer height [m]</a>
+   241) <a name="l241" style="background-color: #ffffff">   real(r8), parameter :: beta = 1.0_r8    ! coefficient of conective velocity [-]</a>
+   242) <a name="l242" style="background-color: #ffffff">   real(r8), parameter :: delmax = 1.0_r8  ! maxchange in  leaf temperature [K]</a>
+   243) <a name="l243" style="background-color: #ffffff">   real(r8), parameter :: dlemin = 0.1_r8  ! max limit for energy flux convergence [w/m2]</a>
+   244) <a name="l244" style="background-color: #ffffff">   real(r8), parameter :: dtmin = 0.01_r8  ! max limit for temperature convergence [K]</a>
+   245) <a name="l245" style="background-color: #ffffff">   integer , parameter :: itmax = 40       ! maximum number of iteration [-]</a>
+   246) <a name="l246" style="background-color: #ffffff">   integer , parameter :: itmin = 2        ! minimum number of iteration [-]</a>
+   247) <a name="l247" style="background-color: #ffffff">   real(r8), parameter :: irrig_min_lai = 0.0_r8           ! Minimum LAI for irrigation</a>
+   248) <a name="l248" style="background-color: #ffffff">   real(r8), parameter :: irrig_btran_thresh = 0.999999_r8 ! Irrigate when btran falls below 0.999999 rather than 1 to allow for round-off error</a>
+   249) <a name="l249" style="background-color: #ffffff">   integer , parameter :: irrig_start_time = isecspday/4   ! Time of day to check whether we need irrigation, seconds (0 = midnight). </a>
+   250) <a name="l250" style="background-color: #ffffff">                                                           ! We start applying the irrigation in the time step FOLLOWING this time, </a>
+   251) <a name="l251" style="background-color: #ffffff">                                                           ! since we won't begin irrigating until the next call to Hydrology1</a>
+   252) <a name="l252" style="background-color: #ffffff">   integer , parameter :: irrig_length = isecspday/6       ! Desired amount of time to irrigate per day (sec). Actual time may </a>
+   253) <a name="l253" style="background-color: #ffffff">                                                           ! differ if this is not a multiple of dtime. Irrigation won't work properly </a>
+   254) <a name="l254" style="background-color: #ffffff">                                                           ! if dtime &gt; secsperday</a>
+   255) <a name="l255" style="background-color: #ffffff">   real(r8), parameter :: irrig_factor = 0.7_r8            ! Determines target soil moisture level for irrigation. If h2osoi_liq_so </a>
+   256) <a name="l256" style="background-color: #ffffff">                                                           ! is the soil moisture level at which stomata are fully open and </a>
+   257) <a name="l257" style="background-color: #ffffff">                                                           ! h2osoi_liq_sat is the soil moisture level at saturation (eff_porosity), </a>
+   258) <a name="l258" style="background-color: #ffffff">                                                           ! then the target soil moisture level is </a>
+   259) <a name="l259" style="background-color: #ffffff">                                                           !     (h2osoi_liq_so + irrig_factor*(h2osoi_liq_sat - h2osoi_liq_so)). </a>
+   260) <a name="l260" style="background-color: #ffffff">                                                           ! A value of 0 means that the target soil moisture level is h2osoi_liq_so. </a>
+   261) <a name="l261" style="background-color: #ffffff">                                                           ! A value of 1 means that the target soil moisture level is h2osoi_liq_sat</a>
+   262) <a name="l262" style="background-color: #ffffff"></a>
+   263) <a name="l263" style="background-color: #ffffff">   !added by K.Sakaguchi for litter resistance</a>
+   264) <a name="l264" style="background-color: #ffffff">   real(r8), parameter :: lai_dl = 0.5_r8  ! placeholder for (dry) plant litter area index (m2/m2)</a>
+   265) <a name="l265" style="background-color: #ffffff">   real(r8), parameter :: z_dl = 0.05_r8   ! placeholder for (dry) litter layer thickness (m)</a>
+   266) <a name="l266" style="background-color: #ffffff">   !added by K.Sakaguchi for stability formulation</a>
+   267) <a name="l267" style="background-color: #ffffff">   real(r8), parameter :: ria  = 0.5_r8    ! free parameter for stable formulation (currently = 0.5, &quot;gamma&quot; in Sakaguchi&amp;Zeng,2008)</a>
+   268) <a name="l268" style="background-color: #ffffff">   real(r8) :: dtime                 ! land model time step (sec)</a>
+   269) <a name="l269" style="background-color: #ffffff">   real(r8) :: zldis(lbp:ubp)        ! reference height &quot;minus&quot; zero displacement height [m]</a>
+   270) <a name="l270" style="background-color: #ffffff">   real(r8) :: zeta                  ! dimensionless height used in Monin-Obukhov theory</a>
+   271) <a name="l271" style="background-color: #ffffff">   real(r8) :: wc                    ! convective velocity [m/s]</a>
+   272) <a name="l272" style="background-color: #ffffff">   real(r8) :: dth(lbp:ubp)          ! diff of virtual temp. between ref. height and surface</a>
+   273) <a name="l273" style="background-color: #ffffff">   real(r8) :: dthv(lbp:ubp)         ! diff of vir. poten. temp. between ref. height and surface</a>
+   274) <a name="l274" style="background-color: #ffffff">   real(r8) :: dqh(lbp:ubp)          ! diff of humidity between ref. height and surface</a>
+   275) <a name="l275" style="background-color: #ffffff">   real(r8) :: obu(lbp:ubp)          ! Monin-Obukhov length (m)</a>
+   276) <a name="l276" style="background-color: #ffffff">   real(r8) :: um(lbp:ubp)           ! wind speed including the stablity effect [m/s]</a>
+   277) <a name="l277" style="background-color: #ffffff">   real(r8) :: ur(lbp:ubp)           ! wind speed at reference height [m/s]</a>
+   278) <a name="l278" style="background-color: #ffffff">   real(r8) :: uaf(lbp:ubp)          ! velocity of air within foliage [m/s]</a>
+   279) <a name="l279" style="background-color: #ffffff">   real(r8) :: temp1(lbp:ubp)        ! relation for potential temperature profile</a>
+   280) <a name="l280" style="background-color: #ffffff">   real(r8) :: temp12m(lbp:ubp)      ! relation for potential temperature profile applied at 2-m</a>
+   281) <a name="l281" style="background-color: #ffffff">   real(r8) :: temp2(lbp:ubp)        ! relation for specific humidity profile</a>
+   282) <a name="l282" style="background-color: #ffffff">   real(r8) :: temp22m(lbp:ubp)      ! relation for specific humidity profile applied at 2-m</a>
+   283) <a name="l283" style="background-color: #ffffff">   real(r8) :: ustar(lbp:ubp)        ! friction velocity [m/s]</a>
+   284) <a name="l284" style="background-color: #ffffff">   real(r8) :: tstar                 ! temperature scaling parameter</a>
+   285) <a name="l285" style="background-color: #ffffff">   real(r8) :: qstar                 ! moisture scaling parameter</a>
+   286) <a name="l286" style="background-color: #ffffff">   real(r8) :: thvstar               ! virtual potential temperature scaling parameter</a>
+   287) <a name="l287" style="background-color: #ffffff">   real(r8) :: taf(lbp:ubp)          ! air temperature within canopy space [K]</a>
+   288) <a name="l288" style="background-color: #ffffff">   real(r8) :: qaf(lbp:ubp)          ! humidity of canopy air [kg/kg]</a>
+   289) <a name="l289" style="background-color: #ffffff">   real(r8) :: rpp                   ! fraction of potential evaporation from leaf [-]</a>
+   290) <a name="l290" style="background-color: #ffffff">   real(r8) :: rppdry                ! fraction of potential evaporation through transp [-]</a>
+   291) <a name="l291" style="background-color: #ffffff">   real(r8) :: cf                    ! heat transfer coefficient from leaves [-]</a>
+   292) <a name="l292" style="background-color: #ffffff">   real(r8) :: rb(lbp:ubp)           ! leaf boundary layer resistance [s/m]</a>
+   293) <a name="l293" style="background-color: #ffffff">   real(r8) :: rah(lbp:ubp,2)        ! thermal resistance [s/m]</a>
+   294) <a name="l294" style="background-color: #ffffff">   real(r8) :: raw(lbp:ubp,2)        ! moisture resistance [s/m]</a>
+   295) <a name="l295" style="background-color: #ffffff">   real(r8) :: wta                   ! heat conductance for air [m/s]</a>
+   296) <a name="l296" style="background-color: #ffffff">   real(r8) :: wtg(lbp:ubp)          ! heat conductance for ground [m/s]</a>
+   297) <a name="l297" style="background-color: #ffffff">   real(r8) :: wtl                   ! heat conductance for leaf [m/s]</a>
+   298) <a name="l298" style="background-color: #ffffff">   real(r8) :: wta0(lbp:ubp)         ! normalized heat conductance for air [-]</a>
+   299) <a name="l299" style="background-color: #ffffff">   real(r8) :: wtl0(lbp:ubp)         ! normalized heat conductance for leaf [-]</a>
+   300) <a name="l300" style="background-color: #ffffff">   real(r8) :: wtg0                  ! normalized heat conductance for ground [-]</a>
+   301) <a name="l301" style="background-color: #ffffff">   real(r8) :: wtal(lbp:ubp)         ! normalized heat conductance for air and leaf [-]</a>
+   302) <a name="l302" style="background-color: #ffffff">   real(r8) :: wtga                  ! normalized heat cond. for air and ground  [-]</a>
+   303) <a name="l303" style="background-color: #ffffff">   real(r8) :: wtaq                  ! latent heat conductance for air [m/s]</a>
+   304) <a name="l304" style="background-color: #ffffff">   real(r8) :: wtlq                  ! latent heat conductance for leaf [m/s]</a>
+   305) <a name="l305" style="background-color: #ffffff">   real(r8) :: wtgq(lbp:ubp)         ! latent heat conductance for ground [m/s]</a>
+   306) <a name="l306" style="background-color: #ffffff">   real(r8) :: wtaq0(lbp:ubp)        ! normalized latent heat conductance for air [-]</a>
+   307) <a name="l307" style="background-color: #ffffff">   real(r8) :: wtlq0(lbp:ubp)        ! normalized latent heat conductance for leaf [-]</a>
+   308) <a name="l308" style="background-color: #ffffff">   real(r8) :: wtgq0                 ! normalized heat conductance for ground [-]</a>
+   309) <a name="l309" style="background-color: #ffffff">   real(r8) :: wtalq(lbp:ubp)        ! normalized latent heat cond. for air and leaf [-]</a>
+   310) <a name="l310" style="background-color: #ffffff">   real(r8) :: wtgaq                 ! normalized latent heat cond. for air and ground [-]</a>
+   311) <a name="l311" style="background-color: #ffffff">   real(r8) :: el(lbp:ubp)           ! vapor pressure on leaf surface [pa]</a>
+   312) <a name="l312" style="background-color: #ffffff">   real(r8) :: deldT                 ! derivative of &quot;el&quot; on &quot;t_veg&quot; [pa/K]</a>
+   313) <a name="l313" style="background-color: #ffffff">   real(r8) :: qsatl(lbp:ubp)        ! leaf specific humidity [kg/kg]</a>
+   314) <a name="l314" style="background-color: #ffffff">   real(r8) :: qsatldT(lbp:ubp)      ! derivative of &quot;qsatl&quot; on &quot;t_veg&quot;</a>
+   315) <a name="l315" style="background-color: #ffffff">   real(r8) :: e_ref2m               ! 2 m height surface saturated vapor pressure [Pa]</a>
+   316) <a name="l316" style="background-color: #ffffff">   real(r8) :: de2mdT                ! derivative of 2 m height surface saturated vapor pressure on t_ref2m</a>
+   317) <a name="l317" style="background-color: #ffffff">   real(r8) :: qsat_ref2m            ! 2 m height surface saturated specific humidity [kg/kg]</a>
+   318) <a name="l318" style="background-color: #ffffff">   real(r8) :: dqsat2mdT             ! derivative of 2 m height surface saturated specific humidity on t_ref2m</a>
+   319) <a name="l319" style="background-color: #ffffff">   real(r8) :: air(lbp:ubp),bir(lbp:ubp),cir(lbp:ubp)  ! atmos. radiation temporay set</a>
+   320) <a name="l320" style="background-color: #ffffff">   real(r8) :: dc1,dc2               ! derivative of energy flux [W/m2/K]</a>
+   321) <a name="l321" style="background-color: #ffffff">   real(r8) :: delt                  ! temporary</a>
+   322) <a name="l322" style="background-color: #ffffff">   real(r8) :: delq(lbp:ubp)         ! temporary</a>
+   323) <a name="l323" style="background-color: #ffffff">   real(r8) :: del(lbp:ubp)          ! absolute change in leaf temp in current iteration [K]</a>
+   324) <a name="l324" style="background-color: #ffffff">   real(r8) :: del2(lbp:ubp)         ! change in leaf temperature in previous iteration [K]</a>
+   325) <a name="l325" style="background-color: #ffffff">   real(r8) :: dele(lbp:ubp)         ! change in latent heat flux from leaf [K]</a>
+   326) <a name="l326" style="background-color: #ffffff">   real(r8) :: dels                  ! change in leaf temperature in current iteration [K]</a>
+   327) <a name="l327" style="background-color: #ffffff">   real(r8) :: det(lbp:ubp)          ! maximum leaf temp. change in two consecutive iter [K]</a>
+   328) <a name="l328" style="background-color: #ffffff">   real(r8) :: efeb(lbp:ubp)         ! latent heat flux from leaf (previous iter) [mm/s]</a>
+   329) <a name="l329" style="background-color: #ffffff">   real(r8) :: efeold                ! latent heat flux from leaf (previous iter) [mm/s]</a>
+   330) <a name="l330" style="background-color: #ffffff">   real(r8) :: efpot                 ! potential latent energy flux [kg/m2/s]</a>
+   331) <a name="l331" style="background-color: #ffffff">   real(r8) :: efe(lbp:ubp)          ! water flux from leaf [mm/s]</a>
+   332) <a name="l332" style="background-color: #ffffff">   real(r8) :: efsh                  ! sensible heat from leaf [mm/s]</a>
+   333) <a name="l333" style="background-color: #ffffff">   real(r8) :: obuold(lbp:ubp)       ! monin-obukhov length from previous iteration</a>
+   334) <a name="l334" style="background-color: #ffffff">   real(r8) :: tlbef(lbp:ubp)        ! leaf temperature from previous iteration [K]</a>
+   335) <a name="l335" style="background-color: #ffffff">   real(r8) :: ecidif                ! excess energies [W/m2]</a>
+   336) <a name="l336" style="background-color: #ffffff">   real(r8) :: err(lbp:ubp)          ! balance error</a>
+   337) <a name="l337" style="background-color: #ffffff">   real(r8) :: erre                  ! balance error</a>
+   338) <a name="l338" style="background-color: #ffffff">   real(r8) :: co2(lbp:ubp)          ! atmospheric co2 partial pressure (pa)</a>
+   339) <a name="l339" style="background-color: #ffffff"></a>
+   340) <a name="l340" style="background-color: #ffffff">   ! 4/14/05: PET</a>
+   341) <a name="l341" style="background-color: #ffffff">   ! Adding isotope code</a>
+   342) <a name="l342" style="background-color: #ffffff">   real(r8) :: c13o2(lbp:ubp)        ! atmospheric c13o2 partial pressure (pa)</a>
+   343) <a name="l343" style="background-color: #ffffff">   </a>
+   344) <a name="l344" style="background-color: #ffffff">   real(r8) :: o2(lbp:ubp)           ! atmospheric o2 partial pressure (pa)</a>
+   345) <a name="l345" style="background-color: #ffffff">   real(r8) :: svpts(lbp:ubp)        ! saturation vapor pressure at t_veg (pa)</a>
+   346) <a name="l346" style="background-color: #ffffff">   real(r8) :: eah(lbp:ubp)          ! canopy air vapor pressure (pa)</a>
+   347) <a name="l347" style="background-color: #ffffff">   real(r8) :: s_node                ! vol_liq/eff_porosity</a>
+   348) <a name="l348" style="background-color: #ffffff">   real(r8) :: smp_node              ! matrix potential</a>
+   349) <a name="l349" style="background-color: #ffffff">   real(r8) :: vol_ice               ! partial volume of ice lens in layer</a>
+   350) <a name="l350" style="background-color: #ffffff">   real(r8) :: eff_porosity          ! effective porosity in layer</a>
+   351) <a name="l351" style="background-color: #ffffff">   real(r8) :: vol_liq               ! partial volume of liquid water in layer</a>
+   352) <a name="l352" style="background-color: #ffffff">   integer  :: itlef                 ! counter for leaf temperature iteration [-]</a>
+   353) <a name="l353" style="background-color: #ffffff">   integer  :: nmozsgn(lbp:ubp)      ! number of times stability changes sign</a>
+   354) <a name="l354" style="background-color: #ffffff">   real(r8) :: w                     ! exp(-LSAI)</a>
+   355) <a name="l355" style="background-color: #ffffff">   real(r8) :: csoilcn               ! interpolated csoilc for less than dense canopies</a>
+   356) <a name="l356" style="background-color: #ffffff">   real(r8) :: fm(lbp:ubp)           ! needed for BGC only to diagnose 10m wind speed</a>
+   357) <a name="l357" style="background-color: #ffffff">   real(r8) :: wtshi                 ! sensible heat resistance for air, grnd and leaf [-]</a>
+   358) <a name="l358" style="background-color: #ffffff">   real(r8) :: wtsqi                 ! latent heat resistance for air, grnd and leaf [-]</a>
+   359) <a name="l359" style="background-color: #ffffff">   integer  :: j                     ! soil/snow level index</a>
+   360) <a name="l360" style="background-color: #ffffff">   integer  :: p                     ! pft index</a>
+   361) <a name="l361" style="background-color: #ffffff">   integer  :: c                     ! column index</a>
+   362) <a name="l362" style="background-color: #ffffff">   integer  :: l                     ! landunit index</a>
+   363) <a name="l363" style="background-color: #ffffff">   integer  :: g                     ! gridcell index</a>
+   364) <a name="l364" style="background-color: #ffffff">   integer  :: fp                    ! lake filter pft index</a>
+   365) <a name="l365" style="background-color: #ffffff">   integer  :: fn                    ! number of values in pft filter</a>
+   366) <a name="l366" style="background-color: #ffffff">   integer  :: fnorig                ! number of values in pft filter copy</a>
+   367) <a name="l367" style="background-color: #ffffff">   integer  :: fnold                 ! temporary copy of pft count</a>
+   368) <a name="l368" style="background-color: #ffffff">   integer  :: f                     ! filter index</a>
+   369) <a name="l369" style="background-color: #ffffff">   integer  :: filterp(ubp-lbp+1)    ! temporary filter</a>
+   370) <a name="l370" style="background-color: #ffffff">   integer  :: fporig(ubp-lbp+1)     ! temporary filter</a>
+   371) <a name="l371" style="background-color: #ffffff">   real(r8) :: displa_loc(lbp:ubp)   ! temporary copy</a>
+   372) <a name="l372" style="background-color: #ffffff">   real(r8) :: z0mv_loc(lbp:ubp)     ! temporary copy</a>
+   373) <a name="l373" style="background-color: #ffffff">   real(r8) :: z0hv_loc(lbp:ubp)     ! temporary copy</a>
+   374) <a name="l374" style="background-color: #ffffff">   real(r8) :: z0qv_loc(lbp:ubp)     ! temporary copy</a>
+   375) <a name="l375" style="background-color: #ffffff">   logical  :: found                 ! error flag for canopy above forcing hgt</a>
+   376) <a name="l376" style="background-color: #ffffff">   integer  :: index                 ! pft index for error</a>
+   377) <a name="l377" style="background-color: #ffffff">   real(r8) :: egvf                  ! effective green vegetation fraction</a>
+   378) <a name="l378" style="background-color: #ffffff">   real(r8) :: lt                    ! elai+esai</a>
+   379) <a name="l379" style="background-color: #ffffff">   real(r8) :: ri                    ! stability parameter for under canopy air (unitless)</a>
+   380) <a name="l380" style="background-color: #ffffff">   real(r8) :: csoilb                ! turbulent transfer coefficient over bare soil (unitless)</a>
+   381) <a name="l381" style="background-color: #ffffff">   real(r8) :: ricsoilc              ! modified transfer coefficient under dense canopy (unitless)</a>
+   382) <a name="l382" style="background-color: #ffffff">   real(r8) :: snowdp_c              ! critical snow depth to cover plant litter (m)</a>
+   383) <a name="l383" style="background-color: #ffffff">   real(r8) :: rdl                   ! dry litter layer resistance for water vapor  (s/m)</a>
+   384) <a name="l384" style="background-color: #ffffff">   real(r8) :: elai_dl               ! exposed (dry) plant litter area index</a>
+   385) <a name="l385" style="background-color: #ffffff">   real(r8) :: fsno_dl               ! effective snow cover over plant litter</a>
+   386) <a name="l386" style="background-color: #ffffff">   real(r8) :: dayl                  ! daylength (s)</a>
+   387) <a name="l387" style="background-color: #ffffff">   real(r8) :: temp                  ! temporary, for daylength calculation</a>
+   388) <a name="l388" style="background-color: #ffffff">   real(r8) :: dayl_factor(lbp:ubp)  ! scalar (0-1) for daylength effect on Vcmax</a>
+   389) <a name="l389" style="background-color: #ffffff">   integer  :: yr                       ! year at start of time step</a>
+   390) <a name="l390" style="background-color: #ffffff">   integer  :: mon                      ! month at start of time step</a>
+   391) <a name="l391" style="background-color: #ffffff">   integer  :: day                      ! day at start of time step</a>
+   392) <a name="l392" style="background-color: #ffffff">   integer  :: time                     ! time at start of time step (seconds after 0Z)</a>
+   393) <a name="l393" style="background-color: #ffffff">   integer  :: local_time               ! local time at start of time step (seconds after solar midnight)</a>
+   394) <a name="l394" style="background-color: #ffffff">   integer  :: irrig_nsteps_per_day     ! number of time steps per day in which we irrigate</a>
+   395) <a name="l395" style="background-color: #ffffff">   logical  :: check_for_irrig(lbp:ubp) ! where do we need to check soil moisture to see if we need to irrigate?</a>
+   396) <a name="l396" style="background-color: #ffffff">   logical  :: frozen_soil(lbc:ubc)     ! set to true if we have encountered a frozen soil layer</a>
+   397) <a name="l397" style="background-color: #ffffff">   real(r8) :: vol_liq_so               ! partial volume of liquid water in layer for which smp_node = smpso</a>
+   398) <a name="l398" style="background-color: #ffffff">   real(r8) :: h2osoi_liq_so            ! liquid water corresponding to vol_liq_so for this layer [kg/m2]</a>
+   399) <a name="l399" style="background-color: #ffffff">   real(r8) :: h2osoi_liq_sat           ! liquid water corresponding to eff_porosity for this layer [kg/m2]</a>
+   400) <a name="l400" style="background-color: #ffffff">   real(r8) :: deficit                  ! difference between desired soil moisture level for this layer and current soil moisture level [kg/m2]</a>
+   401) <a name="l401" style="background-color: #ffffff">!------------------------------------------------------------------------------</a>
+   402) <a name="l402" style="background-color: #ffffff"></a>
+   403) <a name="l403" style="background-color: #ffffff">   ! Assign local pointers to derived type members (gridcell-level)</a>
+   404) <a name="l404" style="background-color: #ffffff"></a>
+   405) <a name="l405" style="background-color: #ffffff">   forc_lwrad     =&gt; clm_a2l%forc_lwrad</a>
+   406) <a name="l406" style="background-color: #ffffff">   forc_pco2      =&gt; clm_a2l%forc_pco2</a>
+   407) <a name="l407" style="background-color: #ffffff"></a>
+   408) <a name="l408" style="background-color: #ffffff">   forc_pc13o2    =&gt; clm_a2l%forc_pc13o2</a>
+   409) <a name="l409" style="background-color: #ffffff"></a>
+   410) <a name="l410" style="background-color: #ffffff">   forc_po2       =&gt; clm_a2l%forc_po2</a>
+   411) <a name="l411" style="background-color: #ffffff">   forc_q         =&gt; clm_a2l%forc_q</a>
+   412) <a name="l412" style="background-color: #ffffff">   forc_pbot      =&gt; clm_a2l%forc_pbot</a>
+   413) <a name="l413" style="background-color: #ffffff">   forc_u         =&gt; clm_a2l%forc_u</a>
+   414) <a name="l414" style="background-color: #ffffff">   forc_v         =&gt; clm_a2l%forc_v</a>
+   415) <a name="l415" style="background-color: #ffffff">   forc_th        =&gt; clm_a2l%forc_th</a>
+   416) <a name="l416" style="background-color: #ffffff">   forc_rho       =&gt; clm_a2l%forc_rho</a>
+   417) <a name="l417" style="background-color: #ffffff">   lat            =&gt; grc%lat</a>
+   418) <a name="l418" style="background-color: #ffffff">   londeg         =&gt; grc%londeg</a>
+   419) <a name="l419" style="background-color: #ffffff"></a>
+   420) <a name="l420" style="background-color: #ffffff">   ! Assign local pointers to derived type members (column-level)</a>
+   421) <a name="l421" style="background-color: #ffffff"></a>
+   422) <a name="l422" style="background-color: #ffffff">   t_soisno       =&gt; ces%t_soisno</a>
+   423) <a name="l423" style="background-color: #ffffff">   watsat         =&gt; cps%watsat</a>
+   424) <a name="l424" style="background-color: #ffffff">   watdry         =&gt; cps%watdry </a>
+   425) <a name="l425" style="background-color: #ffffff">   watopt         =&gt; cps%watopt </a>
+   426) <a name="l426" style="background-color: #ffffff">   h2osoi_ice     =&gt; cws%h2osoi_ice</a>
+   427) <a name="l427" style="background-color: #ffffff">   dz             =&gt; cps%dz</a>
+   428) <a name="l428" style="background-color: #ffffff">   h2osoi_liq     =&gt; cws%h2osoi_liq</a>
+   429) <a name="l429" style="background-color: #ffffff">   sucsat         =&gt; cps%sucsat</a>
+   430) <a name="l430" style="background-color: #ffffff">   bsw            =&gt; cps%bsw</a>
+   431) <a name="l431" style="background-color: #ffffff">   emg            =&gt; cps%emg</a>
+   432) <a name="l432" style="background-color: #ffffff">   t_grnd         =&gt; ces%t_grnd</a>
+   433) <a name="l433" style="background-color: #ffffff">   qg             =&gt; cws%qg</a>
+   434) <a name="l434" style="background-color: #ffffff">   thv            =&gt; ces%thv</a>
+   435) <a name="l435" style="background-color: #ffffff">   dqgdT          =&gt; cws%dqgdT</a>
+   436) <a name="l436" style="background-color: #ffffff">   htvp           =&gt; cps%htvp</a>
+   437) <a name="l437" style="background-color: #ffffff">   z0mg           =&gt; cps%z0mg</a>
+   438) <a name="l438" style="background-color: #ffffff">   frac_sno       =&gt; cps%frac_sno</a>
+   439) <a name="l439" style="background-color: #ffffff">   snowdp         =&gt; cps%snowdp</a>
+   440) <a name="l440" style="background-color: #ffffff">   soilbeta       =&gt; cws%soilbeta</a>
+   441) <a name="l441" style="background-color: #ffffff">   decl           =&gt; cps%decl</a>
+   442) <a name="l442" style="background-color: #ffffff">   max_dayl       =&gt; cps%max_dayl</a>
+   443) <a name="l443" style="background-color: #ffffff"></a>
+   444) <a name="l444" style="background-color: #ffffff">   ! Assign local pointers to derived type members (pft-level)</a>
+   445) <a name="l445" style="background-color: #ffffff"></a>
+   446) <a name="l446" style="background-color: #ffffff">   rb1            =&gt; pps%rb1</a>
+   447) <a name="l447" style="background-color: #ffffff">   ivt            =&gt; pft%itype</a>
+   448) <a name="l448" style="background-color: #ffffff">   pcolumn        =&gt; pft%column</a>
+   449) <a name="l449" style="background-color: #ffffff">   plandunit      =&gt; pft%landunit</a>
+   450) <a name="l450" style="background-color: #ffffff">   pgridcell      =&gt; pft%gridcell</a>
+   451) <a name="l451" style="background-color: #ffffff">   frac_veg_nosno =&gt; pps%frac_veg_nosno</a>
+   452) <a name="l452" style="background-color: #ffffff">   btran          =&gt; pps%btran</a>
+   453) <a name="l453" style="background-color: #ffffff">   rootfr         =&gt; pps%rootfr</a>
+   454) <a name="l454" style="background-color: #ffffff">   rootr          =&gt; pps%rootr</a>
+   455) <a name="l455" style="background-color: #ffffff">   rresis         =&gt; pps%rresis</a>
+   456) <a name="l456" style="background-color: #ffffff">   emv            =&gt; pps%emv</a>
+   457) <a name="l457" style="background-color: #ffffff">   t_veg          =&gt; pes%t_veg</a>
+   458) <a name="l458" style="background-color: #ffffff">   displa         =&gt; pps%displa</a>
+   459) <a name="l459" style="background-color: #ffffff">   z0mv           =&gt; pps%z0mv</a>
+   460) <a name="l460" style="background-color: #ffffff">   z0hv           =&gt; pps%z0hv</a>
+   461) <a name="l461" style="background-color: #ffffff">   z0qv           =&gt; pps%z0qv</a>
+   462) <a name="l462" style="background-color: #ffffff">   ram1           =&gt; pps%ram1</a>
+   463) <a name="l463" style="background-color: #ffffff">   htop           =&gt; pps%htop</a>
+   464) <a name="l464" style="background-color: #ffffff">   rssun          =&gt; pps%rssun</a>
+   465) <a name="l465" style="background-color: #ffffff">   rssha          =&gt; pps%rssha</a>
+   466) <a name="l466" style="background-color: #ffffff">   cisun          =&gt; pps%cisun</a>
+   467) <a name="l467" style="background-color: #ffffff">   cisha          =&gt; pps%cisha</a>
+   468) <a name="l468" style="background-color: #ffffff">   psnsun         =&gt; pcf%psnsun</a>
+   469) <a name="l469" style="background-color: #ffffff">   psnsha         =&gt; pcf%psnsha</a>
+   470) <a name="l470" style="background-color: #ffffff"></a>
+   471) <a name="l471" style="background-color: #ffffff">   ! 4/14/05: PET</a>
+   472) <a name="l472" style="background-color: #ffffff">   ! Adding isotope code</a>
+   473) <a name="l473" style="background-color: #ffffff">   c13_psnsun     =&gt; pc13f%psnsun</a>
+   474) <a name="l474" style="background-color: #ffffff">   c13_psnsha     =&gt; pc13f%psnsha</a>
+   475) <a name="l475" style="background-color: #ffffff">   ! 4/21/05: PET</a>
+   476) <a name="l476" style="background-color: #ffffff">   ! Adding isotope code</a>
+   477) <a name="l477" style="background-color: #ffffff">   rc13_canair    =&gt; pepv%rc13_canair</a>
+   478) <a name="l478" style="background-color: #ffffff">   rc13_psnsun    =&gt; pepv%rc13_psnsun</a>
+   479) <a name="l479" style="background-color: #ffffff">   rc13_psnsha    =&gt; pepv%rc13_psnsha</a>
+   480) <a name="l480" style="background-color: #ffffff">   alphapsnsun    =&gt; pps%alphapsnsun</a>
+   481) <a name="l481" style="background-color: #ffffff">   alphapsnsha    =&gt; pps%alphapsnsha</a>
+   482) <a name="l482" style="background-color: #ffffff">   </a>
+   483) <a name="l483" style="background-color: #ffffff">   elai           =&gt; pps%elai</a>
+   484) <a name="l484" style="background-color: #ffffff">   esai           =&gt; pps%esai</a>
+   485) <a name="l485" style="background-color: #ffffff">   fdry           =&gt; pps%fdry</a>
+   486) <a name="l486" style="background-color: #ffffff">   laisun         =&gt; pps%laisun</a>
+   487) <a name="l487" style="background-color: #ffffff">   laisha         =&gt; pps%laisha</a>
+   488) <a name="l488" style="background-color: #ffffff">   qflx_tran_veg  =&gt; pwf%qflx_tran_veg</a>
+   489) <a name="l489" style="background-color: #ffffff">   fwet           =&gt; pps%fwet</a>
+   490) <a name="l490" style="background-color: #ffffff">   h2ocan         =&gt; pws%h2ocan</a>
+   491) <a name="l491" style="background-color: #ffffff">   dt_veg         =&gt; pps%dt_veg</a>
+   492) <a name="l492" style="background-color: #ffffff">   sabv           =&gt; pef%sabv</a>
+   493) <a name="l493" style="background-color: #ffffff">   qflx_evap_veg  =&gt; pwf%qflx_evap_veg</a>
+   494) <a name="l494" style="background-color: #ffffff">   eflx_sh_veg    =&gt; pef%eflx_sh_veg</a>
+   495) <a name="l495" style="background-color: #ffffff">   taux           =&gt; pmf%taux</a>
+   496) <a name="l496" style="background-color: #ffffff">   tauy           =&gt; pmf%tauy</a>
+   497) <a name="l497" style="background-color: #ffffff">   eflx_sh_grnd   =&gt; pef%eflx_sh_grnd</a>
+   498) <a name="l498" style="background-color: #ffffff">   qflx_evap_soi  =&gt; pwf%qflx_evap_soi</a>
+   499) <a name="l499" style="background-color: #ffffff">   t_ref2m        =&gt; pes%t_ref2m</a>
+   500) <a name="l500" style="background-color: #ffffff">   q_ref2m        =&gt; pes%q_ref2m</a>
+   501) <a name="l501" style="background-color: #ffffff">   t_ref2m_r      =&gt; pes%t_ref2m_r</a>
+   502) <a name="l502" style="background-color: #ffffff">   rh_ref2m_r     =&gt; pes%rh_ref2m_r</a>
+   503) <a name="l503" style="background-color: #ffffff">   rh_ref2m       =&gt; pes%rh_ref2m</a>
+   504) <a name="l504" style="background-color: #ffffff">   dlrad          =&gt; pef%dlrad</a>
+   505) <a name="l505" style="background-color: #ffffff">   ulrad          =&gt; pef%ulrad</a>
+   506) <a name="l506" style="background-color: #ffffff">   cgrnds         =&gt; pef%cgrnds</a>
+   507) <a name="l507" style="background-color: #ffffff">   cgrndl         =&gt; pef%cgrndl</a>
+   508) <a name="l508" style="background-color: #ffffff">   cgrnd          =&gt; pef%cgrnd</a>
+   509) <a name="l509" style="background-color: #ffffff">   fpsn           =&gt; pcf%fpsn</a>
+   510) <a name="l510" style="background-color: #ffffff">   forc_hgt_u_pft =&gt; pps%forc_hgt_u_pft</a>
+   511) <a name="l511" style="background-color: #ffffff">   thm            =&gt; pes%thm</a>
+   512) <a name="l512" style="background-color: #ffffff">   irrig_rate         =&gt; cps%irrig_rate</a>
+   513) <a name="l513" style="background-color: #ffffff">   n_irrig_steps_left =&gt; cps%n_irrig_steps_left</a>
+   514) <a name="l514" style="background-color: #ffffff">      </a>
+   515) <a name="l515" style="background-color: #ffffff">   ! Assign local pointers to derived type members (ecophysiological)</a>
+   516) <a name="l516" style="background-color: #ffffff"></a>
+   517) <a name="l517" style="background-color: #ffffff">   dleaf          =&gt; pftcon%dleaf</a>
+   518) <a name="l518" style="background-color: #ffffff">   smpso          =&gt; pftcon%smpso</a>
+   519) <a name="l519" style="background-color: #ffffff">   smpsc          =&gt; pftcon%smpsc</a>
+   520) <a name="l520" style="background-color: #ffffff"></a>
+   521) <a name="l521" style="background-color: #ffffff">   ! Determine step size</a>
+   522) <a name="l522" style="background-color: #ffffff"></a>
+   523) <a name="l523" style="background-color: #ffffff">   dtime = get_step_size()</a>
+   524) <a name="l524" style="background-color: #ffffff">   irrig_nsteps_per_day = ((irrig_length + (dtime - 1))/dtime)  ! round up</a>
+   525) <a name="l525" style="background-color: #ffffff"></a>
+   526) <a name="l526" style="background-color: #ffffff">   ! Filter pfts where frac_veg_nosno is non-zero</a>
+   527) <a name="l527" style="background-color: #ffffff"></a>
+   528) <a name="l528" style="background-color: #ffffff">   fn = 0</a>
+   529) <a name="l529" style="background-color: #ffffff">   do fp = 1,num_nolakep</a>
+   530) <a name="l530" style="background-color: #ffffff">      p = filter_nolakep(fp)</a>
+   531) <a name="l531" style="background-color: #ffffff">      if (frac_veg_nosno(p) /= 0) then</a>
+   532) <a name="l532" style="background-color: #ffffff">         fn = fn + 1</a>
+   533) <a name="l533" style="background-color: #ffffff">         filterp(fn) = p</a>
+   534) <a name="l534" style="background-color: #ffffff">      end if</a>
+   535) <a name="l535" style="background-color: #ffffff">   end do</a>
+   536) <a name="l536" style="background-color: #ffffff"></a>
+   537) <a name="l537" style="background-color: #ffffff">   ! Initialize</a>
+   538) <a name="l538" style="background-color: #ffffff"></a>
+   539) <a name="l539" style="background-color: #ffffff">   do f = 1, fn</a>
+   540) <a name="l540" style="background-color: #ffffff">      p = filterp(f)</a>
+   541) <a name="l541" style="background-color: #ffffff">      del(p)    = 0._r8  ! change in leaf temperature from previous iteration</a>
+   542) <a name="l542" style="background-color: #ffffff">      efeb(p)   = 0._r8  ! latent head flux from leaf for previous iteration</a>
+   543) <a name="l543" style="background-color: #ffffff">      wtlq0(p)  = 0._r8</a>
+   544) <a name="l544" style="background-color: #ffffff">      wtalq(p)  = 0._r8</a>
+   545) <a name="l545" style="background-color: #ffffff">      wtgq(p)   = 0._r8</a>
+   546) <a name="l546" style="background-color: #ffffff">      wtaq0(p)  = 0._r8</a>
+   547) <a name="l547" style="background-color: #ffffff">      obuold(p) = 0._r8</a>
+   548) <a name="l548" style="background-color: #ffffff">      btran(p)  = btran0</a>
+   549) <a name="l549" style="background-color: #ffffff">   end do</a>
+   550) <a name="l550" style="background-color: #ffffff">   </a>
+   551) <a name="l551" style="background-color: #ffffff">   ! calculate daylength control for Vcmax</a>
+   552) <a name="l552" style="background-color: #ffffff">   do f = 1, fn</a>
+   553) <a name="l553" style="background-color: #ffffff">      p=filterp(f)</a>
+   554) <a name="l554" style="background-color: #ffffff">      c=pcolumn(p)</a>
+   555) <a name="l555" style="background-color: #ffffff">      g=pgridcell(p)</a>
+   556) <a name="l556" style="background-color: #ffffff">      ! calculate daylength</a>
+   557) <a name="l557" style="background-color: #ffffff">      temp = -(sin(lat(g))*sin(decl(c)))/(cos(lat(g)) * cos(decl(c)))</a>
+   558) <a name="l558" style="background-color: #ffffff">      temp = min(1._r8,max(-1._r8,temp))</a>
+   559) <a name="l559" style="background-color: #ffffff">      dayl = 2.0_r8 * 13750.9871_r8 * acos(temp)</a>
+   560) <a name="l560" style="background-color: #ffffff">      ! calculate dayl_factor as the ratio of (current:max dayl)^2</a>
+   561) <a name="l561" style="background-color: #ffffff">      ! set a minimum of 0.01 (1%) for the dayl_factor</a>
+   562) <a name="l562" style="background-color: #ffffff">      dayl_factor(p)=min(1._r8,max(0.01_r8,(dayl*dayl)/(max_dayl(c)*max_dayl(c))))</a>
+   563) <a name="l563" style="background-color: #ffffff">   end do</a>
+   564) <a name="l564" style="background-color: #ffffff"></a>
+   565) <a name="l565" style="background-color: #ffffff">   rb1(lbp:ubp) = 0._r8</a>
+   566) <a name="l566" style="background-color: #ffffff"></a>
+   567) <a name="l567" style="background-color: #ffffff">   ! Effective porosity of soil, partial volume of ice and liquid (needed for btran)</a>
+   568) <a name="l568" style="background-color: #ffffff">   ! and root resistance factors</a>
+   569) <a name="l569" style="background-color: #ffffff"></a>
+   570) <a name="l570" style="background-color: #ffffff">   do j = 1,nlevgrnd</a>
+   571) <a name="l571" style="background-color: #ffffff">      do f = 1, fn</a>
+   572) <a name="l572" style="background-color: #ffffff">         p = filterp(f)</a>
+   573) <a name="l573" style="background-color: #ffffff">         c = pcolumn(p)</a>
+   574) <a name="l574" style="background-color: #ffffff">         l = plandunit(p)</a>
+   575) <a name="l575" style="background-color: #ffffff"></a>
+   576) <a name="l576" style="background-color: #ffffff">         ! Root resistance factors</a>
+   577) <a name="l577" style="background-color: #ffffff"></a>
+   578) <a name="l578" style="background-color: #ffffff">         vol_ice = min(watsat(c,j), h2osoi_ice(c,j)/(dz(c,j)*denice))</a>
+   579) <a name="l579" style="background-color: #ffffff">         eff_porosity = watsat(c,j)-vol_ice</a>
+   580) <a name="l580" style="background-color: #ffffff">         vol_liq = min(eff_porosity, h2osoi_liq(c,j)/(dz(c,j)*denh2o))</a>
+   581) <a name="l581" style="background-color: #ffffff">         if (vol_liq .le. 0._r8 .or. t_soisno(c,j) .le. tfrz-2._r8) then</a>
+   582) <a name="l582" style="background-color: #ffffff">            rootr(p,j) = 0._r8</a>
+   583) <a name="l583" style="background-color: #ffffff">         else</a>
+   584) <a name="l584" style="background-color: #ffffff">            s_node = max(vol_liq/eff_porosity,0.01_r8)</a>
+   585) <a name="l585" style="background-color: #ffffff">            smp_node = max(smpsc(ivt(p)), -sucsat(c,j)*s_node**(-bsw(c,j)))</a>
+   586) <a name="l586" style="background-color: #ffffff"></a>
+   587) <a name="l587" style="background-color: #ffffff">            rresis(p,j) = min( (eff_porosity/watsat(c,j))* &amp;</a>
+   588) <a name="l588" style="background-color: #ffffff">                          (smp_node - smpsc(ivt(p))) / (smpso(ivt(p)) - smpsc(ivt(p))), 1._r8)</a>
+   589) <a name="l589" style="background-color: #ffffff">            rootr(p,j) = rootfr(p,j)*rresis(p,j)</a>
+   590) <a name="l590" style="background-color: #ffffff">            btran(p) = btran(p) + rootr(p,j)</a>
+   591) <a name="l591" style="background-color: #ffffff">         endif </a>
+   592) <a name="l592" style="background-color: #ffffff">      end do</a>
+   593) <a name="l593" style="background-color: #ffffff">   end do</a>
+   594) <a name="l594" style="background-color: #ffffff"></a>
+   595) <a name="l595" style="background-color: #ffffff">   ! Normalize root resistances to get layer contribution to ET</a>
+   596) <a name="l596" style="background-color: #ffffff"></a>
+   597) <a name="l597" style="background-color: #ffffff">   do j = 1,nlevgrnd</a>
+   598) <a name="l598" style="background-color: #ffffff">      do f = 1, fn</a>
+   599) <a name="l599" style="background-color: #ffffff">         p = filterp(f)</a>
+   600) <a name="l600" style="background-color: #ffffff">         if (btran(p) .gt. btran0) then</a>
+   601) <a name="l601" style="background-color: #ffffff">           rootr(p,j) = rootr(p,j)/btran(p)</a>
+   602) <a name="l602" style="background-color: #ffffff">         else</a>
+   603) <a name="l603" style="background-color: #ffffff">           rootr(p,j) = 0._r8</a>
+   604) <a name="l604" style="background-color: #ffffff">         end if</a>
+   605) <a name="l605" style="background-color: #ffffff">      end do</a>
+   606) <a name="l606" style="background-color: #ffffff">   end do</a>
+   607) <a name="l607" style="background-color: #ffffff"></a>
+   608) <a name="l608" style="background-color: #ffffff">   ! Determine if irrigation is needed (over irrigated soil columns)</a>
+   609) <a name="l609" style="background-color: #ffffff"></a>
+   610) <a name="l610" style="background-color: #ffffff">   ! First, determine in what grid cells we need to bother 'measuring' soil water, to see if we need irrigation</a>
+   611) <a name="l611" style="background-color: #ffffff">   ! Also set n_irrig_steps_left for these grid cells</a>
+   612) <a name="l612" style="background-color: #ffffff">   ! n_irrig_steps_left(p) &gt; 0 is ok even if irrig_rate(p) ends up = 0</a>
+   613) <a name="l613" style="background-color: #ffffff">   ! in this case, we'll irrigate by 0 for the given number of time steps</a>
+   614) <a name="l614" style="background-color: #ffffff">   call get_prev_date(yr, mon, day, time)  ! get time as of beginning of time step</a>
+   615) <a name="l615" style="background-color: #ffffff">   do f = 1, fn</a>
+   616) <a name="l616" style="background-color: #ffffff">      p = filterp(f)</a>
+   617) <a name="l617" style="background-color: #ffffff">      c = pcolumn(p)</a>
+   618) <a name="l618" style="background-color: #ffffff">      g = pgridcell(p)</a>
+   619) <a name="l619" style="background-color: #ffffff">      if (ivt(p) </a><a style="background-color: #ffff99">== nirrig .and. elai(p) &gt; irrig_min_lai .and. btran(p) &lt; irrig_btran_thresh) then</a>
+   620) <a name="l620" style="background-color: #ffff99">         ! see if it's the right time of day to start irrigating:</a>
+   621) <a name="l621" style="background-color: #ffff99">         local_time = modulo(time + nint(londeg(g)/degpsec), isecspday)</a>
+   622) <a name="l622" style="background-color: #ffff99">         if (modulo(local_time - irrig_start_time, isecspday) &lt; dtime) then</a>
+   623) <a name="l623" style="background-color: #ffff99">            ! it's time to start irrigating</a>
+   624) <a name="l624" style="background-color: #ffff99">            check_for_irrig(p)    = .true.</a>
+   625) <a name="l625" style="background-color: #ffff99">            n_irrig_steps_left(c) = irrig_nsteps_per_day</a>
+   626) <a name="l626" style="background-color: #ffff99">            irrig_rate(c)         = 0._r8  ! reset; we'll add to this later</a>
+   627) <a name="l627" style="background-color: #ffff99">         else</a>
+   628) <a name="l628" style="background-color: #ffff99">            check_for_irrig(p)    = .false.</a>
+   629) <a name="l629" style="background-color: #ffff99">         end if</a>
+   630) <a name="l630" style="background-color: #ffff99">      else  ! non-irrig pft or elai&lt;=irrig_min_lai or btran&gt;irrig_btran_thresh</a>
+   631) <a name="l631" style="background-color: #ffffff">         check_for_irrig(p)       = .false.</a>
+   632) <a name="l632" style="background-color: #ffffff">      end if</a>
+   633) <a name="l633" style="background-color: #ffffff"></a>
+   634) <a name="l634" style="background-color: #ffffff">   end do</a>
+   635) <a name="l635" style="background-color: #ffffff"></a>
+   636) <a name="l636" style="background-color: #ffffff"></a>
+   637) <a name="l637" style="background-color: #ffffff">   ! Now 'measure' soil water for the grid cells identified above and see if the soil is dry enough to warrant irrigation</a>
+   638) <a name="l638" style="background-color: #ffffff">   frozen_soil(:) = .false.</a>
+   639) <a name="l639" style="background-color: #ffffff">   do j = 1,nlevgrnd</a>
+   640) <a name="l640" style="background-color: #ffffff">      do f = 1, fn</a>
+   641) <a name="l641" style="background-color: #ffffff">         p = filterp(f)</a>
+   642) <a name="l642" style="background-color: #ffffff">         c = pcolumn(p)</a>
+   643) <a name="l643" style="background-color: #ffffff">         if (</a><a style="background-color: #ffff99">check_for_irrig(p) .and. .not. frozen_soil(c)) then</a>
+   644) <a name="l644" style="background-color: #ffff99">            ! if level L was frozen, then we don't look at any levels below L</a>
+   645) <a name="l645" style="background-color: #ffff99">            if (t_soisno(c,j) &lt;= SHR_CONST_TKFRZ) then</a>
+   646) <a name="l646" style="background-color: #ffff99">               frozen_soil(c) = .true.</a>
+   647) <a name="l647" style="background-color: #ffff99">            else if (rootfr(p,j) &gt; 0._r8) then</a>
+   648) <a name="l648" style="background-color: #ffff99">               ! determine soil water deficit in this layer:</a>
+   649) <a name="l649" style="background-color: #ffff99"></a>
+   650) <a name="l650" style="background-color: #ffff99">               ! Calculate vol_liq_so - i.e., vol_liq at which smp_node = smpso - by inverting the above equations </a>
+   651) <a name="l651" style="background-color: #ffff99">               ! for the root resistance factors</a>
+   652) <a name="l652" style="background-color: #ffff99">               vol_ice      = min(watsat(c,j), h2osoi_ice(c,j)/(dz(c,j)*denice))  ! this duplicates the above equation for vol_ice</a>
+   653) <a name="l653" style="background-color: #ffff99">               eff_porosity = watsat(c,j)-vol_ice  ! this duplicates the above equation for eff_porosity</a>
+   654) <a name="l654" style="background-color: #ffff99">               vol_liq_so   = eff_porosity * (-smpso(ivt(p))/sucsat(c,j))**(-1/bsw(c,j))</a>
+   655) <a name="l655" style="background-color: #ffff99"></a>
+   656) <a name="l656" style="background-color: #ffff99">               ! Translate vol_liq_so and eff_porosity into h2osoi_liq_so and h2osoi_liq_sat and calculate deficit</a>
+   657) <a name="l657" style="background-color: #ffff99">               h2osoi_liq_so  = vol_liq_so * denh2o * dz(c,j)</a>
+   658) <a name="l658" style="background-color: #ffff99">               h2osoi_liq_sat = eff_porosity * denh2o * dz(c,j)</a>
+   659) <a name="l659" style="background-color: #ffff99">               deficit        = max((h2osoi_liq_so + irrig_factor*(h2osoi_liq_sat - h2osoi_liq_so)) - h2osoi_liq(c,j), 0._r8)</a>
+   660) <a name="l660" style="background-color: #ffff99"></a>
+   661) <a name="l661" style="background-color: #ffff99">               ! Add deficit to irrig_rate, converting units from mm to mm/sec</a>
+   662) <a name="l662" style="background-color: #ffff99">               irrig_rate(c)  = irrig_rate(c) + deficit/(dtime*irrig_nsteps_per_day)</a>
+   663) <a name="l663" style="background-color: #ffff99"></a>
+   664) <a name="l664" style="background-color: #ffff99">            end if  ! else if (rootfr(p,j) .gt. 0)</a>
+   665) <a name="l665" style="background-color: #ffff99">         end if     ! if (check_for_irrig(p) .and. .not. frozen_soil(c))</a>
+   666) <a name="l666" style="background-color: #ffff99">      end do        ! do f</a>
+   667) <a name="l667" style="background-color: #ffff99">   end do           ! do j</a>
+   668) <a name="l668" style="background-color: #ffff99"></a>
+   669) <a name="l669" style="background-color: #ffff99"> ! Modify aerodynamic parameters for sparse/dense canopy (X. Zeng)</a>
+   670) <a name="l670" style="background-color: #ffffff">   do f = 1, fn</a>
+   671) <a name="l671" style="background-color: #ffffff">      p = filterp(f)</a>
+   672) <a name="l672" style="background-color: #ffffff">      c = pcolumn(p)</a>
+   673) <a name="l673" style="background-color: #ffffff"></a>
+   674) <a name="l674" style="background-color: #ffffff">      lt = min(elai(p)+esai(p), tlsai_crit)</a>
+   675) <a name="l675" style="background-color: #ffffff">      egvf =(1._r8 - alpha_aero * exp(-lt)) / (1._r8 - alpha_aero * exp(-tlsai_crit))</a>
+   676) <a name="l676" style="background-color: #ffffff">      displa(p) = egvf * displa(p)</a>
+   677) <a name="l677" style="background-color: #ffffff">      z0mv(p)   = exp(egvf * log(z0mv(p)) + (1._r8 - egvf) * log(z0mg(c)))</a>
+   678) <a name="l678" style="background-color: #ffffff">      z0hv(p)   = z0mv(p)</a>
+   679) <a name="l679" style="background-color: #ffffff">      z0qv(p)   = z0mv(p)</a>
+   680) <a name="l680" style="background-color: #ffffff"></a>
+   681) <a name="l681" style="background-color: #ffffff">  end do</a>
+   682) <a name="l682" style="background-color: #ffffff"></a>
+   683) <a name="l683" style="background-color: #ffffff">   found = .false.</a>
+   684) <a name="l684" style="background-color: #ffffff">   do f = 1, fn</a>
+   685) <a name="l685" style="background-color: #ffffff">      p = filterp(f)</a>
+   686) <a name="l686" style="background-color: #ffffff">      c = pcolumn(p)</a>
+   687) <a name="l687" style="background-color: #ffffff">      g = pgridcell(p)</a>
+   688) <a name="l688" style="background-color: #ffffff"></a>
+   689) <a name="l689" style="background-color: #ffffff">      ! Net absorbed longwave radiation by canopy and ground</a>
+   690) <a name="l690" style="background-color: #ffffff">      ! =air+bir*t_veg**4+cir*t_grnd(c)**4</a>
+   691) <a name="l691" style="background-color: #ffffff"></a>
+   692) <a name="l692" style="background-color: #ffffff">      air(p) =   emv(p) * (1._r8+(1._r8-emv(p))*(1._r8-emg(c))) * forc_lwrad(g)</a>
+   693) <a name="l693" style="background-color: #ffffff">      bir(p) = - (2._r8-emv(p)*(1._r8-emg(c))) * emv(p) * sb</a>
+   694) <a name="l694" style="background-color: #ffffff">      cir(p) =   emv(p)*emg(c)*sb</a>
+   695) <a name="l695" style="background-color: #ffffff"></a>
+   696) <a name="l696" style="background-color: #ffffff">      ! Saturated vapor pressure, specific humidity, and their derivatives</a>
+   697) <a name="l697" style="background-color: #ffffff">      ! at the leaf surface</a>
+   698) <a name="l698" style="background-color: #ffffff"></a>
+   699) <a name="l699" style="background-color: #ffffff">      call QSat (t_veg(p), forc_pbot(g), el(p), deldT, qsatl(p), qsatldT(p))</a>
+   700) <a name="l700" style="background-color: #ffffff"></a>
+   701) <a name="l701" style="background-color: #ffffff">      ! Determine atmospheric co2 and o2</a>
+   702) <a name="l702" style="background-color: #ffffff"></a>
+   703) <a name="l703" style="background-color: #ffffff">      co2(p) = forc_pco2(g)</a>
+   704) <a name="l704" style="background-color: #ffffff">      o2(p)  = forc_po2(g)</a>
+   705) <a name="l705" style="background-color: #ffffff">      </a>
+   706) <a name="l706" style="background-color: #ffffff">      if (use_c13) then</a>
+   707) <a name="l707" style="background-color: #ffffff">         ! 4/14/05: PET</a>
+   708) <a name="l708" style="background-color: #ffffff">         ! Adding isotope code</a>
+   709) <a name="l709" style="background-color: #ffff99">         c13o2(p) = forc_pc13o2(g)</a>
+   710) <a name="l710" style="background-color: #ffff99">      end if</a>
+   711) <a name="l711" style="background-color: #ffff99">      </a>
+   712) <a name="l712" style="background-color: #ffff99">      ! Initialize flux profile</a>
+   713) <a name="l713" style="background-color: #ffff99"></a>
+   714) <a name="l714" style="background-color: #ffffff">      nmozsgn(p) = 0</a>
+   715) <a name="l715" style="background-color: #ffffff"></a>
+   716) <a name="l716" style="background-color: #ffffff">      taf(p) = (t_grnd(c) + thm(p))/2._r8</a>
+   717) <a name="l717" style="background-color: #ffffff">      qaf(p) = (forc_q(g)+qg(c))/2._r8</a>
+   718) <a name="l718" style="background-color: #ffffff"></a>
+   719) <a name="l719" style="background-color: #ffffff">      ur(p) = max(1.0_r8,sqrt(forc_u(g)*forc_u(g)+forc_v(g)*forc_v(g)))</a>
+   720) <a name="l720" style="background-color: #ffffff">      dth(p) = thm(p)-taf(p)</a>
+   721) <a name="l721" style="background-color: #ffffff">      dqh(p) = forc_q(g)-qaf(p)</a>
+   722) <a name="l722" style="background-color: #ffffff">      delq(p) = qg(c) - qaf(p)</a>
+   723) <a name="l723" style="background-color: #ffffff">      dthv(p) = dth(p)*(1._r8+0.61_r8*forc_q(g))+0.61_r8*forc_th(g)*dqh(p)</a>
+   724) <a name="l724" style="background-color: #ffffff">      zldis(p) = forc_hgt_u_pft(p) - displa(p)</a>
+   725) <a name="l725" style="background-color: #ffffff"></a>
+   726) <a name="l726" style="background-color: #ffffff">      ! Check to see if the forcing height is below the canopy height</a>
+   727) <a name="l727" style="background-color: #ffffff">      if (zldis(p) &lt; 0._r8) then</a>
+   728) <a name="l728" style="background-color: #ffff99">         found = .true.</a>
+   729) <a name="l729" style="background-color: #ffff99">         index = p</a>
+   730) <a name="l730" style="background-color: #ffff99">      end if</a>
+   731) <a name="l731" style="background-color: #ffff99"></a>
+   732) <a name="l732" style="background-color: #ffff99">   end do</a>
+   733) <a name="l733" style="background-color: #ffff99"></a>
+   734) <a name="l734" style="background-color: #ffffff">   if (found) then</a>
+   735) <a name="l735" style="background-color: #ffff99">      write(iulog,*)'Error: Forcing height is below canopy height for pft index ',index</a>
+   736) <a name="l736" style="background-color: #ffff99">      call endrun()</a>
+   737) <a name="l737" style="background-color: #ffff99">   end if</a>
+   738) <a name="l738" style="background-color: #ffff99"></a>
+   739) <a name="l739" style="background-color: #ffffff">   do f = 1, fn</a>
+   740) <a name="l740" style="background-color: #ffffff">      p = filterp(f)</a>
+   741) <a name="l741" style="background-color: #ffffff">      c = pcolumn(p)</a>
+   742) <a name="l742" style="background-color: #ffffff"></a>
+   743) <a name="l743" style="background-color: #ffffff">      ! Initialize Monin-Obukhov length and wind speed</a>
+   744) <a name="l744" style="background-color: #ffffff"></a>
+   745) <a name="l745" style="background-color: #ffffff">      call MoninObukIni(ur(p), thv(c), dthv(p), zldis(p), z0mv(p), um(p), obu(p))</a>
+   746) <a name="l746" style="background-color: #ffffff"></a>
+   747) <a name="l747" style="background-color: #ffffff">   end do</a>
+   748) <a name="l748" style="background-color: #ffffff"></a>
+   749) <a name="l749" style="background-color: #ffffff">   ! Set counter for leaf temperature iteration (itlef)</a>
+   750) <a name="l750" style="background-color: #ffffff"></a>
+   751) <a name="l751" style="background-color: #ffffff">   itlef = 0    </a>
+   752) <a name="l752" style="background-color: #ffffff">   fnorig = fn</a>
+   753) <a name="l753" style="background-color: #ffffff">   fporig(1:fn) = filterp(1:fn)</a>
+   754) <a name="l754" style="background-color: #ffffff"></a>
+   755) <a name="l755" style="background-color: #ffffff">   ! Make copies so that array sections are not passed in function calls to friction velocity</a>
+   756) <a name="l756" style="background-color: #ffffff">   </a>
+   757) <a name="l757" style="background-color: #ffffff">   do f = 1, fn</a>
+   758) <a name="l758" style="background-color: #ffffff">      p = filterp(f)</a>
+   759) <a name="l759" style="background-color: #ffffff">      displa_loc(p) = displa(p)</a>
+   760) <a name="l760" style="background-color: #ffffff">      z0mv_loc(p) = z0mv(p)</a>
+   761) <a name="l761" style="background-color: #ffffff">      z0hv_loc(p) = z0hv(p)</a>
+   762) <a name="l762" style="background-color: #ffffff">      z0qv_loc(p) = z0qv(p)</a>
+   763) <a name="l763" style="background-color: #ffffff">   end do</a>
+   764) <a name="l764" style="background-color: #ffffff"></a>
+   765) <a name="l765" style="background-color: #ffffff">   ! Begin stability iteration</a>
+   766) <a name="l766" style="background-color: #ffffff"></a>
+   767) <a name="l767" style="background-color: #ffffff">   ITERATION : do while (itlef &lt;= itmax .and. fn &gt; 0)</a>
+   768) <a name="l768" style="background-color: #ffffff"></a>
+   769) <a name="l769" style="background-color: #ffffff">      ! Determine friction velocity, and potential temperature and humidity</a>
+   770) <a name="l770" style="background-color: #ffffff">      ! profiles of the surface boundary layer</a>
+   771) <a name="l771" style="background-color: #ffffff"></a>
+   772) <a name="l772" style="background-color: #ffffff">      call FrictionVelocity (lbp, ubp, fn, filterp, &amp;</a>
+   773) <a name="l773" style="background-color: #ffffff">                             displa_loc, z0mv_loc, z0hv_loc, z0qv_loc, &amp;</a>
+   774) <a name="l774" style="background-color: #ffffff">                             obu, itlef+1, ur, um, ustar, &amp;</a>
+   775) <a name="l775" style="background-color: #ffffff">                             temp1, temp2, temp12m, temp22m, fm)</a>
+   776) <a name="l776" style="background-color: #ffffff"></a>
+   777) <a name="l777" style="background-color: #ffffff">      do f = 1, fn</a>
+   778) <a name="l778" style="background-color: #ffffff">         p = filterp(f)</a>
+   779) <a name="l779" style="background-color: #ffffff">         c = pcolumn(p)</a>
+   780) <a name="l780" style="background-color: #ffffff">         g = pgridcell(p)</a>
+   781) <a name="l781" style="background-color: #ffffff"></a>
+   782) <a name="l782" style="background-color: #ffffff">         tlbef(p) = t_veg(p)</a>
+   783) <a name="l783" style="background-color: #ffffff">         del2(p) = del(p)</a>
+   784) <a name="l784" style="background-color: #ffffff"></a>
+   785) <a name="l785" style="background-color: #ffffff">         ! Determine aerodynamic resistances</a>
+   786) <a name="l786" style="background-color: #ffffff"></a>
+   787) <a name="l787" style="background-color: #ffffff">         ram1(p)  = 1._r8/(ustar(p)*ustar(p)/um(p))</a>
+   788) <a name="l788" style="background-color: #ffffff">         rah(p,1) = 1._r8/(temp1(p)*ustar(p))</a>
+   789) <a name="l789" style="background-color: #ffffff">         raw(p,1) = 1._r8/(temp2(p)*ustar(p))</a>
+   790) <a name="l790" style="background-color: #ffffff"></a>
+   791) <a name="l791" style="background-color: #ffffff">         ! Bulk boundary layer resistance of leaves</a>
+   792) <a name="l792" style="background-color: #ffffff"></a>
+   793) <a name="l793" style="background-color: #ffffff">         uaf(p) = um(p)*sqrt( 1._r8/(ram1(p)*um(p)) )</a>
+   794) <a name="l794" style="background-color: #ffffff">         cf  = 0.01_r8/(sqrt(uaf(p))*sqrt(dleaf(ivt(p))))</a>
+   795) <a name="l795" style="background-color: #ffffff">         rb(p)  = 1._r8/(cf*uaf(p))</a>
+   796) <a name="l796" style="background-color: #ffffff">         rb1(p) = rb(p)</a>
+   797) <a name="l797" style="background-color: #ffffff">  </a>
+   798) <a name="l798" style="background-color: #ffffff">         ! Parameterization for variation of csoilc with canopy density from</a>
+   799) <a name="l799" style="background-color: #ffffff">         ! X. Zeng, University of Arizona</a>
+   800) <a name="l800" style="background-color: #ffffff"></a>
+   801) <a name="l801" style="background-color: #ffffff">         w = exp(-(elai(p)+esai(p)))</a>
+   802) <a name="l802" style="background-color: #ffffff"></a>
+   803) <a name="l803" style="background-color: #ffffff">         ! changed by K.Sakaguchi from here</a>
+   804) <a name="l804" style="background-color: #ffffff">         ! transfer coefficient over bare soil is changed to a local variable</a>
+   805) <a name="l805" style="background-color: #ffffff">         ! just for readability of the code (from line 680)</a>
+   806) <a name="l806" style="background-color: #ffffff">         csoilb = (vkc/(0.13_r8*(z0mg(c)*uaf(p)/1.5e-5_r8)**0.45_r8))</a>
+   807) <a name="l807" style="background-color: #ffffff"></a>
+   808) <a name="l808" style="background-color: #ffffff">         !compute the stability parameter for ricsoilc  (&quot;S&quot; in Sakaguchi&amp;Zeng,2008)</a>
+   809) <a name="l809" style="background-color: #ffffff"></a>
+   810) <a name="l810" style="background-color: #ffffff">         ri = ( grav*htop(p) * (taf(p) - t_grnd(c)) ) / (taf(p) * uaf(p) **2.00_r8)</a>
+   811) <a name="l811" style="background-color: #ffffff"></a>
+   812) <a name="l812" style="background-color: #ffffff">         !! modify csoilc value (0.004) if the under-canopy is in stable condition</a>
+   813) <a name="l813" style="background-color: #ffffff"></a>
+   814) <a name="l814" style="background-color: #ffffff">         if ( (taf(p) - t_grnd(c) ) &gt; 0._r8) then</a>
+   815) <a name="l815" style="background-color: #ffffff">               ! decrease the value of csoilc by dividing it with (1+gamma*min(S, 10.0))</a>
+   816) <a name="l816" style="background-color: #ffffff">               ! ria (&quot;gmanna&quot; in Sakaguchi&amp;Zeng, 2008) is a constant (=0.5)</a>
+   817) <a name="l817" style="background-color: #ffffff">               ricsoilc = csoilc / (1.00_r8 + ria*min( ri, 10.0_r8) )</a>
+   818) <a name="l818" style="background-color: #ffffff">               csoilcn = csoilb*w + ricsoilc*(1._r8-w)</a>
+   819) <a name="l819" style="background-color: #ffffff">         else</a>
+   820) <a name="l820" style="background-color: #ffffff">              csoilcn = csoilb*w + csoilc*(1._r8-w)</a>
+   821) <a name="l821" style="background-color: #ffffff">         end if</a>
+   822) <a name="l822" style="background-color: #ffffff"></a>
+   823) <a name="l823" style="background-color: #ffffff">         !! Sakaguchi changes for stability formulation ends here</a>
+   824) <a name="l824" style="background-color: #ffffff"></a>
+   825) <a name="l825" style="background-color: #ffffff">         rah(p,2) = 1._r8/(csoilcn*uaf(p))</a>
+   826) <a name="l826" style="background-color: #ffffff">         raw(p,2) = rah(p,2)</a>
+   827) <a name="l827" style="background-color: #ffffff"></a>
+   828) <a name="l828" style="background-color: #ffffff">         ! Stomatal resistances for sunlit and shaded fractions of canopy.</a>
+   829) <a name="l829" style="background-color: #ffffff">         ! Done each iteration to account for differences in eah, tv.</a>
+   830) <a name="l830" style="background-color: #ffffff"></a>
+   831) <a name="l831" style="background-color: #ffffff">         svpts(p) = el(p)                         ! pa</a>
+   832) <a name="l832" style="background-color: #ffffff">         eah(p) = forc_pbot(g) * qaf(p) / 0.622_r8   ! pa</a>
+   833) <a name="l833" style="background-color: #ffffff">      end do</a>
+   834) <a name="l834" style="background-color: #ffffff"></a>
+   835) <a name="l835" style="background-color: #ffffff">      ! 4/25/05, PET: Now calling the sun/shade version of Stomata by default</a>
+   836) <a name="l836" style="background-color: #ffffff">      call Stomata (fn, filterp, lbp, ubp, svpts, eah, o2, co2, rb, dayl_factor, phase='sun')</a>
+   837) <a name="l837" style="background-color: #ffffff">      call Stomata (fn, filterp, lbp, ubp, svpts, eah, o2, co2, rb, dayl_factor, phase='sha')</a>
+   838) <a name="l838" style="background-color: #ffffff"></a>
+   839) <a name="l839" style="background-color: #ffffff">      do f = 1, fn</a>
+   840) <a name="l840" style="background-color: #ffffff">         p = filterp(f)</a>
+   841) <a name="l841" style="background-color: #ffffff">         c = pcolumn(p)</a>
+   842) <a name="l842" style="background-color: #ffffff">         g = pgridcell(p)</a>
+   843) <a name="l843" style="background-color: #ffffff"></a>
+   844) <a name="l844" style="background-color: #ffffff">         ! Sensible heat conductance for air, leaf and ground</a>
+   845) <a name="l845" style="background-color: #ffffff">         ! Moved the original subroutine in-line...</a>
+   846) <a name="l846" style="background-color: #ffffff"></a>
+   847) <a name="l847" style="background-color: #ffffff">         wta    = 1._r8/rah(p,1)             ! air</a>
+   848) <a name="l848" style="background-color: #ffffff">         wtl    = (elai(p)+esai(p))/rb(p)    ! leaf</a>
+   849) <a name="l849" style="background-color: #ffffff">         wtg(p) = 1._r8/rah(p,2)             ! ground</a>
+   850) <a name="l850" style="background-color: #ffffff">         wtshi  = 1._r8/(wta+wtl+wtg(p))</a>
+   851) <a name="l851" style="background-color: #ffffff"></a>
+   852) <a name="l852" style="background-color: #ffffff">         wtl0(p) = wtl*wtshi         ! leaf</a>
+   853) <a name="l853" style="background-color: #ffffff">         wtg0    = wtg(p)*wtshi      ! ground</a>
+   854) <a name="l854" style="background-color: #ffffff">         wta0(p) = wta*wtshi         ! air</a>
+   855) <a name="l855" style="background-color: #ffffff"></a>
+   856) <a name="l856" style="background-color: #ffffff">         wtga    = wta0(p)+wtg0      ! ground + air</a>
+   857) <a name="l857" style="background-color: #ffffff">         wtal(p) = wta0(p)+wtl0(p)   ! air + leaf</a>
+   858) <a name="l858" style="background-color: #ffffff"></a>
+   859) <a name="l859" style="background-color: #ffffff">         ! Fraction of potential evaporation from leaf</a>
+   860) <a name="l860" style="background-color: #ffffff"></a>
+   861) <a name="l861" style="background-color: #ffffff">         if (fdry(p) .gt. 0._r8) then</a>
+   862) <a name="l862" style="background-color: #ffffff">            rppdry  = fdry(p)*rb(p)*(laisun(p)/(rb(p)+rssun(p)) + &amp;</a>
+   863) <a name="l863" style="background-color: #ffffff">                                     laisha(p)/(rb(p)+rssha(p)))/elai(p)</a>
+   864) <a name="l864" style="background-color: #ffffff">         else</a>
+   865) <a name="l865" style="background-color: #ffffff">            rppdry = 0._r8</a>
+   866) <a name="l866" style="background-color: #ffffff">         end if</a>
+   867) <a name="l867" style="background-color: #ffffff">         efpot = forc_rho(g)*wtl*(qsatl(p)-qaf(p))</a>
+   868) <a name="l868" style="background-color: #ffffff"></a>
+   869) <a name="l869" style="background-color: #ffffff">         if (efpot &gt; 0._r8) then</a>
+   870) <a name="l870" style="background-color: #ffffff">            if (btran(p) &gt; btran0) then</a>
+   871) <a name="l871" style="background-color: #ffffff">               qflx_tran_veg(p) = efpot*rppdry</a>
+   872) <a name="l872" style="background-color: #ffffff">               rpp = rppdry + fwet(p)</a>
+   873) <a name="l873" style="background-color: #ffffff">            else</a>
+   874) <a name="l874" style="background-color: #ffffff">               !No transpiration if btran below 1.e-10</a>
+   875) <a name="l875" style="background-color: #ffffff">               rpp = fwet(p)</a>
+   876) <a name="l876" style="background-color: #ffffff">               qflx_tran_veg(p) = 0._r8</a>
+   877) <a name="l877" style="background-color: #ffffff">            end if</a>
+   878) <a name="l878" style="background-color: #ffffff">            !Check total evapotranspiration from leaves</a>
+   879) <a name="l879" style="background-color: #ffffff">            rpp = min(rpp, (qflx_tran_veg(p)+h2ocan(p)/dtime)/efpot)</a>
+   880) <a name="l880" style="background-color: #ffffff">         else</a>
+   881) <a name="l881" style="background-color: #ffffff">            !No transpiration if potential evaporation less than zero</a>
+   882) <a name="l882" style="background-color: #ffffff">            rpp = 1._r8</a>
+   883) <a name="l883" style="background-color: #ffffff">            qflx_tran_veg(p) = 0._r8</a>
+   884) <a name="l884" style="background-color: #ffffff">         end if</a>
+   885) <a name="l885" style="background-color: #ffffff"></a>
+   886) <a name="l886" style="background-color: #ffffff">         ! Update conductances for changes in rpp</a>
+   887) <a name="l887" style="background-color: #ffffff">         ! Latent heat conductances for ground and leaf.</a>
+   888) <a name="l888" style="background-color: #ffffff">         ! Air has same conductance for both sensible and latent heat.</a>
+   889) <a name="l889" style="background-color: #ffffff">         ! Moved the original subroutine in-line...</a>
+   890) <a name="l890" style="background-color: #ffffff"></a>
+   891) <a name="l891" style="background-color: #ffffff">         wtaq    = frac_veg_nosno(p)/raw(p,1)                        ! air</a>
+   892) <a name="l892" style="background-color: #ffffff">         wtlq    = frac_veg_nosno(p)*(elai(p)+esai(p))/rb(p) * rpp   ! leaf</a>
+   893) <a name="l893" style="background-color: #ffffff"></a>
+   894) <a name="l894" style="background-color: #ffffff">         !Litter layer resistance. Added by K.Sakaguchi</a>
+   895) <a name="l895" style="background-color: #ffffff">         snowdp_c = z_dl ! critical depth for 100% litter burial by snow (=litter thickness)</a>
+   896) <a name="l896" style="background-color: #ffffff">         fsno_dl = snowdp(c)/snowdp_c    ! effective snow cover for (dry)plant litter</a>
+   897) <a name="l897" style="background-color: #ffffff">         elai_dl = lai_dl*(1._r8 - min(fsno_dl,1._r8)) ! exposed (dry)litter area index</a>
+   898) <a name="l898" style="background-color: #ffffff">         rdl = ( 1._r8 - exp(-elai_dl) ) / ( 0.004_r8*uaf(p)) ! dry litter layer resistance</a>
+   899) <a name="l899" style="background-color: #ffffff"></a>
+   900) <a name="l900" style="background-color: #ffffff">         ! add litter resistance and Lee and Pielke 1992 beta</a>
+   901) <a name="l901" style="background-color: #ffffff">         if (delq(p) .lt. 0._r8) then  !dew. Do not apply beta for negative flux (follow old rsoil)</a>
+   902) <a name="l902" style="background-color: #ffffff">            wtgq(p) = frac_veg_nosno(p)/(raw(p,2)+rdl)</a>
+   903) <a name="l903" style="background-color: #ffffff">         else</a>
+   904) <a name="l904" style="background-color: #ffffff">            wtgq(p) = soilbeta(c)*frac_veg_nosno(p)/(raw(p,2)+rdl)</a>
+   905) <a name="l905" style="background-color: #ffffff">         end if</a>
+   906) <a name="l906" style="background-color: #ffffff"></a>
+   907) <a name="l907" style="background-color: #ffffff">         wtsqi   = 1._r8/(wtaq+wtlq+wtgq(p))</a>
+   908) <a name="l908" style="background-color: #ffffff"></a>
+   909) <a name="l909" style="background-color: #ffffff">         wtgq0    = wtgq(p)*wtsqi      ! ground</a>
+   910) <a name="l910" style="background-color: #ffffff">         wtlq0(p) = wtlq*wtsqi         ! leaf</a>
+   911) <a name="l911" style="background-color: #ffffff">         wtaq0(p) = wtaq*wtsqi         ! air</a>
+   912) <a name="l912" style="background-color: #ffffff"></a>
+   913) <a name="l913" style="background-color: #ffffff">         wtgaq    = wtaq0(p)+wtgq0     ! air + ground</a>
+   914) <a name="l914" style="background-color: #ffffff">         wtalq(p) = wtaq0(p)+wtlq0(p)  ! air + leaf</a>
+   915) <a name="l915" style="background-color: #ffffff"></a>
+   916) <a name="l916" style="background-color: #ffffff">         dc1 = forc_rho(g)*cpair*wtl</a>
+   917) <a name="l917" style="background-color: #ffffff">         dc2 = hvap*forc_rho(g)*wtlq</a>
+   918) <a name="l918" style="background-color: #ffffff"></a>
+   919) <a name="l919" style="background-color: #ffffff">         efsh   = dc1*(wtga*t_veg(p)-wtg0*t_grnd(c)-wta0(p)*thm(p))</a>
+   920) <a name="l920" style="background-color: #ffffff">         efe(p) = dc2*(wtgaq*qsatl(p)-wtgq0*qg(c)-wtaq0(p)*forc_q(g))</a>
+   921) <a name="l921" style="background-color: #ffffff"></a>
+   922) <a name="l922" style="background-color: #ffffff">         ! Evaporation flux from foliage</a>
+   923) <a name="l923" style="background-color: #ffffff"></a>
+   924) <a name="l924" style="background-color: #ffffff">         erre = 0._r8</a>
+   925) <a name="l925" style="background-color: #ffffff">         if (efe(p)*efeb(p) &lt; 0._r8) then</a>
+   926) <a name="l926" style="background-color: #ffffff">            efeold = efe(p)</a>
+   927) <a name="l927" style="background-color: #ffffff">            efe(p)  = 0.1_r8*efeold</a>
+   928) <a name="l928" style="background-color: #ffffff">            erre = efe(p) - efeold</a>
+   929) <a name="l929" style="background-color: #ffffff">         end if</a>
+   930) <a name="l930" style="background-color: #ffffff">         dt_veg(p) = (sabv(p) + air(p) + bir(p)*t_veg(p)**4 + &amp;</a>
+   931) <a name="l931" style="background-color: #ffffff">              cir(p)*t_grnd(c)**4 - efsh - efe(p)) / &amp;</a>
+   932) <a name="l932" style="background-color: #ffffff">              (- 4._r8*bir(p)*t_veg(p)**3 +dc1*wtga +dc2*wtgaq*qsatldT(p))</a>
+   933) <a name="l933" style="background-color: #ffffff">         t_veg(p) = tlbef(p) + dt_veg(p)</a>
+   934) <a name="l934" style="background-color: #ffffff">         dels = dt_veg(p)</a>
+   935) <a name="l935" style="background-color: #ffffff">         del(p)  = abs(dels)</a>
+   936) <a name="l936" style="background-color: #ffffff">         err(p) = 0._r8</a>
+   937) <a name="l937" style="background-color: #ffffff">         if (del(p) &gt; delmax) then</a>
+   938) <a name="l938" style="background-color: #ffffff">            dt_veg(p) = delmax*dels/del(p)</a>
+   939) <a name="l939" style="background-color: #ffffff">            t_veg(p) = tlbef(p) + dt_veg(p)</a>
+   940) <a name="l940" style="background-color: #ffffff">            err(p) = sabv(p) + air(p) + bir(p)*tlbef(p)**3*(tlbef(p) + &amp;</a>
+   941) <a name="l941" style="background-color: #ffffff">                 4._r8*dt_veg(p)) + cir(p)*t_grnd(c)**4 - &amp;</a>
+   942) <a name="l942" style="background-color: #ffffff">                 (efsh + dc1*wtga*dt_veg(p)) - (efe(p) + &amp;</a>
+   943) <a name="l943" style="background-color: #ffffff">                 dc2*wtgaq*qsatldT(p)*dt_veg(p))</a>
+   944) <a name="l944" style="background-color: #ffffff">         end if</a>
+   945) <a name="l945" style="background-color: #ffffff"></a>
+   946) <a name="l946" style="background-color: #ffffff">         ! Fluxes from leaves to canopy space</a>
+   947) <a name="l947" style="background-color: #ffffff">         ! &quot;efe&quot; was limited as its sign changes frequently.  This limit may</a>
+   948) <a name="l948" style="background-color: #ffffff">         ! result in an imbalance in &quot;hvap*qflx_evap_veg&quot; and</a>
+   949) <a name="l949" style="background-color: #ffffff">         ! &quot;efe + dc2*wtgaq*qsatdt_veg&quot;</a>
+   950) <a name="l950" style="background-color: #ffffff"></a>
+   951) <a name="l951" style="background-color: #ffffff">         efpot = forc_rho(g)*wtl*(wtgaq*(qsatl(p)+qsatldT(p)*dt_veg(p)) &amp;</a>
+   952) <a name="l952" style="background-color: #ffffff">            -wtgq0*qg(c)-wtaq0(p)*forc_q(g))</a>
+   953) <a name="l953" style="background-color: #ffffff">         qflx_evap_veg(p) = rpp*efpot</a>
+   954) <a name="l954" style="background-color: #ffffff">         </a>
+   955) <a name="l955" style="background-color: #ffffff">         ! Calculation of evaporative potentials (efpot) and</a>
+   956) <a name="l956" style="background-color: #ffffff">         ! interception losses; flux in kg m**-2 s-1.  ecidif</a>
+   957) <a name="l957" style="background-color: #ffffff">         ! holds the excess energy if all intercepted water is evaporated</a>
+   958) <a name="l958" style="background-color: #ffffff">         ! during the timestep.  This energy is later added to the</a>
+   959) <a name="l959" style="background-color: #ffffff">         ! sensible heat flux.</a>
+   960) <a name="l960" style="background-color: #ffffff"></a>
+   961) <a name="l961" style="background-color: #ffffff">         ecidif = 0._r8</a>
+   962) <a name="l962" style="background-color: #ffffff">         if (efpot &gt; 0._r8 .and. btran(p) &gt; btran0) then</a>
+   963) <a name="l963" style="background-color: #ffffff">            qflx_tran_veg(p) = efpot*rppdry</a>
+   964) <a name="l964" style="background-color: #ffffff">         else</a>
+   965) <a name="l965" style="background-color: #ffffff">            qflx_tran_veg(p) = 0._r8</a>
+   966) <a name="l966" style="background-color: #ffffff">         end if</a>
+   967) <a name="l967" style="background-color: #ffffff">         ecidif = max(0._r8, qflx_evap_veg(p)-qflx_tran_veg(p)-h2ocan(p)/dtime)</a>
+   968) <a name="l968" style="background-color: #ffffff">         qflx_evap_veg(p) = min(qflx_evap_veg(p),qflx_tran_veg(p)+h2ocan(p)/dtime)</a>
+   969) <a name="l969" style="background-color: #ffffff"></a>
+   970) <a name="l970" style="background-color: #ffffff">         ! The energy loss due to above two limits is added to</a>
+   971) <a name="l971" style="background-color: #ffffff">         ! the sensible heat flux.</a>
+   972) <a name="l972" style="background-color: #ffffff"></a>
+   973) <a name="l973" style="background-color: #ffffff">         eflx_sh_veg(p) = efsh + dc1*wtga*dt_veg(p) + err(p) + erre + hvap*ecidif</a>
+   974) <a name="l974" style="background-color: #ffffff"></a>
+   975) <a name="l975" style="background-color: #ffffff">         ! Re-calculate saturated vapor pressure, specific humidity, and their</a>
+   976) <a name="l976" style="background-color: #ffffff">         ! derivatives at the leaf surface</a>
+   977) <a name="l977" style="background-color: #ffffff"></a>
+   978) <a name="l978" style="background-color: #ffffff">         call QSat(t_veg(p), forc_pbot(g), el(p), deldT, qsatl(p), qsatldT(p))</a>
+   979) <a name="l979" style="background-color: #ffffff"></a>
+   980) <a name="l980" style="background-color: #ffffff">         ! Update vegetation/ground surface temperature, canopy air</a>
+   981) <a name="l981" style="background-color: #ffffff">         ! temperature, canopy vapor pressure, aerodynamic temperature, and</a>
+   982) <a name="l982" style="background-color: #ffffff">         ! Monin-Obukhov stability parameter for next iteration.</a>
+   983) <a name="l983" style="background-color: #ffffff"></a>
+   984) <a name="l984" style="background-color: #ffffff">         taf(p) = wtg0*t_grnd(c) + wta0(p)*thm(p) + wtl0(p)*t_veg(p)</a>
+   985) <a name="l985" style="background-color: #ffffff">         qaf(p) = wtlq0(p)*qsatl(p) + wtgq0*qg(c) + forc_q(g)*wtaq0(p)</a>
+   986) <a name="l986" style="background-color: #ffffff"></a>
+   987) <a name="l987" style="background-color: #ffffff">         ! Update Monin-Obukhov length and wind speed including the</a>
+   988) <a name="l988" style="background-color: #ffffff">         ! stability effect</a>
+   989) <a name="l989" style="background-color: #ffffff"></a>
+   990) <a name="l990" style="background-color: #ffffff">         dth(p) = thm(p)-taf(p)</a>
+   991) <a name="l991" style="background-color: #ffffff">         dqh(p) = forc_q(g)-qaf(p)</a>
+   992) <a name="l992" style="background-color: #ffffff">         delq(p) = wtalq(p)*qg(c)-wtlq0(p)*qsatl(p)-wtaq0(p)*forc_q(g)</a>
+   993) <a name="l993" style="background-color: #ffffff"></a>
+   994) <a name="l994" style="background-color: #ffffff">         tstar = temp1(p)*dth(p)</a>
+   995) <a name="l995" style="background-color: #ffffff">         qstar = temp2(p)*dqh(p)</a>
+   996) <a name="l996" style="background-color: #ffffff"></a>
+   997) <a name="l997" style="background-color: #ffffff">         thvstar = tstar*(1._r8+0.61_r8*forc_q(g)) + 0.61_r8*forc_th(g)*qstar</a>
+   998) <a name="l998" style="background-color: #ffffff">         zeta = zldis(p)*vkc*grav*thvstar/(ustar(p)**2*thv(c))</a>
+   999) <a name="l999" style="background-color: #ffffff"></a>
+  1000) <a name="l1000" style="background-color: #ffffff">         if (zeta &gt;= 0._r8) then     !stable</a>
+  1001) <a name="l1001" style="background-color: #ffffff">            zeta = min(2._r8,max(zeta,0.01_r8))</a>
+  1002) <a name="l1002" style="background-color: #ffffff">            um(p) = max(ur(p),0.1_r8)</a>
+  1003) <a name="l1003" style="background-color: #ffffff">         else                     !unstable</a>
+  1004) <a name="l1004" style="background-color: #ffffff">            zeta = max(-100._r8,min(zeta,-0.01_r8))</a>
+  1005) <a name="l1005" style="background-color: #ffffff">            wc = beta*(-grav*ustar(p)*thvstar*zii/thv(c))**0.333_r8</a>
+  1006) <a name="l1006" style="background-color: #ffffff">            um(p) = sqrt(ur(p)*ur(p)+wc*wc)</a>
+  1007) <a name="l1007" style="background-color: #ffffff">         end if</a>
+  1008) <a name="l1008" style="background-color: #ffffff">         obu(p) = zldis(p)/zeta</a>
+  1009) <a name="l1009" style="background-color: #ffffff"></a>
+  1010) <a name="l1010" style="background-color: #ffffff">         if (obuold(p)*obu(p) &lt; 0._r8) nmozsgn(p) = nmozsgn(p)+1</a>
+  1011) <a name="l1011" style="background-color: #ffffff">         if (nmozsgn(p) &gt;= 4) obu(p) = zldis(p)/(-0.01_r8)</a>
+  1012) <a name="l1012" style="background-color: #ffffff">         obuold(p) = obu(p)</a>
+  1013) <a name="l1013" style="background-color: #ffffff"></a>
+  1014) <a name="l1014" style="background-color: #ffffff">      end do   ! end of filtered pft loop</a>
+  1015) <a name="l1015" style="background-color: #ffffff"></a>
+  1016) <a name="l1016" style="background-color: #ffffff">      ! Test for convergence</a>
+  1017) <a name="l1017" style="background-color: #ffffff"></a>
+  1018) <a name="l1018" style="background-color: #ffffff">      itlef = itlef+1</a>
+  1019) <a name="l1019" style="background-color: #ffffff">      if (itlef &gt; itmin) then</a>
+  1020) <a name="l1020" style="background-color: #ffffff">         do f = 1, fn</a>
+  1021) <a name="l1021" style="background-color: #ffffff">            p = filterp(f)</a>
+  1022) <a name="l1022" style="background-color: #ffffff">            dele(p) = abs(efe(p)-efeb(p))</a>
+  1023) <a name="l1023" style="background-color: #ffffff">            efeb(p) = efe(p)</a>
+  1024) <a name="l1024" style="background-color: #ffffff">            det(p)  = max(del(p),del2(p))</a>
+  1025) <a name="l1025" style="background-color: #ffffff">         end do</a>
+  1026) <a name="l1026" style="background-color: #ffffff">         fnold = fn</a>
+  1027) <a name="l1027" style="background-color: #ffffff">         fn = 0</a>
+  1028) <a name="l1028" style="background-color: #ffffff">         do f = 1, fnold</a>
+  1029) <a name="l1029" style="background-color: #ffffff">            p = filterp(f)</a>
+  1030) <a name="l1030" style="background-color: #ffffff">            if (.not. (det(p) &lt; dtmin .and. dele(p) &lt; dlemin)) then</a>
+  1031) <a name="l1031" style="background-color: #ffffff">               fn = fn + 1</a>
+  1032) <a name="l1032" style="background-color: #ffffff">               filterp(fn) = p</a>
+  1033) <a name="l1033" style="background-color: #ffffff">            end if</a>
+  1034) <a name="l1034" style="background-color: #ffffff">         end do</a>
+  1035) <a name="l1035" style="background-color: #ffffff">      end if</a>
+  1036) <a name="l1036" style="background-color: #ffffff"></a>
+  1037) <a name="l1037" style="background-color: #ffffff">   end do ITERATION     ! End stability iteration</a>
+  1038) <a name="l1038" style="background-color: #ffffff"></a>
+  1039) <a name="l1039" style="background-color: #ffffff">   fn = fnorig</a>
+  1040) <a name="l1040" style="background-color: #ffffff">   filterp(1:fn) = fporig(1:fn)</a>
+  1041) <a name="l1041" style="background-color: #ffffff"></a>
+  1042) <a name="l1042" style="background-color: #ffffff">   do f = 1, fn</a>
+  1043) <a name="l1043" style="background-color: #ffffff">      p = filterp(f)</a>
+  1044) <a name="l1044" style="background-color: #ffffff">      c = pcolumn(p)</a>
+  1045) <a name="l1045" style="background-color: #ffffff">      g = pgridcell(p)</a>
+  1046) <a name="l1046" style="background-color: #ffffff"></a>
+  1047) <a name="l1047" style="background-color: #ffffff">      ! Energy balance check in canopy</a>
+  1048) <a name="l1048" style="background-color: #ffffff"></a>
+  1049) <a name="l1049" style="background-color: #ffffff">      err(p) = sabv(p) + air(p) + bir(p)*tlbef(p)**3*(tlbef(p) + 4._r8*dt_veg(p)) &amp;</a>
+  1050) <a name="l1050" style="background-color: #ffffff">         + cir(p)*t_grnd(c)**4 - eflx_sh_veg(p) - hvap*qflx_evap_veg(p)</a>
+  1051) <a name="l1051" style="background-color: #ffffff"></a>
+  1052) <a name="l1052" style="background-color: #ffffff">      ! Fluxes from ground to canopy space</a>
+  1053) <a name="l1053" style="background-color: #ffffff"></a>
+  1054) <a name="l1054" style="background-color: #ffffff">      delt    = wtal(p)*t_grnd(c)-wtl0(p)*t_veg(p)-wta0(p)*thm(p)</a>
+  1055) <a name="l1055" style="background-color: #ffffff">      taux(p) = -forc_rho(g)*forc_u(g)/ram1(p)</a>
+  1056) <a name="l1056" style="background-color: #ffffff">      tauy(p) = -forc_rho(g)*forc_v(g)/ram1(p)</a>
+  1057) <a name="l1057" style="background-color: #ffffff">      eflx_sh_grnd(p) = cpair*forc_rho(g)*wtg(p)*delt</a>
+  1058) <a name="l1058" style="background-color: #ffffff">      qflx_evap_soi(p) = forc_rho(g)*wtgq(p)*delq(p)</a>
+  1059) <a name="l1059" style="background-color: #ffffff"></a>
+  1060) <a name="l1060" style="background-color: #ffffff">      ! 2 m height air temperature</a>
+  1061) <a name="l1061" style="background-color: #ffffff"></a>
+  1062) <a name="l1062" style="background-color: #ffffff">      t_ref2m(p) = thm(p) + temp1(p)*dth(p)*(1._r8/temp12m(p) - 1._r8/temp1(p))</a>
+  1063) <a name="l1063" style="background-color: #ffffff">      t_ref2m_r(p) = t_ref2m(p)</a>
+  1064) <a name="l1064" style="background-color: #ffffff"></a>
+  1065) <a name="l1065" style="background-color: #ffffff">      ! 2 m height specific humidity</a>
+  1066) <a name="l1066" style="background-color: #ffffff"></a>
+  1067) <a name="l1067" style="background-color: #ffffff">      q_ref2m(p) = forc_q(g) + temp2(p)*dqh(p)*(1._r8/temp22m(p) - 1._r8/temp2(p))</a>
+  1068) <a name="l1068" style="background-color: #ffffff"></a>
+  1069) <a name="l1069" style="background-color: #ffffff">      ! 2 m height relative humidity</a>
+  1070) <a name="l1070" style="background-color: #ffffff"></a>
+  1071) <a name="l1071" style="background-color: #ffffff">      call QSat(t_ref2m(p), forc_pbot(g), e_ref2m, de2mdT, qsat_ref2m, dqsat2mdT)</a>
+  1072) <a name="l1072" style="background-color: #ffffff">      rh_ref2m(p) = min(100._r8, q_ref2m(p) / qsat_ref2m * 100._r8)</a>
+  1073) <a name="l1073" style="background-color: #ffffff">      rh_ref2m_r(p) = rh_ref2m(p)</a>
+  1074) <a name="l1074" style="background-color: #ffffff"></a>
+  1075) <a name="l1075" style="background-color: #ffffff">      ! Downward longwave radiation below the canopy</a>
+  1076) <a name="l1076" style="background-color: #ffffff"></a>
+  1077) <a name="l1077" style="background-color: #ffffff">      dlrad(p) = (1._r8-emv(p))*emg(c)*forc_lwrad(g) + &amp;</a>
+  1078) <a name="l1078" style="background-color: #ffffff">         emv(p)*emg(c)*sb*tlbef(p)**3*(tlbef(p) + 4._r8*dt_veg(p))</a>
+  1079) <a name="l1079" style="background-color: #ffffff"></a>
+  1080) <a name="l1080" style="background-color: #ffffff">      ! Upward longwave radiation above the canopy</a>
+  1081) <a name="l1081" style="background-color: #ffffff"></a>
+  1082) <a name="l1082" style="background-color: #ffffff">      ulrad(p) = ((1._r8-emg(c))*(1._r8-emv(p))*(1._r8-emv(p))*forc_lwrad(g) &amp;</a>
+  1083) <a name="l1083" style="background-color: #ffffff">         + emv(p)*(1._r8+(1._r8-emg(c))*(1._r8-emv(p)))*sb*tlbef(p)**3*(tlbef(p) + &amp;</a>
+  1084) <a name="l1084" style="background-color: #ffffff">         4._r8*dt_veg(p)) + emg(c)*(1._r8-emv(p))*sb*t_grnd(c)**4)</a>
+  1085) <a name="l1085" style="background-color: #ffffff"></a>
+  1086) <a name="l1086" style="background-color: #ffffff">      ! Derivative of soil energy flux with respect to soil temperature</a>
+  1087) <a name="l1087" style="background-color: #ffffff"></a>
+  1088) <a name="l1088" style="background-color: #ffffff">      cgrnds(p) = cgrnds(p) + cpair*forc_rho(g)*wtg(p)*wtal(p)</a>
+  1089) <a name="l1089" style="background-color: #ffffff">      cgrndl(p) = cgrndl(p) + forc_rho(g)*wtgq(p)*wtalq(p)*dqgdT(c)</a>
+  1090) <a name="l1090" style="background-color: #ffffff">      cgrnd(p)  = cgrnds(p) + cgrndl(p)*htvp(c)</a>
+  1091) <a name="l1091" style="background-color: #ffffff"></a>
+  1092) <a name="l1092" style="background-color: #ffffff">      ! Update dew accumulation (kg/m2)</a>
+  1093) <a name="l1093" style="background-color: #ffffff">      </a>
+  1094) <a name="l1094" style="background-color: #ffffff">      h2ocan(p) = max(0._r8,h2ocan(p)+(qflx_tran_veg(p)-qflx_evap_veg(p))*dtime)</a>
+  1095) <a name="l1095" style="background-color: #ffffff">      </a>
+  1096) <a name="l1096" style="background-color: #ffffff">      ! total photosynthesis</a>
+  1097) <a name="l1097" style="background-color: #ffffff"></a>
+  1098) <a name="l1098" style="background-color: #ffffff">      fpsn(p) = psnsun(p)*laisun(p) + psnsha(p)*laisha(p)</a>
+  1099) <a name="l1099" style="background-color: #ffffff">      </a>
+  1100) <a name="l1100" style="background-color: #ffffff">      if (use_cn) then</a>
+  1101) <a name="l1101" style="background-color: #ffff99">         if (use_c13) then</a>
+  1102) <a name="l1102" style="background-color: #ffff99">            ! 4/14/05: PET</a>
+  1103) <a name="l1103" style="background-color: #ffff99">            ! Adding isotope code</a>
+  1104) <a name="l1104" style="background-color: #ffff99">            rc13_canair(p) = c13o2(p)/(co2(p)-c13o2(p))</a>
+  1105) <a name="l1105" style="background-color: #ffff99">            rc13_psnsun(p) = rc13_canair(p)/alphapsnsun(p)</a>
+  1106) <a name="l1106" style="background-color: #ffff99">            rc13_psnsha(p) = rc13_canair(p)/alphapsnsha(p)</a>
+  1107) <a name="l1107" style="background-color: #ffff99">            c13_psnsun(p) = psnsun(p) * (rc13_psnsun(p)/(1._r8+rc13_psnsun(p)))</a>
+  1108) <a name="l1108" style="background-color: #ffff99">            c13_psnsha(p) = psnsha(p) * (rc13_psnsha(p)/(1._r8+rc13_psnsha(p)))</a>
+  1109) <a name="l1109" style="background-color: #ffff99">            !write(iulog,*) p,ivt(p),btran(p),psnsun(p),psnsha(p),alphapsnsun(p),alphapsnsha(p)</a>
+  1110) <a name="l1110" style="background-color: #ffff99">         end if</a>
+  1111) <a name="l1111" style="background-color: #ffff99">      end if</a>
+  1112) <a name="l1112" style="background-color: #ffff99">      </a>
+  1113) <a name="l1113" style="background-color: #ffff99">   end do</a>
+  1114) <a name="l1114" style="background-color: #ffff99"></a>
+  1115) <a name="l1115" style="background-color: #ffff99">   ! Filter out pfts which have small energy balance errors; report others</a>
+  1116) <a name="l1116" style="background-color: #ffff99"></a>
+  1117) <a name="l1117" style="background-color: #ffffff">   fnold = fn</a>
+  1118) <a name="l1118" style="background-color: #ffffff">   fn = 0</a>
+  1119) <a name="l1119" style="background-color: #ffffff">   do f = 1, fnold</a>
+  1120) <a name="l1120" style="background-color: #ffffff">      p = filterp(f)</a>
+  1121) <a name="l1121" style="background-color: #ffffff">      if (abs(err(p)) &gt; 0.1_r8) then</a>
+  1122) <a name="l1122" style="background-color: #ffff99">         fn = fn + 1</a>
+  1123) <a name="l1123" style="background-color: #ffff99">         filterp(fn) = p</a>
+  1124) <a name="l1124" style="background-color: #ffff99">      end if</a>
+  1125) <a name="l1125" style="background-color: #ffff99">   end do</a>
+  1126) <a name="l1126" style="background-color: #ffff99"></a>
+  1127) <a name="l1127" style="background-color: #fafad2">   do f = 1, fn</a>
+  1128) <a name="l1128" style="background-color: #ffff99">      p = filterp(f)</a>
+  1129) <a name="l1129" style="background-color: #ffff99">      write(iulog,*) 'energy balance in canopy ',p,', err=',err(p)</a>
+  1130) <a name="l1130" style="background-color: #ffff99">   end do</a>
+  1131) <a name="l1131" style="background-color: #ffff99"></a>
+  1132) <a name="l1132" style="background-color: #ffff99">   end subroutine CanopyFluxes</a>
+  1133) <a name="l1133" style="background-color: #ffffff"></a>
+  1134) <a name="l1134" style="background-color: #ffffff">!------------------------------------------------------------------------------</a>
+  1135) <a name="l1135" style="background-color: #ffffff">!BOP</a>
+  1136) <a name="l1136" style="background-color: #ffffff">!</a>
+  1137) <a name="l1137" style="background-color: #ffffff">! !IROUTINE: Stomata</a>
+  1138) <a name="l1138" style="background-color: #ffffff">!</a>
+  1139) <a name="l1139" style="background-color: #ffffff">! !INTERFACE:</a>
+  1140) <a name="l1140" style="background-color: #ffffff">   subroutine Stomata (fn, filterp, lbp, ubp, ei, ea, o2, co2, rb, dayl_factor, phase)</a>
+  1141) <a name="l1141" style="background-color: #ffffff">!</a>
+  1142) <a name="l1142" style="background-color: #ffffff">! !DESCRIPTION: </a>
+  1143) <a name="l1143" style="background-color: #ffffff">! Leaf stomatal resistance and leaf photosynthesis. Modifications for CN code.</a>
+  1144) <a name="l1144" style="background-color: #ffffff"></a>
+  1145) <a name="l1145" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+  1146) <a name="l1146" style="background-color: #ffffff">! 22 January 2004: Created by Peter Thornton</a>
+  1147) <a name="l1147" style="background-color: #ffffff">! 4/14/05: Peter Thornton: Converted Ci from local variable to pps struct member</a>
+  1148) <a name="l1148" style="background-color: #ffffff">!    now returns cisun or cisha per pft as implicit output argument.</a>
+  1149) <a name="l1149" style="background-color: #ffffff">!    Also sets alphapsnsun and alphapsnsha.</a>
+  1150) <a name="l1150" style="background-color: #ffffff">! 4/25/05, Peter Thornton: Adopted as the default code for CLM, together with</a>
+  1151) <a name="l1151" style="background-color: #ffffff">!   modifications for sun/shade canopy.  Renamed from StomataCN to Stomata,</a>
+  1152) <a name="l1152" style="background-color: #ffffff">!   and eliminating the older Stomata subroutine</a>
+  1153) <a name="l1153" style="background-color: #ffffff">! 3/6/09: Peter Thornton; added dayl_factor control on Vcmax, from Bill Bauerle</a>
+  1154) <a name="l1154" style="background-color: #ffffff"></a>
+  1155) <a name="l1155" style="background-color: #ffffff">! !USES:</a>
+  1156) <a name="l1156" style="background-color: #ffffff">     use shr_kind_mod , only : r8 =&gt; shr_kind_r8</a>
+  1157) <a name="l1157" style="background-color: #ffffff">     use shr_const_mod, only : SHR_CONST_TKFRZ, SHR_CONST_RGAS</a>
+  1158) <a name="l1158" style="background-color: #ffffff">     use clmtype</a>
+  1159) <a name="l1159" style="background-color: #ffffff">     use clm_atmlnd   , only : clm_a2l</a>
+  1160) <a name="l1160" style="background-color: #ffffff">     use spmdMod      , only: masterproc</a>
+  1161) <a name="l1161" style="background-color: #ffffff">     use pftvarcon    , only : nbrdlf_dcd_tmp_shrub</a>
+  1162) <a name="l1162" style="background-color: #ffffff">     use pftvarcon    , only : nsoybean, npcropmin</a>
+  1163) <a name="l1163" style="background-color: #ffffff">!</a>
+  1164) <a name="l1164" style="background-color: #ffffff">! !ARGUMENTS:</a>
+  1165) <a name="l1165" style="background-color: #ffffff">     implicit none</a>
+  1166) <a name="l1166" style="background-color: #ffffff">     integer , intent(in)    :: fn                 ! size of pft filter</a>
+  1167) <a name="l1167" style="background-color: #ffffff">     integer , intent(in)    :: filterp(fn)        ! pft filter</a>
+  1168) <a name="l1168" style="background-color: #ffffff">     integer , intent(in)    :: lbp, ubp           ! pft bounds</a>
+  1169) <a name="l1169" style="background-color: #ffffff">     real(r8), intent(in)    :: ei(lbp:ubp)        ! vapor pressure inside leaf (sat vapor press at tl) (pa)</a>
+  1170) <a name="l1170" style="background-color: #ffffff">     real(r8), intent(in)    :: ea(lbp:ubp)        ! vapor pressure of canopy air (pa)</a>
+  1171) <a name="l1171" style="background-color: #ffffff">     real(r8), intent(in)    :: o2(lbp:ubp)        ! atmospheric o2 concentration (pa)</a>
+  1172) <a name="l1172" style="background-color: #ffffff">     real(r8), intent(in)    :: co2(lbp:ubp)       ! atmospheric co2 concentration (pa)</a>
+  1173) <a name="l1173" style="background-color: #ffffff">     real(r8), intent(inout) :: rb(lbp:ubp)        ! boundary layer resistance (s/m)</a>
+  1174) <a name="l1174" style="background-color: #ffffff">     real(r8), intent(in)    :: dayl_factor(lbp:ubp) ! scalar (0-1) for daylength</a>
+  1175) <a name="l1175" style="background-color: #ffffff">     character(len=*), intent(in) :: phase         ! 'sun' or 'sha'</a>
+  1176) <a name="l1176" style="background-color: #ffffff">!</a>
+  1177) <a name="l1177" style="background-color: #ffffff">! !CALLED FROM:</a>
+  1178) <a name="l1178" style="background-color: #ffffff">! subroutine CanopyFluxes in this module</a>
+  1179) <a name="l1179" style="background-color: #ffffff">!</a>
+  1180) <a name="l1180" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+  1181) <a name="l1181" style="background-color: #ffffff">!</a>
+  1182) <a name="l1182" style="background-color: #ffffff">! local pointers to implicit in variables</a>
+  1183) <a name="l1183" style="background-color: #ffffff">! new ecophys variables (leafcn, flnr) added 1/26/04</a>
+  1184) <a name="l1184" style="background-color: #ffffff">!</a>
+  1185) <a name="l1185" style="background-color: #ffffff">     integer , pointer :: pcolumn(:)     ! pft's column index</a>
+  1186) <a name="l1186" style="background-color: #ffffff">     integer , pointer :: pgridcell(:)   ! pft's gridcell index</a>
+  1187) <a name="l1187" style="background-color: #ffffff">     integer , pointer :: ivt(:)         ! pft vegetation type</a>
+  1188) <a name="l1188" style="background-color: #ffffff">     real(r8), pointer :: qe25(:)        ! quantum efficiency at 25C (umol CO2 / umol photon)</a>
+  1189) <a name="l1189" style="background-color: #ffffff">     real(r8), pointer :: c3psn(:)       ! photosynthetic pathway: 0. = c4, 1. = c3</a>
+  1190) <a name="l1190" style="background-color: #ffffff">     real(r8), pointer :: mp(:)          ! slope of conductance-to-photosynthesis relationship</a>
+  1191) <a name="l1191" style="background-color: #ffffff">     real(r8), pointer :: tgcm(:)        ! air temperature at agcm reference height (kelvin)</a>
+  1192) <a name="l1192" style="background-color: #ffffff">     real(r8), pointer :: forc_pbot(:)   ! atmospheric pressure (Pa)</a>
+  1193) <a name="l1193" style="background-color: #ffffff">     real(r8), pointer :: tl(:)          ! leaf temperature (Kelvin)</a>
+  1194) <a name="l1194" style="background-color: #ffffff">     real(r8), pointer :: btran(:)       ! soil water transpiration factor (0 to 1)</a>
+  1195) <a name="l1195" style="background-color: #ffffff">     real(r8), pointer :: apar(:)        ! par absorbed per unit lai (w/m**2)</a>
+  1196) <a name="l1196" style="background-color: #ffffff">     real(r8), pointer :: leafcn(:)      ! leaf C:N (gC/gN)</a>
+  1197) <a name="l1197" style="background-color: #ffffff">     real(r8), pointer :: flnr(:)        ! fraction of leaf N in the Rubisco enzyme (gN Rubisco / gN leaf)</a>
+  1198) <a name="l1198" style="background-color: #ffffff">     real(r8), pointer :: sla(:)         ! specific leaf area, projected area basis (m^2/gC)</a>
+  1199) <a name="l1199" style="background-color: #ffffff">     real(r8), pointer :: fnitr(:)       ! foliage nitrogen limitation factor (-)</a>
+  1200) <a name="l1200" style="background-color: #ffffff">!</a>
+  1201) <a name="l1201" style="background-color: #ffffff">! local pointers to implicit inout variables</a>
+  1202) <a name="l1202" style="background-color: #ffffff">!</a>
+  1203) <a name="l1203" style="background-color: #ffffff">     real(r8), pointer :: rs(:)          ! leaf stomatal resistance (s/m)</a>
+  1204) <a name="l1204" style="background-color: #ffffff">     real(r8), pointer :: psn(:)         ! foliage photosynthesis (umol co2 /m**2/ s) [always +]</a>
+  1205) <a name="l1205" style="background-color: #ffffff">     real(r8), pointer :: ci(:)          ! intracellular leaf CO2 (Pa)</a>
+  1206) <a name="l1206" style="background-color: #ffffff">     real(r8), pointer :: alphapsn(:)    ! 13C fractionation factor for PSN ()</a>
+  1207) <a name="l1207" style="background-color: #ffffff">!</a>
+  1208) <a name="l1208" style="background-color: #ffffff">! local pointers to implicit out variables</a>
+  1209) <a name="l1209" style="background-color: #ffffff">!</a>
+  1210) <a name="l1210" style="background-color: #ffffff">     real(r8), pointer :: lnc(:)         ! leaf N concentration per unit projected LAI (gN leaf/m^2)</a>
+  1211) <a name="l1211" style="background-color: #ffffff">     real(r8), pointer :: vcmx(:)        ! maximum rate of carboxylation (umol co2/m**2/s)</a>
+  1212) <a name="l1212" style="background-color: #ffffff">!</a>
+  1213) <a name="l1213" style="background-color: #ffffff">!</a>
+  1214) <a name="l1214" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+  1215) <a name="l1215" style="background-color: #ffffff">!EOP</a>
+  1216) <a name="l1216" style="background-color: #ffffff">!</a>
+  1217) <a name="l1217" style="background-color: #ffffff">     real(r8), parameter :: mpe = 1.e-6_r8   ! prevents overflow error if division by zero</a>
+  1218) <a name="l1218" style="background-color: #ffffff">     integer , parameter :: niter = 3     ! number of iterations</a>
+  1219) <a name="l1219" style="background-color: #ffffff">     integer  :: f,p,c,g ! indices</a>
+  1220) <a name="l1220" style="background-color: #ffffff">     integer  :: iter    ! iteration index</a>
+  1221) <a name="l1221" style="background-color: #ffffff">     real(r8) :: ab      ! used in statement functions</a>
+  1222) <a name="l1222" style="background-color: #ffffff">     real(r8) :: bc      ! used in statement functions</a>
+  1223) <a name="l1223" style="background-color: #ffffff">     real(r8) :: f1      ! generic temperature response (statement function)</a>
+  1224) <a name="l1224" style="background-color: #ffffff">     real(r8) :: f2      ! generic temperature inhibition (statement function)</a>
+  1225) <a name="l1225" style="background-color: #ffffff">     real(r8) :: tc      ! leaf temperature (degree celsius)</a>
+  1226) <a name="l1226" style="background-color: #ffffff">     real(r8) :: cs      ! co2 concentration at leaf surface (pa)</a>
+  1227) <a name="l1227" style="background-color: #ffffff">     real(r8) :: kc      ! co2 michaelis-menten constant (pa)</a>
+  1228) <a name="l1228" style="background-color: #ffffff">     real(r8) :: ko      ! o2 michaelis-menten constant (pa)</a>
+  1229) <a name="l1229" style="background-color: #ffffff">     real(r8) :: atmp    ! intermediate calculations for rs</a>
+  1230) <a name="l1230" style="background-color: #ffffff">     real(r8) :: btmp    ! intermediate calculations for rs</a>
+  1231) <a name="l1231" style="background-color: #ffffff">     real(r8) :: ctmp    ! intermediate calculations for rs</a>
+  1232) <a name="l1232" style="background-color: #ffffff">     real(r8) :: q       ! intermediate calculations for rs</a>
+  1233) <a name="l1233" style="background-color: #ffffff">     real(r8) :: r1,r2   ! roots for rs</a>
+  1234) <a name="l1234" style="background-color: #ffffff">     real(r8) :: ppf     ! absorb photosynthetic photon flux (umol photons/m**2/s)</a>
+  1235) <a name="l1235" style="background-color: #ffffff">     real(r8) :: wc      ! rubisco limited photosynthesis (umol co2/m**2/s)</a>
+  1236) <a name="l1236" style="background-color: #ffffff">     real(r8) :: wj      ! light limited photosynthesis (umol co2/m**2/s)</a>
+  1237) <a name="l1237" style="background-color: #ffffff">     real(r8) :: we      ! export limited photosynthesis (umol co2/m**2/s)</a>
+  1238) <a name="l1238" style="background-color: #ffffff">     real(r8) :: cp      ! co2 compensation point (pa)</a>
+  1239) <a name="l1239" style="background-color: #ffffff">     real(r8) :: awc     ! intermediate calcuation for wc</a>
+  1240) <a name="l1240" style="background-color: #ffffff">     real(r8) :: j       ! electron transport (umol co2/m**2/s)</a>
+  1241) <a name="l1241" style="background-color: #ffffff">     real(r8) :: cea     ! constrain ea or else model blows up</a>
+  1242) <a name="l1242" style="background-color: #ffffff">     real(r8) :: cf      ! s m**2/umol -&gt; s/m</a>
+  1243) <a name="l1243" style="background-color: #ffffff">     real(r8) :: rsmax0  ! maximum stomatal resistance [s/m]</a>
+  1244) <a name="l1244" style="background-color: #ffffff">     real(r8) :: kc25    ! co2 michaelis-menten constant at 25c (pa)</a>
+  1245) <a name="l1245" style="background-color: #ffffff">     real(r8) :: akc     ! q10 for kc25</a>
+  1246) <a name="l1246" style="background-color: #ffffff">     real(r8) :: ko25    ! o2 michaelis-menten constant at 25c (pa)</a>
+  1247) <a name="l1247" style="background-color: #ffffff">     real(r8) :: ako     ! q10 for ko25</a>
+  1248) <a name="l1248" style="background-color: #ffffff">     real(r8) :: bp      ! minimum leaf conductance (umol/m**2/s)</a>
+  1249) <a name="l1249" style="background-color: #ffffff">     ! additional variables for new treatment of Vcmax, Peter Thornton, 1/26/04</a>
+  1250) <a name="l1250" style="background-color: #ffffff">     real(r8) :: act25   ! (umol/mgRubisco/min) Rubisco activity at 25 C</a>
+  1251) <a name="l1251" style="background-color: #ffffff">     real(r8) :: act     ! (umol/mgRubisco/min) Rubisco activity</a>
+  1252) <a name="l1252" style="background-color: #ffffff">     real(r8) :: q10act  ! (DIM) Q_10 for Rubisco activity</a>
+  1253) <a name="l1253" style="background-color: #ffffff">     real(r8) :: fnr     ! (gRubisco/gN in Rubisco)</a>
+  1254) <a name="l1254" style="background-color: #ffffff">!------------------------------------------------------------------------------</a>
+  1255) <a name="l1255" style="background-color: #ffffff"></a>
+  1256) <a name="l1256" style="background-color: #ffffff">     ! Set statement functions</a>
+  1257) <a name="l1257" style="background-color: #ffffff"></a>
+  1258) <a name="l1258" style="background-color: #ffffff">     f1(ab,bc) = ab**((bc-25._r8)/10._r8)</a>
+  1259) <a name="l1259" style="background-color: #ffffff">     f2(ab) = 1._r8 + exp((-2.2e05_r8+710._r8*(ab+SHR_CONST_TKFRZ))/(SHR_CONST_RGAS*0.001_r8*(ab+SHR_CONST_TKFRZ)))</a>
+  1260) <a name="l1260" style="background-color: #ffffff"></a>
+  1261) <a name="l1261" style="background-color: #ffffff">     ! Assign local pointers to derived type members (pft-level)</a>
+  1262) <a name="l1262" style="background-color: #ffffff"></a>
+  1263) <a name="l1263" style="background-color: #ffffff">     pcolumn   =&gt; pft%column</a>
+  1264) <a name="l1264" style="background-color: #ffffff">     pgridcell =&gt; pft%gridcell</a>
+  1265) <a name="l1265" style="background-color: #ffffff">     ivt       =&gt; pft%itype</a>
+  1266) <a name="l1266" style="background-color: #ffffff">     tl        =&gt; pes%t_veg</a>
+  1267) <a name="l1267" style="background-color: #ffffff">     btran     =&gt; pps%btran</a>
+  1268) <a name="l1268" style="background-color: #ffffff">     if (phase == 'sun') then</a>
+  1269) <a name="l1269" style="background-color: #ffffff">        apar   =&gt; pef%parsun</a>
+  1270) <a name="l1270" style="background-color: #ffffff">        rs     =&gt; pps%rssun</a>
+  1271) <a name="l1271" style="background-color: #ffffff">        psn    =&gt; pcf%psnsun</a>
+  1272) <a name="l1272" style="background-color: #ffffff">        ci     =&gt; pps%cisun</a>
+  1273) <a name="l1273" style="background-color: #ffffff"></a>
+  1274) <a name="l1274" style="background-color: #ffffff">        alphapsn  =&gt; pps%alphapsnsun</a>
+  1275) <a name="l1275" style="background-color: #ffffff"></a>
+  1276) <a name="l1276" style="background-color: #ffffff">        sla    =&gt; pps%slasun</a>
+  1277) <a name="l1277" style="background-color: #ffffff">        lnc    =&gt; pps%lncsun   </a>
+  1278) <a name="l1278" style="background-color: #ffffff">        vcmx   =&gt; pps%vcmxsun   </a>
+  1279) <a name="l1279" style="background-color: #ffffff">     else if (phase == 'sha') then</a>
+  1280) <a name="l1280" style="background-color: #ffffff">        apar   =&gt; pef%parsha</a>
+  1281) <a name="l1281" style="background-color: #ffffff">        rs     =&gt; pps%rssha</a>
+  1282) <a name="l1282" style="background-color: #ffffff">        psn    =&gt; pcf%psnsha</a>
+  1283) <a name="l1283" style="background-color: #ffffff">        ci     =&gt; pps%cisha</a>
+  1284) <a name="l1284" style="background-color: #ffffff">        sla    =&gt; pps%slasha   </a>
+  1285) <a name="l1285" style="background-color: #ffffff"></a>
+  1286) <a name="l1286" style="background-color: #ffffff">        alphapsn  =&gt; pps%alphapsnsha</a>
+  1287) <a name="l1287" style="background-color: #ffffff"></a>
+  1288) <a name="l1288" style="background-color: #ffffff">        lnc    =&gt; pps%lncsha   </a>
+  1289) <a name="l1289" style="background-color: #ffffff">        vcmx   =&gt; pps%vcmxsha</a>
+  1290) <a name="l1290" style="background-color: #ffffff">     end if</a>
+  1291) <a name="l1291" style="background-color: #ffffff"></a>
+  1292) <a name="l1292" style="background-color: #ffffff">     ! Assign local pointers to derived type members (gridcell-level)</a>
+  1293) <a name="l1293" style="background-color: #ffffff"></a>
+  1294) <a name="l1294" style="background-color: #ffffff">     forc_pbot =&gt; clm_a2l%forc_pbot</a>
+  1295) <a name="l1295" style="background-color: #ffffff"></a>
+  1296) <a name="l1296" style="background-color: #ffffff">     ! Assign local pointers to derived type members (column-level)</a>
+  1297) <a name="l1297" style="background-color: #ffffff"></a>
+  1298) <a name="l1298" style="background-color: #ffffff">     tgcm        =&gt; pes%thm</a>
+  1299) <a name="l1299" style="background-color: #ffffff"></a>
+  1300) <a name="l1300" style="background-color: #ffffff">     ! Assign local pointers to pft constants</a>
+  1301) <a name="l1301" style="background-color: #ffffff">     ! new ecophys constants added 1/26/04</a>
+  1302) <a name="l1302" style="background-color: #ffffff"></a>
+  1303) <a name="l1303" style="background-color: #ffffff">     qe25      =&gt; pftcon%qe25</a>
+  1304) <a name="l1304" style="background-color: #ffffff">     c3psn     =&gt; pftcon%c3psn</a>
+  1305) <a name="l1305" style="background-color: #ffffff">     mp        =&gt; pftcon%mp</a>
+  1306) <a name="l1306" style="background-color: #ffffff">     leafcn    =&gt; pftcon%leafcn</a>
+  1307) <a name="l1307" style="background-color: #ffffff">     flnr      =&gt; pftcon%flnr</a>
+  1308) <a name="l1308" style="background-color: #ffffff">     fnitr     =&gt; pftcon%fnitr</a>
+  1309) <a name="l1309" style="background-color: #ffffff"></a>
+  1310) <a name="l1310" style="background-color: #ffffff">     ! Set constant values</a>
+  1311) <a name="l1311" style="background-color: #ffffff"></a>
+  1312) <a name="l1312" style="background-color: #ffffff">     kc25  = 30._r8</a>
+  1313) <a name="l1313" style="background-color: #ffffff">     akc   = 2.1_r8</a>
+  1314) <a name="l1314" style="background-color: #ffffff">     ko25  = 30000._r8</a>
+  1315) <a name="l1315" style="background-color: #ffffff">     ako   = 1.2_r8</a>
+  1316) <a name="l1316" style="background-color: #ffffff">     bp    = 2000._r8</a>
+  1317) <a name="l1317" style="background-color: #ffffff"></a>
+  1318) <a name="l1318" style="background-color: #ffffff">     ! New constants for CN code, added 1/26/04</a>
+  1319) <a name="l1319" style="background-color: #ffffff"></a>
+  1320) <a name="l1320" style="background-color: #ffffff">     act25 = 3.6_r8</a>
+  1321) <a name="l1321" style="background-color: #ffffff">     q10act = 2.4_r8</a>
+  1322) <a name="l1322" style="background-color: #ffffff">     fnr = 7.16_r8</a>
+  1323) <a name="l1323" style="background-color: #ffffff">     </a>
+  1324) <a name="l1324" style="background-color: #ffffff">     ! Convert rubisco activity units from umol/mgRubisco/min -&gt; umol/gRubisco/s</a>
+  1325) <a name="l1325" style="background-color: #ffffff"></a>
+  1326) <a name="l1326" style="background-color: #ffffff">     act25 = act25 * 1000.0_r8 / 60.0_r8</a>
+  1327) <a name="l1327" style="background-color: #ffffff"></a>
+  1328) <a name="l1328" style="background-color: #ffffff">     do f = 1, fn</a>
+  1329) <a name="l1329" style="background-color: #ffffff">        p = filterp(f)</a>
+  1330) <a name="l1330" style="background-color: #ffffff">        c = pcolumn(p)</a>
+  1331) <a name="l1331" style="background-color: #ffffff">        g = pgridcell(p)</a>
+  1332) <a name="l1332" style="background-color: #ffffff"></a>
+  1333) <a name="l1333" style="background-color: #ffffff">        ! Initialize rs=rsmax and psn=0 because calculations are performed only</a>
+  1334) <a name="l1334" style="background-color: #ffffff">        ! when apar &gt; 0, in which case rs &lt;= rsmax and psn &gt;= 0</a>
+  1335) <a name="l1335" style="background-color: #ffffff">        ! Set constants</a>
+  1336) <a name="l1336" style="background-color: #ffffff"></a>
+  1337) <a name="l1337" style="background-color: #ffffff">        rsmax0 = 2.e4_r8</a>
+  1338) <a name="l1338" style="background-color: #ffffff">        cf = forc_pbot(g)/(SHR_CONST_RGAS*0.001_r8*tgcm(p))*1.e06_r8</a>
+  1339) <a name="l1339" style="background-color: #ffffff">        if (apar(p) &lt;= 0._r8) then          ! night time</a>
+  1340) <a name="l1340" style="background-color: #ffffff">           rs(p) = min(rsmax0, 1._r8/bp * cf)</a>
+  1341) <a name="l1341" style="background-color: #ffffff">           psn(p) = 0._r8</a>
+  1342) <a name="l1342" style="background-color: #ffffff">           lnc(p) = 0._r8</a>
+  1343) <a name="l1343" style="background-color: #ffffff">           vcmx(p) = 0._r8</a>
+  1344) <a name="l1344" style="background-color: #ffffff">           if (use_c13) then</a>
+  1345) <a name="l1345" style="background-color: #ffff99">              alphapsn(p) = 1._r8</a>
+  1346) <a name="l1346" style="background-color: #ffff99">           end if</a>
+  1347) <a name="l1347" style="background-color: #ffff99">        else                             ! day time</a>
+  1348) <a name="l1348" style="background-color: #ffffff">           tc = tl(p) - SHR_CONST_TKFRZ</a>
+  1349) <a name="l1349" style="background-color: #ffffff">           ppf = 4.6_r8 * apar(p)                  </a>
+  1350) <a name="l1350" style="background-color: #ffffff">           j = ppf * qe25(ivt(p))</a>
+  1351) <a name="l1351" style="background-color: #ffffff">           kc = kc25 * f1(akc,tc)       </a>
+  1352) <a name="l1352" style="background-color: #ffffff">           ko = ko25 * f1(ako,tc)</a>
+  1353) <a name="l1353" style="background-color: #ffffff">           awc = kc * (1._r8+o2(p)/ko)</a>
+  1354) <a name="l1354" style="background-color: #ffffff">           cp = 0.5_r8*kc/ko*o2(p)*0.21_r8</a>
+  1355) <a name="l1355" style="background-color: #ffffff"></a>
+  1356) <a name="l1356" style="background-color: #ffffff">           ! Modification for shrubs proposed by X.D.Z</a>
+  1357) <a name="l1357" style="background-color: #ffffff">           ! Why does he prefer this line here instead of in subr.</a>
+  1358) <a name="l1358" style="background-color: #ffffff">           ! CanopyFluxes? (slevis)</a>
+  1359) <a name="l1359" style="background-color: #ffffff">           ! Equivalent modification for soy following AgroIBIS</a>
+  1360) <a name="l1360" style="background-color: #ffffff">           if (use_cndv) then</a>
+  1361) <a name="l1361" style="background-color: #ffff99">              if (ivt(p) == nbrdlf_dcd_tmp_shrub) btran(p) = min(1._r8, btran(p) * 3.33_r8)</a>
+  1362) <a name="l1362" style="background-color: #ffff99">           end if</a>
+  1363) <a name="l1363" style="background-color: #ffffff">           if (ivt(p) == nsoybean) </a><a style="background-color: #ffff99">btran(p) = min(1._r8, btran(p) * 1.25_r8)</a>
+  1364) <a name="l1364" style="background-color: #ffff99">           </a>
+  1365) <a name="l1365" style="background-color: #ffff99">           ! new calculations for vcmax, 1/26/04</a>
+  1366) <a name="l1366" style="background-color: #ffffff">           lnc(p) = 1._r8 / (sla(p) * leafcn(ivt(p)))</a>
+  1367) <a name="l1367" style="background-color: #ffffff">           act = act25 * f1(q10act,tc)</a>
+  1368) <a name="l1368" style="background-color: #ffffff">           if (use_cn) then</a>
+  1369) <a name="l1369" style="background-color: #ffff99">              if ( ivt(p) &lt; npcropmin )then</a>
+  1370) <a name="l1370" style="background-color: #ffff99">                 vcmx(p) = lnc(p) * flnr(ivt(p)) * fnr * act / f2(tc) * btran(p) * &amp;</a>
+  1371) <a name="l1371" style="background-color: #ffff99">                      dayl_factor(p)</a>
+  1372) <a name="l1372" style="background-color: #ffff99">              else</a>
+  1373) <a name="l1373" style="background-color: #ffff99">                 vcmx(p) = 101._r8 * f1(q10act,tc) / f2(tc) * btran(p) * dayl_factor(p)</a>
+  1374) <a name="l1374" style="background-color: #ffff99">              end if</a>
+  1375) <a name="l1375" style="background-color: #ffff99">           else</a>
+  1376) <a name="l1376" style="background-color: #ffffff">              vcmx(p) = lnc(p) * flnr(ivt(p)) * fnr * act / f2(tc) * btran(p) * &amp;</a>
+  1377) <a name="l1377" style="background-color: #ffffff">                   dayl_factor(p) * fnitr(ivt(p))</a>
+  1378) <a name="l1378" style="background-color: #ffffff">           end if</a>
+  1379) <a name="l1379" style="background-color: #ffffff">           </a>
+  1380) <a name="l1380" style="background-color: #ffffff">           ! First guess ci</a>
+  1381) <a name="l1381" style="background-color: #ffffff"></a>
+  1382) <a name="l1382" style="background-color: #ffffff">           ci(p) = 0.7_r8*co2(p)*c3psn(ivt(p)) + 0.4_r8*co2(p)*(1._r8-c3psn(ivt(p)))</a>
+  1383) <a name="l1383" style="background-color: #ffffff"></a>
+  1384) <a name="l1384" style="background-color: #ffffff">           ! rb: s/m -&gt; s m**2 / umol</a>
+  1385) <a name="l1385" style="background-color: #ffffff"></a>
+  1386) <a name="l1386" style="background-color: #ffffff">           rb(p) = rb(p)/cf </a>
+  1387) <a name="l1387" style="background-color: #ffffff"></a>
+  1388) <a name="l1388" style="background-color: #ffffff">           ! Constrain ea</a>
+  1389) <a name="l1389" style="background-color: #ffffff"></a>
+  1390) <a name="l1390" style="background-color: #ffffff">           cea = max(0.25_r8*ei(p)*c3psn(ivt(p))+0.40_r8*ei(p)*(1._r8-c3psn(ivt(p))), min(ea(p),ei(p)) ) </a>
+  1391) <a name="l1391" style="background-color: #ffffff"></a>
+  1392) <a name="l1392" style="background-color: #ffffff">           ! ci iteration for 'actual' photosynthesis</a>
+  1393) <a name="l1393" style="background-color: #ffffff"></a>
+  1394) <a name="l1394" style="background-color: #ffffff">           do iter = 1, niter</a>
+  1395) <a name="l1395" style="background-color: #ffffff">              wj = max(ci(p)-cp,0._r8)*j/(ci(p)+2._r8*cp)*c3psn(ivt(p)) + j*(1._r8-c3psn(ivt(p)))</a>
+  1396) <a name="l1396" style="background-color: #ffffff">              wc = max(ci(p)-cp,0._r8)*vcmx(p)/(ci(p)+awc)*c3psn(ivt(p)) + vcmx(p)*(1._r8-c3psn(ivt(p)))</a>
+  1397) <a name="l1397" style="background-color: #ffffff">              we = 0.5_r8*vcmx(p)*c3psn(ivt(p)) + 4000._r8*vcmx(p)*ci(p)/forc_pbot(g)*(1._r8-c3psn(ivt(p))) </a>
+  1398) <a name="l1398" style="background-color: #ffffff">              psn(p) = min(wj,wc,we) </a>
+  1399) <a name="l1399" style="background-color: #ffffff">              cs = max( co2(p)-1.37_r8*rb(p)*forc_pbot(g)*psn(p), mpe )</a>
+  1400) <a name="l1400" style="background-color: #ffffff">              atmp = mp(ivt(p))*psn(p)*forc_pbot(g)*cea / (cs*ei(p)) + bp</a>
+  1401) <a name="l1401" style="background-color: #ffffff">              btmp = ( mp(ivt(p))*psn(p)*forc_pbot(g)/cs + bp ) * rb(p) - 1._r8</a>
+  1402) <a name="l1402" style="background-color: #ffffff">              ctmp = -rb(p)</a>
+  1403) <a name="l1403" style="background-color: #ffffff">              if (btmp &gt;= 0._r8) then</a>
+  1404) <a name="l1404" style="background-color: #ffffff">                 q = -0.5_r8*( btmp + sqrt(btmp*btmp-4._r8*atmp*ctmp) )</a>
+  1405) <a name="l1405" style="background-color: #ffffff">              else</a>
+  1406) <a name="l1406" style="background-color: #ffffff">                 q = -0.5_r8*( btmp - sqrt(btmp*btmp-4._r8*atmp*ctmp) )</a>
+  1407) <a name="l1407" style="background-color: #ffffff">              end if</a>
+  1408) <a name="l1408" style="background-color: #ffffff">              r1 = q/atmp</a>
+  1409) <a name="l1409" style="background-color: #ffffff">              r2 = ctmp/q</a>
+  1410) <a name="l1410" style="background-color: #ffffff">              rs(p) = max(r1,r2)</a>
+  1411) <a name="l1411" style="background-color: #ffffff">              ci(p) = max( cs-psn(p)*forc_pbot(g)*1.65_r8*rs(p), 0._r8 )</a>
+  1412) <a name="l1412" style="background-color: #ffffff">           end do</a>
+  1413) <a name="l1413" style="background-color: #ffffff"></a>
+  1414) <a name="l1414" style="background-color: #ffffff">           ! rs, rb:  s m**2 / umol -&gt; s/m </a>
+  1415) <a name="l1415" style="background-color: #ffffff"></a>
+  1416) <a name="l1416" style="background-color: #ffffff">           rs(p) = min(rsmax0, rs(p)*cf)</a>
+  1417) <a name="l1417" style="background-color: #ffffff">           rb(p) = rb(p) * cf </a>
+  1418) <a name="l1418" style="background-color: #ffffff">           </a>
+  1419) <a name="l1419" style="background-color: #ffffff">           if (use_c13) then</a>
+  1420) <a name="l1420" style="background-color: #ffffff">              ! 4/14/05: PET</a>
+  1421) <a name="l1421" style="background-color: #ffffff">              ! Adding isotope code</a>
+  1422) <a name="l1422" style="background-color: #ffff99">              alphapsn(p) = 1._r8 + (((c3psn(ivt(p)) * (4.4_r8 + (22.6_r8*(ci(p)/co2(p))))) + &amp;</a>
+  1423) <a name="l1423" style="background-color: #ffff99">                   ((1._r8 - c3psn(ivt(p))) * 4.4_r8))/1000._r8)</a>
+  1424) <a name="l1424" style="background-color: #ffff99">              !alphapsn(p) = 1._r8</a>
+  1425) <a name="l1425" style="background-color: #ffff99">              !write(iulog,*) 'in StomataCN ',p,ivt(p),c3psn(ivt(p)),ci(p),co2(p),alphapsn(p)</a>
+  1426) <a name="l1426" style="background-color: #ffff99">           end if</a>
+  1427) <a name="l1427" style="background-color: #ffff99">           </a>
+  1428) <a name="l1428" style="background-color: #ffff99">        end if</a>
+  1429) <a name="l1429" style="background-color: #ffff99"></a>
+  1430) <a name="l1430" style="background-color: #ffff99">     end do</a>
+  1431) <a name="l1431" style="background-color: #ffff99"></a>
+  1432) <a name="l1432" style="background-color: #ffffff">  end subroutine Stomata</a>
+  1433) <a name="l1433" style="background-color: #ffffff"></a>
+  1434) <a name="l1434" style="background-color: #ffffff">end module CanopyFluxesMod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

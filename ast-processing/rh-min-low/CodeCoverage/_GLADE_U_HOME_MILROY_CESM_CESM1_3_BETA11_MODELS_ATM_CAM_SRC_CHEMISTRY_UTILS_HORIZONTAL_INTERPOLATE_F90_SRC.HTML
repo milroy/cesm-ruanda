@@ -1,0 +1,277 @@
+<html>
+<head>
+<title>Listing of horizontal_interpolate.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;horizontal_interpolate.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module horizontal_interpolate</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!   </a>
+     4) <a name="l4" style="background-color: #ffffff">! Modules Used:</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">  use shr_kind_mod,   only: r8 =&gt; shr_kind_r8</a>
+     7) <a name="l7" style="background-color: #ffffff">  use shr_const_mod,  only: SHR_CONST_PI</a>
+     8) <a name="l8" style="background-color: #ffffff">  use abortutils,     only: endrun</a>
+     9) <a name="l9" style="background-color: #ffffff">  use scamMod,        only: single_column</a>
+    10) <a name="l10" style="background-color: #ffffff">  use cam_logfile,    only: iulog</a>
+    11) <a name="l11" style="background-color: #ffffff">  implicit none</a>
+    12) <a name="l12" style="background-color: #ffffff">  private</a>
+    13) <a name="l13" style="background-color: #ffffff">  save</a>
+    14) <a name="l14" style="background-color: #ffffff"></a>
+    15) <a name="l15" style="background-color: #ffffff">  real(r8) :: gw1(1000), gw2(1000)</a>
+    16) <a name="l16" style="background-color: #ffffff"></a>
+    17) <a name="l17" style="background-color: #ffffff">  public :: xy_interp_init, xy_interp</a>
+    18) <a name="l18" style="background-color: #ffffff"></a>
+    19) <a name="l19" style="background-color: #ffffff">contains</a>
+    20) <a name="l20" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">xy_interp_init(im1,jm1,lon0,lat0,im2,jm2,weight_x,weight_y)</a>
+    21) <a name="l21" style="background-color: #ffcccc">!------------------------------------------------------------------------------------------------------------</a>
+    22) <a name="l22" style="background-color: #ffcccc">! This program computes weighting functions to map a variable of (im1,jm1) resolution to (im2,jm2) resolution</a>
+    23) <a name="l23" style="background-color: #ffcccc">! weight_x(im2,im1) is the weighting function for zonal interpolation</a>
+    24) <a name="l24" style="background-color: #ffcccc">! weight_y(jm2,jm1) is the weighting function for meridional interpolation</a>
+    25) <a name="l25" style="background-color: #ffcccc">! </a>
+    26) <a name="l26" style="background-color: #ffcccc">! Author: Chih-Chieh (Jack) Chen  -- May 2010</a>
+    27) <a name="l27" style="background-color: #ffcccc">!</a>
+    28) <a name="l28" style="background-color: #ffcccc">!------------------------------------------------------------------------------------------------------------</a>
+    29) <a name="l29" style="background-color: #ffcccc">  implicit none</a>
+    30) <a name="l30" style="background-color: #ffcccc">  integer,  intent(in)  :: im1, jm1, im2, jm2</a>
+    31) <a name="l31" style="background-color: #ffcccc">  real(r8), intent(in)  :: lon0(im1), lat0(jm1)</a>
+    32) <a name="l32" style="background-color: #ffcccc">  real(r8), intent(out) :: weight_x(im2,im1), weight_y(jm2,jm1)</a>
+    33) <a name="l33" style="background-color: #ffcccc"></a>
+    34) <a name="l34" style="background-color: #ffcccc">  real(r8) :: lon1(im1), lat1(jm1)</a>
+    35) <a name="l35" style="background-color: #ffcccc">  real(r8) :: lon2(im2), lat2(jm2)</a>
+    36) <a name="l36" style="background-color: #ffcccc">  real(r8) :: slon1(im1+1), slon2(im2+1), slat1(jm1+1), slat2(jm2+1)  </a>
+    37) <a name="l37" style="background-color: #ffcccc">  real(r8) :: x1_west, x1_east, x2_west, x2_east</a>
+    38) <a name="l38" style="background-color: #ffcccc">  real(r8) :: y1_south, y1_north, y2_south, y2_north</a>
+    39) <a name="l39" style="background-color: #ffcccc">  integer  :: i1, j1, i2, j2</a>
+    40) <a name="l40" style="background-color: #ffcccc"></a>
+    41) <a name="l41" style="background-color: #ffcccc">  weight_x(:,:) = 0.0_r8</a>
+    42) <a name="l42" style="background-color: #ffcccc">  weight_y(:,:) = 0.0_r8</a>
+    43) <a name="l43" style="background-color: #ffcccc"></a>
+    44) <a name="l44" style="background-color: #ffcccc">! lon0 &amp; lat0 are longitude &amp; latitude on the source mesh in radians</a>
+    45) <a name="l45" style="background-color: #ffcccc">! convert lon1, lat1 from radians to degrees</a>
+    46) <a name="l46" style="background-color: #ffcccc">  lon1(:) = lon0(:)/SHR_CONST_PI*180.0_r8</a>
+    47) <a name="l47" style="background-color: #ffcccc">  lat1(:) = lat0(:)/SHR_CONST_PI*180.0_r8</a>
+    48) <a name="l48" style="background-color: #ffcccc"></a>
+    49) <a name="l49" style="background-color: #ffcccc">! set up lon2, lat2 (target mesh), in CAM convention</a>
+    50) <a name="l50" style="background-color: #ffcccc">  do i2=1,im2</a>
+    51) <a name="l51" style="background-color: #ffcccc">   lon2(i2) = (float(i2)-1.0_r8)*360.0_r8/float(im2)</a>
+    52) <a name="l52" style="background-color: #ffcccc">  enddo</a>
+    53) <a name="l53" style="background-color: #ffcccc">  do j2=1,jm2</a>
+    54) <a name="l54" style="background-color: #ffcccc">   lat2(j2) = -90.0_r8+(float(j2)-1.0_r8)*180.0_r8/(float(jm2)-1.0_r8)</a>
+    55) <a name="l55" style="background-color: #ffcccc">  enddo</a>
+    56) <a name="l56" style="background-color: #ffcccc"></a>
+    57) <a name="l57" style="background-color: #ffcccc"></a>
+    58) <a name="l58" style="background-color: #ffcccc">! set up staggered longitudes (cell edges in x)</a>
+    59) <a name="l59" style="background-color: #ffcccc">  do i1=2,im1</a>
+    60) <a name="l60" style="background-color: #ffcccc">	slon1(i1) = (lon1(i1-1)+lon1(i1))/2.0_r8</a>
+    61) <a name="l61" style="background-color: #ffcccc">  enddo</a>
+    62) <a name="l62" style="background-color: #ffcccc">  slon1(1) = lon1(1)-(lon1(2)-lon1(1))/2.0_r8</a>
+    63) <a name="l63" style="background-color: #ffcccc">  slon1(im1+1) = lon1(im1)+(lon1(im1)-lon1(im1-1))/2.0_r8</a>
+    64) <a name="l64" style="background-color: #ffcccc"></a>
+    65) <a name="l65" style="background-color: #ffcccc">  do i2=2,im2</a>
+    66) <a name="l66" style="background-color: #ffcccc">	slon2(i2) = (lon2(i2-1)+lon2(i2))/2.0_r8</a>
+    67) <a name="l67" style="background-color: #ffcccc">  enddo</a>
+    68) <a name="l68" style="background-color: #ffcccc">  slon2(1) = lon2(1)-(lon2(2)-lon2(1))/2.0_r8</a>
+    69) <a name="l69" style="background-color: #ffcccc">  slon2(im2+1) = lon2(im2)+(lon2(im2)-lon2(im2-1))/2.0_r8</a>
+    70) <a name="l70" style="background-color: #ffcccc"></a>
+    71) <a name="l71" style="background-color: #ffcccc">! set up staggered lattiudes (cell edges in y)</a>
+    72) <a name="l72" style="background-color: #ffcccc">  slat1(1)=-90.0_r8</a>
+    73) <a name="l73" style="background-color: #ffcccc">  do j1=2,jm1</a>
+    74) <a name="l74" style="background-color: #ffcccc">	slat1(j1) = (lat1(j1-1)+lat1(j1))/2.0_r8</a>
+    75) <a name="l75" style="background-color: #ffcccc">  enddo</a>
+    76) <a name="l76" style="background-color: #ffcccc">  slat1(jm1+1)=90.0_r8</a>
+    77) <a name="l77" style="background-color: #ffcccc"></a>
+    78) <a name="l78" style="background-color: #ffcccc">  slat2(1)=-90.0_r8</a>
+    79) <a name="l79" style="background-color: #ffcccc">  do j2=2,jm2</a>
+    80) <a name="l80" style="background-color: #ffcccc">	slat2(j2)=(lat2(j2-1)+lat2(j2))/2.0_r8</a>
+    81) <a name="l81" style="background-color: #ffcccc">  enddo	</a>
+    82) <a name="l82" style="background-color: #ffcccc">  slat2(jm2+1)=90.0_r8</a>
+    83) <a name="l83" style="background-color: #ffcccc"></a>
+    84) <a name="l84" style="background-color: #ffcccc">! compute Guassian weight for two meshes (discrete form of cos(lat).)</a>
+    85) <a name="l85" style="background-color: #ffcccc">  do j1=1,jm1</a>
+    86) <a name="l86" style="background-color: #ffcccc">   	gw1(j1) = sin(slat1(j1+1)/180.0_r8*SHR_CONST_PI)-sin(slat1(j1)/180.0_r8*SHR_CONST_PI)</a>
+    87) <a name="l87" style="background-color: #ffcccc">  enddo</a>
+    88) <a name="l88" style="background-color: #ffcccc"></a>
+    89) <a name="l89" style="background-color: #ffcccc">  do j2=1,jm2</a>
+    90) <a name="l90" style="background-color: #ffcccc">	gw2(j2) = sin(slat2(j2+1)/180.0_r8*SHR_CONST_PI)-sin(slat2(j2)/180.0_r8*SHR_CONST_PI)</a>
+    91) <a name="l91" style="background-color: #ffcccc">  enddo</a>
+    92) <a name="l92" style="background-color: #ffcccc"></a>
+    93) <a name="l93" style="background-color: #ffcccc"></a>
+    94) <a name="l94" style="background-color: #ffcccc">! add 360 to slon1 and slon2 </a>
+    95) <a name="l95" style="background-color: #ffcccc">  slon1(:) = slon1(:)+360.0_r8</a>
+    96) <a name="l96" style="background-color: #ffcccc">  slon2(:) = slon2(:)+360.0_r8</a>
+    97) <a name="l97" style="background-color: #ffcccc"></a>
+    98) <a name="l98" style="background-color: #ffcccc"> do i2=1,im2</a>
+    99) <a name="l99" style="background-color: #ffcccc"></a>
+   100) <a name="l100" style="background-color: #ffcccc">! target grid east-west boundaries</a>
+   101) <a name="l101" style="background-color: #ffcccc">  x2_west=slon2(i2)</a>
+   102) <a name="l102" style="background-color: #ffcccc">  x2_east=slon2(i2+1)</a>
+   103) <a name="l103" style="background-color: #ffcccc"></a>
+   104) <a name="l104" style="background-color: #ffcccc">  do i1=1,im1</a>
+   105) <a name="l105" style="background-color: #ffcccc"></a>
+   106) <a name="l106" style="background-color: #ffcccc">! source grid east-west boundaries</a>
+   107) <a name="l107" style="background-color: #ffcccc">   x1_west=slon1(i1)</a>
+   108) <a name="l108" style="background-color: #ffcccc">   x1_east=slon1(i1+1)</a>
+   109) <a name="l109" style="background-color: #ffcccc"></a>
+   110) <a name="l110" style="background-color: #ffcccc">! check if there is any overlap between the source grid and the target grid</a>
+   111) <a name="l111" style="background-color: #ffcccc">! if no overlap, then weighting is zero</a>
+   112) <a name="l112" style="background-color: #ffcccc">! there are three scenarios overlaps can take place </a>
+   113) <a name="l113" style="background-color: #ffcccc">   if( (x1_west.ge.x2_west).and.(x1_east.le.x2_east) ) then</a>
+   114) <a name="l114" style="background-color: #ffcccc">! case 1: </a>
+   115) <a name="l115" style="background-color: #ffcccc">!                x1_west             x1_east</a>
+   116) <a name="l116" style="background-color: #ffcccc">!                  |-------------------|</a>
+   117) <a name="l117" style="background-color: #ffcccc">!            |---------------------------------|</a>
+   118) <a name="l118" style="background-color: #ffcccc">!          x2_west                           x2_east</a>
+   119) <a name="l119" style="background-color: #ffcccc">     weight_x(i2,i1) =  (x1_east-x1_west)/(x2_east-x2_west)</a>
+   120) <a name="l120" style="background-color: #ffcccc">   elseif ( (x1_west.ge.x2_west).and.(x1_west.lt.x2_east) ) then</a>
+   121) <a name="l121" style="background-color: #ffcccc">! case 2: </a>
+   122) <a name="l122" style="background-color: #ffcccc">!                x1_west                          x1_east</a>
+   123) <a name="l123" style="background-color: #ffcccc">!                  |--------------------------------|</a>
+   124) <a name="l124" style="background-color: #ffcccc">!            |---------------------------------|</a>
+   125) <a name="l125" style="background-color: #ffcccc">!          x2_west                           x2_east</a>
+   126) <a name="l126" style="background-color: #ffcccc">     weight_x(i2,i1) = (x2_east-x1_west)/(x2_east-x2_west)</a>
+   127) <a name="l127" style="background-color: #ffcccc">   elseif ( (x1_east&gt;x2_west).and.(x1_east.le.x2_east) ) then</a>
+   128) <a name="l128" style="background-color: #ffcccc">! case 3: </a>
+   129) <a name="l129" style="background-color: #ffcccc">!       x1_west                          x1_east</a>
+   130) <a name="l130" style="background-color: #ffcccc">!         |--------------------------------|</a>
+   131) <a name="l131" style="background-color: #ffcccc">!                |---------------------------------|</a>
+   132) <a name="l132" style="background-color: #ffcccc">!              x2_west                           x2_east</a>
+   133) <a name="l133" style="background-color: #ffcccc">     weight_x(i2,i1) = (x1_east-x2_west)/(x2_east-x2_west)</a>
+   134) <a name="l134" style="background-color: #ffcccc">   endif</a>
+   135) <a name="l135" style="background-color: #ffcccc"></a>
+   136) <a name="l136" style="background-color: #ffcccc">   enddo	</a>
+   137) <a name="l137" style="background-color: #ffcccc">  enddo</a>
+   138) <a name="l138" style="background-color: #ffcccc"></a>
+   139) <a name="l139" style="background-color: #ffcccc"></a>
+   140) <a name="l140" style="background-color: #ffcccc">! consider end points</a>
+   141) <a name="l141" style="background-color: #ffcccc">      if(slon1(im1+1).gt.slon2(im2+1)) then</a>
+   142) <a name="l142" style="background-color: #ffcccc">! case 1:</a>
+   143) <a name="l143" style="background-color: #ffcccc">!           slon1(im1)                slon1(im1+1) &lt;--- end point</a>
+   144) <a name="l144" style="background-color: #ffcccc">!              |-------------------------|</a>
+   145) <a name="l145" style="background-color: #ffcccc">!           |----------------|......................|</a>
+   146) <a name="l146" style="background-color: #ffcccc">!        slon2(im2)         slon2(im2+1)        slon2(2)  (note: slon2(im2+1) = slon2(1))</a>
+   147) <a name="l147" style="background-color: #ffcccc">     	weight_x(1,im1)= weight_x(1,im1)+(slon1(im1+1)-slon2(im2+1))/(slon2(2)-slon2(1))</a>
+   148) <a name="l148" style="background-color: #ffcccc">      endif	</a>
+   149) <a name="l149" style="background-color: #ffcccc"></a>
+   150) <a name="l150" style="background-color: #ffcccc">      if(slon1(im1+1).lt.slon2(im2+1)) then</a>
+   151) <a name="l151" style="background-color: #ffcccc">! case 1:</a>
+   152) <a name="l152" style="background-color: #ffcccc">!           slon1(im1)                slon1(im1+1)                  slon1(2)    (note: slon1(im1+1) = slon1(1))</a>
+   153) <a name="l153" style="background-color: #ffcccc">!              |-------------------------|.............................|</a>
+   154) <a name="l154" style="background-color: #ffcccc">!                   |-------------------------------|</a>
+   155) <a name="l155" style="background-color: #ffcccc">!               slon2(im2)                        slon2(im2+1) &lt;--- end point</a>
+   156) <a name="l156" style="background-color: #ffcccc">        weight_x(im2,1) = weight_x(im2,1)+(slon2(1)-slon1(1))/(slon2(2)-slon2(1)) </a>
+   157) <a name="l157" style="background-color: #ffcccc">      endif</a>
+   158) <a name="l158" style="background-color: #ffcccc"></a>
+   159) <a name="l159" style="background-color: #ffcccc"></a>
+   160) <a name="l160" style="background-color: #ffcccc"></a>
+   161) <a name="l161" style="background-color: #ffcccc">      do j2=1,jm2</a>
+   162) <a name="l162" style="background-color: #ffcccc">! target grid north-south boundaries</a>
+   163) <a name="l163" style="background-color: #ffcccc">         y2_south=slat2(j2)</a>
+   164) <a name="l164" style="background-color: #ffcccc">         y2_north=slat2(j2+1)</a>
+   165) <a name="l165" style="background-color: #ffcccc"></a>
+   166) <a name="l166" style="background-color: #ffcccc">         do j1=1,jm1</a>
+   167) <a name="l167" style="background-color: #ffcccc"></a>
+   168) <a name="l168" style="background-color: #ffcccc">! source grid north-south boundaries</a>
+   169) <a name="l169" style="background-color: #ffcccc">            y1_south=slat1(j1)</a>
+   170) <a name="l170" style="background-color: #ffcccc">            y1_north=slat1(j1+1)</a>
+   171) <a name="l171" style="background-color: #ffcccc"> </a>
+   172) <a name="l172" style="background-color: #ffcccc">! check if there is any overlap between the source grid and the target grid</a>
+   173) <a name="l173" style="background-color: #ffcccc">! if no overlap, then weighting is zero</a>
+   174) <a name="l174" style="background-color: #ffcccc">! there are three scenarios overlaps can take place </a>
+   175) <a name="l175" style="background-color: #ffcccc">! note: there is Guassian weight to consider in the meridional direction!</a>
+   176) <a name="l176" style="background-color: #ffcccc"></a>
+   177) <a name="l177" style="background-color: #ffcccc">            if( (y1_south.ge.y2_south).and.(y1_north.le.y2_north) ) then</a>
+   178) <a name="l178" style="background-color: #ffcccc">! case 1: </a>
+   179) <a name="l179" style="background-color: #ffcccc">!                y1_south             y1_north</a>
+   180) <a name="l180" style="background-color: #ffcccc">!                  |-------------------|</a>
+   181) <a name="l181" style="background-color: #ffcccc">!            |---------------------------------|</a>
+   182) <a name="l182" style="background-color: #ffcccc">!          y2_south                           y2_north</a>
+   183) <a name="l183" style="background-color: #ffcccc">                 weight_y(j2,j1) =  gw1(j1)/gw2(j2)</a>
+   184) <a name="l184" style="background-color: #ffcccc">            elseif ( (y1_south.ge.y2_south).and.(y1_south.lt.y2_north) ) then</a>
+   185) <a name="l185" style="background-color: #ffcccc">! case 2: </a>
+   186) <a name="l186" style="background-color: #ffcccc">!                y1_south                          y1_north</a>
+   187) <a name="l187" style="background-color: #ffcccc">!                  |--------------------------------|</a>
+   188) <a name="l188" style="background-color: #ffcccc">!            |---------------------------------|</a>
+   189) <a name="l189" style="background-color: #ffcccc">!          y2_south                           y2_north</a>
+   190) <a name="l190" style="background-color: #ffcccc">                 weight_y(j2,j1) = (y2_north-y1_south)/(y1_north-y1_south)*gw1(j1)/gw2(j2)</a>
+   191) <a name="l191" style="background-color: #ffcccc">            elseif ( (y1_north.gt.y2_south).and.(y1_north.le.y2_north) ) then</a>
+   192) <a name="l192" style="background-color: #ffcccc">! case 3: </a>
+   193) <a name="l193" style="background-color: #ffcccc">!       y1_south                          y1_north</a>
+   194) <a name="l194" style="background-color: #ffcccc">!         |--------------------------------|</a>
+   195) <a name="l195" style="background-color: #ffcccc">!                |---------------------------------|</a>
+   196) <a name="l196" style="background-color: #ffcccc">!              y2_south                           y2_north</a>
+   197) <a name="l197" style="background-color: #ffcccc">                 weight_y(j2,j1) = (y1_north-y2_south)/(y1_north-y1_south)*gw1(j1)/gw2(j2)</a>
+   198) <a name="l198" style="background-color: #ffcccc">            endif</a>
+   199) <a name="l199" style="background-color: #ffcccc"></a>
+   200) <a name="l200" style="background-color: #ffcccc">          enddo</a>
+   201) <a name="l201" style="background-color: #ffcccc">        enddo</a>
+   202) <a name="l202" style="background-color: #ffcccc"></a>
+   203) <a name="l203" style="background-color: #ffcccc">  end subroutine xy_interp_init</a>
+   204) <a name="l204" style="background-color: #ffffff"></a>
+   205) <a name="l205" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">xy_interp(im1,jm1,km1,im2,jm2,pcols,ncols,weight_x,weight_y,var_src,var_trg,lons,lats,count_x,count_y,index_x,index_y)</a>
+   206) <a name="l206" style="background-color: #ffcccc">!-------------------------------------------------------------------------------------------------------------</a>
+   207) <a name="l207" style="background-color: #ffcccc">! This program interpolates var_src(im1,jm1,km1) to var_trg(im2,jm2,km1) based on weighting functions weight_x &amp; weight_y.</a>
+   208) <a name="l208" style="background-color: #ffcccc">!-------------------------------------------------------------------------------------------------------------</a>
+   209) <a name="l209" style="background-color: #ffcccc">  implicit none</a>
+   210) <a name="l210" style="background-color: #ffcccc">  integer,  intent(in)  :: im1   ! source number of longitudes</a>
+   211) <a name="l211" style="background-color: #ffcccc">  integer,  intent(in)  :: jm1   ! source number of latitudes</a>
+   212) <a name="l212" style="background-color: #ffcccc">  integer,  intent(in)  :: km1   ! source/target number of levels</a>
+   213) <a name="l213" style="background-color: #ffcccc">  integer,  intent(in)  :: im2   ! target number of longitudes</a>
+   214) <a name="l214" style="background-color: #ffcccc">  integer,  intent(in)  :: jm2   ! target number of latitudes</a>
+   215) <a name="l215" style="background-color: #ffcccc">  integer,  intent(in)  :: pcols</a>
+   216) <a name="l216" style="background-color: #ffcccc">  integer,  intent(in)  :: ncols</a>
+   217) <a name="l217" style="background-color: #ffcccc">  real(r8), intent(in)  :: weight_x(im2,im1), weight_y(jm2,jm1)</a>
+   218) <a name="l218" style="background-color: #ffcccc">  real(r8), intent(in)  :: var_src(im1,jm1,km1)</a>
+   219) <a name="l219" style="background-color: #ffcccc">  integer,  intent(in)  :: lons(pcols), lats(pcols)</a>
+   220) <a name="l220" style="background-color: #ffcccc">  integer,  intent(in)  :: count_x(im2), count_y(jm2)</a>
+   221) <a name="l221" style="background-color: #ffcccc">  integer,  intent(in)  :: index_x(im2,im1), index_y(jm2,jm1)</a>
+   222) <a name="l222" style="background-color: #ffcccc">  real(r8), intent(out) :: var_trg(pcols,km1)</a>
+   223) <a name="l223" style="background-color: #ffcccc">  integer  :: n, i1, j1, k1, i2, j2, ii, jj</a>
+   224) <a name="l224" style="background-color: #ffcccc">  real(r8) :: sum_x</a>
+   225) <a name="l225" style="background-color: #ffcccc"></a>
+   226) <a name="l226" style="background-color: #ffcccc">  var_trg(:,:) = 0.0_r8</a>
+   227) <a name="l227" style="background-color: #ffcccc"> </a>
+   228) <a name="l228" style="background-color: #ffcccc"></a>
+   229) <a name="l229" style="background-color: #ffcccc">  do k1=1,km1</a>
+   230) <a name="l230" style="background-color: #ffcccc">     do n=1,ncols</a>
+   231) <a name="l231" style="background-color: #ffcccc">! interpolate in x</a>
+   232) <a name="l232" style="background-color: #ffcccc">        do jj=1,count_y(lats(n))</a>
+   233) <a name="l233" style="background-color: #ffcccc">           sum_x = 0.0_r8</a>
+   234) <a name="l234" style="background-color: #ffcccc">           do ii=1,count_x(lons(n))</a>
+   235) <a name="l235" style="background-color: #ffcccc">              sum_x = sum_x + var_src(index_x(lons(n),ii),index_y(lats(n),jj),k1)* &amp;</a>
+   236) <a name="l236" style="background-color: #ffcccc">                             weight_x(lons(n),index_x(lons(n),ii))</a>
+   237) <a name="l237" style="background-color: #ffcccc">           enddo</a>
+   238) <a name="l238" style="background-color: #ffcccc">           var_trg(n,k1) = var_trg(n,k1)+sum_x*weight_y(lats(n),index_y(lats(n),jj))</a>
+   239) <a name="l239" style="background-color: #ffcccc">        enddo</a>
+   240) <a name="l240" style="background-color: #ffcccc">     enddo</a>
+   241) <a name="l241" style="background-color: #ffcccc">  enddo</a>
+   242) <a name="l242" style="background-color: #ffcccc"></a>
+   243) <a name="l243" style="background-color: #ffcccc">  end subroutine xy_interp</a>
+   244) <a name="l244" style="background-color: #ffffff"></a>
+   245) <a name="l245" style="background-color: #ffffff"></a>
+   246) <a name="l246" style="background-color: #ffffff">end module horizontal_interpolate</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

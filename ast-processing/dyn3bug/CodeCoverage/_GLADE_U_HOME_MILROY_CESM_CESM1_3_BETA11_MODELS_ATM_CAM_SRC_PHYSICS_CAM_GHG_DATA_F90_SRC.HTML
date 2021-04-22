@@ -1,0 +1,299 @@
+<html>
+<head>
+<title>Listing of ghg_data.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;ghg_data.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 88.33&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff"></a>
+     2) <a name="l2" style="background-color: #ffffff">module ghg_data</a>
+     3) <a name="l3" style="background-color: #ffffff"></a>
+     4) <a name="l4" style="background-color: #ffffff">!------------------------------------------------------------------------------------------------</a>
+     5) <a name="l5" style="background-color: #ffffff">! Purpose:</a>
+     6) <a name="l6" style="background-color: #ffffff">! Provide default distributions of CH4, N2O, CFC11 and CFC12 to the radiation routines.</a>
+     7) <a name="l7" style="background-color: #ffffff">! **NOTE** CO2 is assumed by the radiation to a be constant value.  This value is</a>
+     8) <a name="l8" style="background-color: #ffffff">!          currently supplied directly by the chem_surfvals module.</a>
+     9) <a name="l9" style="background-color: #ffffff">!</a>
+    10) <a name="l10" style="background-color: #ffffff">! Revision history:</a>
+    11) <a name="l11" style="background-color: #ffffff">! 2004-08-29  B. Eaton        Create CAM interface to trcmix.</a>
+    12) <a name="l12" style="background-color: #ffffff">!------------------------------------------------------------------------------------------------</a>
+    13) <a name="l13" style="background-color: #ffffff"></a>
+    14) <a name="l14" style="background-color: #ffffff">use shr_kind_mod,   only: r8 =&gt; shr_kind_r8</a>
+    15) <a name="l15" style="background-color: #ffffff">use ppgrid,         only: pcols, pver, begchunk, endchunk</a>
+    16) <a name="l16" style="background-color: #ffffff">use physics_types,  only: physics_state</a>
+    17) <a name="l17" style="background-color: #ffffff">use physconst,      only: mwdry, mwch4, mwn2o, mwf11, mwf12, mwco2</a>
+    18) <a name="l18" style="background-color: #ffffff">use chem_surfvals,  only: chem_surfvals_get, chem_surfvals_co2_rad</a>
+    19) <a name="l19" style="background-color: #ffffff">use abortutils,     only: endrun</a>
+    20) <a name="l20" style="background-color: #ffffff">use error_messages, only: handle_err</a>
+    21) <a name="l21" style="background-color: #ffffff"></a>
+    22) <a name="l22" style="background-color: #ffffff"></a>
+    23) <a name="l23" style="background-color: #ffffff">implicit none</a>
+    24) <a name="l24" style="background-color: #ffffff">private</a>
+    25) <a name="l25" style="background-color: #ffffff">save</a>
+    26) <a name="l26" style="background-color: #ffffff"></a>
+    27) <a name="l27" style="background-color: #ffffff">! Public interfaces</a>
+    28) <a name="l28" style="background-color: #ffffff">public ::&amp;</a>
+    29) <a name="l29" style="background-color: #ffffff">   ghg_data_register, &amp;! register ghg's with pbuf2d</a>
+    30) <a name="l30" style="background-color: #ffffff">   ghg_data_timestep_init    ! place data model of ghg's in pbuf2d</a>
+    31) <a name="l31" style="background-color: #ffffff"></a>
+    32) <a name="l32" style="background-color: #ffffff">! Private variables</a>
+    33) <a name="l33" style="background-color: #ffffff"></a>
+    34) <a name="l34" style="background-color: #ffffff">real(r8) :: rmwn2o ! = mwn2o/mwdry ! ratio of molecular weight n2o   to dry air</a>
+    35) <a name="l35" style="background-color: #ffffff">real(r8) :: rmwch4 ! = mwch4/mwdry ! ratio of molecular weight ch4   to dry air</a>
+    36) <a name="l36" style="background-color: #ffffff">real(r8) :: rmwf11 ! = mwf11/mwdry ! ratio of molecular weight cfc11 to dry air</a>
+    37) <a name="l37" style="background-color: #ffffff">real(r8) :: rmwf12 ! = mwf12/mwdry ! ratio of molecular weight cfc12 to dry air</a>
+    38) <a name="l38" style="background-color: #ffffff">real(r8) :: rmwco2 ! = mwco2/mwdry ! ratio of molecular weights of co2 to dry air</a>
+    39) <a name="l39" style="background-color: #ffffff"></a>
+    40) <a name="l40" style="background-color: #ffffff">integer, parameter :: ncnst = 6                        ! number of constituents</a>
+    41) <a name="l41" style="background-color: #ffffff">character(len=8), dimension(ncnst), parameter :: &amp;</a>
+    42) <a name="l42" style="background-color: #ffffff">   cnst_names = (/'N2O  ', 'CH4  ', 'CFC11', 'CFC12', 'CO2  ', 'O2   '/) ! constituent names</a>
+    43) <a name="l43" style="background-color: #ffffff">integer  :: pbuf_idx(ncnst)</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">!================================================================================================</a>
+    46) <a name="l46" style="background-color: #ffffff">contains</a>
+    47) <a name="l47" style="background-color: #ffffff">!================================================================================================</a>
+    48) <a name="l48" style="background-color: #ffffff"></a>
+    49) <a name="l49" style="background-color: #ffffff">subroutine ghg_data_register()</a>
+    50) <a name="l50" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+    51) <a name="l51" style="background-color: #ffffff">! register ghg's with pbuf2d</a>
+    52) <a name="l52" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+    53) <a name="l53" style="background-color: #ffffff">  use physics_buffer, only : pbuf_add_field, dtype_r8</a>
+    54) <a name="l54" style="background-color: #ffffff"></a>
+    55) <a name="l55" style="background-color: #ffffff">  integer iconst</a>
+    56) <a name="l56" style="background-color: #ffffff"></a>
+    57) <a name="l57" style="background-color: #ffffff"> </a>
+    58) <a name="l58" style="background-color: #ffffff">  do iconst = 1,ncnst</a>
+    59) <a name="l59" style="background-color: #ffffff">     call pbuf_add_field(cnst_names(iconst),'physpkg',dtype_r8,(/pcols,pver/),pbuf_idx(iconst))</a>
+    60) <a name="l60" style="background-color: #ffffff">  enddo</a>
+    61) <a name="l61" style="background-color: #ffffff"></a>
+    62) <a name="l62" style="background-color: #ffffff">end subroutine ghg_data_register</a>
+    63) <a name="l63" style="background-color: #ffffff"></a>
+    64) <a name="l64" style="background-color: #ffffff">subroutine ghg_data_timestep_init(pbuf2d, state)</a>
+    65) <a name="l65" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+    66) <a name="l66" style="background-color: #ffffff">! place data model of ghg's in pbuf2d at each timestep</a>
+    67) <a name="l67" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+    68) <a name="l68" style="background-color: #ffffff">  use ppgrid,              only: begchunk, endchunk, pcols, pver</a>
+    69) <a name="l69" style="background-color: #ffffff">  use physics_types,       only: physics_state</a>
+    70) <a name="l70" style="background-color: #ffffff">  use physics_buffer,      only: physics_buffer_desc, pbuf_get_field, pbuf_get_chunk</a>
+    71) <a name="l71" style="background-color: #ffffff"></a>
+    72) <a name="l72" style="background-color: #ffffff">  </a>
+    73) <a name="l73" style="background-color: #ffffff">  type(physics_state), intent(in), dimension(begchunk:endchunk) :: state</a>
+    74) <a name="l74" style="background-color: #ffffff">  type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+    75) <a name="l75" style="background-color: #ffffff"> </a>
+    76) <a name="l76" style="background-color: #ffffff">  type(physics_buffer_desc), pointer :: pbuf_chnk(:)</a>
+    77) <a name="l77" style="background-color: #ffffff">  real(r8), pointer :: tmpptr(:,:)</a>
+    78) <a name="l78" style="background-color: #ffffff"></a>
+    79) <a name="l79" style="background-color: #ffffff">  integer iconst</a>
+    80) <a name="l80" style="background-color: #ffffff">  integer lchnk</a>
+    81) <a name="l81" style="background-color: #ffffff"></a>
+    82) <a name="l82" style="background-color: #ffffff">  rmwn2o = mwn2o/mwdry      ! ratio of molecular weight n2o   to dry air</a>
+    83) <a name="l83" style="background-color: #ffffff">  rmwch4 = mwch4/mwdry      ! ratio of molecular weight ch4   to dry air</a>
+    84) <a name="l84" style="background-color: #ffffff">  rmwf11 = mwf11/mwdry      ! ratio of molecular weight cfc11 to dry air</a>
+    85) <a name="l85" style="background-color: #ffffff">  rmwf12 = mwf12/mwdry      ! ratio of molecular weight cfc12 to dry air</a>
+    86) <a name="l86" style="background-color: #ffffff">  rmwco2 = mwco2/mwdry      ! ratio of molecular weights of co2 to dry air</a>
+    87) <a name="l87" style="background-color: #ffffff"></a>
+    88) <a name="l88" style="background-color: #ffffff">   do iconst = 1,ncnst</a>
+    89) <a name="l89" style="background-color: #ffffff">!$OMP PARALLEL DO PRIVATE (LCHNK,tmpptr,pbuf_chnk)</a>
+    90) <a name="l90" style="background-color: #ffffff">     do lchnk = begchunk, endchunk</a>
+    91) <a name="l91" style="background-color: #ffffff">       pbuf_chnk =&gt; pbuf_get_chunk(pbuf2d, lchnk)</a>
+    92) <a name="l92" style="background-color: #ffffff">       call pbuf_get_field(pbuf_chnk, pbuf_idx(iconst), tmpptr) </a>
+    93) <a name="l93" style="background-color: #ffffff">       call </a><a style="background-color: #fafad2">trcmix(cnst_names(iconst), state(lchnk)%ncol, &amp;</a>
+    94) <a name="l94" style="background-color: #fafad2">                   state(lchnk)%lat, state(lchnk)%pmid, &amp;</a>
+    95) <a name="l95" style="background-color: #fafad2">                   tmpptr)</a>
+    96) <a name="l96" style="background-color: #fafad2">     enddo</a>
+    97) <a name="l97" style="background-color: #fafad2">  enddo</a>
+    98) <a name="l98" style="background-color: #fafad2"></a>
+    99) <a name="l99" style="background-color: #ffffff">end subroutine ghg_data_timestep_init</a>
+   100) <a name="l100" style="background-color: #ffffff"></a>
+   101) <a name="l101" style="background-color: #ffffff"></a>
+   102) <a name="l102" style="background-color: #ffffff">!================================================================================================</a>
+   103) <a name="l103" style="background-color: #ffffff"></a>
+   104) <a name="l104" style="background-color: #ffffff">subroutine trcmix(name, ncol, clat, pmid, q)</a>
+   105) <a name="l105" style="background-color: #ffffff">!----------------------------------------------------------------------- </a>
+   106) <a name="l106" style="background-color: #ffffff">! </a>
+   107) <a name="l107" style="background-color: #ffffff">! Purpose: </a>
+   108) <a name="l108" style="background-color: #ffffff">! Specify zonal mean mass mixing ratios of CH4, N2O, CFC11 and</a>
+   109) <a name="l109" style="background-color: #ffffff">! CFC12</a>
+   110) <a name="l110" style="background-color: #ffffff">! </a>
+   111) <a name="l111" style="background-color: #ffffff">! Method: </a>
+   112) <a name="l112" style="background-color: #ffffff">! Distributions assume constant mixing ratio in the troposphere</a>
+   113) <a name="l113" style="background-color: #ffffff">! and a decrease of mixing ratio in the stratosphere. Tropopause</a>
+   114) <a name="l114" style="background-color: #ffffff">! defined by ptrop. The scale height of the particular trace gas</a>
+   115) <a name="l115" style="background-color: #ffffff">! depends on latitude. This assumption produces a more realistic</a>
+   116) <a name="l116" style="background-color: #ffffff">! stratospheric distribution of the various trace gases.</a>
+   117) <a name="l117" style="background-color: #ffffff">! </a>
+   118) <a name="l118" style="background-color: #ffffff">! Author: J. Kiehl</a>
+   119) <a name="l119" style="background-color: #ffffff">! </a>
+   120) <a name="l120" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   121) <a name="l121" style="background-color: #ffffff"></a>
+   122) <a name="l122" style="background-color: #ffffff">   ! Arguments</a>
+   123) <a name="l123" style="background-color: #ffffff">   character(len=*), intent(in)  :: name              ! constituent name</a>
+   124) <a name="l124" style="background-color: #ffffff">   integer,          intent(in)  :: ncol              ! number of columns</a>
+   125) <a name="l125" style="background-color: #ffffff">   real(r8),         intent(in)  :: clat(pcols)       ! latitude in radians for columns</a>
+   126) <a name="l126" style="background-color: #ffffff">   real(r8),         intent(in)  :: pmid(pcols,pver)  ! model pressures</a>
+   127) <a name="l127" style="background-color: #ffffff">   real(r8),         intent(out) :: q(pcols,pver)     ! constituent mass mixing ratio</a>
+   128) <a name="l128" style="background-color: #ffffff"></a>
+   129) <a name="l129" style="background-color: #ffffff">   integer i                ! longitude loop index</a>
+   130) <a name="l130" style="background-color: #ffffff">   integer k                ! level index</a>
+   131) <a name="l131" style="background-color: #ffffff"></a>
+   132) <a name="l132" style="background-color: #ffffff">   real(r8) coslat(pcols)   ! cosine of latitude</a>
+   133) <a name="l133" style="background-color: #ffffff">   real(r8) dlat            ! latitude in degrees</a>
+   134) <a name="l134" style="background-color: #ffffff">   real(r8) ptrop           ! pressure level of tropopause</a>
+   135) <a name="l135" style="background-color: #ffffff">   real(r8) pratio          ! pressure divided by ptrop</a>
+   136) <a name="l136" style="background-color: #ffffff">   real(r8) trop_mmr        ! tropospheric mass mixing ratio</a>
+   137) <a name="l137" style="background-color: #ffffff">   real(r8) scale           ! pressure scale height</a>
+   138) <a name="l138" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   139) <a name="l139" style="background-color: #ffffff"></a>
+   140) <a name="l140" style="background-color: #ffffff">   do i = 1, ncol</a>
+   141) <a name="l141" style="background-color: #ffffff">      coslat(i) = cos(clat(i))</a>
+   142) <a name="l142" style="background-color: #ffffff">   end do</a>
+   143) <a name="l143" style="background-color: #ffffff"></a>
+   144) <a name="l144" style="background-color: #ffffff">   if (name == 'O2') then</a>
+   145) <a name="l145" style="background-color: #ffffff"></a>
+   146) <a name="l146" style="background-color: #ffffff">      q = chem_surfvals_get('O2MMR')</a>
+   147) <a name="l147" style="background-color: #ffffff"></a>
+   148) <a name="l148" style="background-color: #ffffff">   else if (name == 'CO2') then</a>
+   149) <a name="l149" style="background-color: #ffffff"></a>
+   150) <a name="l150" style="background-color: #ffffff">      q = chem_surfvals_co2_rad()</a>
+   151) <a name="l151" style="background-color: #ffffff"></a>
+   152) <a name="l152" style="background-color: #ffffff">   else if (name == 'CH4') then</a>
+   153) <a name="l153" style="background-color: #ffffff"></a>
+   154) <a name="l154" style="background-color: #ffffff">      ! set tropospheric mass mixing ratios</a>
+   155) <a name="l155" style="background-color: #ffffff">      trop_mmr = rmwch4 * chem_surfvals_get('CH4VMR')</a>
+   156) <a name="l156" style="background-color: #ffffff"></a>
+   157) <a name="l157" style="background-color: #ffffff">      do k = 1,pver</a>
+   158) <a name="l158" style="background-color: #ffffff">         do i = 1,ncol</a>
+   159) <a name="l159" style="background-color: #ffffff">            ! set stratospheric scale height factor for gases</a>
+   160) <a name="l160" style="background-color: #ffffff">            dlat = abs(57.2958_r8 * clat(i))</a>
+   161) <a name="l161" style="background-color: #ffffff">            if(dlat.le.45.0_r8) then</a>
+   162) <a name="l162" style="background-color: #ffffff">               scale = 0.2353_r8</a>
+   163) <a name="l163" style="background-color: #ffffff">            else</a>
+   164) <a name="l164" style="background-color: #ffffff">               scale = 0.2353_r8 + 0.0225489_r8 * (dlat - 45)</a>
+   165) <a name="l165" style="background-color: #ffffff">            end if</a>
+   166) <a name="l166" style="background-color: #ffffff"></a>
+   167) <a name="l167" style="background-color: #ffffff">            ! pressure of tropopause</a>
+   168) <a name="l168" style="background-color: #ffffff">            ptrop = 250.0e2_r8 - 150.0e2_r8*coslat(i)**2.0_r8</a>
+   169) <a name="l169" style="background-color: #ffffff"></a>
+   170) <a name="l170" style="background-color: #ffffff">            ! determine output mass mixing ratios</a>
+   171) <a name="l171" style="background-color: #ffffff">            if (pmid(i,k) &gt;= ptrop) then</a>
+   172) <a name="l172" style="background-color: #ffffff">               q(i,k) = trop_mmr</a>
+   173) <a name="l173" style="background-color: #ffffff">            else</a>
+   174) <a name="l174" style="background-color: #ffffff">               pratio = pmid(i,k)/ptrop</a>
+   175) <a name="l175" style="background-color: #ffffff">               q(i,k) = trop_mmr * (pratio)**scale</a>
+   176) <a name="l176" style="background-color: #ffffff">            end if</a>
+   177) <a name="l177" style="background-color: #ffffff">         end do</a>
+   178) <a name="l178" style="background-color: #ffffff">      end do</a>
+   179) <a name="l179" style="background-color: #ffffff"></a>
+   180) <a name="l180" style="background-color: #ffffff">   else if (name == 'N2O') then</a>
+   181) <a name="l181" style="background-color: #ffffff"></a>
+   182) <a name="l182" style="background-color: #ffffff">      ! set tropospheric mass mixing ratios</a>
+   183) <a name="l183" style="background-color: #ffffff">      trop_mmr = rmwn2o * chem_surfvals_get('N2OVMR')</a>
+   184) <a name="l184" style="background-color: #ffffff"></a>
+   185) <a name="l185" style="background-color: #ffffff">      do k = 1,pver</a>
+   186) <a name="l186" style="background-color: #ffffff">         do i = 1,ncol</a>
+   187) <a name="l187" style="background-color: #ffffff">            ! set stratospheric scale height factor for gases</a>
+   188) <a name="l188" style="background-color: #ffffff">            dlat = abs(57.2958_r8 * clat(i))</a>
+   189) <a name="l189" style="background-color: #ffffff">            if(dlat.le.45.0_r8) then</a>
+   190) <a name="l190" style="background-color: #ffffff">               scale = 0.3478_r8 + 0.00116_r8 * dlat</a>
+   191) <a name="l191" style="background-color: #ffffff">            else</a>
+   192) <a name="l192" style="background-color: #ffffff">               scale = 0.4000_r8 + 0.013333_r8 * (dlat - 45)</a>
+   193) <a name="l193" style="background-color: #ffffff">            end if</a>
+   194) <a name="l194" style="background-color: #ffffff"></a>
+   195) <a name="l195" style="background-color: #ffffff">            ! pressure of tropopause</a>
+   196) <a name="l196" style="background-color: #ffffff">            ptrop = 250.0e2_r8 - 150.0e2_r8*coslat(i)**2.0_r8</a>
+   197) <a name="l197" style="background-color: #ffffff"></a>
+   198) <a name="l198" style="background-color: #ffffff">            ! determine output mass mixing ratios</a>
+   199) <a name="l199" style="background-color: #ffffff">            if (pmid(i,k) &gt;= ptrop) then</a>
+   200) <a name="l200" style="background-color: #ffffff">               q(i,k) = trop_mmr</a>
+   201) <a name="l201" style="background-color: #ffffff">            else</a>
+   202) <a name="l202" style="background-color: #ffffff">               pratio = pmid(i,k)/ptrop</a>
+   203) <a name="l203" style="background-color: #ffffff">               q(i,k) = trop_mmr * (pratio)**scale</a>
+   204) <a name="l204" style="background-color: #ffffff">            end if</a>
+   205) <a name="l205" style="background-color: #ffffff">         end do</a>
+   206) <a name="l206" style="background-color: #ffffff">      end do</a>
+   207) <a name="l207" style="background-color: #ffffff"></a>
+   208) <a name="l208" style="background-color: #ffffff">   else if (name == 'CFC11') then</a>
+   209) <a name="l209" style="background-color: #ffffff"></a>
+   210) <a name="l210" style="background-color: #ffffff">      ! set tropospheric mass mixing ratios</a>
+   211) <a name="l211" style="background-color: #ffffff">      trop_mmr = rmwf11 * chem_surfvals_get('F11VMR')</a>
+   212) <a name="l212" style="background-color: #ffffff"></a>
+   213) <a name="l213" style="background-color: #ffffff">      do k = 1,pver</a>
+   214) <a name="l214" style="background-color: #ffffff">         do i = 1,ncol</a>
+   215) <a name="l215" style="background-color: #ffffff">            ! set stratospheric scale height factor for gases</a>
+   216) <a name="l216" style="background-color: #ffffff">            dlat = abs(57.2958_r8 * clat(i))</a>
+   217) <a name="l217" style="background-color: #ffffff">            if(dlat.le.45.0_r8) then</a>
+   218) <a name="l218" style="background-color: #ffffff">               scale = 0.7273_r8 + 0.00606_r8 * dlat</a>
+   219) <a name="l219" style="background-color: #ffffff">            else</a>
+   220) <a name="l220" style="background-color: #ffffff">               scale = 1.00_r8 + 0.013333_r8 * (dlat - 45)</a>
+   221) <a name="l221" style="background-color: #ffffff">            end if</a>
+   222) <a name="l222" style="background-color: #ffffff"></a>
+   223) <a name="l223" style="background-color: #ffffff">            ! pressure of tropopause</a>
+   224) <a name="l224" style="background-color: #ffffff">            ptrop = 250.0e2_r8 - 150.0e2_r8*coslat(i)**2.0_r8</a>
+   225) <a name="l225" style="background-color: #ffffff"></a>
+   226) <a name="l226" style="background-color: #ffffff">            ! determine output mass mixing ratios</a>
+   227) <a name="l227" style="background-color: #ffffff">            if (pmid(i,k) &gt;= ptrop) then</a>
+   228) <a name="l228" style="background-color: #ffffff">               q(i,k) = trop_mmr</a>
+   229) <a name="l229" style="background-color: #ffffff">            else</a>
+   230) <a name="l230" style="background-color: #ffffff">               pratio = pmid(i,k)/ptrop</a>
+   231) <a name="l231" style="background-color: #ffffff">               q(i,k) = trop_mmr * (pratio)**scale</a>
+   232) <a name="l232" style="background-color: #ffffff">            end if</a>
+   233) <a name="l233" style="background-color: #ffffff">         end do</a>
+   234) <a name="l234" style="background-color: #ffffff">      end do</a>
+   235) <a name="l235" style="background-color: #ffffff"></a>
+   236) <a name="l236" style="background-color: #ffffff">   else if (name == 'CFC12') then</a>
+   237) <a name="l237" style="background-color: #ffffff"></a>
+   238) <a name="l238" style="background-color: #ffffff">      ! set tropospheric mass mixing ratios</a>
+   239) <a name="l239" style="background-color: #ffffff">      trop_mmr = rmwf12 * chem_surfvals_get('F12VMR')</a>
+   240) <a name="l240" style="background-color: #ffffff"></a>
+   241) <a name="l241" style="background-color: #ffffff">      do k = 1,pver</a>
+   242) <a name="l242" style="background-color: #ffffff">         do i = 1,ncol</a>
+   243) <a name="l243" style="background-color: #ffffff">            ! set stratospheric scale height factor for gases</a>
+   244) <a name="l244" style="background-color: #ffffff">            dlat = abs(57.2958_r8 * clat(i))</a>
+   245) <a name="l245" style="background-color: #ffffff">            if(dlat.le.45.0_r8) then</a>
+   246) <a name="l246" style="background-color: #ffffff">               scale = 0.4000_r8 + 0.00222_r8 * dlat</a>
+   247) <a name="l247" style="background-color: #ffffff">            else</a>
+   248) <a name="l248" style="background-color: #ffffff">               scale = 0.50_r8 + 0.024444_r8 * (dlat - 45)</a>
+   249) <a name="l249" style="background-color: #ffffff">            end if</a>
+   250) <a name="l250" style="background-color: #ffffff"></a>
+   251) <a name="l251" style="background-color: #ffffff">            ! pressure of tropopause</a>
+   252) <a name="l252" style="background-color: #ffffff">            ptrop = 250.0e2_r8 - 150.0e2_r8*coslat(i)**2.0_r8</a>
+   253) <a name="l253" style="background-color: #ffffff"></a>
+   254) <a name="l254" style="background-color: #ffffff">            ! determine output mass mixing ratios</a>
+   255) <a name="l255" style="background-color: #ffffff">            if (pmid(i,k) &gt;= ptrop) then</a>
+   256) <a name="l256" style="background-color: #ffffff">               q(i,k) = trop_mmr</a>
+   257) <a name="l257" style="background-color: #ffffff">            else</a>
+   258) <a name="l258" style="background-color: #ffffff">               pratio = pmid(i,k)/ptrop</a>
+   259) <a name="l259" style="background-color: #ffffff">               q(i,k) = trop_mmr * (pratio)**scale</a>
+   260) <a name="l260" style="background-color: #ffffff">            end if</a>
+   261) <a name="l261" style="background-color: #ffffff">         end do</a>
+   262) <a name="l262" style="background-color: #ffffff">      end do</a>
+   263) <a name="l263" style="background-color: #ffffff"></a>
+   264) <a name="l264" style="background-color: #ffffff">   end if</a>
+   265) <a name="l265" style="background-color: #ffffff"></a>
+   266) <a name="l266" style="background-color: #ffffff">end subroutine trcmix</a>
+   267) <a name="l267" style="background-color: #ffffff"></a>
+   268) <a name="l268" style="background-color: #ffffff">end module ghg_data</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

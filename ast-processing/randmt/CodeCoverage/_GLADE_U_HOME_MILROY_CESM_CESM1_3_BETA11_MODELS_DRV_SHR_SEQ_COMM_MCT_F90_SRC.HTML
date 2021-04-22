@@ -1,0 +1,1678 @@
+<html>
+<head>
+<title>Listing of seq_comm_mct.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;seq_comm_mct.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 61.90&#160;%func&#160;&#160;&#160;&#160; 62.87&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module seq_comm_mct</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">!</a>
+     5) <a name="l5" style="background-color: #ffffff">! Purpose: MCT utitlity functions used in sequential CCSM.</a>
+     6) <a name="l6" style="background-color: #ffffff">!          Note that if no MPI, will call MCTs fake version</a>
+     7) <a name="l7" style="background-color: #ffffff">!          (including mpif.h) will be utilized</a>
+     8) <a name="l8" style="background-color: #ffffff">!</a>
+     9) <a name="l9" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+    10) <a name="l10" style="background-color: #ffffff"></a>
+    11) <a name="l11" style="background-color: #ffffff"></a>
+    12) <a name="l12" style="background-color: #ffffff">!!! NOTE: If all atmospheres are identical in number of processes,</a>
+    13) <a name="l13" style="background-color: #ffffff">!!! number of threads, and grid layout, we should check that the</a>
+    14) <a name="l14" style="background-color: #ffffff">!!! user-provided number of processes and threads are consistent</a>
+    15) <a name="l15" style="background-color: #ffffff">!!! (or else, only accept one entry for these quantities when reading</a>
+    16) <a name="l16" style="background-color: #ffffff">!!! the namelist).  ARE OTHER PROTECTIONS/CHECKS NEEDED???</a>
+    17) <a name="l17" style="background-color: #ffffff"></a>
+    18) <a name="l18" style="background-color: #ffffff"></a>
+    19) <a name="l19" style="background-color: #ffffff">  use mct_mod     , only : mct_world_init, mct_die</a>
+    20) <a name="l20" style="background-color: #ffffff">  use shr_sys_mod , only : shr_sys_abort, shr_sys_flush</a>
+    21) <a name="l21" style="background-color: #ffffff">  use shr_mpi_mod , only : shr_mpi_chkerr, shr_mpi_bcast, shr_mpi_max</a>
+    22) <a name="l22" style="background-color: #ffffff">  use shr_file_mod, only : shr_file_getUnit, shr_file_freeUnit</a>
+    23) <a name="l23" style="background-color: #ffffff">#ifdef USE_ESMF_LIB</a>
+    24) <a name="l24" style="background-color: #ffffff">  use esmf</a>
+    25) <a name="l25" style="background-color: #ffffff">#endif</a>
+    26) <a name="l26" style="background-color: #ffffff"></a>
+    27) <a name="l27" style="background-color: #ffffff">  implicit none</a>
+    28) <a name="l28" style="background-color: #ffffff"></a>
+    29) <a name="l29" style="background-color: #ffffff">  private</a>
+    30) <a name="l30" style="background-color: #ffffff">#include &lt;mpif.h&gt;  </a>
+    31) <a name="l31" style="background-color: #ffffff">  save</a>
+    32) <a name="l32" style="background-color: #ffffff"></a>
+    33) <a name="l33" style="background-color: #ffffff">!--------------------------------------------------------------------------</a>
+    34) <a name="l34" style="background-color: #ffffff">! Public interfaces</a>
+    35) <a name="l35" style="background-color: #ffffff">!--------------------------------------------------------------------------</a>
+    36) <a name="l36" style="background-color: #ffffff"></a>
+    37) <a name="l37" style="background-color: #ffffff">  public seq_comm_init</a>
+    38) <a name="l38" style="background-color: #ffffff">  public seq_comm_iamin</a>
+    39) <a name="l39" style="background-color: #ffffff">  public seq_comm_iamroot</a>
+    40) <a name="l40" style="background-color: #ffffff">  public seq_comm_mpicom</a>
+    41) <a name="l41" style="background-color: #ffffff">  public seq_comm_iam</a>
+    42) <a name="l42" style="background-color: #ffffff">  public seq_comm_gloiam</a>
+    43) <a name="l43" style="background-color: #ffffff">  public seq_comm_gloroot</a>
+    44) <a name="l44" style="background-color: #ffffff">  public seq_comm_cplpe</a>
+    45) <a name="l45" style="background-color: #ffffff">  public seq_comm_cmppe</a>
+    46) <a name="l46" style="background-color: #ffffff">  public seq_comm_name</a>
+    47) <a name="l47" style="background-color: #ffffff">  public seq_comm_inst</a>
+    48) <a name="l48" style="background-color: #ffffff">  public seq_comm_suffix</a>
+    49) <a name="l49" style="background-color: #ffffff">  public seq_comm_petlist</a>
+    50) <a name="l50" style="background-color: #ffffff">  public seq_comm_setptrs</a>
+    51) <a name="l51" style="background-color: #ffffff">  public seq_comm_setnthreads</a>
+    52) <a name="l52" style="background-color: #ffffff">  public seq_comm_getnthreads</a>
+    53) <a name="l53" style="background-color: #ffffff">  public seq_comm_printcomms</a>
+    54) <a name="l54" style="background-color: #ffffff">#ifdef USE_ESMF_LIB</a>
+    55) <a name="l55" style="background-color: #ffffff">  public seq_comm_getcompstates</a>
+    56) <a name="l56" style="background-color: #ffffff">  public seq_comm_setcompstates</a>
+    57) <a name="l57" style="background-color: #ffffff">#endif</a>
+    58) <a name="l58" style="background-color: #ffffff"></a>
+    59) <a name="l59" style="background-color: #ffffff">!--------------------------------------------------------------------------</a>
+    60) <a name="l60" style="background-color: #ffffff">! Public data</a>
+    61) <a name="l61" style="background-color: #ffffff">!--------------------------------------------------------------------------</a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">  integer, public, parameter :: default_logunit = 6</a>
+    64) <a name="l64" style="background-color: #ffffff">  integer, public :: logunit  = default_logunit     ! log unit number</a>
+    65) <a name="l65" style="background-color: #ffffff">  integer, public :: loglevel = 1     ! log level</a>
+    66) <a name="l66" style="background-color: #ffffff"></a>
+    67) <a name="l67" style="background-color: #ffffff">  integer, public :: global_mype = -1  !! To be initialized</a>
+    68) <a name="l68" style="background-color: #ffffff"></a>
+    69) <a name="l69" style="background-color: #ffffff">  !!! Note - NUM_COMP_INST_XXX are cpp variables set in buildlib.csm_share</a>
+    70) <a name="l70" style="background-color: #ffffff"></a>
+    71) <a name="l71" style="background-color: #ffffff">  integer, parameter :: nphysmod = 7  ! number of physical models</a>
+    72) <a name="l72" style="background-color: #ffffff">  integer, parameter, public :: num_inst_atm = NUM_COMP_INST_ATM</a>
+    73) <a name="l73" style="background-color: #ffffff">  integer, parameter, public :: num_inst_lnd = NUM_COMP_INST_LND</a>
+    74) <a name="l74" style="background-color: #ffffff">  integer, parameter, public :: num_inst_ocn = NUM_COMP_INST_OCN</a>
+    75) <a name="l75" style="background-color: #ffffff">  integer, parameter, public :: num_inst_ice = NUM_COMP_INST_ICE</a>
+    76) <a name="l76" style="background-color: #ffffff">  integer, parameter, public :: num_inst_glc = NUM_COMP_INST_GLC</a>
+    77) <a name="l77" style="background-color: #ffffff">  integer, parameter, public :: num_inst_wav = NUM_COMP_INST_WAV</a>
+    78) <a name="l78" style="background-color: #ffffff">  integer, parameter, public :: num_inst_rof = NUM_COMP_INST_ROF</a>
+    79) <a name="l79" style="background-color: #ffffff"></a>
+    80) <a name="l80" style="background-color: #ffffff">  integer, parameter, public :: num_inst_total= num_inst_atm + &amp;</a>
+    81) <a name="l81" style="background-color: #ffffff">                                                num_inst_lnd + &amp;</a>
+    82) <a name="l82" style="background-color: #ffffff">                                                num_inst_ocn + &amp;</a>
+    83) <a name="l83" style="background-color: #ffffff">                                                num_inst_ice + &amp;</a>
+    84) <a name="l84" style="background-color: #ffffff">                                                num_inst_glc + &amp;</a>
+    85) <a name="l85" style="background-color: #ffffff">                                                num_inst_wav + &amp;</a>
+    86) <a name="l86" style="background-color: #ffffff">                                                num_inst_rof + 1</a>
+    87) <a name="l87" style="background-color: #ffffff"></a>
+    88) <a name="l88" style="background-color: #ffffff">  integer, public :: num_inst_min, num_inst_max</a>
+    89) <a name="l89" style="background-color: #ffffff">  integer, public :: num_inst_xao    ! for xao flux</a>
+    90) <a name="l90" style="background-color: #ffffff">  integer, public :: num_inst_frc    ! for fractions</a>
+    91) <a name="l91" style="background-color: #ffffff"></a>
+    92) <a name="l92" style="background-color: #ffffff">  !!! Each component instance needs two communicators: one internal to the</a>
+    93) <a name="l93" style="background-color: #ffffff">  !!! instance, and one for communicating with the coupler.</a>
+    94) <a name="l94" style="background-color: #ffffff">  !!! Additionally, one communicator is needed for the coupler's</a>
+    95) <a name="l95" style="background-color: #ffffff">  !!! internal communications, and one is needed for the global space.</a>
+    96) <a name="l96" style="background-color: #ffffff"></a>
+    97) <a name="l97" style="background-color: #ffffff">  integer, parameter, public :: num_inst_phys = num_inst_atm + num_inst_lnd + &amp;</a>
+    98) <a name="l98" style="background-color: #ffffff">                                                num_inst_ocn + num_inst_ice + &amp;</a>
+    99) <a name="l99" style="background-color: #ffffff">                                                num_inst_glc + num_inst_rof + &amp;</a>
+   100) <a name="l100" style="background-color: #ffffff">                                                num_inst_wav</a>
+   101) <a name="l101" style="background-color: #ffffff">  integer, parameter :: ncomps = (2 + 2*nphysmod + (2 * num_inst_phys))</a>
+   102) <a name="l102" style="background-color: #ffffff"></a>
+   103) <a name="l103" style="background-color: #ffffff">  integer, public :: GLOID</a>
+   104) <a name="l104" style="background-color: #ffffff">  integer, public :: CPLID</a>
+   105) <a name="l105" style="background-color: #ffffff"></a>
+   106) <a name="l106" style="background-color: #ffffff">  integer, public :: ALLATMID</a>
+   107) <a name="l107" style="background-color: #ffffff">  integer, public :: ALLLNDID</a>
+   108) <a name="l108" style="background-color: #ffffff">  integer, public :: ALLOCNID</a>
+   109) <a name="l109" style="background-color: #ffffff">  integer, public :: ALLICEID</a>
+   110) <a name="l110" style="background-color: #ffffff">  integer, public :: ALLGLCID</a>
+   111) <a name="l111" style="background-color: #ffffff">  integer, public :: ALLROFID</a>
+   112) <a name="l112" style="background-color: #ffffff">  integer, public :: ALLWAVID</a>
+   113) <a name="l113" style="background-color: #ffffff"></a>
+   114) <a name="l114" style="background-color: #ffffff">  integer, public :: CPLALLATMID</a>
+   115) <a name="l115" style="background-color: #ffffff">  integer, public :: CPLALLLNDID</a>
+   116) <a name="l116" style="background-color: #ffffff">  integer, public :: CPLALLOCNID</a>
+   117) <a name="l117" style="background-color: #ffffff">  integer, public :: CPLALLICEID</a>
+   118) <a name="l118" style="background-color: #ffffff">  integer, public :: CPLALLGLCID</a>
+   119) <a name="l119" style="background-color: #ffffff">  integer, public :: CPLALLROFID</a>
+   120) <a name="l120" style="background-color: #ffffff">  integer, public :: CPLALLWAVID</a>
+   121) <a name="l121" style="background-color: #ffffff"></a>
+   122) <a name="l122" style="background-color: #ffffff">  integer, public :: ATMID(num_inst_atm)</a>
+   123) <a name="l123" style="background-color: #ffffff">  integer, public :: LNDID(num_inst_lnd)</a>
+   124) <a name="l124" style="background-color: #ffffff">  integer, public :: OCNID(num_inst_ocn)</a>
+   125) <a name="l125" style="background-color: #ffffff">  integer, public :: ICEID(num_inst_ice)</a>
+   126) <a name="l126" style="background-color: #ffffff">  integer, public :: GLCID(num_inst_glc)</a>
+   127) <a name="l127" style="background-color: #ffffff">  integer, public :: ROFID(num_inst_rof)</a>
+   128) <a name="l128" style="background-color: #ffffff">  integer, public :: WAVID(num_inst_wav)</a>
+   129) <a name="l129" style="background-color: #ffffff"></a>
+   130) <a name="l130" style="background-color: #ffffff">  integer, public :: CPLATMID(num_inst_atm)</a>
+   131) <a name="l131" style="background-color: #ffffff">  integer, public :: CPLLNDID(num_inst_lnd)</a>
+   132) <a name="l132" style="background-color: #ffffff">  integer, public :: CPLOCNID(num_inst_ocn)</a>
+   133) <a name="l133" style="background-color: #ffffff">  integer, public :: CPLICEID(num_inst_ice)</a>
+   134) <a name="l134" style="background-color: #ffffff">  integer, public :: CPLGLCID(num_inst_glc)</a>
+   135) <a name="l135" style="background-color: #ffffff">  integer, public :: CPLROFID(num_inst_rof)</a>
+   136) <a name="l136" style="background-color: #ffffff">  integer, public :: CPLWAVID(num_inst_wav)</a>
+   137) <a name="l137" style="background-color: #ffffff"></a>
+   138) <a name="l138" style="background-color: #ffffff">  integer, parameter, public :: seq_comm_namelen=16</a>
+   139) <a name="l139" style="background-color: #ffffff">  type seq_comm_type</a>
+   140) <a name="l140" style="background-color: #ffffff">    character(len=seq_comm_namelen) :: name     ! my name</a>
+   141) <a name="l141" style="background-color: #ffffff">    character(len=seq_comm_namelen) :: suffix   ! recommended suffix</a>
+   142) <a name="l142" style="background-color: #ffffff">    integer :: inst            ! my inst index</a>
+   143) <a name="l143" style="background-color: #ffffff">    integer :: ID              ! my id number</a>
+   144) <a name="l144" style="background-color: #ffffff">    integer :: mpicom          ! mpicom</a>
+   145) <a name="l145" style="background-color: #ffffff">    integer :: mpigrp          ! mpigrp</a>
+   146) <a name="l146" style="background-color: #ffffff">    integer :: npes            ! number of mpi tasks in comm</a>
+   147) <a name="l147" style="background-color: #ffffff">    integer :: nthreads        ! number of omp threads per task</a>
+   148) <a name="l148" style="background-color: #ffffff">    integer :: iam             ! my task number in mpicom</a>
+   149) <a name="l149" style="background-color: #ffffff">    logical :: iamroot         ! am i the root task in mpicom</a>
+   150) <a name="l150" style="background-color: #ffffff">    integer :: gloiam          ! my task number in mpi_comm_world</a>
+   151) <a name="l151" style="background-color: #ffffff">    integer :: gloroot         ! the global task number of each comps root on all pes</a>
+   152) <a name="l152" style="background-color: #ffffff">    integer :: pethreads       ! max number of threads on my task</a>
+   153) <a name="l153" style="background-color: #ffffff">    integer :: cplpe           ! a common task in mpicom from the cpl group for join mpicoms</a>
+   154) <a name="l154" style="background-color: #ffffff">    integer :: cmppe           ! a common task in mpicom from the component group for join mpicoms</a>
+   155) <a name="l155" style="background-color: #ffffff">    logical :: set             ! has this datatype been set</a>
+   156) <a name="l156" style="background-color: #ffffff">    integer, pointer    :: petlist(:)  ! esmf pet list</a>
+   157) <a name="l157" style="background-color: #ffffff">#ifdef USE_ESMF_LIB</a>
+   158) <a name="l158" style="background-color: #ffffff">    type(ESMF_GridComp) :: esmf_comp   ! esmf gridded component</a>
+   159) <a name="l159" style="background-color: #ffffff">                                       ! The following state members are not needed in 520r.</a>
+   160) <a name="l160" style="background-color: #ffffff">    type(ESMF_State)    :: imp_state   ! esmf import state for the gridded component</a>
+   161) <a name="l161" style="background-color: #ffffff">    type(ESMF_State)    :: exp_state   ! esmf export state for the gridded component</a>
+   162) <a name="l162" style="background-color: #ffffff">#endif</a>
+   163) <a name="l163" style="background-color: #ffffff">  end type seq_comm_type</a>
+   164) <a name="l164" style="background-color: #ffffff"></a>
+   165) <a name="l165" style="background-color: #ffffff">  type(seq_comm_type) :: seq_comms(ncomps)</a>
+   166) <a name="l166" style="background-color: #ffffff"></a>
+   167) <a name="l167" style="background-color: #ffffff">  character(*), parameter :: layout_concurrent = 'concurrent'</a>
+   168) <a name="l168" style="background-color: #ffffff">  character(*), parameter :: layout_sequential = 'sequential'</a>
+   169) <a name="l169" style="background-color: #ffffff"></a>
+   170) <a name="l170" style="background-color: #ffffff">  character(*), parameter :: F11 = &quot;(a,a,'(',i3,' ',a,')',a,   3i6,' (',a,i6,')',' (',a,i3,')')&quot;</a>
+   171) <a name="l171" style="background-color: #ffffff">  character(*), parameter :: F12 = &quot;(a,a,'(',i3,' ',a,')',a,2i6,6x,' (',a,i6,')',' (',a,i3,')','(',a,2i6,')')&quot;</a>
+   172) <a name="l172" style="background-color: #ffffff">  character(*), parameter :: F13 = &quot;(a,a,'(',i3,' ',a,')',a,2i6,6x,' (',a,i6,')',' (',a,i3,')')&quot;</a>
+   173) <a name="l173" style="background-color: #ffffff">  character(*), parameter :: F14 = &quot;(a,a,'(',i3,' ',a,')',a,    6x,' (',a,i6,')',' (',a,i3,')')&quot;</a>
+   174) <a name="l174" style="background-color: #ffffff">  integer :: Global_Comm</a>
+   175) <a name="l175" style="background-color: #ffffff"></a>
+   176) <a name="l176" style="background-color: #ffffff"></a>
+   177) <a name="l177" style="background-color: #ffffff">  character(len=32), public :: &amp;</a>
+   178) <a name="l178" style="background-color: #ffffff">       atm_layout, lnd_layout, ice_layout, glc_layout, rof_layout, &amp;</a>
+   179) <a name="l179" style="background-color: #ffffff">       ocn_layout, wav_layout</a>
+   180) <a name="l180" style="background-color: #ffffff">  </a>
+   181) <a name="l181" style="background-color: #ffffff"></a>
+   182) <a name="l182" style="background-color: #ffffff"></a>
+   183) <a name="l183" style="background-color: #ffffff">!=======================================================================</a>
+   184) <a name="l184" style="background-color: #ffffff">contains</a>
+   185) <a name="l185" style="background-color: #ffffff">!=======================================================================</a>
+   186) <a name="l186" style="background-color: #ffffff">  </a>
+   187) <a name="l187" style="background-color: #ffffff">  subroutine seq_comm_init(Comm_in, nmlfile)</a>
+   188) <a name="l188" style="background-color: #ffffff">      </a>
+   189) <a name="l189" style="background-color: #ffffff">    !----------------------------------------------------------</a>
+   190) <a name="l190" style="background-color: #ffffff">    !</a>
+   191) <a name="l191" style="background-color: #ffffff">    ! Arguments</a>
+   192) <a name="l192" style="background-color: #ffffff">    implicit none</a>
+   193) <a name="l193" style="background-color: #ffffff">    integer, intent(in) :: Comm_in</a>
+   194) <a name="l194" style="background-color: #ffffff">    character(len=*), intent(IN) :: nmlfile</a>
+   195) <a name="l195" style="background-color: #ffffff">    !</a>
+   196) <a name="l196" style="background-color: #ffffff">    ! Local variables</a>
+   197) <a name="l197" style="background-color: #ffffff">    !</a>
+   198) <a name="l198" style="background-color: #ffffff">    logical :: error_state</a>
+   199) <a name="l199" style="background-color: #ffffff">    integer :: ierr, n, count</a>
+   200) <a name="l200" style="background-color: #ffffff">    character(*), parameter :: subName =   '(seq_comm_init) '</a>
+   201) <a name="l201" style="background-color: #ffffff">    integer :: mpi_group_world   ! MPI_COMM_WORLD group</a>
+   202) <a name="l202" style="background-color: #ffffff">    integer :: mype,numpes,myncomps,max_threads,gloroot</a>
+   203) <a name="l203" style="background-color: #ffffff">    integer :: atm_inst_tasks, lnd_inst_tasks, ocn_inst_tasks, ice_inst_tasks, &amp;</a>
+   204) <a name="l204" style="background-color: #ffffff">               glc_inst_tasks, rof_inst_tasks, wav_inst_tasks</a>
+   205) <a name="l205" style="background-color: #ffffff">    integer :: current_task_rootpe, droot</a>
+   206) <a name="l206" style="background-color: #ffffff">    integer :: amin(num_inst_atm), amax(num_inst_atm), astr(num_inst_atm)</a>
+   207) <a name="l207" style="background-color: #ffffff">    integer :: lmin(num_inst_lnd), lmax(num_inst_lnd), lstr(num_inst_lnd)</a>
+   208) <a name="l208" style="background-color: #ffffff">    integer :: imin(num_inst_ice), imax(num_inst_ice), istr(num_inst_ice)</a>
+   209) <a name="l209" style="background-color: #ffffff">    integer :: omin(num_inst_ocn), omax(num_inst_ocn), ostr(num_inst_ocn)</a>
+   210) <a name="l210" style="background-color: #ffffff">    integer :: gmin(num_inst_glc), gmax(num_inst_glc), gstr(num_inst_glc)</a>
+   211) <a name="l211" style="background-color: #ffffff">    integer :: wmin(num_inst_wav), wmax(num_inst_wav), wstr(num_inst_wav)</a>
+   212) <a name="l212" style="background-color: #ffffff">    integer :: rmin(num_inst_rof), rmax(num_inst_rof), rstr(num_inst_rof)</a>
+   213) <a name="l213" style="background-color: #ffffff">    integer :: cmin,cmax,cstr</a>
+   214) <a name="l214" style="background-color: #ffffff">    integer :: pelist(3,1)       ! start, stop, stride for group</a>
+   215) <a name="l215" style="background-color: #ffffff">    integer, pointer :: comps(:) ! array with component ids</a>
+   216) <a name="l216" style="background-color: #ffffff">    integer, pointer :: comms(:) ! array with mpicoms</a>
+   217) <a name="l217" style="background-color: #ffffff">    integer :: nu, i</a>
+   218) <a name="l218" style="background-color: #ffffff">    logical, save :: first_pass = .true.   ! </a>
+   219) <a name="l219" style="background-color: #ffffff"></a>
+   220) <a name="l220" style="background-color: #ffffff">    integer :: &amp;</a>
+   221) <a name="l221" style="background-color: #ffffff">         atm_ntasks, atm_rootpe, atm_pestride, atm_nthreads, &amp;</a>
+   222) <a name="l222" style="background-color: #ffffff">         lnd_ntasks, lnd_rootpe, lnd_pestride, lnd_nthreads, &amp;</a>
+   223) <a name="l223" style="background-color: #ffffff">         ice_ntasks, ice_rootpe, ice_pestride, ice_nthreads, &amp;</a>
+   224) <a name="l224" style="background-color: #ffffff">         glc_ntasks, glc_rootpe, glc_pestride, glc_nthreads, &amp;</a>
+   225) <a name="l225" style="background-color: #ffffff">         wav_ntasks, wav_rootpe, wav_pestride, wav_nthreads, &amp;</a>
+   226) <a name="l226" style="background-color: #ffffff">         rof_ntasks, rof_rootpe, rof_pestride, rof_nthreads, &amp;</a>
+   227) <a name="l227" style="background-color: #ffffff">         ocn_ntasks, ocn_rootpe, ocn_pestride, ocn_nthreads, &amp;</a>
+   228) <a name="l228" style="background-color: #ffffff">         cpl_ntasks, cpl_rootpe, cpl_pestride, cpl_nthreads</a>
+   229) <a name="l229" style="background-color: #ffffff">    namelist /ccsm_pes/  &amp;</a>
+   230) <a name="l230" style="background-color: #ffffff">         atm_ntasks, atm_rootpe, atm_pestride, atm_nthreads, atm_layout, &amp;</a>
+   231) <a name="l231" style="background-color: #ffffff">         lnd_ntasks, lnd_rootpe, lnd_pestride, lnd_nthreads, lnd_layout, &amp;</a>
+   232) <a name="l232" style="background-color: #ffffff">         ice_ntasks, ice_rootpe, ice_pestride, ice_nthreads, ice_layout, &amp;</a>
+   233) <a name="l233" style="background-color: #ffffff">         glc_ntasks, glc_rootpe, glc_pestride, glc_nthreads, glc_layout, &amp;</a>
+   234) <a name="l234" style="background-color: #ffffff">         wav_ntasks, wav_rootpe, wav_pestride, wav_nthreads, wav_layout, &amp;</a>
+   235) <a name="l235" style="background-color: #ffffff">         rof_ntasks, rof_rootpe, rof_pestride, rof_nthreads, rof_layout, &amp;</a>
+   236) <a name="l236" style="background-color: #ffffff">         ocn_ntasks, ocn_rootpe, ocn_pestride, ocn_nthreads, ocn_layout, &amp;</a>
+   237) <a name="l237" style="background-color: #ffffff">         cpl_ntasks, cpl_rootpe, cpl_pestride, cpl_nthreads </a>
+   238) <a name="l238" style="background-color: #ffffff">    !----------------------------------------------------------</a>
+   239) <a name="l239" style="background-color: #ffffff"></a>
+   240) <a name="l240" style="background-color: #ffffff">    ! make sure this is first pass and set comms unset</a>
+   241) <a name="l241" style="background-color: #ffffff">    if (.not. first_pass) then</a>
+   242) <a name="l242" style="background-color: #ffff99">       write(logunit,*) trim(subname),' ERROR seq_comm_init already called '</a>
+   243) <a name="l243" style="background-color: #ffff99">       call shr_sys_abort()</a>
+   244) <a name="l244" style="background-color: #ffff99">    endif</a>
+   245) <a name="l245" style="background-color: #ffffff">    first_pass = .false.</a>
+   246) <a name="l246" style="background-color: #ffffff">    Global_Comm = Comm_in</a>
+   247) <a name="l247" style="background-color: #ffffff"></a>
+   248) <a name="l248" style="background-color: #ffffff">    !! Initialize seq_comms elements</a>
+   249) <a name="l249" style="background-color: #ffffff"></a>
+   250) <a name="l250" style="background-color: #ffffff">    do n = 1,ncomps</a>
+   251) <a name="l251" style="background-color: #ffffff">       seq_comms(n)%name = 'unknown'</a>
+   252) <a name="l252" style="background-color: #ffffff">       seq_comms(n)%suffix = ' '</a>
+   253) <a name="l253" style="background-color: #ffffff">       seq_comms(n)%inst = 0</a>
+   254) <a name="l254" style="background-color: #ffffff">       seq_comms(n)%set = .false.</a>
+   255) <a name="l255" style="background-color: #ffffff">       seq_comms(n)%mpicom = MPI_COMM_NULL    ! do some initialization here </a>
+   256) <a name="l256" style="background-color: #ffffff">       seq_comms(n)%iam = -1</a>
+   257) <a name="l257" style="background-color: #ffffff">       seq_comms(n)%iamroot = .false.</a>
+   258) <a name="l258" style="background-color: #ffffff">       seq_comms(n)%npes = -1</a>
+   259) <a name="l259" style="background-color: #ffffff">       seq_comms(n)%nthreads = -1</a>
+   260) <a name="l260" style="background-color: #ffffff">       seq_comms(n)%gloiam = -1</a>
+   261) <a name="l261" style="background-color: #ffffff">       seq_comms(n)%gloroot = -1</a>
+   262) <a name="l262" style="background-color: #ffffff">       seq_comms(n)%pethreads = -1</a>
+   263) <a name="l263" style="background-color: #ffffff">       seq_comms(n)%cplpe = -1</a>
+   264) <a name="l264" style="background-color: #ffffff">       seq_comms(n)%cmppe = -1</a>
+   265) <a name="l265" style="background-color: #ffffff">    enddo</a>
+   266) <a name="l266" style="background-color: #ffffff"></a>
+   267) <a name="l267" style="background-color: #ffffff"></a>
+   268) <a name="l268" style="background-color: #ffffff">    ! Initialize MPI</a>
+   269) <a name="l269" style="background-color: #ffffff">    ! Note that if no MPI, will call MCTs fake version</a>
+   270) <a name="l270" style="background-color: #ffffff"></a>
+   271) <a name="l271" style="background-color: #ffffff">    call mpi_comm_rank(GLOBAL_COMM, mype  , ierr)</a>
+   272) <a name="l272" style="background-color: #ffffff">    call shr_mpi_chkerr(ierr,subname//' mpi_comm_rank comm_world')</a>
+   273) <a name="l273" style="background-color: #ffffff">    call mpi_comm_size(GLOBAL_COMM, numpes, ierr)</a>
+   274) <a name="l274" style="background-color: #ffffff">    call shr_mpi_chkerr(ierr,subname//' mpi_comm_size comm_world')</a>
+   275) <a name="l275" style="background-color: #ffffff"></a>
+   276) <a name="l276" style="background-color: #ffffff">    ! Initialize gloiam on all IDs</a>
+   277) <a name="l277" style="background-color: #ffffff"></a>
+   278) <a name="l278" style="background-color: #ffffff">    global_mype = mype</a>
+   279) <a name="l279" style="background-color: #ffffff"> </a>
+   280) <a name="l280" style="background-color: #ffffff">    do n = 1,ncomps</a>
+   281) <a name="l281" style="background-color: #ffffff">       seq_comms(n)%gloiam = mype</a>
+   282) <a name="l282" style="background-color: #ffffff">    enddo</a>
+   283) <a name="l283" style="background-color: #ffffff"></a>
+   284) <a name="l284" style="background-color: #ffffff">    ! Set ntasks, rootpe, pestride, nthreads for all components</a>
+   285) <a name="l285" style="background-color: #ffffff"></a>
+   286) <a name="l286" style="background-color: #ffffff">    if (mype == 0) then</a>
+   287) <a name="l287" style="background-color: #ffffff"></a>
+   288) <a name="l288" style="background-color: #ffffff">       !! Set up default atmosphere process parameters</a>
+   289) <a name="l289" style="background-color: #ffffff"></a>
+   290) <a name="l290" style="background-color: #ffffff">       atm_ntasks = numpes</a>
+   291) <a name="l291" style="background-color: #ffffff">       atm_rootpe = 0</a>
+   292) <a name="l292" style="background-color: #ffffff">       atm_pestride = 1</a>
+   293) <a name="l293" style="background-color: #ffffff">       atm_nthreads = 1</a>
+   294) <a name="l294" style="background-color: #ffffff">       atm_layout = trim(layout_concurrent)</a>
+   295) <a name="l295" style="background-color: #ffffff"></a>
+   296) <a name="l296" style="background-color: #ffffff">       lnd_ntasks = numpes</a>
+   297) <a name="l297" style="background-color: #ffffff">       lnd_rootpe = 0</a>
+   298) <a name="l298" style="background-color: #ffffff">       lnd_pestride = 1</a>
+   299) <a name="l299" style="background-color: #ffffff">       lnd_nthreads = 1</a>
+   300) <a name="l300" style="background-color: #ffffff">       lnd_layout = trim(layout_concurrent)</a>
+   301) <a name="l301" style="background-color: #ffffff"></a>
+   302) <a name="l302" style="background-color: #ffffff">       ocn_ntasks = numpes</a>
+   303) <a name="l303" style="background-color: #ffffff">       ocn_rootpe = 0</a>
+   304) <a name="l304" style="background-color: #ffffff">       ocn_pestride = 1</a>
+   305) <a name="l305" style="background-color: #ffffff">       ocn_nthreads = 1</a>
+   306) <a name="l306" style="background-color: #ffffff">       ocn_layout = trim(layout_concurrent)</a>
+   307) <a name="l307" style="background-color: #ffffff"></a>
+   308) <a name="l308" style="background-color: #ffffff">       ice_ntasks = numpes</a>
+   309) <a name="l309" style="background-color: #ffffff">       ice_rootpe = 0</a>
+   310) <a name="l310" style="background-color: #ffffff">       ice_pestride = 1</a>
+   311) <a name="l311" style="background-color: #ffffff">       ice_nthreads = 1</a>
+   312) <a name="l312" style="background-color: #ffffff">       ice_layout = trim(layout_concurrent)</a>
+   313) <a name="l313" style="background-color: #ffffff"></a>
+   314) <a name="l314" style="background-color: #ffffff">       glc_ntasks = numpes</a>
+   315) <a name="l315" style="background-color: #ffffff">       glc_rootpe = 0</a>
+   316) <a name="l316" style="background-color: #ffffff">       glc_pestride = 1</a>
+   317) <a name="l317" style="background-color: #ffffff">       glc_nthreads = 1</a>
+   318) <a name="l318" style="background-color: #ffffff">       glc_layout = trim(layout_concurrent)</a>
+   319) <a name="l319" style="background-color: #ffffff"></a>
+   320) <a name="l320" style="background-color: #ffffff">       rof_ntasks = numpes</a>
+   321) <a name="l321" style="background-color: #ffffff">       rof_rootpe = 0</a>
+   322) <a name="l322" style="background-color: #ffffff">       rof_pestride = 1</a>
+   323) <a name="l323" style="background-color: #ffffff">       rof_nthreads = 1</a>
+   324) <a name="l324" style="background-color: #ffffff">       rof_layout = trim(layout_concurrent)</a>
+   325) <a name="l325" style="background-color: #ffffff"></a>
+   326) <a name="l326" style="background-color: #ffffff">       wav_ntasks = numpes</a>
+   327) <a name="l327" style="background-color: #ffffff">       wav_rootpe = 0</a>
+   328) <a name="l328" style="background-color: #ffffff">       wav_pestride = 1</a>
+   329) <a name="l329" style="background-color: #ffffff">       wav_nthreads = 1</a>
+   330) <a name="l330" style="background-color: #ffffff">       wav_layout = trim(layout_concurrent)</a>
+   331) <a name="l331" style="background-color: #ffffff"></a>
+   332) <a name="l332" style="background-color: #ffffff">       cpl_ntasks = numpes</a>
+   333) <a name="l333" style="background-color: #ffffff">       cpl_rootpe = 0</a>
+   334) <a name="l334" style="background-color: #ffffff">       cpl_pestride = 1</a>
+   335) <a name="l335" style="background-color: #ffffff">       cpl_nthreads = 1</a>
+   336) <a name="l336" style="background-color: #ffffff"></a>
+   337) <a name="l337" style="background-color: #ffffff">       ! Read namelist if it exists</a>
+   338) <a name="l338" style="background-color: #ffffff"></a>
+   339) <a name="l339" style="background-color: #ffffff">       nu = shr_file_getUnit()</a>
+   340) <a name="l340" style="background-color: #ffffff">       open(nu, file=trim(nmlfile), status='old', iostat=ierr)</a>
+   341) <a name="l341" style="background-color: #ffffff"></a>
+   342) <a name="l342" style="background-color: #ffffff">       if (ierr == 0) then</a>
+   343) <a name="l343" style="background-color: #ffffff">          ierr = 1</a>
+   344) <a name="l344" style="background-color: #ffffff">          do while( ierr &gt; 0 )</a>
+   345) <a name="l345" style="background-color: #ffffff">             read(nu, nml=ccsm_pes, iostat=ierr)</a>
+   346) <a name="l346" style="background-color: #ffffff">          end do</a>
+   347) <a name="l347" style="background-color: #ffffff">          close(nu)</a>
+   348) <a name="l348" style="background-color: #ffffff">       end if</a>
+   349) <a name="l349" style="background-color: #ffffff">       call shr_file_freeUnit(nu)</a>
+   350) <a name="l350" style="background-color: #ffffff"></a>
+   351) <a name="l351" style="background-color: #ffffff">    end if</a>
+   352) <a name="l352" style="background-color: #ffffff"></a>
+   353) <a name="l353" style="background-color: #ffffff">    !--- compute some other num_inst values</a>
+   354) <a name="l354" style="background-color: #ffffff">       </a>
+   355) <a name="l355" style="background-color: #ffffff">    num_inst_xao = max(num_inst_atm,num_inst_ocn)</a>
+   356) <a name="l356" style="background-color: #ffffff">    num_inst_frc = num_inst_ice</a>
+   357) <a name="l357" style="background-color: #ffffff"></a>
+   358) <a name="l358" style="background-color: #ffffff">    !--- compute num_inst_min, num_inst_max</a>
+   359) <a name="l359" style="background-color: #ffffff">    !--- instances must be either 1 or a constant across components</a>
+   360) <a name="l360" style="background-color: #ffffff">    !--- checks for prognostic/present consistency in the driver</a>
+   361) <a name="l361" style="background-color: #ffffff"></a>
+   362) <a name="l362" style="background-color: #ffffff">    error_state = .false.</a>
+   363) <a name="l363" style="background-color: #ffffff">    num_inst_min = num_inst_atm</a>
+   364) <a name="l364" style="background-color: #ffffff">    num_inst_min = min(num_inst_min, num_inst_lnd)</a>
+   365) <a name="l365" style="background-color: #ffffff">    num_inst_min = min(num_inst_min, num_inst_ocn)</a>
+   366) <a name="l366" style="background-color: #ffffff">    num_inst_min = min(num_inst_min, num_inst_ice)</a>
+   367) <a name="l367" style="background-color: #ffffff">    num_inst_min = min(num_inst_min, num_inst_glc)</a>
+   368) <a name="l368" style="background-color: #ffffff">    num_inst_min = min(num_inst_min, num_inst_wav)</a>
+   369) <a name="l369" style="background-color: #ffffff">    num_inst_min = min(num_inst_min, num_inst_rof)</a>
+   370) <a name="l370" style="background-color: #ffffff">    num_inst_max = num_inst_atm</a>
+   371) <a name="l371" style="background-color: #ffffff">    num_inst_max = max(num_inst_max, num_inst_lnd)</a>
+   372) <a name="l372" style="background-color: #ffffff">    num_inst_max = max(num_inst_max, num_inst_ocn)</a>
+   373) <a name="l373" style="background-color: #ffffff">    num_inst_max = max(num_inst_max, num_inst_ice)</a>
+   374) <a name="l374" style="background-color: #ffffff">    num_inst_max = max(num_inst_max, num_inst_glc)</a>
+   375) <a name="l375" style="background-color: #ffffff">    num_inst_max = max(num_inst_max, num_inst_wav)</a>
+   376) <a name="l376" style="background-color: #ffffff">    num_inst_max = max(num_inst_max, num_inst_rof)</a>
+   377) <a name="l377" style="background-color: #ffffff"></a>
+   378) <a name="l378" style="background-color: #ffffff">    if (num_inst_min </a><a style="background-color: #ffff99">/= num_inst_max .and. num_inst_min /= 1) error_state = .true.</a>
+   379) <a name="l379" style="background-color: #ffffff">    if (num_inst_atm </a><a style="background-color: #ffff99">/= num_inst_min .and. num_inst_atm /= num_inst_max) error_state = .true.</a>
+   380) <a name="l380" style="background-color: #ffffff">    if (num_inst_lnd </a><a style="background-color: #ffff99">/= num_inst_min .and. num_inst_lnd /= num_inst_max) error_state = .true.</a>
+   381) <a name="l381" style="background-color: #ffffff">    if (num_inst_ocn </a><a style="background-color: #ffff99">/= num_inst_min .and. num_inst_ocn /= num_inst_max) error_state = .true.</a>
+   382) <a name="l382" style="background-color: #ffffff">    if (num_inst_ice </a><a style="background-color: #ffff99">/= num_inst_min .and. num_inst_ice /= num_inst_max) error_state = .true.</a>
+   383) <a name="l383" style="background-color: #ffffff">    if (num_inst_glc </a><a style="background-color: #ffff99">/= num_inst_min .and. num_inst_glc /= num_inst_max) error_state = .true.</a>
+   384) <a name="l384" style="background-color: #ffffff">    if (num_inst_wav </a><a style="background-color: #ffff99">/= num_inst_min .and. num_inst_wav /= num_inst_max) error_state = .true.</a>
+   385) <a name="l385" style="background-color: #ffffff">    if (num_inst_rof </a><a style="background-color: #ffff99">/= num_inst_min .and. num_inst_rof /= num_inst_max) error_state = .true.</a>
+   386) <a name="l386" style="background-color: #ffff99"></a>
+   387) <a name="l387" style="background-color: #ffffff">    if (error_state) then</a>
+   388) <a name="l388" style="background-color: #ffff99">       write(logunit,*) trim(subname),' ERROR: num_inst inconsistent'</a>
+   389) <a name="l389" style="background-color: #ffff99">       call shr_sys_abort(trim(subname)//' ERROR: num_inst inconsistent')</a>
+   390) <a name="l390" style="background-color: #ffff99">    endif</a>
+   391) <a name="l391" style="background-color: #ffff99"></a>
+   392) <a name="l392" style="background-color: #ffff99">    ! Initialize IDs</a>
+   393) <a name="l393" style="background-color: #ffff99"></a>
+   394) <a name="l394" style="background-color: #ffffff">    count = 0</a>
+   395) <a name="l395" style="background-color: #ffffff"></a>
+   396) <a name="l396" style="background-color: #ffffff">    count = count + 1</a>
+   397) <a name="l397" style="background-color: #ffffff">    GLOID = count</a>
+   398) <a name="l398" style="background-color: #ffffff">    count = count + 1</a>
+   399) <a name="l399" style="background-color: #ffffff">    CPLID = count</a>
+   400) <a name="l400" style="background-color: #ffffff"></a>
+   401) <a name="l401" style="background-color: #ffffff">    count = count + 1</a>
+   402) <a name="l402" style="background-color: #ffffff">    ALLATMID = count</a>
+   403) <a name="l403" style="background-color: #ffffff">    count = count + 1</a>
+   404) <a name="l404" style="background-color: #ffffff">    ALLLNDID = count</a>
+   405) <a name="l405" style="background-color: #ffffff">    count = count + 1</a>
+   406) <a name="l406" style="background-color: #ffffff">    ALLOCNID = count</a>
+   407) <a name="l407" style="background-color: #ffffff">    count = count + 1</a>
+   408) <a name="l408" style="background-color: #ffffff">    ALLICEID = count</a>
+   409) <a name="l409" style="background-color: #ffffff">    count = count + 1</a>
+   410) <a name="l410" style="background-color: #ffffff">    ALLGLCID = count</a>
+   411) <a name="l411" style="background-color: #ffffff">    count = count + 1</a>
+   412) <a name="l412" style="background-color: #ffffff">    ALLROFID = count</a>
+   413) <a name="l413" style="background-color: #ffffff">    count = count + 1</a>
+   414) <a name="l414" style="background-color: #ffffff">    ALLWAVID = count</a>
+   415) <a name="l415" style="background-color: #ffffff"></a>
+   416) <a name="l416" style="background-color: #ffffff">    count = count + 1</a>
+   417) <a name="l417" style="background-color: #ffffff">    CPLALLATMID = count</a>
+   418) <a name="l418" style="background-color: #ffffff">    count = count + 1</a>
+   419) <a name="l419" style="background-color: #ffffff">    CPLALLLNDID = count</a>
+   420) <a name="l420" style="background-color: #ffffff">    count = count + 1</a>
+   421) <a name="l421" style="background-color: #ffffff">    CPLALLOCNID = count</a>
+   422) <a name="l422" style="background-color: #ffffff">    count = count + 1</a>
+   423) <a name="l423" style="background-color: #ffffff">    CPLALLICEID = count</a>
+   424) <a name="l424" style="background-color: #ffffff">    count = count + 1</a>
+   425) <a name="l425" style="background-color: #ffffff">    CPLALLGLCID = count</a>
+   426) <a name="l426" style="background-color: #ffffff">    count = count + 1</a>
+   427) <a name="l427" style="background-color: #ffffff">    CPLALLROFID = count</a>
+   428) <a name="l428" style="background-color: #ffffff">    count = count + 1</a>
+   429) <a name="l429" style="background-color: #ffffff">    CPLALLWAVID = count</a>
+   430) <a name="l430" style="background-color: #ffffff"></a>
+   431) <a name="l431" style="background-color: #ffffff">    do n = 1, num_inst_atm</a>
+   432) <a name="l432" style="background-color: #ffffff">       count = count + 1</a>
+   433) <a name="l433" style="background-color: #ffffff">       ATMID(n) = count</a>
+   434) <a name="l434" style="background-color: #ffffff">       count = count + 1</a>
+   435) <a name="l435" style="background-color: #ffffff">       CPLATMID(n) = count</a>
+   436) <a name="l436" style="background-color: #ffffff">    end do</a>
+   437) <a name="l437" style="background-color: #ffffff">         </a>
+   438) <a name="l438" style="background-color: #ffffff">    do n = 1, num_inst_lnd</a>
+   439) <a name="l439" style="background-color: #ffffff">       count = count + 1</a>
+   440) <a name="l440" style="background-color: #ffffff">       LNDID(n) = count</a>
+   441) <a name="l441" style="background-color: #ffffff">       count = count + 1</a>
+   442) <a name="l442" style="background-color: #ffffff">       CPLLNDID(n) = count</a>
+   443) <a name="l443" style="background-color: #ffffff">    end do</a>
+   444) <a name="l444" style="background-color: #ffffff">       </a>
+   445) <a name="l445" style="background-color: #ffffff">    do n = 1, num_inst_ocn</a>
+   446) <a name="l446" style="background-color: #ffffff">       count = count + 1</a>
+   447) <a name="l447" style="background-color: #ffffff">       OCNID(n) = count</a>
+   448) <a name="l448" style="background-color: #ffffff">       count = count + 1</a>
+   449) <a name="l449" style="background-color: #ffffff">       CPLOCNID(n) = count</a>
+   450) <a name="l450" style="background-color: #ffffff">    end do</a>
+   451) <a name="l451" style="background-color: #ffffff">       </a>
+   452) <a name="l452" style="background-color: #ffffff">    do n = 1, num_inst_ice</a>
+   453) <a name="l453" style="background-color: #ffffff">       count = count + 1</a>
+   454) <a name="l454" style="background-color: #ffffff">       ICEID(n) = count</a>
+   455) <a name="l455" style="background-color: #ffffff">       count = count + 1</a>
+   456) <a name="l456" style="background-color: #ffffff">       CPLICEID(n) = count</a>
+   457) <a name="l457" style="background-color: #ffffff">    end do</a>
+   458) <a name="l458" style="background-color: #ffffff"></a>
+   459) <a name="l459" style="background-color: #ffffff">    do n = 1, num_inst_glc</a>
+   460) <a name="l460" style="background-color: #ffffff">       count = count + 1</a>
+   461) <a name="l461" style="background-color: #ffffff">       GLCID(n) = count</a>
+   462) <a name="l462" style="background-color: #ffffff">       count = count + 1</a>
+   463) <a name="l463" style="background-color: #ffffff">       CPLGLCID(n) = count</a>
+   464) <a name="l464" style="background-color: #ffffff">    end do</a>
+   465) <a name="l465" style="background-color: #ffffff"></a>
+   466) <a name="l466" style="background-color: #ffffff">    do n = 1, num_inst_rof</a>
+   467) <a name="l467" style="background-color: #ffffff">       count = count + 1</a>
+   468) <a name="l468" style="background-color: #ffffff">       ROFID(n) = count</a>
+   469) <a name="l469" style="background-color: #ffffff">       count = count + 1</a>
+   470) <a name="l470" style="background-color: #ffffff">       CPLROFID(n) = count</a>
+   471) <a name="l471" style="background-color: #ffffff">    end do</a>
+   472) <a name="l472" style="background-color: #ffffff"></a>
+   473) <a name="l473" style="background-color: #ffffff">    do n = 1, num_inst_wav</a>
+   474) <a name="l474" style="background-color: #ffffff">       count = count + 1</a>
+   475) <a name="l475" style="background-color: #ffffff">       WAVID(n) = count</a>
+   476) <a name="l476" style="background-color: #ffffff">       count = count + 1</a>
+   477) <a name="l477" style="background-color: #ffffff">       CPLWAVID(n) = count</a>
+   478) <a name="l478" style="background-color: #ffffff">    end do</a>
+   479) <a name="l479" style="background-color: #ffffff"></a>
+   480) <a name="l480" style="background-color: #ffffff">    if (count /= ncomps) then</a>
+   481) <a name="l481" style="background-color: #ffff99">       write(logunit,*) trim(subname),' ERROR in ID count ',count,ncomps</a>
+   482) <a name="l482" style="background-color: #ffff99">       call shr_sys_abort(trim(subname)//' ERROR in ID count')</a>
+   483) <a name="l483" style="background-color: #ffff99">    endif</a>
+   484) <a name="l484" style="background-color: #ffff99"></a>
+   485) <a name="l485" style="background-color: #ffffff">    if (mype == 0) then</a>
+   486) <a name="l486" style="background-color: #ffffff">       !--- validation of inputs ---</a>
+   487) <a name="l487" style="background-color: #ffffff">       ! rootpes &gt;= 0</a>
+   488) <a name="l488" style="background-color: #ffffff"></a>
+   489) <a name="l489" style="background-color: #ffffff">       error_state = .false.</a>
+   490) <a name="l490" style="background-color: #ffffff"></a>
+   491) <a name="l491" style="background-color: #ffffff">       if (atm_rootpe &lt; 0) </a><a style="background-color: #ffff99">error_state = .true.</a>
+   492) <a name="l492" style="background-color: #ffffff">       if (lnd_rootpe &lt; 0) </a><a style="background-color: #ffff99">error_state = .true.</a>
+   493) <a name="l493" style="background-color: #ffffff">       if (ice_rootpe &lt; 0) </a><a style="background-color: #ffff99">error_state = .true.</a>
+   494) <a name="l494" style="background-color: #ffffff">       if (ocn_rootpe &lt; 0) </a><a style="background-color: #ffff99">error_state = .true.</a>
+   495) <a name="l495" style="background-color: #ffffff">       if (glc_rootpe &lt; 0) </a><a style="background-color: #ffff99">error_state = .true.</a>
+   496) <a name="l496" style="background-color: #ffffff">       if (wav_rootpe &lt; 0) </a><a style="background-color: #ffff99">error_state = .true.</a>
+   497) <a name="l497" style="background-color: #ffffff">       if (rof_rootpe &lt; 0) </a><a style="background-color: #ffff99">error_state = .true.</a>
+   498) <a name="l498" style="background-color: #ffffff">       if (cpl_rootpe &lt; 0) </a><a style="background-color: #ffff99">error_state = .true.</a>
+   499) <a name="l499" style="background-color: #ffff99">       </a>
+   500) <a name="l500" style="background-color: #ffffff">       if (error_state) then</a>
+   501) <a name="l501" style="background-color: #ffff99">          write(logunit,*) trim(subname),' ERROR: rootpes must be &gt;= 0'</a>
+   502) <a name="l502" style="background-color: #ffff99">          call shr_sys_abort(trim(subname)//' ERROR: rootpes &gt;= 0')</a>
+   503) <a name="l503" style="background-color: #ffff99">       endif</a>
+   504) <a name="l504" style="background-color: #ffff99"></a>
+   505) <a name="l505" style="background-color: #ffff99">!       ! nthreads = 1, temporary</a>
+   506) <a name="l506" style="background-color: #ffff99">!       if (atm_nthreads /= 1 .or. lnd_nthreads /= 1 .or. ice_nthreads /= 1 .or. &amp;</a>
+   507) <a name="l507" style="background-color: #ffff99">!           ocn_nthreads /= 1 .or. cpl_nthreads /= 1) then</a>
+   508) <a name="l508" style="background-color: #ffff99">!          write(logunit,*) trim(subname),' ERROR: nthreads must be 1'</a>
+   509) <a name="l509" style="background-color: #ffff99">!          call shr_sys_abort()</a>
+   510) <a name="l510" style="background-color: #ffff99">!       endif</a>
+   511) <a name="l511" style="background-color: #ffff99"></a>
+   512) <a name="l512" style="background-color: #ffff99">!       ! nthreads should be 1 or something consistent, compute max nthreads</a>
+   513) <a name="l513" style="background-color: #ffff99">!       amax = max(atm_nthreads,lnd_nthreads)</a>
+   514) <a name="l514" style="background-color: #ffff99">!       amax = max(amax        ,ice_nthreads)</a>
+   515) <a name="l515" style="background-color: #ffff99">!       amax = max(amax        ,ocn_nthreads)</a>
+   516) <a name="l516" style="background-color: #ffff99">!       amax = max(amax        ,cpl_nthreads)</a>
+   517) <a name="l517" style="background-color: #ffff99"></a>
+   518) <a name="l518" style="background-color: #ffff99">!       ! check that everything is either 1 or max nthreads</a>
+   519) <a name="l519" style="background-color: #ffff99">!       if ((atm_nthreads /= 1 .and. atm_nthreads /= amax) .or. &amp;</a>
+   520) <a name="l520" style="background-color: #ffff99">!           (lnd_nthreads /= 1 .and. lnd_nthreads /= amax) .or. &amp;</a>
+   521) <a name="l521" style="background-color: #ffff99">!           (ice_nthreads /= 1 .and. ice_nthreads /= amax) .or. &amp;</a>
+   522) <a name="l522" style="background-color: #ffff99">!           (ocn_nthreads /= 1 .and. ocn_nthreads /= amax) .or. &amp;</a>
+   523) <a name="l523" style="background-color: #ffff99">!           (cpl_nthreads /= 1 .and. cpl_nthreads /= amax)) then</a>
+   524) <a name="l524" style="background-color: #ffff99">!          write(logunit,*) trim(subname),' ERROR: nthreads must be consistent'</a>
+   525) <a name="l525" style="background-color: #ffff99">!          call shr_sys_abort()</a>
+   526) <a name="l526" style="background-color: #ffff99">!       endif</a>
+   527) <a name="l527" style="background-color: #ffff99"></a>
+   528) <a name="l528" style="background-color: #ffff99">       !! Determine the process layout</a>
+   529) <a name="l529" style="background-color: #ffff99">       !!</a>
+   530) <a name="l530" style="background-color: #ffff99">       !! We will assign atm_ntasks / num_inst_atm tasks to each atmosphere</a>
+   531) <a name="l531" style="background-color: #ffff99">       !! instance.  (This may lead to unallocated tasks if atm_ntasks is</a>
+   532) <a name="l532" style="background-color: #ffff99">       !! not an integer multiple of num_inst_atm.)</a>
+   533) <a name="l533" style="background-color: #ffff99"></a>
+   534) <a name="l534" style="background-color: #ffff99">       if (</a><a style="background-color: #ffffff">trim(atm_layout) == trim(layout_concurrent)) then</a>
+   535) <a name="l535" style="background-color: #ffffff">          atm_inst_tasks = atm_ntasks / num_inst_atm</a>
+   536) <a name="l536" style="background-color: #ffffff">          droot = (atm_inst_tasks * atm_pestride)</a>
+   537) <a name="l537" style="background-color: #ffffff">       elseif (</a><a style="background-color: #ffff99">trim(atm_layout) == trim(layout_sequential)) then</a>
+   538) <a name="l538" style="background-color: #ffff99">          atm_inst_tasks = atm_ntasks</a>
+   539) <a name="l539" style="background-color: #ffff99">          droot = 0</a>
+   540) <a name="l540" style="background-color: #ffff99">       else</a>
+   541) <a name="l541" style="background-color: #ffff99">          call shr_sys_abort(subname//' ERROR invalid atm_layout ')</a>
+   542) <a name="l542" style="background-color: #ffff99">       endif</a>
+   543) <a name="l543" style="background-color: #ffffff">       current_task_rootpe = atm_rootpe</a>
+   544) <a name="l544" style="background-color: #ffffff">       do n = 1, num_inst_atm</a>
+   545) <a name="l545" style="background-color: #ffffff">          amin(n) = current_task_rootpe</a>
+   546) <a name="l546" style="background-color: #ffffff">          amax(n) = current_task_rootpe &amp;</a>
+   547) <a name="l547" style="background-color: #ffffff">                    + ((atm_inst_tasks - 1) * atm_pestride)</a>
+   548) <a name="l548" style="background-color: #ffffff">          astr(n) = atm_pestride</a>
+   549) <a name="l549" style="background-color: #ffffff">          current_task_rootpe = current_task_rootpe + droot</a>
+   550) <a name="l550" style="background-color: #ffffff">       end do</a>
+   551) <a name="l551" style="background-color: #ffffff"></a>
+   552) <a name="l552" style="background-color: #ffffff">       !! Land instance tasks</a>
+   553) <a name="l553" style="background-color: #ffffff"></a>
+   554) <a name="l554" style="background-color: #ffffff">       if (trim(lnd_layout) == trim(layout_concurrent)) then</a>
+   555) <a name="l555" style="background-color: #ffffff">          lnd_inst_tasks = lnd_ntasks / num_inst_lnd</a>
+   556) <a name="l556" style="background-color: #ffffff">          droot = (lnd_inst_tasks * lnd_pestride)</a>
+   557) <a name="l557" style="background-color: #ffffff">       elseif (</a><a style="background-color: #ffff99">trim(lnd_layout) == trim(layout_sequential)) then</a>
+   558) <a name="l558" style="background-color: #ffff99">          lnd_inst_tasks = lnd_ntasks</a>
+   559) <a name="l559" style="background-color: #ffff99">          droot = 0</a>
+   560) <a name="l560" style="background-color: #ffff99">       else</a>
+   561) <a name="l561" style="background-color: #ffff99">          call shr_sys_abort(subname//' ERROR invalid lnd_layout ')</a>
+   562) <a name="l562" style="background-color: #ffff99">       endif</a>
+   563) <a name="l563" style="background-color: #ffffff">       current_task_rootpe = lnd_rootpe</a>
+   564) <a name="l564" style="background-color: #ffffff">       do n = 1, num_inst_lnd</a>
+   565) <a name="l565" style="background-color: #ffffff">          lmin(n) = current_task_rootpe</a>
+   566) <a name="l566" style="background-color: #ffffff">          lmax(n) = current_task_rootpe &amp;</a>
+   567) <a name="l567" style="background-color: #ffffff">                    + ((lnd_inst_tasks - 1) * lnd_pestride)</a>
+   568) <a name="l568" style="background-color: #ffffff">          lstr(n) = lnd_pestride</a>
+   569) <a name="l569" style="background-color: #ffffff">          current_task_rootpe = current_task_rootpe + droot</a>
+   570) <a name="l570" style="background-color: #ffffff">       end do</a>
+   571) <a name="l571" style="background-color: #ffffff"></a>
+   572) <a name="l572" style="background-color: #ffffff">       !! Ocean instance tasks</a>
+   573) <a name="l573" style="background-color: #ffffff">       </a>
+   574) <a name="l574" style="background-color: #ffffff">       if (trim(ocn_layout) == trim(layout_concurrent)) then</a>
+   575) <a name="l575" style="background-color: #ffffff">          ocn_inst_tasks = ocn_ntasks / num_inst_ocn</a>
+   576) <a name="l576" style="background-color: #ffffff">          droot = (ocn_inst_tasks * ocn_pestride)</a>
+   577) <a name="l577" style="background-color: #ffffff">       elseif (</a><a style="background-color: #ffff99">trim(ocn_layout) == trim(layout_sequential)) then</a>
+   578) <a name="l578" style="background-color: #ffff99">          ocn_inst_tasks = ocn_ntasks</a>
+   579) <a name="l579" style="background-color: #ffff99">          droot = 0</a>
+   580) <a name="l580" style="background-color: #ffff99">       else</a>
+   581) <a name="l581" style="background-color: #ffff99">          call shr_sys_abort(subname//' ERROR invalid ocn_layout ')</a>
+   582) <a name="l582" style="background-color: #ffff99">       endif</a>
+   583) <a name="l583" style="background-color: #ffffff">       current_task_rootpe = ocn_rootpe</a>
+   584) <a name="l584" style="background-color: #ffffff">       do n = 1, num_inst_ocn</a>
+   585) <a name="l585" style="background-color: #ffffff">          omin(n) = current_task_rootpe</a>
+   586) <a name="l586" style="background-color: #ffffff">          omax(n) = current_task_rootpe &amp;</a>
+   587) <a name="l587" style="background-color: #ffffff">                    + ((ocn_inst_tasks - 1) * ocn_pestride)</a>
+   588) <a name="l588" style="background-color: #ffffff">          ostr(n) = ocn_pestride</a>
+   589) <a name="l589" style="background-color: #ffffff">          current_task_rootpe = current_task_rootpe + droot</a>
+   590) <a name="l590" style="background-color: #ffffff">       end do</a>
+   591) <a name="l591" style="background-color: #ffffff"></a>
+   592) <a name="l592" style="background-color: #ffffff">       !! Sea ice instance tasks</a>
+   593) <a name="l593" style="background-color: #ffffff">       </a>
+   594) <a name="l594" style="background-color: #ffffff">       if (trim(ice_layout) == trim(layout_concurrent)) then</a>
+   595) <a name="l595" style="background-color: #ffffff">          ice_inst_tasks = ice_ntasks / num_inst_ice</a>
+   596) <a name="l596" style="background-color: #ffffff">          droot = (ice_inst_tasks * ice_pestride)</a>
+   597) <a name="l597" style="background-color: #ffffff">       elseif (</a><a style="background-color: #ffff99">trim(ice_layout) == trim(layout_sequential)) then</a>
+   598) <a name="l598" style="background-color: #ffff99">          ice_inst_tasks = ice_ntasks</a>
+   599) <a name="l599" style="background-color: #ffff99">          droot = 0</a>
+   600) <a name="l600" style="background-color: #ffff99">       else</a>
+   601) <a name="l601" style="background-color: #ffff99">          call shr_sys_abort(subname//' ERROR invalid ice_layout ')</a>
+   602) <a name="l602" style="background-color: #ffff99">       endif</a>
+   603) <a name="l603" style="background-color: #ffffff">       current_task_rootpe = ice_rootpe</a>
+   604) <a name="l604" style="background-color: #ffffff">       do n = 1, num_inst_ice</a>
+   605) <a name="l605" style="background-color: #ffffff">          imin(n) = current_task_rootpe</a>
+   606) <a name="l606" style="background-color: #ffffff">          imax(n) = current_task_rootpe &amp;</a>
+   607) <a name="l607" style="background-color: #ffffff">                    + ((ice_inst_tasks - 1) * ice_pestride)</a>
+   608) <a name="l608" style="background-color: #ffffff">          istr(n) = ice_pestride</a>
+   609) <a name="l609" style="background-color: #ffffff">          current_task_rootpe = current_task_rootpe + droot</a>
+   610) <a name="l610" style="background-color: #ffffff">       end do</a>
+   611) <a name="l611" style="background-color: #ffffff"></a>
+   612) <a name="l612" style="background-color: #ffffff">       !! Glacier instance tasks</a>
+   613) <a name="l613" style="background-color: #ffffff">       </a>
+   614) <a name="l614" style="background-color: #ffffff">       if (trim(glc_layout) == trim(layout_concurrent)) then</a>
+   615) <a name="l615" style="background-color: #ffffff">          glc_inst_tasks = glc_ntasks / num_inst_glc</a>
+   616) <a name="l616" style="background-color: #ffffff">          droot = (glc_inst_tasks * glc_pestride)</a>
+   617) <a name="l617" style="background-color: #ffffff">       elseif (</a><a style="background-color: #ffff99">trim(glc_layout) == trim(layout_sequential)) then</a>
+   618) <a name="l618" style="background-color: #ffff99">          glc_inst_tasks = glc_ntasks</a>
+   619) <a name="l619" style="background-color: #ffff99">          droot = 0</a>
+   620) <a name="l620" style="background-color: #ffff99">       else</a>
+   621) <a name="l621" style="background-color: #ffff99">          call shr_sys_abort(subname//' ERROR invalid glc_layout ')</a>
+   622) <a name="l622" style="background-color: #ffff99">       endif</a>
+   623) <a name="l623" style="background-color: #ffffff">       current_task_rootpe = glc_rootpe</a>
+   624) <a name="l624" style="background-color: #ffffff">       do n = 1, num_inst_glc</a>
+   625) <a name="l625" style="background-color: #ffffff">          gmin(n) = current_task_rootpe</a>
+   626) <a name="l626" style="background-color: #ffffff">          gmax(n) = current_task_rootpe &amp;</a>
+   627) <a name="l627" style="background-color: #ffffff">                    + ((glc_inst_tasks - 1) * glc_pestride)</a>
+   628) <a name="l628" style="background-color: #ffffff">          gstr(n) = glc_pestride</a>
+   629) <a name="l629" style="background-color: #ffffff">          current_task_rootpe = current_task_rootpe + droot</a>
+   630) <a name="l630" style="background-color: #ffffff">       end do</a>
+   631) <a name="l631" style="background-color: #ffffff"></a>
+   632) <a name="l632" style="background-color: #ffffff">       !! Runoff instance tasks</a>
+   633) <a name="l633" style="background-color: #ffffff">       </a>
+   634) <a name="l634" style="background-color: #ffffff">       if (trim(rof_layout) == trim(layout_concurrent)) then</a>
+   635) <a name="l635" style="background-color: #ffffff">          rof_inst_tasks = rof_ntasks / num_inst_rof</a>
+   636) <a name="l636" style="background-color: #ffffff">          droot = (rof_inst_tasks * rof_pestride)</a>
+   637) <a name="l637" style="background-color: #ffffff">       elseif (</a><a style="background-color: #ffff99">trim(rof_layout) == trim(layout_sequential)) then</a>
+   638) <a name="l638" style="background-color: #ffff99">          rof_inst_tasks = rof_ntasks</a>
+   639) <a name="l639" style="background-color: #ffff99">          droot = 0</a>
+   640) <a name="l640" style="background-color: #ffff99">       else</a>
+   641) <a name="l641" style="background-color: #ffff99">          call shr_sys_abort(subname//' ERROR invalid rof_layout ')</a>
+   642) <a name="l642" style="background-color: #ffff99">       endif</a>
+   643) <a name="l643" style="background-color: #ffffff">       current_task_rootpe = rof_rootpe</a>
+   644) <a name="l644" style="background-color: #ffffff">       do n = 1, num_inst_rof</a>
+   645) <a name="l645" style="background-color: #ffffff">          rmin(n) = current_task_rootpe</a>
+   646) <a name="l646" style="background-color: #ffffff">          rmax(n) = current_task_rootpe &amp;</a>
+   647) <a name="l647" style="background-color: #ffffff">                    + ((rof_inst_tasks - 1) * rof_pestride)</a>
+   648) <a name="l648" style="background-color: #ffffff">          rstr(n) = rof_pestride</a>
+   649) <a name="l649" style="background-color: #ffffff">          current_task_rootpe = current_task_rootpe + droot</a>
+   650) <a name="l650" style="background-color: #ffffff">       end do</a>
+   651) <a name="l651" style="background-color: #ffffff"></a>
+   652) <a name="l652" style="background-color: #ffffff">       !! Wave instance tasks</a>
+   653) <a name="l653" style="background-color: #ffffff">       </a>
+   654) <a name="l654" style="background-color: #ffffff">       if (trim(wav_layout) == trim(layout_concurrent)) then</a>
+   655) <a name="l655" style="background-color: #ffffff">          wav_inst_tasks = wav_ntasks / num_inst_wav</a>
+   656) <a name="l656" style="background-color: #ffffff">          droot = (wav_inst_tasks * wav_pestride)</a>
+   657) <a name="l657" style="background-color: #ffffff">       elseif (</a><a style="background-color: #ffff99">trim(wav_layout) == trim(layout_sequential)) then</a>
+   658) <a name="l658" style="background-color: #ffff99">          wav_inst_tasks = wav_ntasks</a>
+   659) <a name="l659" style="background-color: #ffff99">          droot = 0</a>
+   660) <a name="l660" style="background-color: #ffff99">       else</a>
+   661) <a name="l661" style="background-color: #ffff99">          call shr_sys_abort(subname//' ERROR invalid wav_layout ')</a>
+   662) <a name="l662" style="background-color: #ffff99">       endif</a>
+   663) <a name="l663" style="background-color: #ffffff">       current_task_rootpe = wav_rootpe</a>
+   664) <a name="l664" style="background-color: #ffffff">       do n = 1, num_inst_wav</a>
+   665) <a name="l665" style="background-color: #ffffff">          wmin(n) = current_task_rootpe</a>
+   666) <a name="l666" style="background-color: #ffffff">          wmax(n) = current_task_rootpe &amp;</a>
+   667) <a name="l667" style="background-color: #ffffff">                    + ((wav_inst_tasks - 1) * wav_pestride)</a>
+   668) <a name="l668" style="background-color: #ffffff">          wstr(n) = wav_pestride</a>
+   669) <a name="l669" style="background-color: #ffffff">          current_task_rootpe = current_task_rootpe + droot</a>
+   670) <a name="l670" style="background-color: #ffffff">       end do</a>
+   671) <a name="l671" style="background-color: #ffffff"></a>
+   672) <a name="l672" style="background-color: #ffffff">       !! Coupler tasks</a>
+   673) <a name="l673" style="background-color: #ffffff"></a>
+   674) <a name="l674" style="background-color: #ffffff">       cmin = cpl_rootpe</a>
+   675) <a name="l675" style="background-color: #ffffff">       cmax = cpl_rootpe + (cpl_ntasks-1)*cpl_pestride</a>
+   676) <a name="l676" style="background-color: #ffffff">       cstr = cpl_pestride</a>
+   677) <a name="l677" style="background-color: #ffffff">    end if</a>
+   678) <a name="l678" style="background-color: #ffffff"></a>
+   679) <a name="l679" style="background-color: #ffffff">#if (1 == 0)</a>
+   680) <a name="l680" style="background-color: #ffffff">    ! create petlist for ESMF components, doesn't work for ensembles </a>
+   681) <a name="l681" style="background-color: #ffffff">    if(present(atm_petlist)) then</a>
+   682) <a name="l682" style="background-color: #ffffff">        call shr_mpi_bcast(atm_ntasks, GLOBAL_COMM, 'atm_ntasks')</a>
+   683) <a name="l683" style="background-color: #ffffff">        call shr_mpi_bcast(atm_rootpe, GLOBAL_COMM, 'atm_rootpe')</a>
+   684) <a name="l684" style="background-color: #ffffff">        call shr_mpi_bcast(atm_pestride, GLOBAL_COMM, 'atm_pestride')</a>
+   685) <a name="l685" style="background-color: #ffffff">        allocate(atm_petlist(atm_ntasks))</a>
+   686) <a name="l686" style="background-color: #ffffff">        do i = 1, atm_ntasks</a>
+   687) <a name="l687" style="background-color: #ffffff">            atm_petlist(i) = atm_rootpe + (i-1)*atm_pestride</a>
+   688) <a name="l688" style="background-color: #ffffff">        enddo</a>
+   689) <a name="l689" style="background-color: #ffffff">    endif</a>
+   690) <a name="l690" style="background-color: #ffffff"></a>
+   691) <a name="l691" style="background-color: #ffffff">    if(present(lnd_petlist)) then</a>
+   692) <a name="l692" style="background-color: #ffffff">        call shr_mpi_bcast(lnd_ntasks, GLOBAL_COMM, 'lnd_ntasks')</a>
+   693) <a name="l693" style="background-color: #ffffff">        call shr_mpi_bcast(lnd_rootpe, GLOBAL_COMM, 'lnd_rootpe')</a>
+   694) <a name="l694" style="background-color: #ffffff">        call shr_mpi_bcast(lnd_pestride, GLOBAL_COMM, 'lnd_pestride')</a>
+   695) <a name="l695" style="background-color: #ffffff">        allocate(lnd_petlist(lnd_ntasks))</a>
+   696) <a name="l696" style="background-color: #ffffff">        do i = 1, lnd_ntasks</a>
+   697) <a name="l697" style="background-color: #ffffff">            lnd_petlist(i) = lnd_rootpe + (i-1)*lnd_pestride</a>
+   698) <a name="l698" style="background-color: #ffffff">        enddo</a>
+   699) <a name="l699" style="background-color: #ffffff">    endif</a>
+   700) <a name="l700" style="background-color: #ffffff"></a>
+   701) <a name="l701" style="background-color: #ffffff">    if(present(ice_petlist)) then</a>
+   702) <a name="l702" style="background-color: #ffffff">        call shr_mpi_bcast(ice_ntasks, GLOBAL_COMM, 'ice_ntasks')</a>
+   703) <a name="l703" style="background-color: #ffffff">        call shr_mpi_bcast(ice_rootpe, GLOBAL_COMM, 'ice_rootpe')</a>
+   704) <a name="l704" style="background-color: #ffffff">        call shr_mpi_bcast(ice_pestride, GLOBAL_COMM, 'ice_pestride')</a>
+   705) <a name="l705" style="background-color: #ffffff">        allocate(ice_petlist(ice_ntasks))</a>
+   706) <a name="l706" style="background-color: #ffffff">        do i = 1, ice_ntasks</a>
+   707) <a name="l707" style="background-color: #ffffff">            ice_petlist(i) = ice_rootpe + (i-1)*ice_pestride</a>
+   708) <a name="l708" style="background-color: #ffffff">        enddo</a>
+   709) <a name="l709" style="background-color: #ffffff">    endif</a>
+   710) <a name="l710" style="background-color: #ffffff"></a>
+   711) <a name="l711" style="background-color: #ffffff">    if(present(ocn_petlist)) then</a>
+   712) <a name="l712" style="background-color: #ffffff">        call shr_mpi_bcast(ocn_ntasks, GLOBAL_COMM, 'ocn_ntasks')</a>
+   713) <a name="l713" style="background-color: #ffffff">        call shr_mpi_bcast(ocn_rootpe, GLOBAL_COMM, 'ocn_rootpe')</a>
+   714) <a name="l714" style="background-color: #ffffff">        call shr_mpi_bcast(ocn_pestride, GLOBAL_COMM, 'ocn_pestride')</a>
+   715) <a name="l715" style="background-color: #ffffff">        allocate(ocn_petlist(ocn_ntasks))</a>
+   716) <a name="l716" style="background-color: #ffffff">        do i = 1, ocn_ntasks</a>
+   717) <a name="l717" style="background-color: #ffffff">            ocn_petlist(i) = ocn_rootpe + (i-1)*ocn_pestride</a>
+   718) <a name="l718" style="background-color: #ffffff">        enddo</a>
+   719) <a name="l719" style="background-color: #ffffff">    endif</a>
+   720) <a name="l720" style="background-color: #ffffff"></a>
+   721) <a name="l721" style="background-color: #ffffff">    if(present(glc_petlist)) then</a>
+   722) <a name="l722" style="background-color: #ffffff">        call shr_mpi_bcast(glc_ntasks, GLOBAL_COMM, 'glc_ntasks')</a>
+   723) <a name="l723" style="background-color: #ffffff">        call shr_mpi_bcast(glc_rootpe, GLOBAL_COMM, 'glc_rootpe')</a>
+   724) <a name="l724" style="background-color: #ffffff">        call shr_mpi_bcast(glc_pestride, GLOBAL_COMM, 'glc_pestride')</a>
+   725) <a name="l725" style="background-color: #ffffff">        allocate(glc_petlist(glc_ntasks))</a>
+   726) <a name="l726" style="background-color: #ffffff">        do i = 1, glc_ntasks</a>
+   727) <a name="l727" style="background-color: #ffffff">            glc_petlist(i) = glc_rootpe + (i-1)*glc_pestride</a>
+   728) <a name="l728" style="background-color: #ffffff">        enddo</a>
+   729) <a name="l729" style="background-color: #ffffff">    endif</a>
+   730) <a name="l730" style="background-color: #ffffff"></a>
+   731) <a name="l731" style="background-color: #ffffff">    if(present(rof_petlist)) then</a>
+   732) <a name="l732" style="background-color: #ffffff">        call shr_mpi_bcast(rof_ntasks, GLOBAL_COMM, 'rof_ntasks')</a>
+   733) <a name="l733" style="background-color: #ffffff">        call shr_mpi_bcast(rof_rootpe, GLOBAL_COMM, 'rof_rootpe')</a>
+   734) <a name="l734" style="background-color: #ffffff">        call shr_mpi_bcast(rof_pestride, GLOBAL_COMM, 'rof_pestride')</a>
+   735) <a name="l735" style="background-color: #ffffff">        allocate(rof_petlist(rof_ntasks))</a>
+   736) <a name="l736" style="background-color: #ffffff">        do i = 1, rof_ntasks</a>
+   737) <a name="l737" style="background-color: #ffffff">            rof_petlist(i) = rof_rootpe + (i-1)*rof_pestride</a>
+   738) <a name="l738" style="background-color: #ffffff">        enddo</a>
+   739) <a name="l739" style="background-color: #ffffff">    endif</a>
+   740) <a name="l740" style="background-color: #ffffff"></a>
+   741) <a name="l741" style="background-color: #ffffff">    if(present(wav_petlist)) then</a>
+   742) <a name="l742" style="background-color: #ffffff">        call shr_mpi_bcast(wav_ntasks, GLOBAL_COMM, 'wav_ntasks')</a>
+   743) <a name="l743" style="background-color: #ffffff">        call shr_mpi_bcast(wav_rootpe, GLOBAL_COMM, 'wav_rootpe')</a>
+   744) <a name="l744" style="background-color: #ffffff">        call shr_mpi_bcast(wav_pestride, GLOBAL_COMM, 'wav_pestride')</a>
+   745) <a name="l745" style="background-color: #ffffff">        allocate(wav_petlist(wav_ntasks))</a>
+   746) <a name="l746" style="background-color: #ffffff">        do i = 1, wav_ntasks</a>
+   747) <a name="l747" style="background-color: #ffffff">            wav_petlist(i) = wav_rootpe + (i-1)*wav_pestride</a>
+   748) <a name="l748" style="background-color: #ffffff">        enddo</a>
+   749) <a name="l749" style="background-color: #ffffff">    endif</a>
+   750) <a name="l750" style="background-color: #ffffff">#endif</a>
+   751) <a name="l751" style="background-color: #ffffff">       </a>
+   752) <a name="l752" style="background-color: #ffffff">    call shr_mpi_bcast(atm_nthreads,GLOBAL_COMM,'atm_nthreads')</a>
+   753) <a name="l753" style="background-color: #ffffff">    call shr_mpi_bcast(lnd_nthreads,GLOBAL_COMM,'lnd_nthreads')</a>
+   754) <a name="l754" style="background-color: #ffffff">    call shr_mpi_bcast(ocn_nthreads,GLOBAL_COMM,'ocn_nthreads')</a>
+   755) <a name="l755" style="background-color: #ffffff">    call shr_mpi_bcast(ice_nthreads,GLOBAL_COMM,'ice_nthreads')</a>
+   756) <a name="l756" style="background-color: #ffffff">    call shr_mpi_bcast(glc_nthreads,GLOBAL_COMM,'glc_nthreads')</a>
+   757) <a name="l757" style="background-color: #ffffff">    call shr_mpi_bcast(wav_nthreads,GLOBAL_COMM,'wav_nthreads')</a>
+   758) <a name="l758" style="background-color: #ffffff">    call shr_mpi_bcast(rof_nthreads,GLOBAL_COMM,'rof_nthreads')</a>
+   759) <a name="l759" style="background-color: #ffffff">    call shr_mpi_bcast(cpl_nthreads,GLOBAL_COMM,'cpl_nthreads')</a>
+   760) <a name="l760" style="background-color: #ffffff"></a>
+   761) <a name="l761" style="background-color: #ffffff">    ! Create MPI communicator groups</a>
+   762) <a name="l762" style="background-color: #ffffff"></a>
+   763) <a name="l763" style="background-color: #ffffff">    if (mype == 0) then</a>
+   764) <a name="l764" style="background-color: #ffffff">       pelist(1,1) = 0</a>
+   765) <a name="l765" style="background-color: #ffffff">       pelist(2,1) = numpes-1</a>
+   766) <a name="l766" style="background-color: #ffffff">       pelist(3,1) = 1</a>
+   767) <a name="l767" style="background-color: #ffffff">    end if</a>
+   768) <a name="l768" style="background-color: #ffffff">    call mpi_bcast(pelist, size(pelist), MPI_INTEGER, 0, GLOBAL_COMM, ierr)</a>
+   769) <a name="l769" style="background-color: #ffffff">    call seq_comm_setcomm(GLOID, pelist,iname='GLOBAL')</a>
+   770) <a name="l770" style="background-color: #ffffff"></a>
+   771) <a name="l771" style="background-color: #ffffff">    if (mype == 0) then</a>
+   772) <a name="l772" style="background-color: #ffffff">       pelist(1,1) = cmin</a>
+   773) <a name="l773" style="background-color: #ffffff">       pelist(2,1) = cmax</a>
+   774) <a name="l774" style="background-color: #ffffff">       pelist(3,1) = cstr</a>
+   775) <a name="l775" style="background-color: #ffffff">    end if</a>
+   776) <a name="l776" style="background-color: #ffffff">    call mpi_bcast(pelist, size(pelist), MPI_INTEGER, 0, GLOBAL_COMM, ierr)</a>
+   777) <a name="l777" style="background-color: #ffffff">    call seq_comm_setcomm(CPLID,pelist,cpl_nthreads,'CPL')</a>
+   778) <a name="l778" style="background-color: #ffffff"></a>
+   779) <a name="l779" style="background-color: #ffffff">    do n = 1, num_inst_atm</a>
+   780) <a name="l780" style="background-color: #ffffff">       if (mype == 0) then</a>
+   781) <a name="l781" style="background-color: #ffffff">          pelist(1,1) = amin(n)</a>
+   782) <a name="l782" style="background-color: #ffffff">          pelist(2,1) = amax(n)</a>
+   783) <a name="l783" style="background-color: #ffffff">          pelist(3,1) = astr(n)</a>
+   784) <a name="l784" style="background-color: #ffffff">       end if</a>
+   785) <a name="l785" style="background-color: #ffffff">       call mpi_bcast(pelist, size(pelist), MPI_INTEGER, 0, GLOBAL_COMM, ierr)</a>
+   786) <a name="l786" style="background-color: #ffffff">       call seq_comm_setcomm(ATMID(n), pelist, atm_nthreads, 'ATM', n, num_inst_atm)</a>
+   787) <a name="l787" style="background-color: #ffffff">       call seq_comm_joincomm(CPLID, ATMID(n), CPLATMID(n), 'CPLATM', n, num_inst_atm)</a>
+   788) <a name="l788" style="background-color: #ffffff">    end do</a>
+   789) <a name="l789" style="background-color: #ffffff">    call seq_comm_jcommarr(ATMID,ALLATMID,'ALLATMID',1,1)</a>
+   790) <a name="l790" style="background-color: #ffffff">    call seq_comm_joincomm(CPLID,ALLATMID,CPLALLATMID,'CPLALLATMID',1,1)</a>
+   791) <a name="l791" style="background-color: #ffffff"></a>
+   792) <a name="l792" style="background-color: #ffffff">    do n = 1, num_inst_lnd</a>
+   793) <a name="l793" style="background-color: #ffffff">       if (mype == 0) then</a>
+   794) <a name="l794" style="background-color: #ffffff">          pelist(1,1) = lmin(n)</a>
+   795) <a name="l795" style="background-color: #ffffff">          pelist(2,1) = lmax(n)</a>
+   796) <a name="l796" style="background-color: #ffffff">          pelist(3,1) = lstr(n)</a>
+   797) <a name="l797" style="background-color: #ffffff">       end if</a>
+   798) <a name="l798" style="background-color: #ffffff">       call mpi_bcast(pelist, size(pelist), MPI_INTEGER, 0, GLOBAL_COMM, ierr)</a>
+   799) <a name="l799" style="background-color: #ffffff">       call seq_comm_setcomm(LNDID(n), pelist, lnd_nthreads, 'LND', n, num_inst_lnd)</a>
+   800) <a name="l800" style="background-color: #ffffff">       call seq_comm_joincomm(CPLID, LNDID(n), CPLLNDID(n), 'CPLLND', n, num_inst_lnd)</a>
+   801) <a name="l801" style="background-color: #ffffff">    end do</a>
+   802) <a name="l802" style="background-color: #ffffff">    call seq_comm_jcommarr(LNDID,ALLLNDID,'ALLLNDID',1,1)</a>
+   803) <a name="l803" style="background-color: #ffffff">    call seq_comm_joincomm(CPLID,ALLLNDID,CPLALLLNDID,'CPLALLLNDID',1,1)</a>
+   804) <a name="l804" style="background-color: #ffffff"></a>
+   805) <a name="l805" style="background-color: #ffffff">    do n = 1, num_inst_ocn</a>
+   806) <a name="l806" style="background-color: #ffffff">       if (mype == 0) then</a>
+   807) <a name="l807" style="background-color: #ffffff">          pelist(1,1) = omin(n)</a>
+   808) <a name="l808" style="background-color: #ffffff">          pelist(2,1) = omax(n)</a>
+   809) <a name="l809" style="background-color: #ffffff">          pelist(3,1) = ostr(n)</a>
+   810) <a name="l810" style="background-color: #ffffff">       end if</a>
+   811) <a name="l811" style="background-color: #ffffff">       call mpi_bcast(pelist, size(pelist), MPI_INTEGER, 0, GLOBAL_COMM, ierr)</a>
+   812) <a name="l812" style="background-color: #ffffff">       call seq_comm_setcomm(OCNID(n), pelist, ocn_nthreads, 'OCN', n, num_inst_ocn)</a>
+   813) <a name="l813" style="background-color: #ffffff">       call seq_comm_joincomm(CPLID, OCNID(n), CPLOCNID(n), 'CPLOCN', n, num_inst_ocn)</a>
+   814) <a name="l814" style="background-color: #ffffff">    end do</a>
+   815) <a name="l815" style="background-color: #ffffff">    call seq_comm_jcommarr(OCNID,ALLOCNID,'ALLOCNID',1,1)</a>
+   816) <a name="l816" style="background-color: #ffffff">    call seq_comm_joincomm(CPLID,ALLOCNID,CPLALLOCNID,'CPLALLOCNID',1,1)</a>
+   817) <a name="l817" style="background-color: #ffffff"></a>
+   818) <a name="l818" style="background-color: #ffffff">    do n = 1, num_inst_ice</a>
+   819) <a name="l819" style="background-color: #ffffff">       if (mype == 0) then</a>
+   820) <a name="l820" style="background-color: #ffffff">          pelist(1,1) = imin(n)</a>
+   821) <a name="l821" style="background-color: #ffffff">          pelist(2,1) = imax(n)</a>
+   822) <a name="l822" style="background-color: #ffffff">          pelist(3,1) = istr(n)</a>
+   823) <a name="l823" style="background-color: #ffffff">       end if</a>
+   824) <a name="l824" style="background-color: #ffffff">       call mpi_bcast(pelist, size(pelist), MPI_INTEGER, 0, GLOBAL_COMM, ierr)</a>
+   825) <a name="l825" style="background-color: #ffffff">       call seq_comm_setcomm(ICEID(n), pelist, ice_nthreads, 'ICE', n, num_inst_ice)</a>
+   826) <a name="l826" style="background-color: #ffffff">       call seq_comm_joincomm(CPLID, ICEID(n), CPLICEID(n), 'CPLICE', n, num_inst_ice)</a>
+   827) <a name="l827" style="background-color: #ffffff">    end do</a>
+   828) <a name="l828" style="background-color: #ffffff">    call seq_comm_jcommarr(ICEID,ALLICEID,'ALLICEID',1,1)</a>
+   829) <a name="l829" style="background-color: #ffffff">    call seq_comm_joincomm(CPLID,ALLICEID,CPLALLICEID,'CPLALLICEID',1,1)</a>
+   830) <a name="l830" style="background-color: #ffffff"></a>
+   831) <a name="l831" style="background-color: #ffffff">    do n = 1, num_inst_glc</a>
+   832) <a name="l832" style="background-color: #ffffff">       if (mype == 0) then</a>
+   833) <a name="l833" style="background-color: #ffffff">          pelist(1,1) = gmin(n)</a>
+   834) <a name="l834" style="background-color: #ffffff">          pelist(2,1) = gmax(n)</a>
+   835) <a name="l835" style="background-color: #ffffff">          pelist(3,1) = gstr(n)</a>
+   836) <a name="l836" style="background-color: #ffffff">       end if</a>
+   837) <a name="l837" style="background-color: #ffffff">       call mpi_bcast(pelist, size(pelist), MPI_INTEGER, 0, GLOBAL_COMM, ierr)</a>
+   838) <a name="l838" style="background-color: #ffffff">       call seq_comm_setcomm(GLCID(n), pelist, glc_nthreads, 'GLC', n, num_inst_glc)</a>
+   839) <a name="l839" style="background-color: #ffffff">       call seq_comm_joincomm(CPLID, GLCID(n), CPLGLCID(n), 'CPLGLC', n, num_inst_glc)</a>
+   840) <a name="l840" style="background-color: #ffffff">    end do</a>
+   841) <a name="l841" style="background-color: #ffffff">    call seq_comm_jcommarr(GLCID,ALLGLCID,'ALLGLCID',1,1)</a>
+   842) <a name="l842" style="background-color: #ffffff">    call seq_comm_joincomm(CPLID,ALLGLCID,CPLALLGLCID,'CPLALLGLCID',1,1)</a>
+   843) <a name="l843" style="background-color: #ffffff"></a>
+   844) <a name="l844" style="background-color: #ffffff">    do n = 1, num_inst_rof</a>
+   845) <a name="l845" style="background-color: #ffffff">       if (mype == 0) then</a>
+   846) <a name="l846" style="background-color: #ffffff">          pelist(1,1) = rmin(n)</a>
+   847) <a name="l847" style="background-color: #ffffff">          pelist(2,1) = rmax(n)</a>
+   848) <a name="l848" style="background-color: #ffffff">          pelist(3,1) = rstr(n)</a>
+   849) <a name="l849" style="background-color: #ffffff">       end if</a>
+   850) <a name="l850" style="background-color: #ffffff">       call mpi_bcast(pelist, size(pelist), MPI_INTEGER, 0, GLOBAL_COMM, ierr)</a>
+   851) <a name="l851" style="background-color: #ffffff">       call seq_comm_setcomm(ROFID(n), pelist, rof_nthreads, 'ROF', n, num_inst_rof)</a>
+   852) <a name="l852" style="background-color: #ffffff">       call seq_comm_joincomm(CPLID, ROFID(n), CPLROFID(n), 'CPLROF', n, num_inst_rof)</a>
+   853) <a name="l853" style="background-color: #ffffff">    end do</a>
+   854) <a name="l854" style="background-color: #ffffff">    call seq_comm_jcommarr(ROFID,ALLROFID,'ALLROFID',1,1)</a>
+   855) <a name="l855" style="background-color: #ffffff">    call seq_comm_joincomm(CPLID,ALLROFID,CPLALLROFID,'CPLALLROFID',1,1)</a>
+   856) <a name="l856" style="background-color: #ffffff"></a>
+   857) <a name="l857" style="background-color: #ffffff">    do n = 1, num_inst_wav</a>
+   858) <a name="l858" style="background-color: #ffffff">       if (mype == 0) then</a>
+   859) <a name="l859" style="background-color: #ffffff">          pelist(1,1) = wmin(n)</a>
+   860) <a name="l860" style="background-color: #ffffff">          pelist(2,1) = wmax(n)</a>
+   861) <a name="l861" style="background-color: #ffffff">          pelist(3,1) = wstr(n)</a>
+   862) <a name="l862" style="background-color: #ffffff">       end if</a>
+   863) <a name="l863" style="background-color: #ffffff">       call mpi_bcast(pelist, size(pelist), MPI_INTEGER, 0, GLOBAL_COMM, ierr)</a>
+   864) <a name="l864" style="background-color: #ffffff">       call seq_comm_setcomm(WAVID(n), pelist, wav_nthreads, 'WAV', n, num_inst_wav)</a>
+   865) <a name="l865" style="background-color: #ffffff">       call seq_comm_joincomm(CPLID, WAVID(n), CPLWAVID(n), 'CPLWAV', n, num_inst_wav)</a>
+   866) <a name="l866" style="background-color: #ffffff">    end do</a>
+   867) <a name="l867" style="background-color: #ffffff">    call seq_comm_jcommarr(WAVID,ALLWAVID,'ALLWAVID',1,1)</a>
+   868) <a name="l868" style="background-color: #ffffff">    call seq_comm_joincomm(CPLID,ALLWAVID,CPLALLWAVID,'CPLALLWAVID',1,1)</a>
+   869) <a name="l869" style="background-color: #ffffff"></a>
+   870) <a name="l870" style="background-color: #ffffff">    !! Count the total number of threads</a>
+   871) <a name="l871" style="background-color: #ffffff"></a>
+   872) <a name="l872" style="background-color: #ffffff">    max_threads = -1</a>
+   873) <a name="l873" style="background-color: #ffffff">    do n = 1,ncomps</a>
+   874) <a name="l874" style="background-color: #ffffff">       max_threads = max(max_threads,seq_comms(n)%nthreads)</a>
+   875) <a name="l875" style="background-color: #ffffff">    enddo</a>
+   876) <a name="l876" style="background-color: #ffffff">    do n = 1,ncomps</a>
+   877) <a name="l877" style="background-color: #ffffff">       seq_comms(n)%pethreads = max_threads</a>
+   878) <a name="l878" style="background-color: #ffffff">    enddo</a>
+   879) <a name="l879" style="background-color: #ffffff"></a>
+   880) <a name="l880" style="background-color: #ffffff">    ! compute each components root pe global id and broadcast so all pes have info</a>
+   881) <a name="l881" style="background-color: #ffffff"></a>
+   882) <a name="l882" style="background-color: #ffffff">    do n = 1,ncomps</a>
+   883) <a name="l883" style="background-color: #ffffff">       gloroot = -999</a>
+   884) <a name="l884" style="background-color: #ffffff">       if (seq_comms(n)%iamroot) gloroot = seq_comms(n)%gloiam</a>
+   885) <a name="l885" style="background-color: #ffffff">       call shr_mpi_max(gloroot,seq_comms(n)%gloroot,GLOBAL_COMM, &amp;</a>
+   886) <a name="l886" style="background-color: #ffffff">                        trim(subname)//' gloroot',all=.true.)</a>
+   887) <a name="l887" style="background-color: #ffffff">    enddo</a>
+   888) <a name="l888" style="background-color: #ffffff"></a>
+   889) <a name="l889" style="background-color: #ffffff">    ! Initialize MCT</a>
+   890) <a name="l890" style="background-color: #ffffff"></a>
+   891) <a name="l891" style="background-color: #ffffff">    ! add up valid comps on local pe</a>
+   892) <a name="l892" style="background-color: #ffffff"></a>
+   893) <a name="l893" style="background-color: #ffffff">    myncomps = 0</a>
+   894) <a name="l894" style="background-color: #ffffff">    do n = 1,ncomps</a>
+   895) <a name="l895" style="background-color: #ffffff">       if (seq_comms(n)%mpicom /= MPI_COMM_NULL) then</a>
+   896) <a name="l896" style="background-color: #ffffff">          myncomps = myncomps + 1</a>
+   897) <a name="l897" style="background-color: #ffffff">       endif</a>
+   898) <a name="l898" style="background-color: #ffffff">    enddo</a>
+   899) <a name="l899" style="background-color: #ffffff"></a>
+   900) <a name="l900" style="background-color: #ffffff">    ! set comps and comms</a>
+   901) <a name="l901" style="background-color: #ffffff"></a>
+   902) <a name="l902" style="background-color: #fafad2">    allocate(comps(myncomps),comms(myncomps),stat=ierr)</a>
+   903) <a name="l903" style="background-color: #fafad2">    if(ierr/=0) </a><a style="background-color: #ffff99">call mct_die(subName,'allocate comps comms',ierr)</a>
+   904) <a name="l904" style="background-color: #ffff99"></a>
+   905) <a name="l905" style="background-color: #ffffff">    myncomps = 0</a>
+   906) <a name="l906" style="background-color: #ffffff">    do n = 1,ncomps</a>
+   907) <a name="l907" style="background-color: #ffffff">       if (seq_comms(n)%mpicom /= MPI_COMM_NULL) then</a>
+   908) <a name="l908" style="background-color: #ffffff">          myncomps = myncomps + 1</a>
+   909) <a name="l909" style="background-color: #ffffff">          if (myncomps &gt; size(comps)) then</a>
+   910) <a name="l910" style="background-color: #ffff99">             write(logunit,*) trim(subname),' ERROR in myncomps ',myncomps,size(comps)</a>
+   911) <a name="l911" style="background-color: #ffff99">             call shr_sys_abort()</a>
+   912) <a name="l912" style="background-color: #ffff99">          endif</a>
+   913) <a name="l913" style="background-color: #ffffff">          comps(myncomps) = seq_comms(n)%ID</a>
+   914) <a name="l914" style="background-color: #ffffff">          comms(myncomps) = seq_comms(n)%mpicom</a>
+   915) <a name="l915" style="background-color: #ffffff">       endif</a>
+   916) <a name="l916" style="background-color: #ffffff">    enddo</a>
+   917) <a name="l917" style="background-color: #ffffff"></a>
+   918) <a name="l918" style="background-color: #ffffff">    if (myncomps /= size(comps)) then</a>
+   919) <a name="l919" style="background-color: #ffff99">       write(logunit,*) trim(subname),' ERROR in myncomps ',myncomps,size(comps)</a>
+   920) <a name="l920" style="background-color: #ffff99">       call shr_sys_abort()</a>
+   921) <a name="l921" style="background-color: #ffff99">    endif</a>
+   922) <a name="l922" style="background-color: #ffff99"></a>
+   923) <a name="l923" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">mct_world_init(ncomps, GLOBAL_COMM, comms, comps)</a>
+   924) <a name="l924" style="background-color: #ffffff"></a>
+   925) <a name="l925" style="background-color: #ffffff">    deallocate(comps,comms)</a>
+   926) <a name="l926" style="background-color: #ffffff"></a>
+   927) <a name="l927" style="background-color: #ffffff">    call seq_comm_printcomms()</a>
+   928) <a name="l928" style="background-color: #ffffff"></a>
+   929) <a name="l929" style="background-color: #ffffff">  end subroutine seq_comm_init</a>
+   930) <a name="l930" style="background-color: #ffffff"></a>
+   931) <a name="l931" style="background-color: #ffffff">!---------------------------------------------------------</a>
+   932) <a name="l932" style="background-color: #ffffff">  subroutine seq_comm_setcomm(ID,pelist,nthreads,iname,inst,tinst)</a>
+   933) <a name="l933" style="background-color: #ffffff"></a>
+   934) <a name="l934" style="background-color: #ffffff">    implicit none</a>
+   935) <a name="l935" style="background-color: #ffffff">    integer,intent(IN) :: ID</a>
+   936) <a name="l936" style="background-color: #ffffff">    integer,intent(IN) :: pelist(:,:)</a>
+   937) <a name="l937" style="background-color: #ffffff">    integer,intent(IN),optional :: nthreads</a>
+   938) <a name="l938" style="background-color: #ffffff">    character(len=*),intent(IN),optional :: iname  ! name of component</a>
+   939) <a name="l939" style="background-color: #ffffff">    integer,intent(IN),optional :: inst  ! instance of component</a>
+   940) <a name="l940" style="background-color: #ffffff">    integer,intent(IN),optional :: tinst ! total number of instances for this component</a>
+   941) <a name="l941" style="background-color: #ffffff"></a>
+   942) <a name="l942" style="background-color: #ffffff">    integer :: mpigrp_world</a>
+   943) <a name="l943" style="background-color: #ffffff">    integer :: mpigrp</a>
+   944) <a name="l944" style="background-color: #ffffff">    integer :: mpicom</a>
+   945) <a name="l945" style="background-color: #ffffff">    integer :: ntask,ntasks,cnt</a>
+   946) <a name="l946" style="background-color: #ffffff">    integer :: ierr</a>
+   947) <a name="l947" style="background-color: #ffffff">    character(len=seq_comm_namelen) :: cname</a>
+   948) <a name="l948" style="background-color: #ffffff">    logical :: set_suffix</a>
+   949) <a name="l949" style="background-color: #ffffff">    character(*),parameter :: subName =   '(seq_comm_setcomm) '</a>
+   950) <a name="l950" style="background-color: #ffffff"></a>
+   951) <a name="l951" style="background-color: #ffffff">    if (ID &lt; 1 .or. ID &gt; ncomps) then</a>
+   952) <a name="l952" style="background-color: #ffff99">       write(logunit,*) subname,' ID out of range, abort ',ID</a>
+   953) <a name="l953" style="background-color: #ffff99">       call shr_sys_abort()</a>
+   954) <a name="l954" style="background-color: #ffff99">    endif </a>
+   955) <a name="l955" style="background-color: #ffff99"></a>
+   956) <a name="l956" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">mpi_comm_group(GLOBAL_COMM, mpigrp_world, ierr)</a>
+   957) <a name="l957" style="background-color: #ffffff">    call shr_mpi_chkerr(ierr,subname//' mpi_comm_group mpigrp_world')</a>
+   958) <a name="l958" style="background-color: #ffffff">    call mpi_group_range_incl(mpigrp_world, 1, </a><a style="background-color: #fafad2">pelist, mpigrp,ierr)</a>
+   959) <a name="l959" style="background-color: #fafad2">    call </a><a style="background-color: #ffffff">shr_mpi_chkerr(ierr,subname//' mpi_group_range_incl mpigrp')</a>
+   960) <a name="l960" style="background-color: #ffffff">    call mpi_comm_create(GLOBAL_COMM, mpigrp, mpicom, ierr)</a>
+   961) <a name="l961" style="background-color: #ffffff">    call shr_mpi_chkerr(ierr,subname//' mpi_comm_create mpigrp')</a>
+   962) <a name="l962" style="background-color: #ffffff"></a>
+   963) <a name="l963" style="background-color: #ffffff">    ntasks = ((pelist(2,1) - pelist(1,1)) / pelist(3,1)) + 1</a>
+   964) <a name="l964" style="background-color: #fafad2">    allocate(seq_comms(ID)%petlist(ntasks))</a>
+   965) <a name="l965" style="background-color: #ffffff">    cnt = 0</a>
+   966) <a name="l966" style="background-color: #ffffff">    do ntask = pelist(1,1),pelist(2,1),pelist(3,1)</a>
+   967) <a name="l967" style="background-color: #ffffff">        cnt = cnt + 1</a>
+   968) <a name="l968" style="background-color: #ffffff">        if (cnt &gt; ntasks) then</a>
+   969) <a name="l969" style="background-color: #ffff99">           write(logunit,*) subname,' ERROR in petlist init ',ntasks,pelist(1:3,1),ntask,cnt</a>
+   970) <a name="l970" style="background-color: #ffff99">           call shr_sys_abort(subname//' ERROR in petlist init')</a>
+   971) <a name="l971" style="background-color: #ffff99">        endif</a>
+   972) <a name="l972" style="background-color: #ffffff">        seq_comms(ID)%petlist(cnt) = ntask</a>
+   973) <a name="l973" style="background-color: #ffffff">    enddo</a>
+   974) <a name="l974" style="background-color: #ffffff"></a>
+   975) <a name="l975" style="background-color: #ffffff">    seq_comms(ID)%set = .true.</a>
+   976) <a name="l976" style="background-color: #ffffff">    seq_comms(ID)%ID = ID</a>
+   977) <a name="l977" style="background-color: #ffffff"></a>
+   978) <a name="l978" style="background-color: #ffffff">    if (present(inst)) then</a>
+   979) <a name="l979" style="background-color: #ffffff">       seq_comms(ID)%inst = inst</a>
+   980) <a name="l980" style="background-color: #ffffff">       set_suffix = .true.</a>
+   981) <a name="l981" style="background-color: #ffffff">    else</a>
+   982) <a name="l982" style="background-color: #ffffff">       seq_comms(ID)%inst = 1</a>
+   983) <a name="l983" style="background-color: #ffffff">       set_suffix = .false.</a>
+   984) <a name="l984" style="background-color: #ffffff">    endif</a>
+   985) <a name="l985" style="background-color: #ffffff"></a>
+   986) <a name="l986" style="background-color: #ffffff">    if (present(tinst)) then</a>
+   987) <a name="l987" style="background-color: #ffffff">       if (tinst == 1) set_suffix = .false.</a>
+   988) <a name="l988" style="background-color: #ffffff">    endif</a>
+   989) <a name="l989" style="background-color: #ffffff"></a>
+   990) <a name="l990" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(iname)) then</a>
+   991) <a name="l991" style="background-color: #ffffff">       seq_comms(ID)%name = trim(iname)</a>
+   992) <a name="l992" style="background-color: #ffffff">       if (set_suffix) then</a>
+   993) <a name="l993" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">seq_comm_mkname(cname,iname,seq_comms(ID)%inst)</a>
+   994) <a name="l994" style="background-color: #ffff99">          seq_comms(ID)%name = trim(cname)</a>
+   995) <a name="l995" style="background-color: #ffff99">       endif</a>
+   996) <a name="l996" style="background-color: #ffff99">    endif</a>
+   997) <a name="l997" style="background-color: #ffff99"></a>
+   998) <a name="l998" style="background-color: #ffffff">    if (set_suffix) then</a>
+   999) <a name="l999" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">seq_comm_mkname(cname,'_',seq_comms(ID)%inst)</a>
+  1000) <a name="l1000" style="background-color: #ffff99">       seq_comms(ID)%suffix = trim(cname)</a>
+  1001) <a name="l1001" style="background-color: #ffff99">    else</a>
+  1002) <a name="l1002" style="background-color: #ffffff">       seq_comms(ID)%suffix = ' '</a>
+  1003) <a name="l1003" style="background-color: #ffffff">    endif</a>
+  1004) <a name="l1004" style="background-color: #ffffff"></a>
+  1005) <a name="l1005" style="background-color: #ffffff">    seq_comms(ID)%mpicom = mpicom</a>
+  1006) <a name="l1006" style="background-color: #ffffff">    seq_comms(ID)%mpigrp = mpigrp</a>
+  1007) <a name="l1007" style="background-color: #ffffff">    if (present(nthreads)) then</a>
+  1008) <a name="l1008" style="background-color: #ffffff">       seq_comms(ID)%nthreads = nthreads</a>
+  1009) <a name="l1009" style="background-color: #ffffff">    else</a>
+  1010) <a name="l1010" style="background-color: #ffffff">       seq_comms(ID)%nthreads = 1</a>
+  1011) <a name="l1011" style="background-color: #ffffff">    endif</a>
+  1012) <a name="l1012" style="background-color: #ffffff"></a>
+  1013) <a name="l1013" style="background-color: #ffffff">    if (mpicom /= MPI_COMM_NULL) then</a>
+  1014) <a name="l1014" style="background-color: #ffffff">       call mpi_comm_size(mpicom,seq_comms(ID)%npes,ierr)</a>
+  1015) <a name="l1015" style="background-color: #ffffff">       call shr_mpi_chkerr(ierr,subname//' mpi_comm_size')</a>
+  1016) <a name="l1016" style="background-color: #ffffff">       call mpi_comm_rank(mpicom,seq_comms(ID)%iam,ierr)</a>
+  1017) <a name="l1017" style="background-color: #ffffff">       call shr_mpi_chkerr(ierr,subname//' mpi_comm_rank')</a>
+  1018) <a name="l1018" style="background-color: #ffffff">       if (seq_comms(ID)%iam == 0) then</a>
+  1019) <a name="l1019" style="background-color: #ffffff">          seq_comms(ID)%iamroot = .true.</a>
+  1020) <a name="l1020" style="background-color: #ffffff">       else</a>
+  1021) <a name="l1021" style="background-color: #ffffff">          seq_comms(ID)%iamroot = .false.</a>
+  1022) <a name="l1022" style="background-color: #ffffff">       endif</a>
+  1023) <a name="l1023" style="background-color: #ffffff">    else</a>
+  1024) <a name="l1024" style="background-color: #ffff99">       seq_comms(ID)%npes = -1</a>
+  1025) <a name="l1025" style="background-color: #ffff99">       seq_comms(ID)%iam = -1</a>
+  1026) <a name="l1026" style="background-color: #ffff99">       seq_comms(ID)%nthreads = 1</a>
+  1027) <a name="l1027" style="background-color: #ffff99">       seq_comms(ID)%iamroot = .false.</a>
+  1028) <a name="l1028" style="background-color: #ffff99">    endif</a>
+  1029) <a name="l1029" style="background-color: #ffff99"></a>
+  1030) <a name="l1030" style="background-color: #ffffff">    if (seq_comms(ID)%iamroot) then</a>
+  1031) <a name="l1031" style="background-color: #fafad2">       write(logunit,F11) </a><a style="background-color: #ffffff">trim(subname),'  initialize ID ',ID,seq_comms(ID)%name, &amp;</a>
+  1032) <a name="l1032" style="background-color: #ffffff">         ' pelist   =',pelist,' npes =',seq_comms(ID)%npes,' nthreads =',seq_comms(ID)%nthreads</a>
+  1033) <a name="l1033" style="background-color: #ffffff">    endif</a>
+  1034) <a name="l1034" style="background-color: #ffffff"></a>
+  1035) <a name="l1035" style="background-color: #ffffff">  end subroutine seq_comm_setcomm</a>
+  1036) <a name="l1036" style="background-color: #ffffff"></a>
+  1037) <a name="l1037" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1038) <a name="l1038" style="background-color: #ffffff">  subroutine seq_comm_joincomm(ID1,ID2,ID,iname,inst,tinst)</a>
+  1039) <a name="l1039" style="background-color: #ffffff"></a>
+  1040) <a name="l1040" style="background-color: #ffffff">    implicit none</a>
+  1041) <a name="l1041" style="background-color: #ffffff">    integer,intent(IN) :: ID1    ! src id</a>
+  1042) <a name="l1042" style="background-color: #ffffff">    integer,intent(IN) :: ID2    ! srd id</a>
+  1043) <a name="l1043" style="background-color: #ffffff">    integer,intent(IN) :: ID     ! computed id</a>
+  1044) <a name="l1044" style="background-color: #ffffff">    character(len=*),intent(IN),optional :: iname  ! comm name</a>
+  1045) <a name="l1045" style="background-color: #ffffff">    integer,intent(IN),optional :: inst</a>
+  1046) <a name="l1046" style="background-color: #ffffff">    integer,intent(IN),optional :: tinst</a>
+  1047) <a name="l1047" style="background-color: #ffffff"></a>
+  1048) <a name="l1048" style="background-color: #ffffff">    integer :: mpigrp</a>
+  1049) <a name="l1049" style="background-color: #ffffff">    integer :: mpicom</a>
+  1050) <a name="l1050" style="background-color: #ffffff">    integer :: ierr</a>
+  1051) <a name="l1051" style="background-color: #ffffff">    integer :: n,nsize</a>
+  1052) <a name="l1052" style="background-color: #ffffff">    character(len=seq_comm_namelen) :: cname</a>
+  1053) <a name="l1053" style="background-color: #ffffff">    logical :: set_suffix</a>
+  1054) <a name="l1054" style="background-color: #ffffff">    integer,allocatable :: pe_t1(:),pe_t2(:)</a>
+  1055) <a name="l1055" style="background-color: #ffffff">    character(*),parameter :: subName =   '(seq_comm_joincomm) '</a>
+  1056) <a name="l1056" style="background-color: #ffffff"></a>
+  1057) <a name="l1057" style="background-color: #ffffff">    ! check that IDs are in valid range, that ID1 and ID2 have</a>
+  1058) <a name="l1058" style="background-color: #ffffff">    ! been set, and that ID has not been set</a>
+  1059) <a name="l1059" style="background-color: #ffffff"></a>
+  1060) <a name="l1060" style="background-color: #ffffff">    if (ID1 &lt; 1 .or. ID1 &gt; ncomps) then</a>
+  1061) <a name="l1061" style="background-color: #ffff99">       write(logunit,*) subname,' ID1 out of range, abort ',ID1</a>
+  1062) <a name="l1062" style="background-color: #ffff99">       call shr_sys_abort()</a>
+  1063) <a name="l1063" style="background-color: #ffff99">    endif </a>
+  1064) <a name="l1064" style="background-color: #ffffff">    if (ID2 &lt; 1 .or. ID2 &gt; ncomps) then</a>
+  1065) <a name="l1065" style="background-color: #ffff99">       write(logunit,*) subname,' ID2 out of range, abort ',ID2</a>
+  1066) <a name="l1066" style="background-color: #ffff99">       call shr_sys_abort()</a>
+  1067) <a name="l1067" style="background-color: #ffff99">    endif </a>
+  1068) <a name="l1068" style="background-color: #ffffff">    if (ID &lt; 1 .or. ID &gt; ncomps) then</a>
+  1069) <a name="l1069" style="background-color: #ffff99">       write(logunit,*) subname,' ID out of range, abort ',ID</a>
+  1070) <a name="l1070" style="background-color: #ffff99">       call shr_sys_abort()</a>
+  1071) <a name="l1071" style="background-color: #ffff99">    endif</a>
+  1072) <a name="l1072" style="background-color: #ffffff">    if (.not. seq_comms(ID1)%set .or. .not. seq_comms(ID2)%set) then</a>
+  1073) <a name="l1073" style="background-color: #ffff99">       write(logunit,*) subname,' ID1 or ID2 not set ',ID1,ID2</a>
+  1074) <a name="l1074" style="background-color: #ffff99">       call shr_sys_abort()</a>
+  1075) <a name="l1075" style="background-color: #ffff99">    endif</a>
+  1076) <a name="l1076" style="background-color: #ffffff">    if (seq_comms(ID)%set) then</a>
+  1077) <a name="l1077" style="background-color: #ffff99">       write(logunit,*) subname,' ID already set ',ID</a>
+  1078) <a name="l1078" style="background-color: #ffff99">       call shr_sys_abort()</a>
+  1079) <a name="l1079" style="background-color: #ffff99">    endif</a>
+  1080) <a name="l1080" style="background-color: #ffff99"></a>
+  1081) <a name="l1081" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">mpi_group_union(seq_comms(ID1)%mpigrp,seq_comms(ID2)%mpigrp,mpigrp,ierr)</a>
+  1082) <a name="l1082" style="background-color: #ffffff">    call shr_mpi_chkerr(ierr,subname//' mpi_comm_union mpigrp')</a>
+  1083) <a name="l1083" style="background-color: #ffffff">    call mpi_comm_create(GLOBAL_COMM, mpigrp, mpicom, ierr)</a>
+  1084) <a name="l1084" style="background-color: #ffffff">    call shr_mpi_chkerr(ierr,subname//' mpi_comm_create mpigrp')</a>
+  1085) <a name="l1085" style="background-color: #ffffff"></a>
+  1086) <a name="l1086" style="background-color: #ffffff">    seq_comms(ID)%set = .true.</a>
+  1087) <a name="l1087" style="background-color: #ffffff">    seq_comms(ID)%ID = ID</a>
+  1088) <a name="l1088" style="background-color: #ffffff"></a>
+  1089) <a name="l1089" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(inst)) then</a>
+  1090) <a name="l1090" style="background-color: #ffffff">       seq_comms(ID)%inst = inst</a>
+  1091) <a name="l1091" style="background-color: #ffffff">    else</a>
+  1092) <a name="l1092" style="background-color: #ffff99">       seq_comms(ID)%inst = 1</a>
+  1093) <a name="l1093" style="background-color: #ffff99">    endif</a>
+  1094) <a name="l1094" style="background-color: #ffff99"></a>
+  1095) <a name="l1095" style="background-color: #ffffff">    set_suffix = .true.</a>
+  1096) <a name="l1096" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(tinst)) then</a>
+  1097) <a name="l1097" style="background-color: #ffffff">       if (tinst == 1) set_suffix = .false.</a>
+  1098) <a name="l1098" style="background-color: #ffffff">    endif</a>
+  1099) <a name="l1099" style="background-color: #ffffff"></a>
+  1100) <a name="l1100" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(iname)) then</a>
+  1101) <a name="l1101" style="background-color: #ffffff">       seq_comms(ID)%name = trim(iname)</a>
+  1102) <a name="l1102" style="background-color: #ffffff">       if (set_suffix) then</a>
+  1103) <a name="l1103" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">seq_comm_mkname(cname,iname,seq_comms(ID)%inst)</a>
+  1104) <a name="l1104" style="background-color: #ffff99">          seq_comms(ID)%name = trim(cname)</a>
+  1105) <a name="l1105" style="background-color: #ffff99">       endif</a>
+  1106) <a name="l1106" style="background-color: #ffff99">    endif</a>
+  1107) <a name="l1107" style="background-color: #ffff99"></a>
+  1108) <a name="l1108" style="background-color: #ffffff">    if (set_suffix) then</a>
+  1109) <a name="l1109" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">seq_comm_mkname(cname,'_',seq_comms(ID)%inst)</a>
+  1110) <a name="l1110" style="background-color: #ffff99">       seq_comms(ID)%suffix = trim(cname)</a>
+  1111) <a name="l1111" style="background-color: #ffff99">    else</a>
+  1112) <a name="l1112" style="background-color: #ffffff">       seq_comms(ID)%suffix = ' '</a>
+  1113) <a name="l1113" style="background-color: #ffffff">    endif</a>
+  1114) <a name="l1114" style="background-color: #ffffff"></a>
+  1115) <a name="l1115" style="background-color: #ffffff">    seq_comms(ID)%mpicom = mpicom</a>
+  1116) <a name="l1116" style="background-color: #ffffff">    seq_comms(ID)%mpigrp = mpigrp</a>
+  1117) <a name="l1117" style="background-color: #ffffff">    seq_comms(ID)%nthreads = max(seq_comms(ID1)%nthreads,seq_comms(ID2)%nthreads)</a>
+  1118) <a name="l1118" style="background-color: #ffffff">    seq_comms(ID)%nthreads = max(seq_comms(ID)%nthreads,1)</a>
+  1119) <a name="l1119" style="background-color: #ffffff"></a>
+  1120) <a name="l1120" style="background-color: #ffffff">    if (mpicom /= MPI_COMM_NULL) then</a>
+  1121) <a name="l1121" style="background-color: #ffffff">       call mpi_comm_size(mpicom,seq_comms(ID)%npes,ierr)</a>
+  1122) <a name="l1122" style="background-color: #ffffff">       call shr_mpi_chkerr(ierr,subname//' mpi_comm_size')</a>
+  1123) <a name="l1123" style="background-color: #ffffff">       call mpi_comm_rank(mpicom,seq_comms(ID)%iam,ierr)</a>
+  1124) <a name="l1124" style="background-color: #ffffff">       call shr_mpi_chkerr(ierr,subname//' mpi_comm_rank')</a>
+  1125) <a name="l1125" style="background-color: #ffffff">       if (seq_comms(ID)%iam == 0) then</a>
+  1126) <a name="l1126" style="background-color: #ffffff">          seq_comms(ID)%iamroot = .true.</a>
+  1127) <a name="l1127" style="background-color: #ffffff">       else</a>
+  1128) <a name="l1128" style="background-color: #ffffff">          seq_comms(ID)%iamroot = .false.</a>
+  1129) <a name="l1129" style="background-color: #ffffff">       endif</a>
+  1130) <a name="l1130" style="background-color: #ffffff">    else</a>
+  1131) <a name="l1131" style="background-color: #ffff99">       seq_comms(ID)%npes = -1</a>
+  1132) <a name="l1132" style="background-color: #ffff99">       seq_comms(ID)%iam = -1</a>
+  1133) <a name="l1133" style="background-color: #ffff99">       seq_comms(ID)%iamroot = .false.</a>
+  1134) <a name="l1134" style="background-color: #ffff99">    endif</a>
+  1135) <a name="l1135" style="background-color: #ffff99"></a>
+  1136) <a name="l1136" style="background-color: #ffff99">! needs to be excluded until mpi_group_size is added to serial mpi in mct</a>
+  1137) <a name="l1137" style="background-color: #ffff99">#if (1 == 0)</a>
+  1138) <a name="l1138" style="background-color: #ffff99">    if (loglevel &gt; 3) then</a>
+  1139) <a name="l1139" style="background-color: #ffff99">       ! some debug code to prove the join is working ok</a>
+  1140) <a name="l1140" style="background-color: #ffff99">       ! when joining mpicomms, the local rank may be quite different</a>
+  1141) <a name="l1141" style="background-color: #ffff99">       !   from either the global or local ranks of the joining comms</a>
+  1142) <a name="l1142" style="background-color: #ffff99">       call mpi_group_size(seq_comms(ID1)%mpigrp,nsize,ierr)</a>
+  1143) <a name="l1143" style="background-color: #ffff99">       allocate(pe_t1(nsize),pe_t2(nsize))</a>
+  1144) <a name="l1144" style="background-color: #ffff99">       do n = 1,nsize</a>
+  1145) <a name="l1145" style="background-color: #ffff99">          pe_t1(n) = n-1</a>
+  1146) <a name="l1146" style="background-color: #ffff99">          pe_t2(n) = -1</a>
+  1147) <a name="l1147" style="background-color: #ffff99">       enddo</a>
+  1148) <a name="l1148" style="background-color: #ffff99">       call mpi_group_translate_ranks(seq_comms(ID1)%mpigrp, nsize, pe_t1, mpigrp, pe_t2, ierr)</a>
+  1149) <a name="l1149" style="background-color: #ffff99">       write(logunit,*) 'ID1      ranks ',pe_t1</a>
+  1150) <a name="l1150" style="background-color: #ffff99">       write(logunit,*) 'ID1-JOIN ranks ',pe_t2</a>
+  1151) <a name="l1151" style="background-color: #ffff99">       deallocate(pe_t1,pe_t2)</a>
+  1152) <a name="l1152" style="background-color: #ffff99"></a>
+  1153) <a name="l1153" style="background-color: #ffff99">       call mpi_group_size(seq_comms(ID2)%mpigrp,nsize,ierr)</a>
+  1154) <a name="l1154" style="background-color: #ffff99">       allocate(pe_t1(nsize),pe_t2(nsize))</a>
+  1155) <a name="l1155" style="background-color: #ffff99">       do n = 1,nsize</a>
+  1156) <a name="l1156" style="background-color: #ffff99">          pe_t1(n) = n-1</a>
+  1157) <a name="l1157" style="background-color: #ffff99">          pe_t2(n) = -1</a>
+  1158) <a name="l1158" style="background-color: #ffff99">       enddo</a>
+  1159) <a name="l1159" style="background-color: #ffff99">       call mpi_group_translate_ranks(seq_comms(ID2)%mpigrp, nsize, pe_t1, mpigrp, pe_t2, ierr)</a>
+  1160) <a name="l1160" style="background-color: #ffff99">       write(logunit,*) 'ID2      ranks ',pe_t1</a>
+  1161) <a name="l1161" style="background-color: #ffff99">       write(logunit,*) 'ID2-JOIN ranks ',pe_t2</a>
+  1162) <a name="l1162" style="background-color: #ffff99">       deallocate(pe_t1,pe_t2)</a>
+  1163) <a name="l1163" style="background-color: #ffff99">    endif</a>
+  1164) <a name="l1164" style="background-color: #ffff99">#endif</a>
+  1165) <a name="l1165" style="background-color: #ffff99"></a>
+  1166) <a name="l1166" style="background-color: #ffffff">    allocate(pe_t1(1),pe_t2(1))</a>
+  1167) <a name="l1167" style="background-color: #ffffff">    pe_t1(1) = 0</a>
+  1168) <a name="l1168" style="background-color: #ffffff">    call mpi_group_translate_ranks(seq_comms(ID1)%mpigrp, 1, pe_t1, mpigrp, pe_t2, ierr)</a>
+  1169) <a name="l1169" style="background-color: #ffffff">    seq_comms(ID)%cplpe = pe_t2(1)</a>
+  1170) <a name="l1170" style="background-color: #ffffff">    pe_t1(1) = 0</a>
+  1171) <a name="l1171" style="background-color: #ffffff">    call mpi_group_translate_ranks(seq_comms(ID2)%mpigrp, 1, pe_t1, mpigrp, pe_t2, ierr)</a>
+  1172) <a name="l1172" style="background-color: #ffffff">    seq_comms(ID)%cmppe = pe_t2(1)</a>
+  1173) <a name="l1173" style="background-color: #ffffff">    deallocate(pe_t1,pe_t2)</a>
+  1174) <a name="l1174" style="background-color: #ffffff"></a>
+  1175) <a name="l1175" style="background-color: #ffffff">    if (seq_comms(ID)%iamroot) then</a>
+  1176) <a name="l1176" style="background-color: #ffffff">       if (loglevel &gt; 1) then</a>
+  1177) <a name="l1177" style="background-color: #ffff99">          write(logunit,F12) trim(subname),' initialize ID ',ID,seq_comms(ID)%name, &amp;</a>
+  1178) <a name="l1178" style="background-color: #ffff99">          ' join IDs =',ID1,ID2,' npes =',seq_comms(ID)%npes, &amp;</a>
+  1179) <a name="l1179" style="background-color: #ffff99">          ' nthreads =',seq_comms(ID)%nthreads, &amp;</a>
+  1180) <a name="l1180" style="background-color: #ffff99">          ' cpl/cmp pes =',seq_comms(ID)%cplpe,seq_comms(ID)%cmppe</a>
+  1181) <a name="l1181" style="background-color: #ffff99">       else</a>
+  1182) <a name="l1182" style="background-color: #ffffff">          write(logunit,F13) trim(subname),' initialize ID ',ID,seq_comms(ID)%name, &amp;</a>
+  1183) <a name="l1183" style="background-color: #ffffff">          ' join IDs =',ID1,ID2,' npes =',seq_comms(ID)%npes, &amp;</a>
+  1184) <a name="l1184" style="background-color: #ffffff">          ' nthreads =',seq_comms(ID)%nthreads</a>
+  1185) <a name="l1185" style="background-color: #ffffff">       endif</a>
+  1186) <a name="l1186" style="background-color: #ffffff">    endif</a>
+  1187) <a name="l1187" style="background-color: #ffffff"></a>
+  1188) <a name="l1188" style="background-color: #fafad2">  end subroutine seq_comm_joincomm</a>
+  1189) <a name="l1189" style="background-color: #ffffff"></a>
+  1190) <a name="l1190" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1191) <a name="l1191" style="background-color: #ffffff">  subroutine seq_comm_jcommarr(IDs,ID,iname,inst,tinst)</a>
+  1192) <a name="l1192" style="background-color: #ffffff"></a>
+  1193) <a name="l1193" style="background-color: #ffffff">    implicit none</a>
+  1194) <a name="l1194" style="background-color: #ffffff">    integer,intent(IN) :: IDs(:) ! src id</a>
+  1195) <a name="l1195" style="background-color: #ffffff">    integer,intent(IN) :: ID     ! computed id</a>
+  1196) <a name="l1196" style="background-color: #ffffff">    character(len=*),intent(IN),optional :: iname  ! comm name</a>
+  1197) <a name="l1197" style="background-color: #ffffff">    integer,intent(IN),optional :: inst</a>
+  1198) <a name="l1198" style="background-color: #ffffff">    integer,intent(IN),optional :: tinst</a>
+  1199) <a name="l1199" style="background-color: #ffffff"></a>
+  1200) <a name="l1200" style="background-color: #ffffff">    integer :: mpigrp, mpigrpp</a>
+  1201) <a name="l1201" style="background-color: #ffffff">    integer :: mpicom, nids</a>
+  1202) <a name="l1202" style="background-color: #ffffff">    integer :: ierr</a>
+  1203) <a name="l1203" style="background-color: #ffffff">    integer :: n,nsize</a>
+  1204) <a name="l1204" style="background-color: #ffffff">    character(len=seq_comm_namelen) :: cname</a>
+  1205) <a name="l1205" style="background-color: #ffffff">    logical :: set_suffix</a>
+  1206) <a name="l1206" style="background-color: #ffffff">    integer,allocatable :: pe_t1(:),pe_t2(:)</a>
+  1207) <a name="l1207" style="background-color: #ffffff">    character(*),parameter :: subName =   '(seq_comm_jcommarr) '</a>
+  1208) <a name="l1208" style="background-color: #ffffff"></a>
+  1209) <a name="l1209" style="background-color: #ffffff">    ! check that IDs are in valid range, that IDs have</a>
+  1210) <a name="l1210" style="background-color: #ffffff">    ! been set, and that ID has not been set</a>
+  1211) <a name="l1211" style="background-color: #ffffff"></a>
+  1212) <a name="l1212" style="background-color: #ffffff">    nids = size(IDs)</a>
+  1213) <a name="l1213" style="background-color: #ffffff">    do n = 1,nids</a>
+  1214) <a name="l1214" style="background-color: #ffffff">       if (IDs(n) &lt; 1 .or. IDs(n) &gt; ncomps) then</a>
+  1215) <a name="l1215" style="background-color: #ffff99">          write(logunit,*) subname,' IDs out of range, abort ',n,IDs(n)</a>
+  1216) <a name="l1216" style="background-color: #ffff99">          call shr_sys_abort()</a>
+  1217) <a name="l1217" style="background-color: #ffff99">       endif </a>
+  1218) <a name="l1218" style="background-color: #ffffff">       if (.not. seq_comms(IDs(n))%set) then</a>
+  1219) <a name="l1219" style="background-color: #ffff99">          write(logunit,*) subname,' IDs not set ',n,IDs(n)</a>
+  1220) <a name="l1220" style="background-color: #ffff99">          call shr_sys_abort()</a>
+  1221) <a name="l1221" style="background-color: #ffff99">       endif</a>
+  1222) <a name="l1222" style="background-color: #ffff99">    enddo</a>
+  1223) <a name="l1223" style="background-color: #ffff99"></a>
+  1224) <a name="l1224" style="background-color: #ffffff">    if (ID &lt; 1 .or. ID &gt; ncomps) then</a>
+  1225) <a name="l1225" style="background-color: #ffff99">       write(logunit,*) subname,' ID out of range, abort ',ID</a>
+  1226) <a name="l1226" style="background-color: #ffff99">       call shr_sys_abort()</a>
+  1227) <a name="l1227" style="background-color: #ffff99">    endif</a>
+  1228) <a name="l1228" style="background-color: #ffffff">    if (seq_comms(ID)%set) then</a>
+  1229) <a name="l1229" style="background-color: #ffff99">       write(logunit,*) subname,' ID already set ',ID</a>
+  1230) <a name="l1230" style="background-color: #ffff99">       call shr_sys_abort()</a>
+  1231) <a name="l1231" style="background-color: #ffff99">    endif</a>
+  1232) <a name="l1232" style="background-color: #ffff99"></a>
+  1233) <a name="l1233" style="background-color: #ffffff">    mpigrp = seq_comms(IDs(1))%mpigrp</a>
+  1234) <a name="l1234" style="background-color: #ffffff">    do n = 1,nids</a>
+  1235) <a name="l1235" style="background-color: #ffffff">       mpigrpp = mpigrp</a>
+  1236) <a name="l1236" style="background-color: #ffffff">       call mpi_group_union(mpigrpp,seq_comms(IDs(n))%mpigrp,mpigrp,ierr)</a>
+  1237) <a name="l1237" style="background-color: #ffffff">       call shr_mpi_chkerr(ierr,subname//' mpi_comm_union mpigrp')</a>
+  1238) <a name="l1238" style="background-color: #ffffff">    enddo</a>
+  1239) <a name="l1239" style="background-color: #ffffff">    call mpi_comm_create(GLOBAL_COMM, mpigrp, mpicom, ierr)</a>
+  1240) <a name="l1240" style="background-color: #ffffff">    call shr_mpi_chkerr(ierr,subname//' mpi_comm_create mpigrp')</a>
+  1241) <a name="l1241" style="background-color: #ffffff"></a>
+  1242) <a name="l1242" style="background-color: #ffffff">    seq_comms(ID)%set = .true.</a>
+  1243) <a name="l1243" style="background-color: #ffffff">    seq_comms(ID)%ID = ID</a>
+  1244) <a name="l1244" style="background-color: #ffffff"></a>
+  1245) <a name="l1245" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(inst)) then</a>
+  1246) <a name="l1246" style="background-color: #ffffff">       seq_comms(ID)%inst = inst</a>
+  1247) <a name="l1247" style="background-color: #ffffff">    else</a>
+  1248) <a name="l1248" style="background-color: #ffff99">       seq_comms(ID)%inst = 1</a>
+  1249) <a name="l1249" style="background-color: #ffff99">    endif</a>
+  1250) <a name="l1250" style="background-color: #ffff99"></a>
+  1251) <a name="l1251" style="background-color: #ffffff">    set_suffix = .true.</a>
+  1252) <a name="l1252" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(tinst)) then</a>
+  1253) <a name="l1253" style="background-color: #ffffff">       if (tinst == 1) set_suffix = .false.</a>
+  1254) <a name="l1254" style="background-color: #ffffff">    endif</a>
+  1255) <a name="l1255" style="background-color: #ffffff"></a>
+  1256) <a name="l1256" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(iname)) then</a>
+  1257) <a name="l1257" style="background-color: #ffffff">       seq_comms(ID)%name = trim(iname)</a>
+  1258) <a name="l1258" style="background-color: #ffffff">       if (set_suffix) then</a>
+  1259) <a name="l1259" style="background-color: #ffffff">          call </a><a style="background-color: #ffff99">seq_comm_mkname(cname,iname,seq_comms(ID)%inst)</a>
+  1260) <a name="l1260" style="background-color: #ffff99">          seq_comms(ID)%name = trim(cname)</a>
+  1261) <a name="l1261" style="background-color: #ffff99">       endif</a>
+  1262) <a name="l1262" style="background-color: #ffff99">    endif</a>
+  1263) <a name="l1263" style="background-color: #ffff99"></a>
+  1264) <a name="l1264" style="background-color: #ffffff">    if (set_suffix) then</a>
+  1265) <a name="l1265" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">seq_comm_mkname(cname,'_',seq_comms(ID)%inst)</a>
+  1266) <a name="l1266" style="background-color: #ffff99">       seq_comms(ID)%suffix = trim(cname)</a>
+  1267) <a name="l1267" style="background-color: #ffff99">    else</a>
+  1268) <a name="l1268" style="background-color: #ffffff">       seq_comms(ID)%suffix = ' '</a>
+  1269) <a name="l1269" style="background-color: #ffffff">    endif</a>
+  1270) <a name="l1270" style="background-color: #ffffff"></a>
+  1271) <a name="l1271" style="background-color: #ffffff">    seq_comms(ID)%mpicom = mpicom</a>
+  1272) <a name="l1272" style="background-color: #ffffff">    seq_comms(ID)%mpigrp = mpigrp</a>
+  1273) <a name="l1273" style="background-color: #ffffff">    </a>
+  1274) <a name="l1274" style="background-color: #ffffff">    seq_comms(ID)%nthreads = 1</a>
+  1275) <a name="l1275" style="background-color: #ffffff">    do n = 1,nids</a>
+  1276) <a name="l1276" style="background-color: #ffffff">       seq_comms(ID)%nthreads = max(seq_comms(ID)%nthreads,seq_comms(IDs(n))%nthreads)</a>
+  1277) <a name="l1277" style="background-color: #ffffff">    enddo</a>
+  1278) <a name="l1278" style="background-color: #ffffff"></a>
+  1279) <a name="l1279" style="background-color: #ffffff">    if (mpicom /= MPI_COMM_NULL) then</a>
+  1280) <a name="l1280" style="background-color: #ffffff">       call mpi_comm_size(mpicom,seq_comms(ID)%npes,ierr)</a>
+  1281) <a name="l1281" style="background-color: #ffffff">       call shr_mpi_chkerr(ierr,subname//' mpi_comm_size')</a>
+  1282) <a name="l1282" style="background-color: #ffffff">       call mpi_comm_rank(mpicom,seq_comms(ID)%iam,ierr)</a>
+  1283) <a name="l1283" style="background-color: #ffffff">       call shr_mpi_chkerr(ierr,subname//' mpi_comm_rank')</a>
+  1284) <a name="l1284" style="background-color: #ffffff">       if (seq_comms(ID)%iam == 0) then</a>
+  1285) <a name="l1285" style="background-color: #ffffff">          seq_comms(ID)%iamroot = .true.</a>
+  1286) <a name="l1286" style="background-color: #ffffff">       else</a>
+  1287) <a name="l1287" style="background-color: #ffffff">          seq_comms(ID)%iamroot = .false.</a>
+  1288) <a name="l1288" style="background-color: #ffffff">       endif</a>
+  1289) <a name="l1289" style="background-color: #ffffff">    else</a>
+  1290) <a name="l1290" style="background-color: #ffff99">       seq_comms(ID)%npes = -1</a>
+  1291) <a name="l1291" style="background-color: #ffff99">       seq_comms(ID)%iam = -1</a>
+  1292) <a name="l1292" style="background-color: #ffff99">       seq_comms(ID)%iamroot = .false.</a>
+  1293) <a name="l1293" style="background-color: #ffff99">    endif</a>
+  1294) <a name="l1294" style="background-color: #ffff99"></a>
+  1295) <a name="l1295" style="background-color: #ffffff">    seq_comms(ID)%cplpe = -1</a>
+  1296) <a name="l1296" style="background-color: #ffffff">    seq_comms(ID)%cmppe = -1</a>
+  1297) <a name="l1297" style="background-color: #ffffff"></a>
+  1298) <a name="l1298" style="background-color: #ffffff">    if (seq_comms(ID)%iamroot) then</a>
+  1299) <a name="l1299" style="background-color: #ffffff">       if (loglevel &gt; 1) then</a>
+  1300) <a name="l1300" style="background-color: #ffff99">          write(logunit,F14) trim(subname),' initialize ID ',ID,seq_comms(ID)%name, &amp;</a>
+  1301) <a name="l1301" style="background-color: #ffff99">          ' join multiple comp IDs',' npes =',seq_comms(ID)%npes, &amp;</a>
+  1302) <a name="l1302" style="background-color: #ffff99">          ' nthreads =',seq_comms(ID)%nthreads</a>
+  1303) <a name="l1303" style="background-color: #ffff99">       else</a>
+  1304) <a name="l1304" style="background-color: #ffffff">          write(logunit,F14) trim(subname),' initialize ID ',ID,seq_comms(ID)%name, &amp;</a>
+  1305) <a name="l1305" style="background-color: #ffffff">          ' join multiple comp IDs',' npes =',seq_comms(ID)%npes, &amp;</a>
+  1306) <a name="l1306" style="background-color: #ffffff">          ' nthreads =',seq_comms(ID)%nthreads</a>
+  1307) <a name="l1307" style="background-color: #ffffff">       endif</a>
+  1308) <a name="l1308" style="background-color: #ffffff">    endif</a>
+  1309) <a name="l1309" style="background-color: #ffffff"></a>
+  1310) <a name="l1310" style="background-color: #fafad2">  end subroutine seq_comm_jcommarr</a>
+  1311) <a name="l1311" style="background-color: #ffffff"></a>
+  1312) <a name="l1312" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1313) <a name="l1313" style="background-color: #ffffff">  subroutine seq_comm_printcomms()</a>
+  1314) <a name="l1314" style="background-color: #ffffff"></a>
+  1315) <a name="l1315" style="background-color: #ffffff">    implicit none</a>
+  1316) <a name="l1316" style="background-color: #ffffff">    character(*),parameter :: subName =   '(seq_comm_printcomms) '</a>
+  1317) <a name="l1317" style="background-color: #ffffff">    integer :: m,n,mype,npes,ierr</a>
+  1318) <a name="l1318" style="background-color: #ffffff">    character(len=256) :: iamstring</a>
+  1319) <a name="l1319" style="background-color: #ffffff">    character(*),parameter :: F01 = &quot;(4x,a4,4x   ,40(1x,a8))&quot;</a>
+  1320) <a name="l1320" style="background-color: #ffffff">    character(*),parameter :: F02 = &quot;(4x,i4,3x,a1,40(2x,i6,1x))&quot;</a>
+  1321) <a name="l1321" style="background-color: #ffffff">    character(*),parameter :: F03 = &quot;(4x,i4,3x,a1,a)&quot;</a>
+  1322) <a name="l1322" style="background-color: #ffffff"></a>
+  1323) <a name="l1323" style="background-color: #ffffff">    call mpi_comm_size(GLOBAL_COMM, npes  , ierr)</a>
+  1324) <a name="l1324" style="background-color: #ffffff">    call shr_mpi_chkerr(ierr,subname//' mpi_comm_size comm_world')</a>
+  1325) <a name="l1325" style="background-color: #ffffff">    call mpi_comm_rank(GLOBAL_COMM, mype  , ierr)</a>
+  1326) <a name="l1326" style="background-color: #ffffff">    call shr_mpi_chkerr(ierr,subname//' mpi_comm_rank comm_world')</a>
+  1327) <a name="l1327" style="background-color: #ffffff"></a>
+  1328) <a name="l1328" style="background-color: #ffffff">    call shr_sys_flush(logunit)</a>
+  1329) <a name="l1329" style="background-color: #ffffff">    call mpi_barrier(GLOBAL_COMM,ierr)</a>
+  1330) <a name="l1330" style="background-color: #ffffff">    if (mype == 0) then</a>
+  1331) <a name="l1331" style="background-color: #ffffff">       do n = 1,ncomps</a>
+  1332) <a name="l1332" style="background-color: #ffffff">          write(logunit,'(a,4i6,2x,3a)') trim(subName),n, &amp;</a>
+  1333) <a name="l1333" style="background-color: #ffffff">             seq_comms(n)%gloroot,seq_comms(n)%npes,seq_comms(n)%nthreads, &amp;</a>
+  1334) <a name="l1334" style="background-color: #ffffff">             trim(seq_comms(n)%name),':',trim(seq_comms(n)%suffix)</a>
+  1335) <a name="l1335" style="background-color: #ffffff">       enddo</a>
+  1336) <a name="l1336" style="background-color: #ffffff">!       write(logunit,*) ' '</a>
+  1337) <a name="l1337" style="background-color: #ffffff">!       write(logunit,*) trim(subName),' ID layout : global pes vs local pe for each ID'</a>
+  1338) <a name="l1338" style="background-color: #ffffff">!       write(logunit,F01) ' gpe',(seq_comms(n)%name,n=1,ncomps),'nthrds'</a>
+  1339) <a name="l1339" style="background-color: #ffffff">!       write(logunit,F01) ' ---',(' ------ '       ,n=1,ncomps),'------'</a>
+  1340) <a name="l1340" style="background-color: #ffffff">       call shr_sys_flush(logunit)</a>
+  1341) <a name="l1341" style="background-color: #ffffff">    endif</a>
+  1342) <a name="l1342" style="background-color: #ffffff">!    iamstring = ' '</a>
+  1343) <a name="l1343" style="background-color: #ffffff">!   do n = 1,ncomps</a>
+  1344) <a name="l1344" style="background-color: #ffffff">!      if (seq_comms(n)%iam &gt;= 0) then</a>
+  1345) <a name="l1345" style="background-color: #ffffff">!         write(iamstring((n-1)*9+1:n*9),&quot;(2x,i6,1x)&quot;) seq_comms(n)%iam</a>
+  1346) <a name="l1346" style="background-color: #ffffff">!      endif</a>
+  1347) <a name="l1347" style="background-color: #ffffff">!   enddo</a>
+  1348) <a name="l1348" style="background-color: #ffffff">!   n = ncomps + 1</a>
+  1349) <a name="l1349" style="background-color: #ffffff">!   write(iamstring((n-1)*9+1:n*9),&quot;(2x,i6,1x)&quot;) seq_comms(GLOID)%pethreads</a>
+  1350) <a name="l1350" style="background-color: #ffffff"></a>
+  1351) <a name="l1351" style="background-color: #ffffff">!    call shr_sys_flush(logunit)</a>
+  1352) <a name="l1352" style="background-color: #ffffff">!    call mpi_barrier(GLOBAL_COMM,ierr)</a>
+  1353) <a name="l1353" style="background-color: #ffffff">!   do m = 0,npes-1</a>
+  1354) <a name="l1354" style="background-color: #ffffff">!      if (mype == m) then</a>
+  1355) <a name="l1355" style="background-color: #ffffff">!!          write(logunit,F02) mype,':',(seq_comms(n)%iam,n=1,ncomps)</a>
+  1356) <a name="l1356" style="background-color: #ffffff">!         write(logunit,F03) mype,':',trim(iamstring)</a>
+  1357) <a name="l1357" style="background-color: #ffffff">!         if (m == npes-1) then</a>
+  1358) <a name="l1358" style="background-color: #ffffff">!            write(logunit,*) ' '</a>
+  1359) <a name="l1359" style="background-color: #ffffff">!         endif</a>
+  1360) <a name="l1360" style="background-color: #ffffff">!      endif</a>
+  1361) <a name="l1361" style="background-color: #ffffff">!      call shr_sys_flush(logunit)</a>
+  1362) <a name="l1362" style="background-color: #ffffff">!      call mpi_barrier(GLOBAL_COMM,ierr)</a>
+  1363) <a name="l1363" style="background-color: #ffffff">!   enddo</a>
+  1364) <a name="l1364" style="background-color: #ffffff"></a>
+  1365) <a name="l1365" style="background-color: #ffffff">  end subroutine seq_comm_printcomms</a>
+  1366) <a name="l1366" style="background-color: #ffffff"></a>
+  1367) <a name="l1367" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1368) <a name="l1368" style="background-color: #ffffff">  subroutine seq_comm_setptrs(ID,mpicom,mpigrp,npes,nthreads,iam,iamroot,gloiam,gloroot, &amp;</a>
+  1369) <a name="l1369" style="background-color: #ffffff">                                 cplpe,cmppe,pethreads, name)</a>
+  1370) <a name="l1370" style="background-color: #ffffff"></a>
+  1371) <a name="l1371" style="background-color: #ffffff">    implicit none</a>
+  1372) <a name="l1372" style="background-color: #ffffff">    integer,intent(in) :: ID</a>
+  1373) <a name="l1373" style="background-color: #ffffff">    integer,intent(out),optional :: mpicom</a>
+  1374) <a name="l1374" style="background-color: #ffffff">    integer,intent(out),optional :: mpigrp</a>
+  1375) <a name="l1375" style="background-color: #ffffff">    integer,intent(out),optional :: npes</a>
+  1376) <a name="l1376" style="background-color: #ffffff">    integer,intent(out),optional :: nthreads</a>
+  1377) <a name="l1377" style="background-color: #ffffff">    integer,intent(out),optional :: iam</a>
+  1378) <a name="l1378" style="background-color: #ffffff">    logical,intent(out),optional :: iamroot</a>
+  1379) <a name="l1379" style="background-color: #ffffff">    integer,intent(out),optional :: gloiam</a>
+  1380) <a name="l1380" style="background-color: #ffffff">    integer,intent(out),optional :: gloroot</a>
+  1381) <a name="l1381" style="background-color: #ffffff">    integer,intent(out),optional :: cplpe</a>
+  1382) <a name="l1382" style="background-color: #ffffff">    integer,intent(out),optional :: cmppe</a>
+  1383) <a name="l1383" style="background-color: #ffffff">    integer,intent(out),optional :: pethreads</a>
+  1384) <a name="l1384" style="background-color: #ffffff">    character(len=seq_comm_namelen)  , intent(out), optional :: name</a>
+  1385) <a name="l1385" style="background-color: #ffffff">    character(*),parameter :: subName =   '(seq_comm_setptrs) '</a>
+  1386) <a name="l1386" style="background-color: #ffffff"></a>
+  1387) <a name="l1387" style="background-color: #ffffff">    if (ID &lt; 1 .or. ID &gt; ncomps) then</a>
+  1388) <a name="l1388" style="background-color: #ffff99">       write(logunit,*) subname,' ID out of range, return ',ID</a>
+  1389) <a name="l1389" style="background-color: #ffff99">       return</a>
+  1390) <a name="l1390" style="background-color: #ffff99">    endif </a>
+  1391) <a name="l1391" style="background-color: #ffff99"></a>
+  1392) <a name="l1392" style="background-color: #ffffff">    if (present(mpicom)) then</a>
+  1393) <a name="l1393" style="background-color: #ffffff">       mpicom = seq_comms(ID)%mpicom</a>
+  1394) <a name="l1394" style="background-color: #ffffff">    endif</a>
+  1395) <a name="l1395" style="background-color: #ffffff"></a>
+  1396) <a name="l1396" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(mpigrp)) then</a>
+  1397) <a name="l1397" style="background-color: #ffff99">       mpigrp = seq_comms(ID)%mpigrp</a>
+  1398) <a name="l1398" style="background-color: #ffff99">    endif</a>
+  1399) <a name="l1399" style="background-color: #ffff99"></a>
+  1400) <a name="l1400" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(npes)) then</a>
+  1401) <a name="l1401" style="background-color: #ffff99">       npes = seq_comms(ID)%npes</a>
+  1402) <a name="l1402" style="background-color: #ffff99">    endif</a>
+  1403) <a name="l1403" style="background-color: #ffff99"></a>
+  1404) <a name="l1404" style="background-color: #ffffff">    if (present(nthreads)) then</a>
+  1405) <a name="l1405" style="background-color: #ffffff">       nthreads = seq_comms(ID)%nthreads</a>
+  1406) <a name="l1406" style="background-color: #ffffff">    endif</a>
+  1407) <a name="l1407" style="background-color: #ffffff"></a>
+  1408) <a name="l1408" style="background-color: #ffffff">    if (present(iam)) then</a>
+  1409) <a name="l1409" style="background-color: #ffffff">       iam = seq_comms(ID)%iam</a>
+  1410) <a name="l1410" style="background-color: #ffffff">    endif</a>
+  1411) <a name="l1411" style="background-color: #ffffff"></a>
+  1412) <a name="l1412" style="background-color: #ffffff">    if (present(iamroot)) then</a>
+  1413) <a name="l1413" style="background-color: #ffffff">       iamroot = seq_comms(ID)%iamroot</a>
+  1414) <a name="l1414" style="background-color: #ffffff">    endif</a>
+  1415) <a name="l1415" style="background-color: #ffffff"></a>
+  1416) <a name="l1416" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(gloiam)) then</a>
+  1417) <a name="l1417" style="background-color: #ffff99">       gloiam = seq_comms(ID)%gloiam</a>
+  1418) <a name="l1418" style="background-color: #ffff99">    endif</a>
+  1419) <a name="l1419" style="background-color: #ffff99"></a>
+  1420) <a name="l1420" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(gloroot)) then</a>
+  1421) <a name="l1421" style="background-color: #ffff99">       gloroot = seq_comms(ID)%gloroot</a>
+  1422) <a name="l1422" style="background-color: #ffff99">    endif</a>
+  1423) <a name="l1423" style="background-color: #ffff99"></a>
+  1424) <a name="l1424" style="background-color: #ffffff">    if (present(cplpe)) then</a>
+  1425) <a name="l1425" style="background-color: #ffffff">       cplpe = seq_comms(ID)%cplpe</a>
+  1426) <a name="l1426" style="background-color: #ffffff">    endif</a>
+  1427) <a name="l1427" style="background-color: #ffffff"></a>
+  1428) <a name="l1428" style="background-color: #ffffff">    if (present(cmppe)) then</a>
+  1429) <a name="l1429" style="background-color: #ffffff">       cmppe = seq_comms(ID)%cmppe</a>
+  1430) <a name="l1430" style="background-color: #ffffff">    endif</a>
+  1431) <a name="l1431" style="background-color: #ffffff"></a>
+  1432) <a name="l1432" style="background-color: #ffffff">    if (present(pethreads)) then</a>
+  1433) <a name="l1433" style="background-color: #ffffff">       pethreads = seq_comms(ID)%pethreads</a>
+  1434) <a name="l1434" style="background-color: #ffffff">    endif</a>
+  1435) <a name="l1435" style="background-color: #ffffff"></a>
+  1436) <a name="l1436" style="background-color: #ffffff">    if(</a><a style="background-color: #fafad2">present(name)) then</a>
+  1437) <a name="l1437" style="background-color: #ffff99">       name = seq_comms(ID)%name</a>
+  1438) <a name="l1438" style="background-color: #ffff99">    end if</a>
+  1439) <a name="l1439" style="background-color: #ffff99"></a>
+  1440) <a name="l1440" style="background-color: #ffff99"></a>
+  1441) <a name="l1441" style="background-color: #ffff99"></a>
+  1442) <a name="l1442" style="background-color: #ffffff">  end subroutine seq_comm_setptrs</a>
+  1443) <a name="l1443" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1444) <a name="l1444" style="background-color: #ffffff">  subroutine seq_comm_setnthreads(nthreads)</a>
+  1445) <a name="l1445" style="background-color: #ffffff"></a>
+  1446) <a name="l1446" style="background-color: #ffffff">    implicit none</a>
+  1447) <a name="l1447" style="background-color: #ffffff">    integer,intent(in) :: nthreads</a>
+  1448) <a name="l1448" style="background-color: #ffffff">    character(*),parameter :: subName =   '(seq_comm_setnthreads) '</a>
+  1449) <a name="l1449" style="background-color: #ffffff"></a>
+  1450) <a name="l1450" style="background-color: #ffffff">#ifdef _OPENMP</a>
+  1451) <a name="l1451" style="background-color: #ffffff">    if (nthreads &lt; 1) then</a>
+  1452) <a name="l1452" style="background-color: #ffffff">       call shr_sys_abort(subname//' ERROR: nthreads less than one')</a>
+  1453) <a name="l1453" style="background-color: #ffffff">    endif</a>
+  1454) <a name="l1454" style="background-color: #ffffff">    call omp_set_num_threads(nthreads)</a>
+  1455) <a name="l1455" style="background-color: #ffffff">#endif</a>
+  1456) <a name="l1456" style="background-color: #ffffff"></a>
+  1457) <a name="l1457" style="background-color: #ffffff">  end subroutine seq_comm_setnthreads</a>
+  1458) <a name="l1458" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1459) <a name="l1459" style="background-color: #ffffff">  integer function </a><a style="background-color: #ffcccc">seq_comm_getnthreads()</a>
+  1460) <a name="l1460" style="background-color: #ffcccc"></a>
+  1461) <a name="l1461" style="background-color: #ffcccc">    implicit none</a>
+  1462) <a name="l1462" style="background-color: #ffcccc">    integer :: omp_get_num_threads</a>
+  1463) <a name="l1463" style="background-color: #ffcccc">    character(*),parameter :: subName =   '(seq_comm_getnthreads) '</a>
+  1464) <a name="l1464" style="background-color: #ffcccc"></a>
+  1465) <a name="l1465" style="background-color: #ffcccc">    seq_comm_getnthreads = -1</a>
+  1466) <a name="l1466" style="background-color: #ffcccc">#ifdef _OPENMP</a>
+  1467) <a name="l1467" style="background-color: #ffcccc">!$OMP PARALLEL</a>
+  1468) <a name="l1468" style="background-color: #ffcccc">    seq_comm_getnthreads = omp_get_num_threads()</a>
+  1469) <a name="l1469" style="background-color: #ffcccc">!$OMP END PARALLEL</a>
+  1470) <a name="l1470" style="background-color: #ffcccc">#endif</a>
+  1471) <a name="l1471" style="background-color: #ffcccc"></a>
+  1472) <a name="l1472" style="background-color: #ffcccc">  end function seq_comm_getnthreads</a>
+  1473) <a name="l1473" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1474) <a name="l1474" style="background-color: #ffffff">  logical function seq_comm_iamin(ID)</a>
+  1475) <a name="l1475" style="background-color: #ffffff"></a>
+  1476) <a name="l1476" style="background-color: #ffffff">    implicit none</a>
+  1477) <a name="l1477" style="background-color: #ffffff">    integer,intent(in) :: ID</a>
+  1478) <a name="l1478" style="background-color: #ffffff">    character(*),parameter :: subName =   '(seq_comm_iamin) '</a>
+  1479) <a name="l1479" style="background-color: #ffffff"></a>
+  1480) <a name="l1480" style="background-color: #ffffff">    if (seq_comms(ID)%iam &gt;= 0) then</a>
+  1481) <a name="l1481" style="background-color: #ffffff">       seq_comm_iamin = .true.</a>
+  1482) <a name="l1482" style="background-color: #ffffff">    else</a>
+  1483) <a name="l1483" style="background-color: #ffff99">       seq_comm_iamin = .false.</a>
+  1484) <a name="l1484" style="background-color: #ffff99">    endif</a>
+  1485) <a name="l1485" style="background-color: #ffff99"></a>
+  1486) <a name="l1486" style="background-color: #ffffff">  end function seq_comm_iamin</a>
+  1487) <a name="l1487" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1488) <a name="l1488" style="background-color: #ffffff">  logical function seq_comm_iamroot(ID)</a>
+  1489) <a name="l1489" style="background-color: #ffffff"></a>
+  1490) <a name="l1490" style="background-color: #ffffff">    implicit none</a>
+  1491) <a name="l1491" style="background-color: #ffffff">    integer,intent(in) :: ID</a>
+  1492) <a name="l1492" style="background-color: #ffffff">    character(*),parameter :: subName =   '(seq_comm_iamroot) '</a>
+  1493) <a name="l1493" style="background-color: #ffffff"></a>
+  1494) <a name="l1494" style="background-color: #ffffff">    seq_comm_iamroot = seq_comms(ID)%iamroot</a>
+  1495) <a name="l1495" style="background-color: #ffffff"></a>
+  1496) <a name="l1496" style="background-color: #ffffff">  end function seq_comm_iamroot</a>
+  1497) <a name="l1497" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1498) <a name="l1498" style="background-color: #ffffff">  integer function seq_comm_mpicom(ID)</a>
+  1499) <a name="l1499" style="background-color: #ffffff"></a>
+  1500) <a name="l1500" style="background-color: #ffffff">    implicit none</a>
+  1501) <a name="l1501" style="background-color: #ffffff">    integer,intent(in) :: ID</a>
+  1502) <a name="l1502" style="background-color: #ffffff">    character(*),parameter :: subName =   '(seq_comm_mpicom) '</a>
+  1503) <a name="l1503" style="background-color: #ffffff"></a>
+  1504) <a name="l1504" style="background-color: #ffffff">    seq_comm_mpicom = seq_comms(ID)%mpicom</a>
+  1505) <a name="l1505" style="background-color: #ffffff"></a>
+  1506) <a name="l1506" style="background-color: #ffffff">  end function seq_comm_mpicom</a>
+  1507) <a name="l1507" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1508) <a name="l1508" style="background-color: #ffffff">  integer function </a><a style="background-color: #ffcccc">seq_comm_iam(ID)</a>
+  1509) <a name="l1509" style="background-color: #ffcccc"></a>
+  1510) <a name="l1510" style="background-color: #ffcccc">    implicit none</a>
+  1511) <a name="l1511" style="background-color: #ffcccc">    integer,intent(in) :: ID</a>
+  1512) <a name="l1512" style="background-color: #ffcccc">    character(*),parameter :: subName =   '(seq_comm_iam) '</a>
+  1513) <a name="l1513" style="background-color: #ffcccc"></a>
+  1514) <a name="l1514" style="background-color: #ffcccc">    seq_comm_iam = seq_comms(ID)%iam</a>
+  1515) <a name="l1515" style="background-color: #ffcccc"></a>
+  1516) <a name="l1516" style="background-color: #ffcccc">  end function seq_comm_iam</a>
+  1517) <a name="l1517" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1518) <a name="l1518" style="background-color: #ffffff">  integer function </a><a style="background-color: #ffcccc">seq_comm_gloiam(ID)</a>
+  1519) <a name="l1519" style="background-color: #ffcccc"></a>
+  1520) <a name="l1520" style="background-color: #ffcccc">    implicit none</a>
+  1521) <a name="l1521" style="background-color: #ffcccc">    integer,intent(in) :: ID</a>
+  1522) <a name="l1522" style="background-color: #ffcccc">    character(*),parameter :: subName =   '(seq_comm_gloiam) '</a>
+  1523) <a name="l1523" style="background-color: #ffcccc"></a>
+  1524) <a name="l1524" style="background-color: #ffcccc">    seq_comm_gloiam = seq_comms(ID)%gloiam</a>
+  1525) <a name="l1525" style="background-color: #ffcccc"></a>
+  1526) <a name="l1526" style="background-color: #ffcccc">  end function seq_comm_gloiam</a>
+  1527) <a name="l1527" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1528) <a name="l1528" style="background-color: #ffffff">  integer function </a><a style="background-color: #ffcccc">seq_comm_gloroot(ID)</a>
+  1529) <a name="l1529" style="background-color: #ffcccc"></a>
+  1530) <a name="l1530" style="background-color: #ffcccc">    implicit none</a>
+  1531) <a name="l1531" style="background-color: #ffcccc">    integer,intent(in) :: ID</a>
+  1532) <a name="l1532" style="background-color: #ffcccc">    character(*),parameter :: subName =   '(seq_comm_gloroot) '</a>
+  1533) <a name="l1533" style="background-color: #ffcccc"></a>
+  1534) <a name="l1534" style="background-color: #ffcccc">    seq_comm_gloroot = seq_comms(ID)%gloroot</a>
+  1535) <a name="l1535" style="background-color: #ffcccc"></a>
+  1536) <a name="l1536" style="background-color: #ffcccc">  end function seq_comm_gloroot</a>
+  1537) <a name="l1537" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1538) <a name="l1538" style="background-color: #ffffff">  integer function </a><a style="background-color: #ffcccc">seq_comm_cplpe(ID)</a>
+  1539) <a name="l1539" style="background-color: #ffcccc"></a>
+  1540) <a name="l1540" style="background-color: #ffcccc">    implicit none</a>
+  1541) <a name="l1541" style="background-color: #ffcccc">    integer,intent(in) :: ID</a>
+  1542) <a name="l1542" style="background-color: #ffcccc">    character(*),parameter :: subName =   '(seq_comm_cplpe) '</a>
+  1543) <a name="l1543" style="background-color: #ffcccc"></a>
+  1544) <a name="l1544" style="background-color: #ffcccc">    seq_comm_cplpe = seq_comms(ID)%cplpe</a>
+  1545) <a name="l1545" style="background-color: #ffcccc"></a>
+  1546) <a name="l1546" style="background-color: #ffcccc">  end function seq_comm_cplpe</a>
+  1547) <a name="l1547" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1548) <a name="l1548" style="background-color: #ffffff">  integer function </a><a style="background-color: #ffcccc">seq_comm_cmppe(ID)</a>
+  1549) <a name="l1549" style="background-color: #ffcccc"></a>
+  1550) <a name="l1550" style="background-color: #ffcccc">    implicit none</a>
+  1551) <a name="l1551" style="background-color: #ffcccc">    integer,intent(in) :: ID</a>
+  1552) <a name="l1552" style="background-color: #ffcccc">    character(*),parameter :: subName =   '(seq_comm_cmppe) '</a>
+  1553) <a name="l1553" style="background-color: #ffcccc"></a>
+  1554) <a name="l1554" style="background-color: #ffcccc">    seq_comm_cmppe = seq_comms(ID)%cmppe</a>
+  1555) <a name="l1555" style="background-color: #ffcccc"></a>
+  1556) <a name="l1556" style="background-color: #ffcccc">  end function seq_comm_cmppe</a>
+  1557) <a name="l1557" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1558) <a name="l1558" style="background-color: #ffffff">  character(len=seq_comm_namelen) function seq_comm_name(ID)</a>
+  1559) <a name="l1559" style="background-color: #ffffff"></a>
+  1560) <a name="l1560" style="background-color: #ffffff">    implicit none</a>
+  1561) <a name="l1561" style="background-color: #ffffff">    integer,intent(in) :: ID</a>
+  1562) <a name="l1562" style="background-color: #ffffff">    character(*),parameter :: subName =   '(seq_comm_name) '</a>
+  1563) <a name="l1563" style="background-color: #ffffff"></a>
+  1564) <a name="l1564" style="background-color: #ffffff">    seq_comm_name = trim(seq_comms(ID)%name)</a>
+  1565) <a name="l1565" style="background-color: #ffffff"></a>
+  1566) <a name="l1566" style="background-color: #ffffff">  end function seq_comm_name</a>
+  1567) <a name="l1567" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1568) <a name="l1568" style="background-color: #ffffff">  character(len=seq_comm_namelen) function seq_comm_suffix(ID)</a>
+  1569) <a name="l1569" style="background-color: #ffffff"></a>
+  1570) <a name="l1570" style="background-color: #ffffff">    implicit none</a>
+  1571) <a name="l1571" style="background-color: #ffffff">    integer,intent(in) :: ID</a>
+  1572) <a name="l1572" style="background-color: #ffffff">    character(*),parameter :: subName =   '(seq_comm_suffix) '</a>
+  1573) <a name="l1573" style="background-color: #ffffff"></a>
+  1574) <a name="l1574" style="background-color: #ffffff">    seq_comm_suffix = trim(seq_comms(ID)%suffix)</a>
+  1575) <a name="l1575" style="background-color: #ffffff"></a>
+  1576) <a name="l1576" style="background-color: #ffffff">  end function seq_comm_suffix</a>
+  1577) <a name="l1577" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1578) <a name="l1578" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">seq_comm_petlist(ID,petlist)</a>
+  1579) <a name="l1579" style="background-color: #ffcccc"></a>
+  1580) <a name="l1580" style="background-color: #ffcccc">    implicit none</a>
+  1581) <a name="l1581" style="background-color: #ffcccc">    integer,intent(in) :: ID</a>
+  1582) <a name="l1582" style="background-color: #ffcccc">    integer,pointer :: petlist(:)</a>
+  1583) <a name="l1583" style="background-color: #ffcccc">    character(*),parameter :: subName =   '(seq_comm_petlist) '</a>
+  1584) <a name="l1584" style="background-color: #ffcccc"></a>
+  1585) <a name="l1585" style="background-color: #ffcccc">    petlist =&gt; seq_comms(ID)%petlist</a>
+  1586) <a name="l1586" style="background-color: #ffcccc"></a>
+  1587) <a name="l1587" style="background-color: #ffcccc">  end subroutine seq_comm_petlist</a>
+  1588) <a name="l1588" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1589) <a name="l1589" style="background-color: #ffffff">#ifdef USE_ESMF_LIB</a>
+  1590) <a name="l1590" style="background-color: #ffffff">  subroutine seq_comm_getcompstates(ID,comp,imp_state,exp_state)</a>
+  1591) <a name="l1591" style="background-color: #ffffff"></a>
+  1592) <a name="l1592" style="background-color: #ffffff">    implicit none</a>
+  1593) <a name="l1593" style="background-color: #ffffff">    integer,                       intent(in)  :: ID</a>
+  1594) <a name="l1594" style="background-color: #ffffff">    type(ESMF_GridComp), optional, intent(out) :: comp</a>
+  1595) <a name="l1595" style="background-color: #ffffff">    type(ESMF_State),    optional, intent(out) :: imp_state, exp_state</a>
+  1596) <a name="l1596" style="background-color: #ffffff">    character(*),parameter :: subName =   '(seq_comm_getcompstates) '</a>
+  1597) <a name="l1597" style="background-color: #ffffff"></a>
+  1598) <a name="l1598" style="background-color: #ffffff">    if(present(comp))      comp      = seq_comms(ID)%esmf_comp</a>
+  1599) <a name="l1599" style="background-color: #ffffff">    if(present(imp_state)) imp_state = seq_comms(ID)%imp_state</a>
+  1600) <a name="l1600" style="background-color: #ffffff">    if(present(imp_state)) exp_state = seq_comms(ID)%exp_state</a>
+  1601) <a name="l1601" style="background-color: #ffffff"></a>
+  1602) <a name="l1602" style="background-color: #ffffff">  end subroutine seq_comm_getcompstates</a>
+  1603) <a name="l1603" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1604) <a name="l1604" style="background-color: #ffffff">  subroutine seq_comm_setcompstates(ID,comp,imp_state,exp_state)</a>
+  1605) <a name="l1605" style="background-color: #ffffff"></a>
+  1606) <a name="l1606" style="background-color: #ffffff">    implicit none</a>
+  1607) <a name="l1607" style="background-color: #ffffff">    integer,                       intent(in) :: ID</a>
+  1608) <a name="l1608" style="background-color: #ffffff">    type(ESMF_GridComp), optional, intent(in) :: comp</a>
+  1609) <a name="l1609" style="background-color: #ffffff">    type(ESMF_State)   , optional, intent(in) :: imp_state, exp_state</a>
+  1610) <a name="l1610" style="background-color: #ffffff">    character(*),parameter :: subName =   '(seq_comm_setcompstates) '</a>
+  1611) <a name="l1611" style="background-color: #ffffff"></a>
+  1612) <a name="l1612" style="background-color: #ffffff">    if(present(comp))      seq_comms(ID)%esmf_comp = comp</a>
+  1613) <a name="l1613" style="background-color: #ffffff">    if(present(imp_state)) seq_comms(ID)%imp_state = imp_state</a>
+  1614) <a name="l1614" style="background-color: #ffffff">    if(present(imp_state)) seq_comms(ID)%exp_state = exp_state</a>
+  1615) <a name="l1615" style="background-color: #ffffff"></a>
+  1616) <a name="l1616" style="background-color: #ffffff">  end subroutine seq_comm_setcompstates</a>
+  1617) <a name="l1617" style="background-color: #ffffff">#endif</a>
+  1618) <a name="l1618" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1619) <a name="l1619" style="background-color: #ffffff">  integer function seq_comm_inst(ID)</a>
+  1620) <a name="l1620" style="background-color: #ffffff"></a>
+  1621) <a name="l1621" style="background-color: #ffffff">    implicit none</a>
+  1622) <a name="l1622" style="background-color: #ffffff">    integer,intent(in) :: ID</a>
+  1623) <a name="l1623" style="background-color: #ffffff">    character(*),parameter :: subName =   '(seq_comm_inst) '</a>
+  1624) <a name="l1624" style="background-color: #ffffff"></a>
+  1625) <a name="l1625" style="background-color: #ffffff">    seq_comm_inst = seq_comms(ID)%inst</a>
+  1626) <a name="l1626" style="background-color: #ffffff"></a>
+  1627) <a name="l1627" style="background-color: #ffffff">  end function seq_comm_inst</a>
+  1628) <a name="l1628" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1629) <a name="l1629" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">seq_comm_mkname(oname,str1,num)</a>
+  1630) <a name="l1630" style="background-color: #ffcccc">    implicit none</a>
+  1631) <a name="l1631" style="background-color: #ffcccc">    character(len=*),intent(out) :: oname</a>
+  1632) <a name="l1632" style="background-color: #ffcccc">    character(len=*),intent(in)  :: str1</a>
+  1633) <a name="l1633" style="background-color: #ffcccc">    integer,intent(in)           :: num</a>
+  1634) <a name="l1634" style="background-color: #ffcccc">    character(*),parameter :: subName =   '(seq_comm_mkname) '</a>
+  1635) <a name="l1635" style="background-color: #ffcccc"></a>
+  1636) <a name="l1636" style="background-color: #ffcccc">    character(len=8) :: cnum</a>
+  1637) <a name="l1637" style="background-color: #ffcccc"></a>
+  1638) <a name="l1638" style="background-color: #ffcccc">    write(cnum,'(i4.4)') num</a>
+  1639) <a name="l1639" style="background-color: #ffcccc">    if (len_trim(str1) + len_trim(cnum) &gt; len(oname)) then</a>
+  1640) <a name="l1640" style="background-color: #ffcccc">       write(logunit,*) trim(subname),' ERROR in str lens ',len(oname),trim(str1),trim(cnum)</a>
+  1641) <a name="l1641" style="background-color: #ffcccc">       call shr_sys_abort(trim(subname))</a>
+  1642) <a name="l1642" style="background-color: #ffcccc">    endif</a>
+  1643) <a name="l1643" style="background-color: #ffcccc">    oname = trim(str1)//trim(cnum)</a>
+  1644) <a name="l1644" style="background-color: #ffcccc"></a>
+  1645) <a name="l1645" style="background-color: #ffcccc">  end subroutine seq_comm_mkname</a>
+  1646) <a name="l1646" style="background-color: #ffffff">!---------------------------------------------------------</a>
+  1647) <a name="l1647" style="background-color: #ffffff">end module seq_comm_mct</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

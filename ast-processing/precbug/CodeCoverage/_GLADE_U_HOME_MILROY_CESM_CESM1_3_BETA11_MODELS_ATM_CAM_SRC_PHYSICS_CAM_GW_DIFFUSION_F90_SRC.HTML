@@ -1,0 +1,226 @@
+<html>
+<head>
+<title>Listing of gw_diffusion.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;gw_diffusion.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module gw_diffusion</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!</a>
+     4) <a name="l4" style="background-color: #ffffff">! This module contains code computing the effective diffusion of</a>
+     5) <a name="l5" style="background-color: #ffffff">! constituents and dry static energy due to gravity wave breaking.</a>
+     6) <a name="l6" style="background-color: #ffffff">!</a>
+     7) <a name="l7" style="background-color: #ffffff"></a>
+     8) <a name="l8" style="background-color: #ffffff">use gw_utils, only: r8</a>
+     9) <a name="l9" style="background-color: #ffffff">use vdiff_lu_solver, only: lu_decomp</a>
+    10) <a name="l10" style="background-color: #ffffff"></a>
+    11) <a name="l11" style="background-color: #ffffff">implicit none</a>
+    12) <a name="l12" style="background-color: #ffffff">private</a>
+    13) <a name="l13" style="background-color: #ffffff">save</a>
+    14) <a name="l14" style="background-color: #ffffff"></a>
+    15) <a name="l15" style="background-color: #ffffff">public :: gw_ediff</a>
+    16) <a name="l16" style="background-color: #ffffff">public :: gw_diff_tend</a>
+    17) <a name="l17" style="background-color: #ffffff"></a>
+    18) <a name="l18" style="background-color: #ffffff">contains</a>
+    19) <a name="l19" style="background-color: #ffffff"></a>
+    20) <a name="l20" style="background-color: #ffffff">!==========================================================================</a>
+    21) <a name="l21" style="background-color: #ffffff"></a>
+    22) <a name="l22" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">gw_ediff(ncol, pver, ngwv, kbot, ktop, tend_level, &amp;</a>
+    23) <a name="l23" style="background-color: #ffcccc">     gwut, ubm, nm, rho, dt, gravit, pmid, rdpm, c, &amp;</a>
+    24) <a name="l24" style="background-color: #ffcccc">     egwdffi, decomp)</a>
+    25) <a name="l25" style="background-color: #ffcccc">!</a>
+    26) <a name="l26" style="background-color: #ffcccc">! Calculate effective diffusivity associated with GW forcing.</a>
+    27) <a name="l27" style="background-color: #ffcccc">!</a>
+    28) <a name="l28" style="background-color: #ffcccc">! Author: F. Sassi, Jan 31, 2001</a>
+    29) <a name="l29" style="background-color: #ffcccc">!</a>
+    30) <a name="l30" style="background-color: #ffcccc">  use gw_utils, only: midpoint_interp</a>
+    31) <a name="l31" style="background-color: #ffcccc">  use vdiff_lu_solver, only: vd_lu_decomp</a>
+    32) <a name="l32" style="background-color: #ffcccc"></a>
+    33) <a name="l33" style="background-color: #ffcccc">!-------------------------------Input Arguments----------------------------</a>
+    34) <a name="l34" style="background-color: #ffcccc"></a>
+    35) <a name="l35" style="background-color: #ffcccc">  ! Column, level, and gravity wave spectrum dimensions.</a>
+    36) <a name="l36" style="background-color: #ffcccc">  integer, intent(in) :: ncol, pver, ngwv</a>
+    37) <a name="l37" style="background-color: #ffcccc">  ! Bottom and top levels to operate on.</a>
+    38) <a name="l38" style="background-color: #ffcccc">  integer, intent(in) :: kbot, ktop</a>
+    39) <a name="l39" style="background-color: #ffcccc">  ! Per-column bottom index where tendencies are applied.</a>
+    40) <a name="l40" style="background-color: #ffcccc">  integer, intent(in) :: tend_level(ncol)</a>
+    41) <a name="l41" style="background-color: #ffcccc">  ! GW zonal wind tendencies at midpoint.</a>
+    42) <a name="l42" style="background-color: #ffcccc">  real(r8), intent(in) :: gwut(ncol,pver,-ngwv:ngwv)</a>
+    43) <a name="l43" style="background-color: #ffcccc">  ! Projection of wind at midpoints.</a>
+    44) <a name="l44" style="background-color: #ffcccc">  real(r8), intent(in) :: ubm(ncol,pver)</a>
+    45) <a name="l45" style="background-color: #ffcccc">  ! Brunt-Vaisalla frequency.</a>
+    46) <a name="l46" style="background-color: #ffcccc">  real(r8), intent(in) :: nm(ncol,pver)</a>
+    47) <a name="l47" style="background-color: #ffcccc"></a>
+    48) <a name="l48" style="background-color: #ffcccc">  ! Density at interfaces.</a>
+    49) <a name="l49" style="background-color: #ffcccc">  real(r8), intent(in) :: rho(ncol,pver+1)</a>
+    50) <a name="l50" style="background-color: #ffcccc">  ! Time step.</a>
+    51) <a name="l51" style="background-color: #ffcccc">  real(r8), intent(in) :: dt</a>
+    52) <a name="l52" style="background-color: #ffcccc">  ! Acceleration due to gravity.</a>
+    53) <a name="l53" style="background-color: #ffcccc">  real(r8), intent(in) :: gravit</a>
+    54) <a name="l54" style="background-color: #ffcccc">  ! Midpoint pressure.</a>
+    55) <a name="l55" style="background-color: #ffcccc">  real(r8), intent(in) :: pmid(ncol,pver)</a>
+    56) <a name="l56" style="background-color: #ffcccc">  ! 1./pdel (pdel is thickness between interfaces).</a>
+    57) <a name="l57" style="background-color: #ffcccc">  real(r8), intent(in) :: rdpm(ncol,pver)</a>
+    58) <a name="l58" style="background-color: #ffcccc">  ! Wave phase speeds for each column.</a>
+    59) <a name="l59" style="background-color: #ffcccc">  real(r8), intent(in) :: c(ncol,-ngwv:ngwv)</a>
+    60) <a name="l60" style="background-color: #ffcccc"></a>
+    61) <a name="l61" style="background-color: #ffcccc">!-----------------------------Output Arguments-----------------------------</a>
+    62) <a name="l62" style="background-color: #ffcccc">  ! Effective gw diffusivity at interfaces.</a>
+    63) <a name="l63" style="background-color: #ffcccc">  real(r8), intent(out) :: egwdffi(ncol,0:pver)</a>
+    64) <a name="l64" style="background-color: #ffcccc">  ! LU decomposition.</a>
+    65) <a name="l65" style="background-color: #ffcccc">  type(lu_decomp), intent(out) :: decomp</a>
+    66) <a name="l66" style="background-color: #ffcccc"></a>
+    67) <a name="l67" style="background-color: #ffcccc">!-----------------------------Local Workspace------------------------------</a>
+    68) <a name="l68" style="background-color: #ffcccc"></a>
+    69) <a name="l69" style="background-color: #ffcccc">  ! 0._r8 (array to pass to vd_lu_decomp).</a>
+    70) <a name="l70" style="background-color: #ffcccc">  real(r8) :: zero(ncol)</a>
+    71) <a name="l71" style="background-color: #ffcccc">  ! Effective gw diffusivity at midpoints.</a>
+    72) <a name="l72" style="background-color: #ffcccc">  real(r8) :: egwdffm(ncol,pver)</a>
+    73) <a name="l73" style="background-color: #ffcccc">  ! dt * (gravit*rho)^2/dp</a>
+    74) <a name="l74" style="background-color: #ffcccc">  real(r8) :: tmpi2(ncol,pver+1)</a>
+    75) <a name="l75" style="background-color: #ffcccc">  ! Level and wave indices.</a>
+    76) <a name="l76" style="background-color: #ffcccc">  integer :: k, l</a>
+    77) <a name="l77" style="background-color: #ffcccc">  ! Inverse Prandtl number.</a>
+    78) <a name="l78" style="background-color: #ffcccc">  real(r8), parameter :: prndl=0.25_r8</a>
+    79) <a name="l79" style="background-color: #ffcccc">  ! Density scale height.</a>
+    80) <a name="l80" style="background-color: #ffcccc">  real(r8), parameter :: dscale=7000._r8</a>
+    81) <a name="l81" style="background-color: #ffcccc"></a>
+    82) <a name="l82" style="background-color: #ffcccc">!--------------------------------------------------------------------------</a>
+    83) <a name="l83" style="background-color: #ffcccc"></a>
+    84) <a name="l84" style="background-color: #ffcccc">  zero = 0.0_r8</a>
+    85) <a name="l85" style="background-color: #ffcccc"></a>
+    86) <a name="l86" style="background-color: #ffcccc">  egwdffi = 0._r8</a>
+    87) <a name="l87" style="background-color: #ffcccc">  egwdffm = 0._r8</a>
+    88) <a name="l88" style="background-color: #ffcccc"></a>
+    89) <a name="l89" style="background-color: #ffcccc">  ! Calculate effective diffusivity at midpoints.</a>
+    90) <a name="l90" style="background-color: #ffcccc">  do l = -ngwv, ngwv</a>
+    91) <a name="l91" style="background-color: #ffcccc">     do k = ktop+1, kbot</a>
+    92) <a name="l92" style="background-color: #ffcccc"></a>
+    93) <a name="l93" style="background-color: #ffcccc">        egwdffm(:,k) = egwdffm(:,k) + &amp;</a>
+    94) <a name="l94" style="background-color: #ffcccc">             prndl * 0.5_r8 * gwut(:,k,l) * (c(:,l)-ubm(:,k)) / nm(:,k)**2</a>
+    95) <a name="l95" style="background-color: #ffcccc"></a>
+    96) <a name="l96" style="background-color: #ffcccc">     end do</a>
+    97) <a name="l97" style="background-color: #ffcccc">  end do</a>
+    98) <a name="l98" style="background-color: #ffcccc"></a>
+    99) <a name="l99" style="background-color: #ffcccc"></a>
+   100) <a name="l100" style="background-color: #ffcccc">  ! Interpolate effective diffusivity to interfaces.</a>
+   101) <a name="l101" style="background-color: #ffcccc">  ! Assume zero at top and bottom interfaces.</a>
+   102) <a name="l102" style="background-color: #ffcccc">  egwdffi(:,ktop+1:kbot-1) = midpoint_interp(egwdffm(:,ktop+1:kbot))</a>
+   103) <a name="l103" style="background-color: #ffcccc"></a>
+   104) <a name="l104" style="background-color: #ffcccc">  ! Limit diffusivity to some reasonable value.</a>
+   105) <a name="l105" style="background-color: #ffcccc">  egwdffi = min(150._r8, egwdffi)</a>
+   106) <a name="l106" style="background-color: #ffcccc"></a>
+   107) <a name="l107" style="background-color: #ffcccc">  ! Do not calculate diffusivities below level where tendencies are</a>
+   108) <a name="l108" style="background-color: #ffcccc">  ! actually allowed.</a>
+   109) <a name="l109" style="background-color: #ffcccc">  do k= ktop, kbot</a>
+   110) <a name="l110" style="background-color: #ffcccc">     where (k &gt;= tend_level) egwdffi(:,k) = 0.0_r8</a>
+   111) <a name="l111" style="background-color: #ffcccc">  enddo</a>
+   112) <a name="l112" style="background-color: #ffcccc"></a>
+   113) <a name="l113" style="background-color: #ffcccc">  ! Calculate dt * (gravit*rho)^2/dp at interior interfaces.</a>
+   114) <a name="l114" style="background-color: #ffcccc">  tmpi2 = 0.0_r8</a>
+   115) <a name="l115" style="background-color: #ffcccc">  do k = ktop+2 , kbot+1</a>
+   116) <a name="l116" style="background-color: #ffcccc">     tmpi2(:,k) = dt * (gravit * rho(:,k))**2 / (pmid(:,k) - pmid(:,k-1))</a>
+   117) <a name="l117" style="background-color: #ffcccc">  end do</a>
+   118) <a name="l118" style="background-color: #ffcccc"></a>
+   119) <a name="l119" style="background-color: #ffcccc">  ! Decompose the diffusion matrix.</a>
+   120) <a name="l120" style="background-color: #ffcccc">  ! Note that [ktop,kbot] are model interfaces (beginning at zero), whereas</a>
+   121) <a name="l121" style="background-color: #ffcccc">  ! in vd_lu_decomp they are expected as midpoints.</a>
+   122) <a name="l122" style="background-color: #ffcccc">  call vd_lu_decomp(ncol, pver, ncol, &amp;</a>
+   123) <a name="l123" style="background-color: #ffcccc">       zero, egwdffi, tmpi2, rdpm, dt, gravit, zero, ktop+1, kbot+1, decomp)</a>
+   124) <a name="l124" style="background-color: #ffcccc"></a>
+   125) <a name="l125" style="background-color: #ffcccc">end subroutine gw_ediff</a>
+   126) <a name="l126" style="background-color: #ffffff"></a>
+   127) <a name="l127" style="background-color: #ffffff">!==========================================================================</a>
+   128) <a name="l128" style="background-color: #ffffff"></a>
+   129) <a name="l129" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">gw_diff_tend(ncol, pver, kbot, ktop, q, dt, decomp, dq)</a>
+   130) <a name="l130" style="background-color: #ffcccc"></a>
+   131) <a name="l131" style="background-color: #ffcccc">!</a>
+   132) <a name="l132" style="background-color: #ffcccc">! Calculates tendencies from effective diffusion due to gravity wave</a>
+   133) <a name="l133" style="background-color: #ffcccc">! breaking.</a>
+   134) <a name="l134" style="background-color: #ffcccc">!</a>
+   135) <a name="l135" style="background-color: #ffcccc">! Method:</a>
+   136) <a name="l136" style="background-color: #ffcccc">! A constituent flux on interfaces is given by:</a>
+   137) <a name="l137" style="background-color: #ffcccc">!</a>
+   138) <a name="l138" style="background-color: #ffcccc">!              rho * (w'q') = rho * Deff qz</a>
+   139) <a name="l139" style="background-color: #ffcccc">!</a>
+   140) <a name="l140" style="background-color: #ffcccc">! where (all evaluated on interfaces):</a>
+   141) <a name="l141" style="background-color: #ffcccc">!</a>
+   142) <a name="l142" style="background-color: #ffcccc">!        rho   = density</a>
+   143) <a name="l143" style="background-color: #ffcccc">!        qz    = constituent vertical gradient</a>
+   144) <a name="l144" style="background-color: #ffcccc">!        Deff  = effective diffusivity</a>
+   145) <a name="l145" style="background-color: #ffcccc">!</a>
+   146) <a name="l146" style="background-color: #ffcccc">! An effective diffusivity is calculated by adding up the diffusivities</a>
+   147) <a name="l147" style="background-color: #ffcccc">! from all waves (see gw_ediff). The tendency is calculated by invoking LU</a>
+   148) <a name="l148" style="background-color: #ffcccc">! decomposition and solving as for a regular diffusion equation.</a>
+   149) <a name="l149" style="background-color: #ffcccc">!</a>
+   150) <a name="l150" style="background-color: #ffcccc">! Author: Sassi - Jan 2001</a>
+   151) <a name="l151" style="background-color: #ffcccc">!--------------------------------------------------------------------------</a>
+   152) <a name="l152" style="background-color: #ffcccc"></a>
+   153) <a name="l153" style="background-color: #ffcccc">  use vdiff_lu_solver, only: vd_lu_solve</a>
+   154) <a name="l154" style="background-color: #ffcccc"></a>
+   155) <a name="l155" style="background-color: #ffcccc">!---------------------------Input Arguments--------------------------------</a>
+   156) <a name="l156" style="background-color: #ffcccc"></a>
+   157) <a name="l157" style="background-color: #ffcccc">  ! Column and level dimensions.</a>
+   158) <a name="l158" style="background-color: #ffcccc">  integer, intent(in) :: ncol, pver</a>
+   159) <a name="l159" style="background-color: #ffcccc">  ! Bottom and top levels to operate on.</a>
+   160) <a name="l160" style="background-color: #ffcccc">  integer, intent(in) :: kbot, ktop</a>
+   161) <a name="l161" style="background-color: #ffcccc"></a>
+   162) <a name="l162" style="background-color: #ffcccc">  ! Constituent to diffuse.</a>
+   163) <a name="l163" style="background-color: #ffcccc">  real(r8), intent(in) :: q(ncol,pver)</a>
+   164) <a name="l164" style="background-color: #ffcccc">  ! Time step.</a>
+   165) <a name="l165" style="background-color: #ffcccc">  real(r8), intent(in) :: dt</a>
+   166) <a name="l166" style="background-color: #ffcccc"></a>
+   167) <a name="l167" style="background-color: #ffcccc">  ! LU decomposition.</a>
+   168) <a name="l168" style="background-color: #ffcccc">  type(lu_decomp), intent(in) :: decomp</a>
+   169) <a name="l169" style="background-color: #ffcccc"></a>
+   170) <a name="l170" style="background-color: #ffcccc">!--------------------------Output Arguments--------------------------------</a>
+   171) <a name="l171" style="background-color: #ffcccc"></a>
+   172) <a name="l172" style="background-color: #ffcccc">  ! Constituent tendencies.</a>
+   173) <a name="l173" style="background-color: #ffcccc">  real(r8), intent(out) :: dq(ncol,pver)</a>
+   174) <a name="l174" style="background-color: #ffcccc"></a>
+   175) <a name="l175" style="background-color: #ffcccc">!--------------------------Local Workspace---------------------------------</a>
+   176) <a name="l176" style="background-color: #ffcccc"></a>
+   177) <a name="l177" style="background-color: #ffcccc">  ! Temporary storage for constituent.</a>
+   178) <a name="l178" style="background-color: #ffcccc">  real(r8) :: qnew(ncol,pver)</a>
+   179) <a name="l179" style="background-color: #ffcccc">  ! 0._r8 (array to pass to vd_lu_decomp).</a>
+   180) <a name="l180" style="background-color: #ffcccc">  real(r8) :: zero(ncol)</a>
+   181) <a name="l181" style="background-color: #ffcccc"></a>
+   182) <a name="l182" style="background-color: #ffcccc">!--------------------------------------------------------------------------</a>
+   183) <a name="l183" style="background-color: #ffcccc">  zero = 0.0_r8</a>
+   184) <a name="l184" style="background-color: #ffcccc">  dq   = 0.0_r8</a>
+   185) <a name="l185" style="background-color: #ffcccc">  qnew = q</a>
+   186) <a name="l186" style="background-color: #ffcccc"></a>
+   187) <a name="l187" style="background-color: #ffcccc">  ! Solve the diffusion matrix.</a>
+   188) <a name="l188" style="background-color: #ffcccc">  call vd_lu_solve(ncol, pver, ncol, qnew, decomp, ktop+1, kbot+1, zero)</a>
+   189) <a name="l189" style="background-color: #ffcccc"></a>
+   190) <a name="l190" style="background-color: #ffcccc">  ! Evaluate tendency to be reported back.</a>
+   191) <a name="l191" style="background-color: #ffcccc">  dq = (qnew-q) / dt</a>
+   192) <a name="l192" style="background-color: #ffcccc"></a>
+   193) <a name="l193" style="background-color: #ffcccc">end subroutine gw_diff_tend</a>
+   194) <a name="l194" style="background-color: #ffffff"></a>
+   195) <a name="l195" style="background-color: #ffffff">end module gw_diffusion</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

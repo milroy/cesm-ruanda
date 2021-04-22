@@ -1,0 +1,898 @@
+<html>
+<head>
+<title>Listing of mo_setsox.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;mo_setsox.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 76.56&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff"></a>
+     2) <a name="l2" style="background-color: #ffffff">module MO_SETSOX</a>
+     3) <a name="l3" style="background-color: #ffffff"></a>
+     4) <a name="l4" style="background-color: #ffffff">  use shr_kind_mod, only : r8 =&gt; shr_kind_r8</a>
+     5) <a name="l5" style="background-color: #ffffff">  use cam_logfile,  only : iulog</a>
+     6) <a name="l6" style="background-color: #ffffff"></a>
+     7) <a name="l7" style="background-color: #ffffff">  private</a>
+     8) <a name="l8" style="background-color: #ffffff">  public :: sox_inti, setsox</a>
+     9) <a name="l9" style="background-color: #ffffff">  public :: has_sox</a>
+    10) <a name="l10" style="background-color: #ffffff"></a>
+    11) <a name="l11" style="background-color: #ffffff">  save</a>
+    12) <a name="l12" style="background-color: #ffffff">  logical            ::  inv_o3</a>
+    13) <a name="l13" style="background-color: #ffffff">  integer            ::  id_msa</a>
+    14) <a name="l14" style="background-color: #ffffff"></a>
+    15) <a name="l15" style="background-color: #ffffff">  integer :: id_so2, id_nh3, id_hno3, id_h2o2, id_o3, id_ho2</a>
+    16) <a name="l16" style="background-color: #ffffff">  integer :: id_so4, id_h2so4</a>
+    17) <a name="l17" style="background-color: #ffffff"></a>
+    18) <a name="l18" style="background-color: #ffffff">  logical :: has_sox = .true.</a>
+    19) <a name="l19" style="background-color: #ffffff">  logical :: inv_so2, inv_nh3, inv_hno3, inv_h2o2, inv_ox, inv_nh4no3, inv_ho2</a>
+    20) <a name="l20" style="background-color: #ffffff"></a>
+    21) <a name="l21" style="background-color: #ffffff">  logical :: cloud_borne = .false.</a>
+    22) <a name="l22" style="background-color: #ffffff">  logical :: modal_aerosols = .false.</a>
+    23) <a name="l23" style="background-color: #ffffff"></a>
+    24) <a name="l24" style="background-color: #ffffff">contains</a>
+    25) <a name="l25" style="background-color: #ffffff"></a>
+    26) <a name="l26" style="background-color: #ffffff">!-----------------------------------------------------------------------      </a>
+    27) <a name="l27" style="background-color: #ffffff">!-----------------------------------------------------------------------      </a>
+    28) <a name="l28" style="background-color: #ffffff">  subroutine sox_inti</a>
+    29) <a name="l29" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+    30) <a name="l30" style="background-color: #ffffff">    !	... initialize the hetero sox routine</a>
+    31) <a name="l31" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+    32) <a name="l32" style="background-color: #ffffff"></a>
+    33) <a name="l33" style="background-color: #ffffff">    use mo_chem_utls, only : get_spc_ndx, get_inv_ndx</a>
+    34) <a name="l34" style="background-color: #ffffff">    use spmd_utils,   only : masterproc</a>
+    35) <a name="l35" style="background-color: #ffffff">    use cam_history,  only : addfld,phys_decomp</a>
+    36) <a name="l36" style="background-color: #ffffff">    use cam_history,  only : add_default</a>
+    37) <a name="l37" style="background-color: #ffffff">    use ppgrid,       only : pver</a>
+    38) <a name="l38" style="background-color: #ffffff">    use phys_control, only : phys_getopts</a>
+    39) <a name="l39" style="background-color: #ffffff">    use sox_cldaero_mod, only : sox_cldaero_init</a>
+    40) <a name="l40" style="background-color: #ffffff"></a>
+    41) <a name="l41" style="background-color: #ffffff">    implicit none</a>
+    42) <a name="l42" style="background-color: #ffffff"></a>
+    43) <a name="l43" style="background-color: #ffffff">    logical :: history_aerosol   ! Output aerosol diagnostics</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">    call phys_getopts( &amp;</a>
+    46) <a name="l46" style="background-color: #ffffff">         history_aerosol_out = history_aerosol, &amp;</a>
+    47) <a name="l47" style="background-color: #ffffff">         prog_modal_aero_out=modal_aerosols )</a>
+    48) <a name="l48" style="background-color: #ffffff"></a>
+    49) <a name="l49" style="background-color: #ffffff">    cloud_borne = modal_aerosols</a>
+    50) <a name="l50" style="background-color: #ffffff"></a>
+    51) <a name="l51" style="background-color: #ffffff">    !-----------------------------------------------------------------</a>
+    52) <a name="l52" style="background-color: #ffffff">    !       ... get species indicies</a>
+    53) <a name="l53" style="background-color: #ffffff">    !-----------------------------------------------------------------</a>
+    54) <a name="l54" style="background-color: #ffffff">    </a>
+    55) <a name="l55" style="background-color: #ffffff">    if (cloud_borne) then</a>
+    56) <a name="l56" style="background-color: #ffffff">       id_h2so4 = get_spc_ndx( 'H2SO4' )</a>
+    57) <a name="l57" style="background-color: #ffffff">    else</a>
+    58) <a name="l58" style="background-color: #ffff99">       id_so4 = get_spc_ndx( 'SO4' )</a>
+    59) <a name="l59" style="background-color: #ffff99">    endif</a>
+    60) <a name="l60" style="background-color: #ffffff">    id_msa = get_spc_ndx( 'MSA' )</a>
+    61) <a name="l61" style="background-color: #ffffff"></a>
+    62) <a name="l62" style="background-color: #ffffff">    inv_so2 = .false.</a>
+    63) <a name="l63" style="background-color: #ffffff">    id_so2 = get_inv_ndx( 'SO2' )</a>
+    64) <a name="l64" style="background-color: #fafad2">    inv_so2 = id_so2 &gt; 0</a>
+    65) <a name="l65" style="background-color: #fafad2">    if ( .not. inv_so2 ) then</a>
+    66) <a name="l66" style="background-color: #ffffff">       id_so2 = get_spc_ndx( 'SO2' )</a>
+    67) <a name="l67" style="background-color: #ffffff">    endif</a>
+    68) <a name="l68" style="background-color: #ffffff"></a>
+    69) <a name="l69" style="background-color: #ffffff">    inv_NH3 = .false.</a>
+    70) <a name="l70" style="background-color: #ffffff">    id_NH3 = get_inv_ndx( 'NH3' )</a>
+    71) <a name="l71" style="background-color: #fafad2">    inv_NH3 = id_NH3 &gt; 0</a>
+    72) <a name="l72" style="background-color: #fafad2">    if ( .not. inv_NH3 ) then</a>
+    73) <a name="l73" style="background-color: #ffffff">       id_NH3 = get_spc_ndx( 'NH3' )</a>
+    74) <a name="l74" style="background-color: #ffffff">    endif</a>
+    75) <a name="l75" style="background-color: #ffffff"></a>
+    76) <a name="l76" style="background-color: #ffffff">    inv_HNO3 = .false.</a>
+    77) <a name="l77" style="background-color: #ffffff">    id_HNO3 = get_inv_ndx( 'HNO3' )</a>
+    78) <a name="l78" style="background-color: #fafad2">    inv_HNO3 = id_hno3 &gt; 0</a>
+    79) <a name="l79" style="background-color: #fafad2">    if ( .not. inv_HNO3 ) then</a>
+    80) <a name="l80" style="background-color: #ffffff">       id_HNO3 = get_spc_ndx( 'HNO3' )</a>
+    81) <a name="l81" style="background-color: #ffffff">    endif</a>
+    82) <a name="l82" style="background-color: #ffffff"></a>
+    83) <a name="l83" style="background-color: #ffffff">    inv_H2O2 = .false.</a>
+    84) <a name="l84" style="background-color: #ffffff">    id_H2O2 = get_inv_ndx( 'H2O2' )</a>
+    85) <a name="l85" style="background-color: #fafad2">    inv_H2O2 = id_H2O2 &gt; 0</a>
+    86) <a name="l86" style="background-color: #fafad2">    if ( .not. inv_H2O2 ) then</a>
+    87) <a name="l87" style="background-color: #ffffff">       id_H2O2 = get_spc_ndx( 'H2O2' )</a>
+    88) <a name="l88" style="background-color: #ffffff">    endif</a>
+    89) <a name="l89" style="background-color: #ffffff"></a>
+    90) <a name="l90" style="background-color: #ffffff">    inv_HO2 = .false.</a>
+    91) <a name="l91" style="background-color: #ffffff">    id_HO2 = get_inv_ndx( 'HO2' )</a>
+    92) <a name="l92" style="background-color: #fafad2">    inv_HO2 = id_HO2 &gt; 0</a>
+    93) <a name="l93" style="background-color: #fafad2">    if ( .not. inv_HO2 ) then</a>
+    94) <a name="l94" style="background-color: #ffff99">       id_HO2 = get_spc_ndx( 'HO2' )</a>
+    95) <a name="l95" style="background-color: #ffff99">    endif</a>
+    96) <a name="l96" style="background-color: #ffff99"></a>
+    97) <a name="l97" style="background-color: #fafad2">    inv_o3 = </a><a style="background-color: #ffffff">get_inv_ndx( 'O3' ) &gt; 0</a>
+    98) <a name="l98" style="background-color: #ffffff">    if (inv_o3) then</a>
+    99) <a name="l99" style="background-color: #ffffff">       id_o3 = get_inv_ndx( 'O3' )</a>
+   100) <a name="l100" style="background-color: #ffffff">    else</a>
+   101) <a name="l101" style="background-color: #ffff99">       id_o3 = get_spc_ndx( 'O3' )</a>
+   102) <a name="l102" style="background-color: #ffff99">    endif</a>
+   103) <a name="l103" style="background-color: #fafad2">    inv_ho2 = </a><a style="background-color: #ffffff">get_inv_ndx( 'HO2' ) &gt; 0</a>
+   104) <a name="l104" style="background-color: #ffffff">    if (inv_ho2) then</a>
+   105) <a name="l105" style="background-color: #ffffff">       id_ho2 = get_inv_ndx( 'HO2' )</a>
+   106) <a name="l106" style="background-color: #ffffff">    else</a>
+   107) <a name="l107" style="background-color: #ffff99">       id_ho2 = get_spc_ndx( 'HO2' )</a>
+   108) <a name="l108" style="background-color: #ffff99">    endif</a>
+   109) <a name="l109" style="background-color: #ffff99"></a>
+   110) <a name="l110" style="background-color: #ffffff">    has_sox = (id_so2</a><a style="background-color: #fafad2">&gt;0) </a><a style="background-color: #ffffff">.and. (id_h2o2</a><a style="background-color: #fafad2">&gt;0) </a><a style="background-color: #ffffff">.and. (id_o3</a><a style="background-color: #fafad2">&gt;0) .and. (id_ho2&gt;0)</a>
+   111) <a name="l111" style="background-color: #fafad2">    if (cloud_borne) then</a>
+   112) <a name="l112" style="background-color: #ffffff">       has_sox = has_sox .and. (id_h2so4</a><a style="background-color: #fafad2">&gt;0)</a>
+   113) <a name="l113" style="background-color: #fafad2">    else</a>
+   114) <a name="l114" style="background-color: #ffff99">       has_sox = has_sox .and. (id_so4&gt;0) .and. (id_nh3&gt;0)</a>
+   115) <a name="l115" style="background-color: #ffff99">    endif</a>
+   116) <a name="l116" style="background-color: #ffff99"></a>
+   117) <a name="l117" style="background-color: #ffffff">    if (masterproc) then</a>
+   118) <a name="l118" style="background-color: #ffffff">       write(iulog,*) 'sox_inti: has_sox = ',has_sox</a>
+   119) <a name="l119" style="background-color: #ffffff">    endif</a>
+   120) <a name="l120" style="background-color: #ffffff"></a>
+   121) <a name="l121" style="background-color: #ffffff">    if( has_sox ) then</a>
+   122) <a name="l122" style="background-color: #ffffff">       if (masterproc) then</a>
+   123) <a name="l123" style="background-color: #ffffff">          write(iulog,*) '-----------------------------------------'</a>
+   124) <a name="l124" style="background-color: #ffffff">          write(iulog,*) 'mozart will do sox aerosols'</a>
+   125) <a name="l125" style="background-color: #ffffff">          write(iulog,*) '-----------------------------------------'</a>
+   126) <a name="l126" style="background-color: #ffffff">       endif</a>
+   127) <a name="l127" style="background-color: #ffffff">    else </a>
+   128) <a name="l128" style="background-color: #ffffff">       return</a>
+   129) <a name="l129" style="background-color: #ffffff">    end if</a>
+   130) <a name="l130" style="background-color: #ffffff"></a>
+   131) <a name="l131" style="background-color: #ffffff">    call addfld( 'XPH_LWC','kg/kg   ',pver, 'A', 'pH value multiplied by lwc', phys_decomp)</a>
+   132) <a name="l132" style="background-color: #ffffff">    if ( history_aerosol ) then    </a>
+   133) <a name="l133" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">add_default ('XPH_LWC', 1, ' ') </a>
+   134) <a name="l134" style="background-color: #ffff99">    endif</a>
+   135) <a name="l135" style="background-color: #ffff99"></a>
+   136) <a name="l136" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">sox_cldaero_init()</a>
+   137) <a name="l137" style="background-color: #ffffff"></a>
+   138) <a name="l138" style="background-color: #ffffff">  end subroutine sox_inti</a>
+   139) <a name="l139" style="background-color: #ffffff">  </a>
+   140) <a name="l140" style="background-color: #ffffff">!-----------------------------------------------------------------------      </a>
+   141) <a name="l141" style="background-color: #ffffff">!-----------------------------------------------------------------------      </a>
+   142) <a name="l142" style="background-color: #ffffff">  subroutine SETSOX( &amp;</a>
+   143) <a name="l143" style="background-color: #ffffff">       ncol,   &amp;</a>
+   144) <a name="l144" style="background-color: #ffffff">       lchnk,  &amp;</a>
+   145) <a name="l145" style="background-color: #ffffff">       loffset,&amp;</a>
+   146) <a name="l146" style="background-color: #ffffff">       dtime,  &amp;</a>
+   147) <a name="l147" style="background-color: #ffffff">       press,  &amp;</a>
+   148) <a name="l148" style="background-color: #ffffff">       pdel,   &amp;</a>
+   149) <a name="l149" style="background-color: #ffffff">       tfld,   &amp;</a>
+   150) <a name="l150" style="background-color: #ffffff">       mbar,   &amp;</a>
+   151) <a name="l151" style="background-color: #ffffff">       lwc,    &amp;</a>
+   152) <a name="l152" style="background-color: #ffffff">       cldfrc, &amp;</a>
+   153) <a name="l153" style="background-color: #ffffff">       cldnum, &amp;</a>
+   154) <a name="l154" style="background-color: #ffffff">       xhnm,   &amp;</a>
+   155) <a name="l155" style="background-color: #ffffff">       invariants, &amp;</a>
+   156) <a name="l156" style="background-color: #ffffff">       qcw,    &amp;</a>
+   157) <a name="l157" style="background-color: #ffffff">       qin     &amp;</a>
+   158) <a name="l158" style="background-color: #ffffff">       )</a>
+   159) <a name="l159" style="background-color: #ffffff"></a>
+   160) <a name="l160" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   161) <a name="l161" style="background-color: #ffffff">    !          ... Compute heterogeneous reactions of SOX</a>
+   162) <a name="l162" style="background-color: #ffffff">    !</a>
+   163) <a name="l163" style="background-color: #ffffff">    !       (0) using initial PH to calculate PH</a>
+   164) <a name="l164" style="background-color: #ffffff">    !           (a) HENRYs law constants</a>
+   165) <a name="l165" style="background-color: #ffffff">    !           (b) PARTIONING</a>
+   166) <a name="l166" style="background-color: #ffffff">    !           (c) PH values</a>
+   167) <a name="l167" style="background-color: #ffffff">    !</a>
+   168) <a name="l168" style="background-color: #ffffff">    !       (1) using new PH to repeat</a>
+   169) <a name="l169" style="background-color: #ffffff">    !           (a) HENRYs law constants</a>
+   170) <a name="l170" style="background-color: #ffffff">    !           (b) PARTIONING</a>
+   171) <a name="l171" style="background-color: #ffffff">    !           (c) REACTION rates</a>
+   172) <a name="l172" style="background-color: #ffffff">    !           (d) PREDICTION</a>
+   173) <a name="l173" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   174) <a name="l174" style="background-color: #ffffff">    !</a>
+   175) <a name="l175" style="background-color: #ffffff">    use ppgrid,    only : pcols, pver</a>
+   176) <a name="l176" style="background-color: #ffffff">    use chem_mods, only : gas_pcnst, nfs</a>
+   177) <a name="l177" style="background-color: #ffffff">    use chem_mods,    only : adv_mass</a>
+   178) <a name="l178" style="background-color: #ffffff">    use physconst,    only : mwdry, gravit</a>
+   179) <a name="l179" style="background-color: #ffffff">    use mo_constants, only : pi</a>
+   180) <a name="l180" style="background-color: #ffffff">    use cam_history,  only : outfld</a>
+   181) <a name="l181" style="background-color: #ffffff">    use sox_cldaero_mod, only : sox_cldaero_update, sox_cldaero_create_obj, sox_cldaero_destroy_obj</a>
+   182) <a name="l182" style="background-color: #ffffff">    use cldaero_mod,     only : cldaero_conc_t</a>
+   183) <a name="l183" style="background-color: #ffffff"></a>
+   184) <a name="l184" style="background-color: #ffffff">    !</a>
+   185) <a name="l185" style="background-color: #ffffff">    implicit none</a>
+   186) <a name="l186" style="background-color: #ffffff">    !</a>
+   187) <a name="l187" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   188) <a name="l188" style="background-color: #ffffff">    !      ... Dummy arguments</a>
+   189) <a name="l189" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   190) <a name="l190" style="background-color: #ffffff">    integer,          intent(in)    :: ncol              ! num of columns in chunk</a>
+   191) <a name="l191" style="background-color: #ffffff">    integer,          intent(in)    :: lchnk             ! chunk id</a>
+   192) <a name="l192" style="background-color: #ffffff">    integer,          intent(in)    :: loffset           ! offset of chem tracers in the advected tracers array</a>
+   193) <a name="l193" style="background-color: #ffffff">    real(r8),         intent(in)    :: dtime             ! time step (sec)</a>
+   194) <a name="l194" style="background-color: #ffffff">    real(r8),         intent(in)    :: press(:,:)        ! midpoint pressure ( Pa )</a>
+   195) <a name="l195" style="background-color: #ffffff">    real(r8),         intent(in)    :: pdel(:,:)         ! pressure thickness of levels (Pa)</a>
+   196) <a name="l196" style="background-color: #ffffff">    real(r8),         intent(in)    :: tfld(:,:)         ! temperature</a>
+   197) <a name="l197" style="background-color: #ffffff">    real(r8),         intent(in)    :: mbar(:,:)         ! mean wet atmospheric mass ( amu )</a>
+   198) <a name="l198" style="background-color: #ffffff">    real(r8), target, intent(in)    :: lwc(:,:)          ! cloud liquid water content (kg/kg)</a>
+   199) <a name="l199" style="background-color: #ffffff">    real(r8), target, intent(in)    :: cldfrc(:,:)       ! cloud fraction</a>
+   200) <a name="l200" style="background-color: #ffffff">    real(r8),         intent(in)    :: cldnum(:,:)       ! droplet number concentration (#/kg)</a>
+   201) <a name="l201" style="background-color: #ffffff">    real(r8),         intent(in)    :: xhnm(:,:)         ! total atms density ( /cm**3)</a>
+   202) <a name="l202" style="background-color: #ffffff">    real(r8),         intent(in)    :: invariants(:,:,:)</a>
+   203) <a name="l203" style="background-color: #ffffff">    real(r8), target, intent(inout) :: qcw(:,:,:)        ! cloud-borne aerosol (vmr)</a>
+   204) <a name="l204" style="background-color: #ffffff">    real(r8),         intent(inout) :: qin(:,:,:)        ! transported species ( vmr )</a>
+   205) <a name="l205" style="background-color: #ffffff"></a>
+   206) <a name="l206" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   207) <a name="l207" style="background-color: #ffffff">    !      ... Local variables</a>
+   208) <a name="l208" style="background-color: #ffffff">    !</a>
+   209) <a name="l209" style="background-color: #ffffff">    !           xhno3 ... in mixing ratio</a>
+   210) <a name="l210" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   211) <a name="l211" style="background-color: #ffffff">    integer,  parameter :: itermax = 20</a>
+   212) <a name="l212" style="background-color: #ffffff">    real(r8), parameter :: ph0 = 5.0_r8  ! INITIAL PH VALUES</a>
+   213) <a name="l213" style="background-color: #ffffff">    real(r8), parameter :: const0 = 1.e3_r8/6.023e23_r8</a>
+   214) <a name="l214" style="background-color: #ffffff">    real(r8), parameter :: xa0 = 11._r8</a>
+   215) <a name="l215" style="background-color: #ffffff">    real(r8), parameter :: xb0 = -.1_r8</a>
+   216) <a name="l216" style="background-color: #ffffff">    real(r8), parameter :: xa1 = 1.053_r8</a>
+   217) <a name="l217" style="background-color: #ffffff">    real(r8), parameter :: xb1 = -4.368_r8</a>
+   218) <a name="l218" style="background-color: #ffffff">    real(r8), parameter :: xa2 = 1.016_r8</a>
+   219) <a name="l219" style="background-color: #ffffff">    real(r8), parameter :: xb2 = -2.54_r8</a>
+   220) <a name="l220" style="background-color: #ffffff">    real(r8), parameter :: xa3 = .816e-32_r8</a>
+   221) <a name="l221" style="background-color: #ffffff">    real(r8), parameter :: xb3 = .259_r8</a>
+   222) <a name="l222" style="background-color: #ffffff"></a>
+   223) <a name="l223" style="background-color: #ffffff">    real(r8), parameter :: kh0 = 9.e3_r8            ! HO2(g)          -&gt; Ho2(a)</a>
+   224) <a name="l224" style="background-color: #ffffff">    real(r8), parameter :: kh1 = 2.05e-5_r8         ! HO2(a)          -&gt; H+ + O2-</a>
+   225) <a name="l225" style="background-color: #ffffff">    real(r8), parameter :: kh2 = 8.6e5_r8           ! HO2(a) + ho2(a) -&gt; h2o2(a) + o2</a>
+   226) <a name="l226" style="background-color: #ffffff">    real(r8), parameter :: kh3 = 1.e8_r8            ! HO2(a) + o2-    -&gt; h2o2(a) + o2</a>
+   227) <a name="l227" style="background-color: #ffffff">    real(r8), parameter :: Ra = 8314._r8/101325._r8 ! universal constant   (atm)/(M-K)</a>
+   228) <a name="l228" style="background-color: #ffffff">    real(r8), parameter :: xkw = 1.e-14_r8          ! water acidity</a>
+   229) <a name="l229" style="background-color: #ffffff"></a>
+   230) <a name="l230" style="background-color: #ffffff">    !</a>
+   231) <a name="l231" style="background-color: #ffffff">    real(r8) :: xdelso4hp(ncol,pver)</a>
+   232) <a name="l232" style="background-color: #ffffff">    real(r8) :: xphlwc(ncol,pver)</a>
+   233) <a name="l233" style="background-color: #ffffff"></a>
+   234) <a name="l234" style="background-color: #ffffff">    integer  :: k, i, iter, file</a>
+   235) <a name="l235" style="background-color: #ffffff">    real(r8) :: wrk, delta</a>
+   236) <a name="l236" style="background-color: #ffffff">    real(r8) :: xph0, aden, xk, xe, x2</a>
+   237) <a name="l237" style="background-color: #ffffff">    real(r8) :: tz, xl, px, qz, pz, es, qs, patm</a>
+   238) <a name="l238" style="background-color: #ffffff">    real(r8) :: Eso2, Eso4, Ehno3, Eco2, Eh2o, Enh3</a>
+   239) <a name="l239" style="background-color: #ffffff">    real(r8) :: so2g, h2o2g, co2g, o3g</a>
+   240) <a name="l240" style="background-color: #ffffff">    real(r8) :: hno3a, nh3a, so2a, h2o2a, co2a, o3a</a>
+   241) <a name="l241" style="background-color: #ffffff">    real(r8) :: rah2o2, rao3, pso4, ccc</a>
+   242) <a name="l242" style="background-color: #ffffff">    real(r8) :: cnh3, chno3, com, com1, com2, xra</a>
+   243) <a name="l243" style="background-color: #ffffff"></a>
+   244) <a name="l244" style="background-color: #ffffff">    real(r8) :: hno3g(ncol,pver), nh3g(ncol,pver)</a>
+   245) <a name="l245" style="background-color: #ffffff">    !</a>
+   246) <a name="l246" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   247) <a name="l247" style="background-color: #ffffff">    !            for Ho2(g) -&gt; H2o2(a) formation </a>
+   248) <a name="l248" style="background-color: #ffffff">    !            schwartz JGR, 1984, 11589</a>
+   249) <a name="l249" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   250) <a name="l250" style="background-color: #ffffff">    real(r8) :: kh4    ! kh2+kh3</a>
+   251) <a name="l251" style="background-color: #ffffff">    real(r8) :: xam    ! air density /cm3</a>
+   252) <a name="l252" style="background-color: #ffffff">    real(r8) :: ho2s   ! ho2s = ho2(a)+o2-</a>
+   253) <a name="l253" style="background-color: #ffffff">    real(r8) :: r1h2o2 ! prod(h2o2) by ho2 in mole/L(w)/s</a>
+   254) <a name="l254" style="background-color: #ffffff">    real(r8) :: r2h2o2 ! prod(h2o2) by ho2 in mix/s</a>
+   255) <a name="l255" style="background-color: #ffffff"></a>
+   256) <a name="l256" style="background-color: #ffffff">    real(r8), dimension(ncol,pver)  ::             &amp;</a>
+   257) <a name="l257" style="background-color: #ffffff">         xhno3, xh2o2, xso2, xso4, xno3, &amp;</a>
+   258) <a name="l258" style="background-color: #ffffff">         xnh3, xnh4, xo3,         &amp;</a>
+   259) <a name="l259" style="background-color: #ffffff">         cfact, &amp;</a>
+   260) <a name="l260" style="background-color: #ffffff">         xph, xho2,         &amp;</a>
+   261) <a name="l261" style="background-color: #ffffff">         xh2so4, xmsa, xso4_init, &amp;</a>
+   262) <a name="l262" style="background-color: #ffffff">         hehno3, &amp;            ! henry law const for hno3</a>
+   263) <a name="l263" style="background-color: #ffffff">         heh2o2, &amp;            ! henry law const for h2o2</a>
+   264) <a name="l264" style="background-color: #ffffff">         heso2,  &amp;            ! henry law const for so2</a>
+   265) <a name="l265" style="background-color: #ffffff">         henh3,  &amp;            ! henry law const for nh3</a>
+   266) <a name="l266" style="background-color: #ffffff">         heo3              !!,   &amp;            ! henry law const for o3</a>
+   267) <a name="l267" style="background-color: #ffffff"></a>
+   268) <a name="l268" style="background-color: #ffffff">    real(r8) :: patm_x</a>
+   269) <a name="l269" style="background-color: #ffffff"></a>
+   270) <a name="l270" style="background-color: #ffffff">    real(r8), dimension(ncol)  :: work1</a>
+   271) <a name="l271" style="background-color: #ffffff">    logical :: converged</a>
+   272) <a name="l272" style="background-color: #ffffff"></a>
+   273) <a name="l273" style="background-color: #ffffff">    real(r8), pointer :: xso4c(:,:)</a>
+   274) <a name="l274" style="background-color: #ffffff">    real(r8), pointer :: xnh4c(:,:)</a>
+   275) <a name="l275" style="background-color: #ffffff">    real(r8), pointer :: xno3c(:,:)</a>
+   276) <a name="l276" style="background-color: #ffffff">    type(cldaero_conc_t), pointer :: cldconc</a>
+   277) <a name="l277" style="background-color: #ffffff"></a>
+   278) <a name="l278" style="background-color: #ffffff">    real(r8) :: fact1_hno3, fact2_hno3, fact3_hno3</a>
+   279) <a name="l279" style="background-color: #ffffff">    real(r8) :: fact1_so2, fact2_so2, fact3_so2, fact4_so2</a>
+   280) <a name="l280" style="background-color: #ffffff">    real(r8) :: fact1_nh3, fact2_nh3, fact3_nh3</a>
+   281) <a name="l281" style="background-color: #ffffff">    real(r8) :: tmp_hp, tmp_hso3, tmp_hco3, tmp_nh4, tmp_no3</a>
+   282) <a name="l282" style="background-color: #ffffff">    real(r8) :: tmp_oh, tmp_so3, tmp_so4</a>
+   283) <a name="l283" style="background-color: #ffffff">    real(r8) :: tmp_neg, tmp_pos</a>
+   284) <a name="l284" style="background-color: #ffffff">    real(r8) :: yph, yph_lo, yph_hi</a>
+   285) <a name="l285" style="background-color: #ffffff">    real(r8) :: ynetpos, ynetpos_lo, ynetpos_hi</a>
+   286) <a name="l286" style="background-color: #ffffff"></a>
+   287) <a name="l287" style="background-color: #ffffff">    !-----------------------------------------------------------------</a>
+   288) <a name="l288" style="background-color: #ffffff">    !       ... NOTE: The press array is in pascals and must be</a>
+   289) <a name="l289" style="background-color: #ffffff">    !                 mutiplied by 10 to yield dynes/cm**2.</a>
+   290) <a name="l290" style="background-color: #ffffff">    !-----------------------------------------------------------------</a>
+   291) <a name="l291" style="background-color: #ffffff">    !==================================================================</a>
+   292) <a name="l292" style="background-color: #ffffff">    !       ... First set the PH</a>
+   293) <a name="l293" style="background-color: #ffffff">    !==================================================================</a>
+   294) <a name="l294" style="background-color: #ffffff">    !      ... Initial values</a>
+   295) <a name="l295" style="background-color: #ffffff">    !           The values of so2, so4 are after (1) SLT, and CHEM</a>
+   296) <a name="l296" style="background-color: #ffffff">    !-----------------------------------------------------------------</a>
+   297) <a name="l297" style="background-color: #ffffff">    xph0 = 10._r8**(-ph0)                      ! initial PH value</a>
+   298) <a name="l298" style="background-color: #ffffff"></a>
+   299) <a name="l299" style="background-color: #ffffff">    do k = 1,pver</a>
+   300) <a name="l300" style="background-color: #ffffff">       cfact(:,k) = xhnm(:,k)     &amp;          ! /cm3(a)  </a>
+   301) <a name="l301" style="background-color: #ffffff">            * 1.e6_r8             &amp;          ! /m3(a)</a>
+   302) <a name="l302" style="background-color: #ffffff">            * 1.38e-23_r8/287._r8 &amp;          ! Kg(a)/m3(a)</a>
+   303) <a name="l303" style="background-color: #ffffff">            * 1.e-3_r8                       ! Kg(a)/L(a)</a>
+   304) <a name="l304" style="background-color: #ffffff">    end do</a>
+   305) <a name="l305" style="background-color: #ffffff"></a>
+   306) <a name="l306" style="background-color: #ffffff">    cldconc =&gt; sox_cldaero_create_obj( cldfrc,qcw,lwc, cfact, ncol, loffset )</a>
+   307) <a name="l307" style="background-color: #ffffff">    xso4c =&gt; cldconc%so4c</a>
+   308) <a name="l308" style="background-color: #ffffff">    xnh4c =&gt; cldconc%nh4c</a>
+   309) <a name="l309" style="background-color: #ffffff">    xno3c =&gt; cldconc%no3c</a>
+   310) <a name="l310" style="background-color: #ffffff"></a>
+   311) <a name="l311" style="background-color: #ffffff">    xso4(:,:) = 0._r8</a>
+   312) <a name="l312" style="background-color: #ffffff">    xno3(:,:) = 0._r8</a>
+   313) <a name="l313" style="background-color: #ffffff">    xnh4(:,:) = 0._r8</a>
+   314) <a name="l314" style="background-color: #ffffff"></a>
+   315) <a name="l315" style="background-color: #ffffff">    do k = 1,pver</a>
+   316) <a name="l316" style="background-color: #ffffff">       xph(:,k) = xph0                                ! initial PH value</a>
+   317) <a name="l317" style="background-color: #ffffff"></a>
+   318) <a name="l318" style="background-color: #ffffff">       if ( inv_so2 ) then</a>
+   319) <a name="l319" style="background-color: #ffff99">          xso2 (:,k) = invariants(:,k,id_so2)/xhnm(:,k)  ! mixing ratio</a>
+   320) <a name="l320" style="background-color: #ffff99">       else</a>
+   321) <a name="l321" style="background-color: #ffffff">          xso2 (:,k) = qin(:,k,id_so2)                   ! mixing ratio</a>
+   322) <a name="l322" style="background-color: #ffffff">       endif</a>
+   323) <a name="l323" style="background-color: #ffffff"></a>
+   324) <a name="l324" style="background-color: #ffffff">       if (id_hno3 &gt; 0) then</a>
+   325) <a name="l325" style="background-color: #ffff99">          xhno3(:,k) = qin(:,k,id_hno3)</a>
+   326) <a name="l326" style="background-color: #ffff99">       else</a>
+   327) <a name="l327" style="background-color: #ffffff">          xhno3(:,k) = 0.0_r8</a>
+   328) <a name="l328" style="background-color: #ffffff">       endif</a>
+   329) <a name="l329" style="background-color: #ffffff"></a>
+   330) <a name="l330" style="background-color: #ffffff">       if ( inv_h2o2 ) then</a>
+   331) <a name="l331" style="background-color: #ffff99">          xh2o2 (:,k) = invariants(:,k,id_h2o2)/xhnm(:,k)  ! mixing ratio</a>
+   332) <a name="l332" style="background-color: #ffff99">       else</a>
+   333) <a name="l333" style="background-color: #ffffff">          xh2o2 (:,k) = qin(:,k,id_h2o2)                   ! mixing ratio</a>
+   334) <a name="l334" style="background-color: #ffffff">       endif</a>
+   335) <a name="l335" style="background-color: #ffffff"></a>
+   336) <a name="l336" style="background-color: #ffffff">       if (id_nh3  &gt; 0) then</a>
+   337) <a name="l337" style="background-color: #ffff99">          xnh3 (:,k) = qin(:,k,id_nh3)</a>
+   338) <a name="l338" style="background-color: #ffff99">       else</a>
+   339) <a name="l339" style="background-color: #ffffff">          xnh3 (:,k) = 0.0_r8</a>
+   340) <a name="l340" style="background-color: #ffffff">       endif</a>
+   341) <a name="l341" style="background-color: #ffffff"></a>
+   342) <a name="l342" style="background-color: #ffffff">       if ( inv_o3 ) then</a>
+   343) <a name="l343" style="background-color: #ffffff">          xo3  (:,k) = invariants(:,k,id_o3)/xhnm(:,k) ! mixing ratio</a>
+   344) <a name="l344" style="background-color: #ffffff">       else</a>
+   345) <a name="l345" style="background-color: #ffff99">          xo3  (:,k) = qin(:,k,id_o3)                  ! mixing ratio</a>
+   346) <a name="l346" style="background-color: #ffff99">       endif</a>
+   347) <a name="l347" style="background-color: #ffffff">       if ( inv_ho2 ) then</a>
+   348) <a name="l348" style="background-color: #ffffff">          xho2 (:,k) = invariants(:,k,id_ho2)/xhnm(:,k)! mixing ratio</a>
+   349) <a name="l349" style="background-color: #ffffff">       else</a>
+   350) <a name="l350" style="background-color: #ffff99">          xho2 (:,k) = qin(:,k,id_ho2)                 ! mixing ratio</a>
+   351) <a name="l351" style="background-color: #ffff99">       endif</a>
+   352) <a name="l352" style="background-color: #ffff99"></a>
+   353) <a name="l353" style="background-color: #ffffff">       if (cloud_borne) then</a>
+   354) <a name="l354" style="background-color: #ffffff">          xh2so4(:,k) = qin(:,k,id_h2so4)</a>
+   355) <a name="l355" style="background-color: #ffffff">       else</a>
+   356) <a name="l356" style="background-color: #ffff99">          xso4  (:,k) = qin(:,k,id_so4) ! mixing ratio</a>
+   357) <a name="l357" style="background-color: #ffff99">       endif</a>
+   358) <a name="l358" style="background-color: #ffffff">       if (id_msa &gt; 0) </a><a style="background-color: #ffff99">xmsa (:,k) = qin(:,k,id_msa)</a>
+   359) <a name="l359" style="background-color: #ffff99"></a>
+   360) <a name="l360" style="background-color: #ffff99">    end do</a>
+   361) <a name="l361" style="background-color: #ffff99">    </a>
+   362) <a name="l362" style="background-color: #ffff99">    !-----------------------------------------------------------------</a>
+   363) <a name="l363" style="background-color: #ffff99">    !       ... Temperature dependent Henry constants</a>
+   364) <a name="l364" style="background-color: #ffff99">    !-----------------------------------------------------------------</a>
+   365) <a name="l365" style="background-color: #ffffff">    ver_loop0: do k = 1,pver                               !! pver loop for STEP 0</a>
+   366) <a name="l366" style="background-color: #ffffff">       col_loop0: do i = 1,ncol</a>
+   367) <a name="l367" style="background-color: #ffffff">          </a>
+   368) <a name="l368" style="background-color: #ffffff">          if (cloud_borne .and. cldfrc(i,k)&gt;0._r8) then</a>
+   369) <a name="l369" style="background-color: #ffffff">             xso4(i,k) = xso4c(i,k) / cldfrc(i,k)</a>
+   370) <a name="l370" style="background-color: #ffffff">             xnh4(i,k) = xnh4c(i,k) / cldfrc(i,k)</a>
+   371) <a name="l371" style="background-color: #ffffff">             xno3(i,k) = xno3c(i,k) / cldfrc(i,k)</a>
+   372) <a name="l372" style="background-color: #ffffff">          endif</a>
+   373) <a name="l373" style="background-color: #ffffff">          xl = cldconc%xlwc(i,k)</a>
+   374) <a name="l374" style="background-color: #ffffff"></a>
+   375) <a name="l375" style="background-color: #ffffff">          if( xl &gt;= 1.e-8_r8 ) then</a>
+   376) <a name="l376" style="background-color: #ffffff">             work1(i) = 1._r8 / tfld(i,k) - 1._r8 / 298._r8</a>
+   377) <a name="l377" style="background-color: #ffffff"></a>
+   378) <a name="l378" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   379) <a name="l379" style="background-color: #ffffff">             ! 21-mar-2011 changes by rce</a>
+   380) <a name="l380" style="background-color: #ffffff">             ! ph calculation now uses bisection method to solve the electro-neutrality equation</a>
+   381) <a name="l381" style="background-color: #ffffff">             ! 3-mode aerosols (where so4 is assumed to be nh4hso4)</a>
+   382) <a name="l382" style="background-color: #ffffff">             !    old code set xnh4c = so4c</a>
+   383) <a name="l383" style="background-color: #ffffff">             !    new code sets xnh4c = 0, then uses a -1 charge (instead of -2)</a>
+   384) <a name="l384" style="background-color: #ffffff">             !       for so4 when solving the electro-neutrality equation</a>
+   385) <a name="l385" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   386) <a name="l386" style="background-color: #ffffff"></a>
+   387) <a name="l387" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   388) <a name="l388" style="background-color: #ffffff">             !  calculations done before iterating</a>
+   389) <a name="l389" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   390) <a name="l390" style="background-color: #ffffff"></a>
+   391) <a name="l391" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   392) <a name="l392" style="background-color: #ffffff">             pz = .01_r8*press(i,k)       !! pressure in mb</a>
+   393) <a name="l393" style="background-color: #ffffff">             tz = tfld(i,k)</a>
+   394) <a name="l394" style="background-color: #ffffff">             patm = pz/1013._r8</a>
+   395) <a name="l395" style="background-color: #ffffff">             xam  = press(i,k)/(1.38e-23_r8*tz)  !air density /M3</a>
+   396) <a name="l396" style="background-color: #ffffff"></a>
+   397) <a name="l397" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   398) <a name="l398" style="background-color: #ffffff">             !        ... hno3</a>
+   399) <a name="l399" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   400) <a name="l400" style="background-color: #ffffff">             ! previous code</a>
+   401) <a name="l401" style="background-color: #ffffff">             !    hehno3(i,k)  = xk*(1._r8 + xe/xph(i,k))</a>
+   402) <a name="l402" style="background-color: #ffffff">             !    px = hehno3(i,k) * Ra * tz * xl</a>
+   403) <a name="l403" style="background-color: #ffffff">             !    hno3g = xhno3(i,k)/(1._r8 + px)</a>
+   404) <a name="l404" style="background-color: #ffffff">             !    Ehno3 = xk*xe*hno3g *patm</a>
+   405) <a name="l405" style="background-color: #ffffff">             ! equivalent new code</a>
+   406) <a name="l406" style="background-color: #ffffff">             !    hehno3 = xk + xk*xe/hplus</a>
+   407) <a name="l407" style="background-color: #ffffff">             !    hno3g = xhno3/(1 + px)</a>
+   408) <a name="l408" style="background-color: #ffffff">             !          = xhno3/(1 + hehno3*ra*tz*xl)</a>
+   409) <a name="l409" style="background-color: #ffffff">             !          = xhno3/(1 + xk*ra*tz*xl*(1 + xe/hplus)</a>
+   410) <a name="l410" style="background-color: #ffffff">             !    ehno3 = hno3g*xk*xe*patm</a>
+   411) <a name="l411" style="background-color: #ffffff">             !          = xk*xe*patm*xhno3/(1 + xk*ra*tz*xl*(1 + xe/hplus)</a>
+   412) <a name="l412" style="background-color: #ffffff">             !          = ( fact1_hno3    )/(1 + fact2_hno3 *(1 + fact3_hno3/hplus)</a>
+   413) <a name="l413" style="background-color: #ffffff">             !    [hno3-] = ehno3/hplus</a>
+   414) <a name="l414" style="background-color: #ffffff">             xk = 2.1e5_r8 *EXP( 8700._r8*work1(i) )</a>
+   415) <a name="l415" style="background-color: #ffffff">             xe = 15.4_r8</a>
+   416) <a name="l416" style="background-color: #ffffff">             fact1_hno3 = xk*xe*patm*xhno3(i,k)</a>
+   417) <a name="l417" style="background-color: #ffffff">             fact2_hno3 = xk*ra*tz*xl</a>
+   418) <a name="l418" style="background-color: #ffffff">             fact3_hno3 = xe</a>
+   419) <a name="l419" style="background-color: #ffffff"></a>
+   420) <a name="l420" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   421) <a name="l421" style="background-color: #ffffff">             !          ... so2</a>
+   422) <a name="l422" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   423) <a name="l423" style="background-color: #ffffff">             ! previous code</a>
+   424) <a name="l424" style="background-color: #ffffff">             !    heso2(i,k)  = xk*(1._r8 + wrk*(1._r8 + x2/xph(i,k)))</a>
+   425) <a name="l425" style="background-color: #ffffff">             !    px = heso2(i,k) * Ra * tz * xl</a>
+   426) <a name="l426" style="background-color: #ffffff">             !    so2g =  xso2(i,k)/(1._r8+ px)</a>
+   427) <a name="l427" style="background-color: #ffffff">             !    Eso2 = xk*xe*so2g *patm</a>
+   428) <a name="l428" style="background-color: #ffffff">             ! equivalent new code</a>
+   429) <a name="l429" style="background-color: #ffffff">             !    heso2 = xk + xk*xe/hplus * xk*xe*x2/hplus**2</a>
+   430) <a name="l430" style="background-color: #ffffff">             !    so2g = xso2/(1 + px)</a>
+   431) <a name="l431" style="background-color: #ffffff">             !         = xso2/(1 + heso2*ra*tz*xl)</a>
+   432) <a name="l432" style="background-color: #ffffff">             !         = xso2/(1 + xk*ra*tz*xl*(1 + (xe/hplus)*(1 + x2/hplus))</a>
+   433) <a name="l433" style="background-color: #ffffff">             !    eso2 = so2g*xk*xe*patm</a>
+   434) <a name="l434" style="background-color: #ffffff">             !          = xk*xe*patm*xso2/(1 + xk*ra*tz*xl*(1 + (xe/hplus)*(1 + x2/hplus))</a>
+   435) <a name="l435" style="background-color: #ffffff">             !          = ( fact1_so2    )/(1 + fact2_so2 *(1 + (fact3_so2/hplus)*(1 + fact4_so2/hplus)</a>
+   436) <a name="l436" style="background-color: #ffffff">             !    [hso3-] + 2*[so3--] = (eso2/hplus)*(1 + 2*x2/hplus)</a>
+   437) <a name="l437" style="background-color: #ffffff">             xk = 1.23_r8  *EXP( 3120._r8*work1(i) )</a>
+   438) <a name="l438" style="background-color: #ffffff">             xe = 1.7e-2_r8*EXP( 2090._r8*work1(i) )</a>
+   439) <a name="l439" style="background-color: #ffffff">             x2 = 6.0e-8_r8*EXP( 1120._r8*work1(i) )</a>
+   440) <a name="l440" style="background-color: #ffffff">             fact1_so2 = xk*xe*patm*xso2(i,k)</a>
+   441) <a name="l441" style="background-color: #ffffff">             fact2_so2 = xk*ra*tz*xl</a>
+   442) <a name="l442" style="background-color: #ffffff">             fact3_so2 = xe</a>
+   443) <a name="l443" style="background-color: #ffffff">             fact4_so2 = x2</a>
+   444) <a name="l444" style="background-color: #ffffff"></a>
+   445) <a name="l445" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   446) <a name="l446" style="background-color: #ffffff">             !          ... nh3</a>
+   447) <a name="l447" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   448) <a name="l448" style="background-color: #ffffff">             ! previous code</a>
+   449) <a name="l449" style="background-color: #ffffff">             !    henh3(i,k)  = xk*(1._r8 + xe*xph(i,k)/xkw)</a>
+   450) <a name="l450" style="background-color: #ffffff">             !    px = henh3(i,k) * Ra * tz * xl</a>
+   451) <a name="l451" style="background-color: #ffffff">             !    nh3g = (xnh3(i,k)+xnh4(i,k))/(1._r8+ px)</a>
+   452) <a name="l452" style="background-color: #ffffff">             !    Enh3 = xk*xe*nh3g/xkw *patm</a>
+   453) <a name="l453" style="background-color: #ffffff">             ! equivalent new code</a>
+   454) <a name="l454" style="background-color: #ffffff">             !    henh3 = xk + xk*xe*hplus/xkw</a>
+   455) <a name="l455" style="background-color: #ffffff">             !    nh3g = xnh34/(1 + px)</a>
+   456) <a name="l456" style="background-color: #ffffff">             !         = xnh34/(1 + henh3*ra*tz*xl)</a>
+   457) <a name="l457" style="background-color: #ffffff">             !         = xnh34/(1 + xk*ra*tz*xl*(1 + xe*hplus/xkw)</a>
+   458) <a name="l458" style="background-color: #ffffff">             !    enh3 = nh3g*xk*xe*patm/xkw</a>
+   459) <a name="l459" style="background-color: #ffffff">             !          = ((xk*xe*patm/xkw)*xnh34)/(1 + xk*ra*tz*xl*(1 + xe*hplus/xkw)</a>
+   460) <a name="l460" style="background-color: #ffffff">             !          = ( fact1_nh3            )/(1 + fact2_nh3  *(1 + fact3_nh3*hplus)</a>
+   461) <a name="l461" style="background-color: #ffffff">             !    [nh4+] = enh3*hplus</a>
+   462) <a name="l462" style="background-color: #ffffff">             xk = 58._r8   *EXP( 4085._r8*work1(i) )</a>
+   463) <a name="l463" style="background-color: #ffffff">             xe = 1.7e-5_r8*EXP( -4325._r8*work1(i) )</a>
+   464) <a name="l464" style="background-color: #ffffff"></a>
+   465) <a name="l465" style="background-color: #ffffff">             fact1_nh3 = (xk*xe*patm/xkw)*(xnh3(i,k)+xnh4(i,k))</a>
+   466) <a name="l466" style="background-color: #ffffff">             fact2_nh3 = xk*ra*tz*xl</a>
+   467) <a name="l467" style="background-color: #ffffff">             fact3_nh3 = xe/xkw</a>
+   468) <a name="l468" style="background-color: #ffffff"></a>
+   469) <a name="l469" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   470) <a name="l470" style="background-color: #ffffff">             !        ... h2o effects</a>
+   471) <a name="l471" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   472) <a name="l472" style="background-color: #ffffff">             Eh2o = xkw</a>
+   473) <a name="l473" style="background-color: #ffffff"></a>
+   474) <a name="l474" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   475) <a name="l475" style="background-color: #ffffff">             !        ... co2 effects</a>
+   476) <a name="l476" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   477) <a name="l477" style="background-color: #ffffff">             co2g = 330.e-6_r8                            !330 ppm = 330.e-6 atm</a>
+   478) <a name="l478" style="background-color: #ffffff">             xk = 3.1e-2_r8*EXP( 2423._r8*work1(i) )</a>
+   479) <a name="l479" style="background-color: #ffffff">             xe = 4.3e-7_r8*EXP(-913._r8 *work1(i) )</a>
+   480) <a name="l480" style="background-color: #ffffff">             Eco2 = xk*xe*co2g  *patm</a>
+   481) <a name="l481" style="background-color: #ffffff"></a>
+   482) <a name="l482" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   483) <a name="l483" style="background-color: #ffffff">             !         ... so4 effect</a>
+   484) <a name="l484" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   485) <a name="l485" style="background-color: #ffffff">             Eso4 = xso4(i,k)*xhnm(i,k)   &amp;         ! /cm3(a)</a>
+   486) <a name="l486" style="background-color: #ffffff">                  *const0/xl</a>
+   487) <a name="l487" style="background-color: #ffffff"></a>
+   488) <a name="l488" style="background-color: #ffffff"></a>
+   489) <a name="l489" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   490) <a name="l490" style="background-color: #ffffff">             ! now use bisection method to solve electro-neutrality equation</a>
+   491) <a name="l491" style="background-color: #ffffff">             !</a>
+   492) <a name="l492" style="background-color: #ffffff">             ! during the iteration loop,</a>
+   493) <a name="l493" style="background-color: #ffffff">             !    yph_lo = lower ph value that brackets the root (i.e., correct ph)</a>
+   494) <a name="l494" style="background-color: #ffffff">             !    yph_hi = upper ph value that brackets the root (i.e., correct ph)</a>
+   495) <a name="l495" style="background-color: #ffffff">             !    yph    = current ph value</a>
+   496) <a name="l496" style="background-color: #ffffff">             !    yposnet_lo and yposnet_hi = net positive ions for</a>
+   497) <a name="l497" style="background-color: #ffffff">             !       yph_lo and yph_hi</a>
+   498) <a name="l498" style="background-color: #ffffff">             !-----------------------------------------------------------------</a>
+   499) <a name="l499" style="background-color: #ffffff">             do iter = 1,itermax</a>
+   500) <a name="l500" style="background-color: #ffffff"></a>
+   501) <a name="l501" style="background-color: #ffffff">                if (iter == 1) then</a>
+   502) <a name="l502" style="background-color: #ffffff">                   ! 1st iteration ph = lower bound value</a>
+   503) <a name="l503" style="background-color: #ffffff">                   yph_lo = 2.0_r8</a>
+   504) <a name="l504" style="background-color: #ffffff">                   yph_hi = yph_lo</a>
+   505) <a name="l505" style="background-color: #ffffff">                   yph = yph_lo</a>
+   506) <a name="l506" style="background-color: #ffffff">                else if (iter == 2) then</a>
+   507) <a name="l507" style="background-color: #ffffff">                   ! 2nd iteration ph = upper bound value</a>
+   508) <a name="l508" style="background-color: #ffffff">                   yph_hi = 7.0_r8</a>
+   509) <a name="l509" style="background-color: #ffffff">                   yph = yph_hi</a>
+   510) <a name="l510" style="background-color: #ffffff">                else</a>
+   511) <a name="l511" style="background-color: #ffffff">                   ! later iteration ph = mean of the two bracketing values</a>
+   512) <a name="l512" style="background-color: #ffffff">                   yph = 0.5_r8*(yph_lo + yph_hi)</a>
+   513) <a name="l513" style="background-color: #ffffff">                end if</a>
+   514) <a name="l514" style="background-color: #ffffff">                ! calc current [H+] from ph</a>
+   515) <a name="l515" style="background-color: #ffffff">                xph(i,k) = 10.0_r8**(-yph)</a>
+   516) <a name="l516" style="background-color: #ffffff"></a>
+   517) <a name="l517" style="background-color: #ffffff">                !-----------------------------------------------------------------</a>
+   518) <a name="l518" style="background-color: #ffffff">                !        ... hno3</a>
+   519) <a name="l519" style="background-color: #ffffff">                !-----------------------------------------------------------------</a>
+   520) <a name="l520" style="background-color: #ffffff">                Ehno3 = fact1_hno3/(1.0_r8 + fact2_hno3*(1.0_r8 + fact3_hno3/xph(i,k)))</a>
+   521) <a name="l521" style="background-color: #ffffff"></a>
+   522) <a name="l522" style="background-color: #ffffff">                !-----------------------------------------------------------------</a>
+   523) <a name="l523" style="background-color: #ffffff">                !          ... so2</a>
+   524) <a name="l524" style="background-color: #ffffff">                !-----------------------------------------------------------------</a>
+   525) <a name="l525" style="background-color: #ffffff">                Eso2 = fact1_so2/(1.0_r8 + fact2_so2*(1.0_r8 + (fact3_so2/xph(i,k)) &amp;</a>
+   526) <a name="l526" style="background-color: #ffffff">                     *(1.0_r8 +  fact4_so2/xph(i,k))))</a>
+   527) <a name="l527" style="background-color: #ffffff"></a>
+   528) <a name="l528" style="background-color: #ffffff">                !-----------------------------------------------------------------</a>
+   529) <a name="l529" style="background-color: #ffffff">                !          ... nh3</a>
+   530) <a name="l530" style="background-color: #ffffff">                !-----------------------------------------------------------------</a>
+   531) <a name="l531" style="background-color: #ffffff">                Enh3 = fact1_nh3/(1.0_r8 + fact2_nh3*(1.0_r8 + fact3_nh3*xph(i,k)))</a>
+   532) <a name="l532" style="background-color: #ffffff"></a>
+   533) <a name="l533" style="background-color: #ffffff">                tmp_nh4  = Enh3 * xph(i,k)</a>
+   534) <a name="l534" style="background-color: #ffffff">                tmp_hso3 = Eso2 / xph(i,k)</a>
+   535) <a name="l535" style="background-color: #ffffff">                tmp_so3  = tmp_hso3 * 2.0_r8*fact4_so2/xph(i,k)</a>
+   536) <a name="l536" style="background-color: #ffffff">                tmp_hco3 = Eco2 / xph(i,k)</a>
+   537) <a name="l537" style="background-color: #ffffff">                tmp_oh   = Eh2o / xph(i,k)</a>
+   538) <a name="l538" style="background-color: #ffffff">                tmp_no3  = Ehno3 / xph(i,k)</a>
+   539) <a name="l539" style="background-color: #ffffff">                tmp_so4 = cldconc%so4_fact*Eso4</a>
+   540) <a name="l540" style="background-color: #ffffff">                tmp_pos = xph(i,k) + tmp_nh4</a>
+   541) <a name="l541" style="background-color: #ffffff">                tmp_neg = tmp_oh + tmp_hco3 + tmp_no3 + tmp_hso3 + tmp_so3 + tmp_so4</a>
+   542) <a name="l542" style="background-color: #ffffff"></a>
+   543) <a name="l543" style="background-color: #ffffff">                ynetpos = tmp_pos - tmp_neg</a>
+   544) <a name="l544" style="background-color: #ffffff"></a>
+   545) <a name="l545" style="background-color: #ffffff"></a>
+   546) <a name="l546" style="background-color: #ffffff">                ! yposnet = net positive ions/charge</a>
+   547) <a name="l547" style="background-color: #ffffff">                ! if the correct ph is bracketed by yph_lo and yph_hi (with yph_lo &lt; yph_hi),</a>
+   548) <a name="l548" style="background-color: #ffffff">                !    then you will have yposnet_lo &gt; 0 and yposnet_hi &lt; 0</a>
+   549) <a name="l549" style="background-color: #ffffff">                converged = .false.</a>
+   550) <a name="l550" style="background-color: #ffffff">                if (iter &gt; 2) then</a>
+   551) <a name="l551" style="background-color: #ffffff">                   if (ynetpos == 0.0_r8) then</a>
+   552) <a name="l552" style="background-color: #ffffff">                      ! the exact solution was found (very unlikely)</a>
+   553) <a name="l553" style="background-color: #ffff99">                      tmp_hp = xph(i,k)</a>
+   554) <a name="l554" style="background-color: #ffff99">                      converged = .true.</a>
+   555) <a name="l555" style="background-color: #ffff99">                      exit</a>
+   556) <a name="l556" style="background-color: #ffffff">                   else if (ynetpos &gt;= 0.0_r8) then</a>
+   557) <a name="l557" style="background-color: #ffffff">                      ! net positive ions are &gt;= 0 for both yph and yph_lo</a>
+   558) <a name="l558" style="background-color: #ffffff">                      !    so replace yph_lo with yph</a>
+   559) <a name="l559" style="background-color: #ffffff">                      yph_lo = yph</a>
+   560) <a name="l560" style="background-color: #ffffff">                      ynetpos_lo = ynetpos</a>
+   561) <a name="l561" style="background-color: #ffffff">                   else</a>
+   562) <a name="l562" style="background-color: #ffffff">                      ! net positive ions are &lt;= 0 for both yph and yph_hi</a>
+   563) <a name="l563" style="background-color: #ffffff">                      !    so replace yph_hi with yph</a>
+   564) <a name="l564" style="background-color: #ffffff">                      yph_hi = yph</a>
+   565) <a name="l565" style="background-color: #ffffff">                      ynetpos_hi = ynetpos</a>
+   566) <a name="l566" style="background-color: #ffffff">                   end if</a>
+   567) <a name="l567" style="background-color: #ffffff"></a>
+   568) <a name="l568" style="background-color: #ffffff">                   if (abs(yph_hi - yph_lo) .le. 0.005_r8) then</a>
+   569) <a name="l569" style="background-color: #ffffff">                      ! |yph_hi - yph_lo| &lt;= convergence criterion, so set</a>
+   570) <a name="l570" style="background-color: #ffffff">                      !    final ph to their midpoint and exit</a>
+   571) <a name="l571" style="background-color: #ffffff">                      ! (.005 absolute error in pH gives .01 relative error in H+)</a>
+   572) <a name="l572" style="background-color: #ffffff">                      tmp_hp = xph(i,k)</a>
+   573) <a name="l573" style="background-color: #ffffff">                      yph = 0.5_r8*(yph_hi + yph_lo)</a>
+   574) <a name="l574" style="background-color: #ffffff">                      xph(i,k) = 10.0_r8**(-yph)</a>
+   575) <a name="l575" style="background-color: #ffffff">                      converged = .true.</a>
+   576) <a name="l576" style="background-color: #ffffff">                      exit</a>
+   577) <a name="l577" style="background-color: #ffffff">                   else </a>
+   578) <a name="l578" style="background-color: #ffffff">                      ! do another iteration</a>
+   579) <a name="l579" style="background-color: #ffffff">                      converged = .false.</a>
+   580) <a name="l580" style="background-color: #ffffff">                   end if</a>
+   581) <a name="l581" style="background-color: #ffffff"></a>
+   582) <a name="l582" style="background-color: #ffffff">                else if (iter == 1) then</a>
+   583) <a name="l583" style="background-color: #ffffff">                   if (ynetpos &lt;= 0.0_r8) then</a>
+   584) <a name="l584" style="background-color: #ffffff">                      ! the lower and upper bound ph values (2.0 and 7.0) do not bracket</a>
+   585) <a name="l585" style="background-color: #ffffff">                      !    the correct ph, so use the lower bound</a>
+   586) <a name="l586" style="background-color: #ffffff">                      tmp_hp = xph(i,k)</a>
+   587) <a name="l587" style="background-color: #ffffff">                      converged = .true.</a>
+   588) <a name="l588" style="background-color: #ffffff">                      exit</a>
+   589) <a name="l589" style="background-color: #ffffff">                   end if</a>
+   590) <a name="l590" style="background-color: #ffffff">                   ynetpos_lo = ynetpos</a>
+   591) <a name="l591" style="background-color: #ffffff"></a>
+   592) <a name="l592" style="background-color: #ffffff">                else ! (iter == 2)</a>
+   593) <a name="l593" style="background-color: #ffffff">                   if (ynetpos &gt;= 0.0_r8) then</a>
+   594) <a name="l594" style="background-color: #ffffff">                      ! the lower and upper bound ph values (2.0 and 7.0) do not bracket</a>
+   595) <a name="l595" style="background-color: #ffffff">                      !    the correct ph, so use they upper bound</a>
+   596) <a name="l596" style="background-color: #ffff99">                      tmp_hp = xph(i,k)</a>
+   597) <a name="l597" style="background-color: #ffff99">                      converged = .true.</a>
+   598) <a name="l598" style="background-color: #ffff99">                      exit</a>
+   599) <a name="l599" style="background-color: #ffff99">                   end if</a>
+   600) <a name="l600" style="background-color: #ffffff">                   ynetpos_hi = ynetpos</a>
+   601) <a name="l601" style="background-color: #ffffff">                end if</a>
+   602) <a name="l602" style="background-color: #ffffff"></a>
+   603) <a name="l603" style="background-color: #ffffff">             end do ! iter</a>
+   604) <a name="l604" style="background-color: #ffffff"></a>
+   605) <a name="l605" style="background-color: #ffffff">             if( .not. converged ) then</a>
+   606) <a name="l606" style="background-color: #ffff99">                write(iulog,*) 'SETSOX: pH failed to converge @ (',i,',',k,'), % change=', &amp;</a>
+   607) <a name="l607" style="background-color: #ffff99">                     100._r8*delta</a>
+   608) <a name="l608" style="background-color: #ffff99">             end if</a>
+   609) <a name="l609" style="background-color: #ffff99">          else</a>
+   610) <a name="l610" style="background-color: #ffffff">             xph(i,k) =  1.e-7_r8</a>
+   611) <a name="l611" style="background-color: #ffffff">          end if</a>
+   612) <a name="l612" style="background-color: #ffffff">       end do col_loop0</a>
+   613) <a name="l613" style="background-color: #ffffff">    end do ver_loop0 ! end pver loop for STEP 0</a>
+   614) <a name="l614" style="background-color: #ffffff"></a>
+   615) <a name="l615" style="background-color: #ffffff">    !==============================================================</a>
+   616) <a name="l616" style="background-color: #ffffff">    !          ... Now use the actual PH</a>
+   617) <a name="l617" style="background-color: #ffffff">    !==============================================================</a>
+   618) <a name="l618" style="background-color: #ffffff">    ver_loop1: do k = 1,pver</a>
+   619) <a name="l619" style="background-color: #ffffff">       col_loop1: do i = 1,ncol</a>
+   620) <a name="l620" style="background-color: #ffffff">          work1(i) = 1._r8 / tfld(i,k) - 1._r8 / 298._r8</a>
+   621) <a name="l621" style="background-color: #ffffff">          tz = tfld(i,k)</a>
+   622) <a name="l622" style="background-color: #ffffff"></a>
+   623) <a name="l623" style="background-color: #ffffff">          xl = cldconc%xlwc(i,k)</a>
+   624) <a name="l624" style="background-color: #ffffff"></a>
+   625) <a name="l625" style="background-color: #ffffff">          patm = press(i,k)/101300._r8        ! press is in pascal</a>
+   626) <a name="l626" style="background-color: #ffffff">          xam  = press(i,k)/(1.38e-23_r8*tz)  ! air density /M3</a>
+   627) <a name="l627" style="background-color: #ffffff"></a>
+   628) <a name="l628" style="background-color: #ffffff">          !-----------------------------------------------------------------------      </a>
+   629) <a name="l629" style="background-color: #ffffff">          !        ... hno3</a>
+   630) <a name="l630" style="background-color: #ffffff">          !-----------------------------------------------------------------------      </a>
+   631) <a name="l631" style="background-color: #ffffff">          xk = 2.1e5_r8 *EXP( 8700._r8*work1(i) )</a>
+   632) <a name="l632" style="background-color: #ffffff">          xe = 15.4_r8</a>
+   633) <a name="l633" style="background-color: #ffffff">          hehno3(i,k)  = xk*(1._r8 + xe/xph(i,k))</a>
+   634) <a name="l634" style="background-color: #ffffff"></a>
+   635) <a name="l635" style="background-color: #ffffff">          !-----------------------------------------------------------------</a>
+   636) <a name="l636" style="background-color: #ffffff">          !        ... h2o2</a>
+   637) <a name="l637" style="background-color: #ffffff">          !-----------------------------------------------------------------</a>
+   638) <a name="l638" style="background-color: #ffffff">          xk = 7.4e4_r8   *EXP( 6621._r8*work1(i) )</a>
+   639) <a name="l639" style="background-color: #ffffff">          xe = 2.2e-12_r8 *EXP(-3730._r8*work1(i) )</a>
+   640) <a name="l640" style="background-color: #ffffff">          heh2o2(i,k)  = xk*(1._r8 + xe/xph(i,k))</a>
+   641) <a name="l641" style="background-color: #ffffff"></a>
+   642) <a name="l642" style="background-color: #ffffff">          !-----------------------------------------------------------------</a>
+   643) <a name="l643" style="background-color: #ffffff">          !         ... so2</a>
+   644) <a name="l644" style="background-color: #ffffff">          !-----------------------------------------------------------------</a>
+   645) <a name="l645" style="background-color: #ffffff">          xk = 1.23_r8  *EXP( 3120._r8*work1(i) )</a>
+   646) <a name="l646" style="background-color: #ffffff">          xe = 1.7e-2_r8*EXP( 2090._r8*work1(i) )</a>
+   647) <a name="l647" style="background-color: #ffffff">          x2 = 6.0e-8_r8*EXP( 1120._r8*work1(i) )</a>
+   648) <a name="l648" style="background-color: #ffffff"></a>
+   649) <a name="l649" style="background-color: #ffffff">          wrk = xe/xph(i,k)</a>
+   650) <a name="l650" style="background-color: #ffffff">          heso2(i,k)  = xk*(1._r8 + wrk*(1._r8 + x2/xph(i,k)))</a>
+   651) <a name="l651" style="background-color: #ffffff"></a>
+   652) <a name="l652" style="background-color: #ffffff">          !-----------------------------------------------------------------</a>
+   653) <a name="l653" style="background-color: #ffffff">          !          ... nh3</a>
+   654) <a name="l654" style="background-color: #ffffff">          !-----------------------------------------------------------------</a>
+   655) <a name="l655" style="background-color: #ffffff">          xk = 58._r8   *EXP( 4085._r8*work1(i) )</a>
+   656) <a name="l656" style="background-color: #ffffff">          xe = 1.7e-5_r8*EXP(-4325._r8*work1(i) )</a>
+   657) <a name="l657" style="background-color: #ffffff">          henh3(i,k)  = xk*(1._r8 + xe*xph(i,k)/xkw)</a>
+   658) <a name="l658" style="background-color: #ffffff"></a>
+   659) <a name="l659" style="background-color: #ffffff">          !-----------------------------------------------------------------</a>
+   660) <a name="l660" style="background-color: #ffffff">          !        ... o3</a>
+   661) <a name="l661" style="background-color: #ffffff">          !-----------------------------------------------------------------</a>
+   662) <a name="l662" style="background-color: #ffffff">          xk = 1.15e-2_r8 *EXP( 2560._r8*work1(i) )</a>
+   663) <a name="l663" style="background-color: #ffffff">          heo3(i,k) = xk</a>
+   664) <a name="l664" style="background-color: #ffffff"></a>
+   665) <a name="l665" style="background-color: #ffffff">          !------------------------------------------------------------------------</a>
+   666) <a name="l666" style="background-color: #ffffff">          !       ... for Ho2(g) -&gt; H2o2(a) formation </a>
+   667) <a name="l667" style="background-color: #ffffff">          !           schwartz JGR, 1984, 11589</a>
+   668) <a name="l668" style="background-color: #ffffff">          !------------------------------------------------------------------------</a>
+   669) <a name="l669" style="background-color: #ffffff">          kh4 = (kh2 + kh3*kh1/xph(i,k)) / ((1._r8 + kh1/xph(i,k))**2)</a>
+   670) <a name="l670" style="background-color: #ffffff">          ho2s = kh0*xho2(i,k)*patm*(1._r8 + kh1/xph(i,k))  ! ho2s = ho2(a)+o2-</a>
+   671) <a name="l671" style="background-color: #ffffff">          r1h2o2 = kh4*ho2s*ho2s                         ! prod(h2o2) in mole/L(w)/s</a>
+   672) <a name="l672" style="background-color: #ffffff"></a>
+   673) <a name="l673" style="background-color: #ffffff">          if ( cloud_borne ) then</a>
+   674) <a name="l674" style="background-color: #ffffff">             r2h2o2 = r1h2o2*xl        &amp;    ! mole/L(w)/s   * L(w)/fm3(a) = mole/fm3(a)/s</a>
+   675) <a name="l675" style="background-color: #ffffff">                  / const0*1.e+6_r8  &amp;    ! correct a bug here ????</a>
+   676) <a name="l676" style="background-color: #ffffff">                  / xam</a>
+   677) <a name="l677" style="background-color: #ffffff">          else</a>
+   678) <a name="l678" style="background-color: #ffff99">             r2h2o2 = r1h2o2*xl  &amp;          ! mole/L(w)/s   * L(w)/fm3(a) = mole/fm3(a)/s</a>
+   679) <a name="l679" style="background-color: #ffff99">                  * const0     &amp;          ! mole/fm3(a)/s * 1.e-3       = mole/cm3(a)/s</a>
+   680) <a name="l680" style="background-color: #ffff99">                  / xam                   ! /cm3(a)/s    / air-den     = mix-ratio/s</a>
+   681) <a name="l681" style="background-color: #ffff99">          endif</a>
+   682) <a name="l682" style="background-color: #ffff99"></a>
+   683) <a name="l683" style="background-color: #ffffff">          if ( .not. modal_aerosols ) then</a>
+   684) <a name="l684" style="background-color: #ffff99">             xh2o2(i,k) = xh2o2(i,k) + r2h2o2*dtime         ! updated h2o2 by het production</a>
+   685) <a name="l685" style="background-color: #ffff99">          endif</a>
+   686) <a name="l686" style="background-color: #ffff99"></a>
+   687) <a name="l687" style="background-color: #ffff99">          !-----------------------------------------------</a>
+   688) <a name="l688" style="background-color: #ffff99">          !       ... Partioning </a>
+   689) <a name="l689" style="background-color: #ffff99">          !-----------------------------------------------</a>
+   690) <a name="l690" style="background-color: #ffff99"></a>
+   691) <a name="l691" style="background-color: #ffff99">          !-----------------------------------------------------------------</a>
+   692) <a name="l692" style="background-color: #ffff99">          !        ... hno3</a>
+   693) <a name="l693" style="background-color: #ffff99">          !-----------------------------------------------------------------</a>
+   694) <a name="l694" style="background-color: #ffffff">          px = hehno3(i,k) * Ra * tz * xl</a>
+   695) <a name="l695" style="background-color: #ffffff">          hno3g(i,k) = (xhno3(i,k)+xno3(i,k))/(1._r8 + px)</a>
+   696) <a name="l696" style="background-color: #ffffff"></a>
+   697) <a name="l697" style="background-color: #ffffff">          !------------------------------------------------------------------------</a>
+   698) <a name="l698" style="background-color: #ffffff">          !        ... h2o2</a>
+   699) <a name="l699" style="background-color: #ffffff">          !------------------------------------------------------------------------</a>
+   700) <a name="l700" style="background-color: #ffffff">          px = heh2o2(i,k) * Ra * tz * xl</a>
+   701) <a name="l701" style="background-color: #ffffff">          h2o2g =  xh2o2(i,k)/(1._r8+ px)</a>
+   702) <a name="l702" style="background-color: #ffffff"></a>
+   703) <a name="l703" style="background-color: #ffffff">          !------------------------------------------------------------------------</a>
+   704) <a name="l704" style="background-color: #ffffff">          !         ... so2</a>
+   705) <a name="l705" style="background-color: #ffffff">          !------------------------------------------------------------------------</a>
+   706) <a name="l706" style="background-color: #ffffff">          px = heso2(i,k) * Ra * tz * xl</a>
+   707) <a name="l707" style="background-color: #ffffff">          so2g =  xso2(i,k)/(1._r8+ px)</a>
+   708) <a name="l708" style="background-color: #ffffff"></a>
+   709) <a name="l709" style="background-color: #ffffff">          !------------------------------------------------------------------------</a>
+   710) <a name="l710" style="background-color: #ffffff">          !         ... o3</a>
+   711) <a name="l711" style="background-color: #ffffff">          !------------------------------------------------------------------------</a>
+   712) <a name="l712" style="background-color: #ffffff">          px = heo3(i,k) * Ra * tz * xl</a>
+   713) <a name="l713" style="background-color: #ffffff">          o3g =  xo3(i,k)/(1._r8+ px)</a>
+   714) <a name="l714" style="background-color: #ffffff"></a>
+   715) <a name="l715" style="background-color: #ffffff">          !------------------------------------------------------------------------</a>
+   716) <a name="l716" style="background-color: #ffffff">          !         ... nh3</a>
+   717) <a name="l717" style="background-color: #ffffff">          !------------------------------------------------------------------------</a>
+   718) <a name="l718" style="background-color: #ffffff">          px = henh3(i,k) * Ra * tz * xl</a>
+   719) <a name="l719" style="background-color: #ffffff">          if (id_nh3&gt;0) then</a>
+   720) <a name="l720" style="background-color: #ffff99">             nh3g(i,k) = (xnh3(i,k)+xnh4(i,k))/(1._r8+ px)</a>
+   721) <a name="l721" style="background-color: #ffff99">          else</a>
+   722) <a name="l722" style="background-color: #ffffff">             nh3g(i,k) = 0._r8</a>
+   723) <a name="l723" style="background-color: #ffffff">          endif</a>
+   724) <a name="l724" style="background-color: #ffffff"></a>
+   725) <a name="l725" style="background-color: #ffffff">          !-----------------------------------------------</a>
+   726) <a name="l726" style="background-color: #ffffff">          !       ... Aqueous phase reaction rates</a>
+   727) <a name="l727" style="background-color: #ffffff">          !           SO2 + H2O2 -&gt; SO4</a>
+   728) <a name="l728" style="background-color: #ffffff">          !           SO2 + O3   -&gt; SO4</a>
+   729) <a name="l729" style="background-color: #ffffff">          !-----------------------------------------------</a>
+   730) <a name="l730" style="background-color: #ffffff"></a>
+   731) <a name="l731" style="background-color: #ffffff">          !------------------------------------------------------------------------</a>
+   732) <a name="l732" style="background-color: #ffffff">          !       ... S(IV) (HSO3) + H2O2</a>
+   733) <a name="l733" style="background-color: #ffffff">          !------------------------------------------------------------------------</a>
+   734) <a name="l734" style="background-color: #ffffff">          rah2o2 = 8.e4_r8 * EXP( -3650._r8*work1(i) )  &amp;</a>
+   735) <a name="l735" style="background-color: #ffffff">               / (.1_r8 + xph(i,k))</a>
+   736) <a name="l736" style="background-color: #ffffff"></a>
+   737) <a name="l737" style="background-color: #ffffff">          !------------------------------------------------------------------------</a>
+   738) <a name="l738" style="background-color: #ffffff">          !        ... S(IV)+ O3</a>
+   739) <a name="l739" style="background-color: #ffffff">          !------------------------------------------------------------------------</a>
+   740) <a name="l740" style="background-color: #ffffff">          rao3   = 4.39e11_r8 * EXP(-4131._r8/tz)  &amp;</a>
+   741) <a name="l741" style="background-color: #ffffff">               + 2.56e3_r8  * EXP(-996._r8 /tz) /xph(i,k)</a>
+   742) <a name="l742" style="background-color: #ffffff"></a>
+   743) <a name="l743" style="background-color: #ffffff">          !-----------------------------------------------------------------</a>
+   744) <a name="l744" style="background-color: #ffffff">          !       ... Prediction after aqueous phase</a>
+   745) <a name="l745" style="background-color: #ffffff">          !       so4</a>
+   746) <a name="l746" style="background-color: #ffffff">          !       When Cloud is present </a>
+   747) <a name="l747" style="background-color: #ffffff">          !   </a>
+   748) <a name="l748" style="background-color: #ffffff">          !       S(IV) + H2O2 = S(VI)</a>
+   749) <a name="l749" style="background-color: #ffffff">          !       S(IV) + O3   = S(VI)</a>
+   750) <a name="l750" style="background-color: #ffffff">          !</a>
+   751) <a name="l751" style="background-color: #ffffff">          !       reference:</a>
+   752) <a name="l752" style="background-color: #ffffff">          !           (1) Seinfeld</a>
+   753) <a name="l753" style="background-color: #ffffff">          !           (2) Benkovitz</a>
+   754) <a name="l754" style="background-color: #ffffff">          !-----------------------------------------------------------------</a>
+   755) <a name="l755" style="background-color: #ffffff">          </a>
+   756) <a name="l756" style="background-color: #ffffff">          !............................</a>
+   757) <a name="l757" style="background-color: #ffffff">          !       S(IV) + H2O2 = S(VI)</a>
+   758) <a name="l758" style="background-color: #ffffff">          !............................</a>
+   759) <a name="l759" style="background-color: #ffffff">          </a>
+   760) <a name="l760" style="background-color: #ffffff">          IF (XL .ge. 1.e-8_r8) THEN    !! WHEN CLOUD IS PRESENTED          </a>
+   761) <a name="l761" style="background-color: #ffffff"></a>
+   762) <a name="l762" style="background-color: #ffffff">             if (cloud_borne) then</a>
+   763) <a name="l763" style="background-color: #ffffff">                patm_x = patm</a>
+   764) <a name="l764" style="background-color: #ffffff">             else</a>
+   765) <a name="l765" style="background-color: #ffff99">                patm_x = 1._r8</a>
+   766) <a name="l766" style="background-color: #ffff99">             endif</a>
+   767) <a name="l767" style="background-color: #ffff99"></a>
+   768) <a name="l768" style="background-color: #ffffff">             if (modal_aerosols) then</a>
+   769) <a name="l769" style="background-color: #ffffff"></a>
+   770) <a name="l770" style="background-color: #ffffff">                pso4 = rah2o2 * 7.4e4_r8*EXP(6621._r8*work1(i)) * h2o2g * patm_x &amp;</a>
+   771) <a name="l771" style="background-color: #ffffff">                     * 1.23_r8 *EXP(3120._r8*work1(i)) * so2g * patm_x</a>
+   772) <a name="l772" style="background-color: #ffffff">             else</a>
+   773) <a name="l773" style="background-color: #ffff99">                pso4 = rah2o2 * heh2o2(i,k) * h2o2g * patm_x  &amp;</a>
+   774) <a name="l774" style="background-color: #ffff99">                     * heso2(i,k)  * so2g  * patm_x    ! [M/s]</a>
+   775) <a name="l775" style="background-color: #ffff99"></a>
+   776) <a name="l776" style="background-color: #ffff99">             endif</a>
+   777) <a name="l777" style="background-color: #ffff99"></a>
+   778) <a name="l778" style="background-color: #ffffff">             pso4 = pso4 &amp; ! [M/s] = [mole/L(w)/s]</a>
+   779) <a name="l779" style="background-color: #ffffff">                  * xl &amp; ! [mole/L(a)/s]</a>
+   780) <a name="l780" style="background-color: #ffffff">                  / const0 &amp; ! [/L(a)/s]</a>
+   781) <a name="l781" style="background-color: #ffffff">                  / xhnm(i,k)</a>
+   782) <a name="l782" style="background-color: #ffffff"></a>
+   783) <a name="l783" style="background-color: #ffffff"></a>
+   784) <a name="l784" style="background-color: #ffffff">             ccc = pso4*dtime</a>
+   785) <a name="l785" style="background-color: #ffffff">             ccc = max(ccc, 1.e-30_r8)</a>
+   786) <a name="l786" style="background-color: #ffffff"></a>
+   787) <a name="l787" style="background-color: #ffffff">             xso4_init(i,k)=xso4(i,k)</a>
+   788) <a name="l788" style="background-color: #ffffff"></a>
+   789) <a name="l789" style="background-color: #ffffff">             IF (xh2o2(i,k) .gt. xso2(i,k)) THEN</a>
+   790) <a name="l790" style="background-color: #ffffff">                if (ccc .gt. xso2(i,k)) then</a>
+   791) <a name="l791" style="background-color: #ffffff">                   xso4(i,k)=xso4(i,k)+xso2(i,k)</a>
+   792) <a name="l792" style="background-color: #ffffff">                   if (cloud_borne) then</a>
+   793) <a name="l793" style="background-color: #ffffff">                      xh2o2(i,k)=xh2o2(i,k)-xso2(i,k)</a>
+   794) <a name="l794" style="background-color: #ffffff">                      xso2(i,k)=1.e-20_r8</a>
+   795) <a name="l795" style="background-color: #ffffff">                   else       ! ???? bug ????</a>
+   796) <a name="l796" style="background-color: #ffff99">                      xso2(i,k)=1.e-20_r8</a>
+   797) <a name="l797" style="background-color: #ffff99">                      xh2o2(i,k)=xh2o2(i,k)-xso2(i,k)</a>
+   798) <a name="l798" style="background-color: #ffff99">                   endif</a>
+   799) <a name="l799" style="background-color: #ffff99">                else</a>
+   800) <a name="l800" style="background-color: #ffffff">                   xso4(i,k)  = xso4(i,k)  + ccc</a>
+   801) <a name="l801" style="background-color: #ffffff">                   xh2o2(i,k) = xh2o2(i,k) - ccc</a>
+   802) <a name="l802" style="background-color: #ffffff">                   xso2(i,k)  = xso2(i,k)  - ccc</a>
+   803) <a name="l803" style="background-color: #ffffff">                end if</a>
+   804) <a name="l804" style="background-color: #ffffff"></a>
+   805) <a name="l805" style="background-color: #ffffff">             ELSE</a>
+   806) <a name="l806" style="background-color: #ffffff">                if (ccc  .gt. xh2o2(i,k)) then</a>
+   807) <a name="l807" style="background-color: #ffffff">                   xso4(i,k)=xso4(i,k)+xh2o2(i,k)</a>
+   808) <a name="l808" style="background-color: #ffffff">                   xso2(i,k)=xso2(i,k)-xh2o2(i,k)</a>
+   809) <a name="l809" style="background-color: #ffffff">                   xh2o2(i,k)=1.e-20_r8</a>
+   810) <a name="l810" style="background-color: #ffffff">                else</a>
+   811) <a name="l811" style="background-color: #ffffff">                   xso4(i,k)  = xso4(i,k)  + ccc</a>
+   812) <a name="l812" style="background-color: #ffffff">                   xh2o2(i,k) = xh2o2(i,k) - ccc</a>
+   813) <a name="l813" style="background-color: #ffffff">                   xso2(i,k)  = xso2(i,k)  - ccc</a>
+   814) <a name="l814" style="background-color: #ffffff">                end if</a>
+   815) <a name="l815" style="background-color: #ffffff">             END IF</a>
+   816) <a name="l816" style="background-color: #ffffff">             </a>
+   817) <a name="l817" style="background-color: #ffffff">             if (modal_aerosols) then</a>
+   818) <a name="l818" style="background-color: #ffffff">                xdelso4hp(i,k)  =  xso4(i,k) - xso4_init(i,k)</a>
+   819) <a name="l819" style="background-color: #ffffff">             endif</a>
+   820) <a name="l820" style="background-color: #ffffff">             !...........................</a>
+   821) <a name="l821" style="background-color: #ffffff">             !       S(IV) + O3 = S(VI)</a>
+   822) <a name="l822" style="background-color: #ffffff">             !...........................</a>
+   823) <a name="l823" style="background-color: #ffffff"></a>
+   824) <a name="l824" style="background-color: #ffffff">             pso4 = rao3 * heo3(i,k)*o3g*patm_x * heso2(i,k)*so2g*patm_x  ! [M/s]</a>
+   825) <a name="l825" style="background-color: #ffffff"></a>
+   826) <a name="l826" style="background-color: #ffffff">             pso4 = pso4        &amp;                                ! [M/s] =  [mole/L(w)/s]</a>
+   827) <a name="l827" style="background-color: #ffffff">                  * xl          &amp;                                ! [mole/L(a)/s]</a>
+   828) <a name="l828" style="background-color: #ffffff">                  / const0      &amp;                                ! [/L(a)/s]</a>
+   829) <a name="l829" style="background-color: #ffffff">                  / xhnm(i,k)                                    ! [mixing ratio/s]</a>
+   830) <a name="l830" style="background-color: #ffffff">             </a>
+   831) <a name="l831" style="background-color: #ffffff">             ccc = pso4*dtime</a>
+   832) <a name="l832" style="background-color: #ffffff">             ccc = max(ccc, 1.e-30_r8)</a>
+   833) <a name="l833" style="background-color: #ffffff"></a>
+   834) <a name="l834" style="background-color: #ffffff">             xso4_init(i,k)=xso4(i,k)</a>
+   835) <a name="l835" style="background-color: #ffffff"></a>
+   836) <a name="l836" style="background-color: #ffffff">             if (ccc .gt. xso2(i,k)) then</a>
+   837) <a name="l837" style="background-color: #ffffff">                xso4(i,k) = xso4(i,k) + xso2(i,k)</a>
+   838) <a name="l838" style="background-color: #ffffff">                xso2(i,k) = 1.e-20_r8</a>
+   839) <a name="l839" style="background-color: #ffffff">             else</a>
+   840) <a name="l840" style="background-color: #ffffff">                xso4(i,k) = xso4(i,k) + ccc</a>
+   841) <a name="l841" style="background-color: #ffffff">                xso2(i,k) = xso2(i,k) - ccc</a>
+   842) <a name="l842" style="background-color: #ffffff">             end if</a>
+   843) <a name="l843" style="background-color: #ffffff"></a>
+   844) <a name="l844" style="background-color: #ffffff">          END IF !! WHEN CLOUD IS PRESENTED</a>
+   845) <a name="l845" style="background-color: #ffffff"></a>
+   846) <a name="l846" style="background-color: #ffffff">       end do col_loop1</a>
+   847) <a name="l847" style="background-color: #ffffff">    end do ver_loop1</a>
+   848) <a name="l848" style="background-color: #ffffff"></a>
+   849) <a name="l849" style="background-color: #ffffff">    call sox_cldaero_update( &amp;</a>
+   850) <a name="l850" style="background-color: #ffffff">         ncol, lchnk, loffset, dtime, mbar, pdel, press, tfld, cldnum, cldfrc, cfact, cldconc%xlwc, &amp;</a>
+   851) <a name="l851" style="background-color: #ffffff">         xdelso4hp, xh2so4, xso4, xso4_init, nh3g, hno3g, xnh3, xhno3, xnh4c,  xno3c, xmsa, xso2, xh2o2, qcw, qin )</a>
+   852) <a name="l852" style="background-color: #ffffff">    </a>
+   853) <a name="l853" style="background-color: #ffffff">    xphlwc(:,:) = 0._r8</a>
+   854) <a name="l854" style="background-color: #ffffff">    do k = 1, pver</a>
+   855) <a name="l855" style="background-color: #ffffff">       do i = 1, ncol</a>
+   856) <a name="l856" style="background-color: #ffffff">          if (cldfrc(i,k)&gt;=1.e-5_r8 .and. lwc(i,k)&gt;=1.e-8_r8) then</a>
+   857) <a name="l857" style="background-color: #ffffff">             xphlwc(i,k) = -1._r8*log10(xph(i,k)) * lwc(i,k)</a>
+   858) <a name="l858" style="background-color: #ffffff">          endif</a>
+   859) <a name="l859" style="background-color: #ffffff">       end do</a>
+   860) <a name="l860" style="background-color: #ffffff">    end do</a>
+   861) <a name="l861" style="background-color: #ffffff">    call </a><a style="background-color: #fafad2">outfld( 'XPH_LWC', xphlwc(:ncol,:), ncol , lchnk )</a>
+   862) <a name="l862" style="background-color: #fafad2"></a>
+   863) <a name="l863" style="background-color: #fafad2">    call </a><a style="background-color: #ffffff">sox_cldaero_destroy_obj(cldconc)</a>
+   864) <a name="l864" style="background-color: #ffffff"></a>
+   865) <a name="l865" style="background-color: #ffffff">  end subroutine SETSOX</a>
+   866) <a name="l866" style="background-color: #ffffff"></a>
+   867) <a name="l867" style="background-color: #ffffff">end module MO_SETSOX</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

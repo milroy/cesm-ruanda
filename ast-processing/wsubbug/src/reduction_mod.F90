@@ -1,0 +1,483 @@
+
+
+
+
+module reduction_mod
+  use kinds, only : real_kind
+  implicit none
+  private
+
+  type, public :: ReductionBuffer_int_1d_t
+     integer, dimension(:), pointer :: buf
+     integer :: len=0
+     integer :: ctr
+  end type ReductionBuffer_int_1d_t
+
+  type, public :: ReductionBuffer_r_1d_t
+     real (kind=real_kind), dimension(:), pointer :: buf
+     integer :: len=0
+     integer :: ctr
+  end type ReductionBuffer_r_1d_t
+
+  type, public :: ReductionBuffer_ordered_1d_t
+     real (kind=real_kind), dimension(:,:),pointer :: buf
+     integer :: len=0
+     integer :: ctr
+  end type ReductionBuffer_ordered_1d_t
+
+  public :: ParallelMin,ParallelMax
+
+  !type (ReductionBuffer_ordered_1d_t), public :: red_sum
+  type (ReductionBuffer_int_1d_t),       public :: red_max_int
+  type (ReductionBuffer_int_1d_t),       public :: red_sum_int
+  type (ReductionBuffer_r_1d_t),       public :: red_sum
+  type (ReductionBuffer_r_1d_t),       public :: red_max,red_min
+  type (ReductionBuffer_r_1d_t),       public :: red_flops,red_timer
+
+  !JMD new addition
+
+  SAVE red_sum,red_max,red_min,red_flops,red_timer,red_max_int,red_sum_int
+
+  interface ParallelMin
+     module procedure ParallelMin1d
+     module procedure ParallelMin0d
+  end interface
+  interface ParallelMax
+     module procedure ParallelMax1d_int
+     module procedure ParallelMax2d_int
+     module procedure ParallelMax1d
+     module procedure ParallelMax0d
+     module procedure ParallelMax0d_int
+  end interface
+
+  interface pmax_mt
+     module procedure pmax_mt_int_1d
+     module procedure pmax_mt_r_1d
+  end interface
+
+  interface pmin_mt
+     module procedure pmin_mt_r_1d
+  end interface
+
+  interface InitReductionBuffer
+     module procedure InitReductionBuffer_int_1d
+     module procedure InitReductionBuffer_r_1d
+     module procedure InitReductionBuffer_ordered_1d
+  end interface
+
+  public :: InitReductionBuffer
+  public :: pmax_mt, pmin_mt
+  public :: ElementSum_1d
+
+contains
+
+  function ParallelMin1d(data,hybrid) result(pmin)
+    use hybrid_mod, only : hybrid_t
+    implicit none
+    real(kind=real_kind), intent(in)    :: data(:)
+    type (hybrid_t),      intent(in)    :: hybrid
+    real(kind=real_kind)                :: pmin
+
+    real(kind=real_kind)                :: tmp(1)
+
+
+    tmp(1) = MINVAL(data)
+    call pmin_mt(red_min,tmp,1,hybrid)
+    pmin = red_min%buf(1)
+
+  end function ParallelMin1d
+
+  function ParallelMin0d(data,hybrid) result(pmin)
+    use hybrid_mod, only : hybrid_t
+    implicit none
+    real(kind=real_kind), intent(in)    :: data
+    type (hybrid_t),      intent(in)    :: hybrid
+    real(kind=real_kind)                :: pmin
+    real(kind=real_kind)                :: tmp(1)
+    tmp(1) = data
+    call pmin_mt(red_min,tmp,1,hybrid)
+    pmin = red_min%buf(1)
+
+  end function ParallelMin0d
+  !==================================================
+! Subprogram not used   function ParallelMax2d_int(data, n, m, hybrid) result(pmax)
+! Subprogram not used     use hybrid_mod, only : hybrid_t
+! Subprogram not used     implicit none
+! Subprogram not used     integer, intent(in)                 :: n,m
+! Subprogram not used     integer, intent(in), dimension(n,m) :: data
+! Subprogram not used     type (hybrid_t), intent(in)         :: hybrid
+! Subprogram not used     integer, dimension(n,m)             :: pmax
+! Subprogram not used     integer, dimension(n*m)             :: tmp
+! Subprogram not used     integer :: ierr,i,j
+! Subprogram not used     do i=1,n 
+! Subprogram not used       do j=1,m
+! Subprogram not used         tmp(i+(j-1)*n) = data(i,j)
+! Subprogram not used       enddo 
+! Subprogram not used     enddo 
+! Subprogram not used     call pmax_mt(red_max_int,tmp,n*m,hybrid)
+! Subprogram not used     do i=1,n 
+! Subprogram not used       do j=1,m
+! Subprogram not used         pmax(i,j) = red_max_int%buf(i+(j-1)*n) 
+! Subprogram not used       enddo 
+! Subprogram not used     enddo 
+! Subprogram not used   end function ParallelMax2d_int
+
+! Subprogram not used   function ParallelMax1d_int(data, len, hybrid) result(pmax)
+! Subprogram not used     use hybrid_mod, only : hybrid_t
+! Subprogram not used     implicit none
+! Subprogram not used     integer, intent(in)                 :: len
+! Subprogram not used     integer, intent(in), dimension(len) :: data
+! Subprogram not used     type (hybrid_t), intent(in)         :: hybrid
+! Subprogram not used     integer, dimension(len)             :: pmax, tmp
+! Subprogram not used     integer :: ierr
+! Subprogram not used 
+! Subprogram not used     tmp = data(:)
+! Subprogram not used     call pmax_mt(red_max_int,tmp,len,hybrid)
+! Subprogram not used     pmax(:) = red_max_int%buf(1:len)
+! Subprogram not used 
+! Subprogram not used   end function ParallelMax1d_int
+  function ParallelMax1d(data,hybrid) result(pmax)
+    use hybrid_mod, only : hybrid_t
+    implicit none
+    real(kind=real_kind), intent(in)    :: data(:)
+    type (hybrid_t),      intent(in)    :: hybrid
+    real(kind=real_kind)                :: pmax
+
+    real(kind=real_kind)                :: tmp(1)
+
+
+    tmp(1) = MAXVAL(data)
+    call pmax_mt(red_max,tmp,1,hybrid)
+    pmax = red_max%buf(1)
+
+  end function ParallelMax1d
+  function ParallelMax0d(data,hybrid) result(pmax)
+    use hybrid_mod, only : hybrid_t
+    implicit none
+    real(kind=real_kind), intent(in)    :: data
+    type (hybrid_t),      intent(in)    :: hybrid
+    real(kind=real_kind)                :: pmax
+    real(kind=real_kind)                :: tmp(1)
+
+    tmp(1)=data
+
+    call pmax_mt(red_max,tmp,1,hybrid)
+    pmax = red_max%buf(1)
+
+  end function ParallelMax0d
+! Subprogram not used   function ParallelMax0d_int(data,hybrid) result(pmax)
+! Subprogram not used     use hybrid_mod, only : hybrid_t
+! Subprogram not used     implicit none
+! Subprogram not used     integer             , intent(in)    :: data
+! Subprogram not used     type (hybrid_t),      intent(in)    :: hybrid
+! Subprogram not used     integer                             :: pmax
+! Subprogram not used     integer                             :: tmp(1)
+! Subprogram not used 
+! Subprogram not used     tmp(1)=data
+! Subprogram not used 
+! Subprogram not used     call pmax_mt(red_max_int,tmp,1,hybrid)
+! Subprogram not used     pmax = red_max_int%buf(1)
+! Subprogram not used 
+! Subprogram not used   end function ParallelMax0d_int
+  !==================================================
+  subroutine InitReductionBuffer_int_1d(red,len)
+    use parallel_mod, only: abortmp
+    use thread_mod, only: omp_get_num_threads
+    integer, intent(in)           :: len
+    type (ReductionBuffer_int_1d_t),intent(out) :: red
+
+    if (omp_get_num_threads()>1) then
+       call abortmp("Error: attempt to allocate reduction buffer in threaded region")
+    endif
+
+    ! if buffer is already allocated and large enough, do nothing
+    if (len > red%len) then
+       !buffer is too small, or has not yet been allocated
+       if (red%len>0) deallocate(red%buf)
+       red%len  = len
+       allocate(red%buf(len))
+       red%buf  = 0
+       red%ctr  = 0
+    endif
+
+  end subroutine InitReductionBuffer_int_1d
+  !****************************************************************
+  subroutine InitReductionBuffer_r_1d(red,len)
+    use parallel_mod, only: abortmp
+    use thread_mod, only: omp_get_num_threads
+    integer, intent(in)           :: len
+    type (ReductionBuffer_r_1d_t),intent(out) :: red
+
+    if (omp_get_num_threads()>1) then
+       call abortmp("Error: attempt to allocate reduction buffer in threaded region")
+    endif
+
+    if (len > red%len) then
+       if (red%len>0) deallocate(red%buf)
+       red%len  = len
+       allocate(red%buf(len))
+       red%buf  = 0.0D0
+       red%ctr  = 0
+    endif
+  end subroutine InitReductionBuffer_r_1d
+  !****************************************************************
+  subroutine InitReductionBuffer_ordered_1d(red,len,nthread)
+    use parallel_mod, only: abortmp
+    use thread_mod, only: omp_get_num_threads
+    integer, intent(in)           :: len
+    integer, intent(in)           :: nthread
+    type (ReductionBuffer_ordered_1d_t),intent(out) :: red
+
+    if (omp_get_num_threads()>1) then
+       call abortmp("Error: attempt to allocate reduction buffer in threaded region")
+    endif
+
+    if (len > red%len) then
+       if (red%len>0) deallocate(red%buf)
+       red%len  = len
+       allocate(red%buf(len,nthread+1))
+       red%buf  = 0.0D0
+       red%ctr  = 0
+    endif
+  end subroutine InitReductionBuffer_ordered_1d
+
+  ! =======================================
+  ! pmax_mt:
+  !
+  ! thread safe, parallel reduce maximum
+  ! of a one dimensional reduction vector
+  ! =======================================
+
+! Subprogram not used   subroutine pmax_mt_int_1d(red,redp,len,hybrid)
+! Subprogram not used     use hybrid_mod, only : hybrid_t
+! Subprogram not used 
+! Subprogram not used     use parallel_mod, only: mpi_min, mpi_max, mpiinteger_t,abortmp
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used     type (ReductionBuffer_int_1d_t)   :: red       ! shared memory reduction buffer struct
+! Subprogram not used     integer,               intent(in) :: len       ! buffer length
+! Subprogram not used     integer, intent(inout)            :: redp(len) ! thread private vector of partial sum
+! Subprogram not used     type (hybrid_t),       intent(in) :: hybrid    ! parallel handle
+! Subprogram not used 
+! Subprogram not used     ! Local variables
+! Subprogram not used 
+! Subprogram not used     integer ierr
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used     integer  :: k
+! Subprogram not used     if (len>red%len) call abortmp('ERROR: threadsafe reduction buffer too small')
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used     !$OMP BARRIER
+! Subprogram not used     !$OMP CRITICAL (CRITMAX)
+! Subprogram not used 
+! Subprogram not used     if (red%ctr == 0) red%buf(1:len)= -9999
+! Subprogram not used     if (red%ctr < hybrid%NThreads) then
+! Subprogram not used        do k=1,len
+! Subprogram not used           red%buf(k)=MAX(red%buf(k),redp(k))
+! Subprogram not used        enddo
+! Subprogram not used        red%ctr=red%ctr+1
+! Subprogram not used     end if
+! Subprogram not used     if (red%ctr == hybrid%NThreads) red%ctr=0
+! Subprogram not used 
+! Subprogram not used     !$OMP END CRITICAL (CRITMAX)
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used     !$OMP BARRIER
+! Subprogram not used 
+! Subprogram not used     if (hybrid%ithr==0) then
+! Subprogram not used 
+! Subprogram not used        call MPI_Allreduce(red%buf(1),redp,len,MPIinteger_t, &
+! Subprogram not used             MPI_MAX,hybrid%par%comm,ierr)
+! Subprogram not used 
+! Subprogram not used        red%buf(1:len)=redp(1:len)
+! Subprogram not used     end if
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used     !$OMP BARRIER
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used   end subroutine pmax_mt_int_1d
+  
+  subroutine pmax_mt_r_1d(red,redp,len,hybrid)
+    use hybrid_mod, only : hybrid_t
+
+    use parallel_mod, only: mpi_min, mpi_max, mpireal_t,abortmp
+
+
+
+
+    type (ReductionBuffer_r_1d_t)     :: red     ! shared memory reduction buffer struct
+    real (kind=real_kind), intent(inout) :: redp(:) ! thread private vector of partial sum
+    integer,               intent(in) :: len     ! buffer length
+    type (hybrid_t),       intent(in) :: hybrid  ! parallel handle
+
+    ! Local variables
+
+    integer ierr
+
+
+    integer  :: k
+    if (len>red%len) call abortmp('ERROR: threadsafe reduction buffer too small')
+
+
+    !$OMP BARRIER
+    !$OMP CRITICAL (CRITMAX)
+
+    if (red%ctr == 0) red%buf(1:len)= -9.11e30
+    if (red%ctr < hybrid%NThreads) then
+       do k=1,len
+          red%buf(k)=MAX(red%buf(k),redp(k))
+       enddo
+       red%ctr=red%ctr+1
+    end if
+    if (red%ctr == hybrid%NThreads) red%ctr=0
+
+    !$OMP END CRITICAL (CRITMAX)
+
+
+
+    !$OMP BARRIER
+
+    if (hybrid%ithr==0) then
+
+       call MPI_Allreduce(red%buf(1),redp,len,MPIreal_t, &
+            MPI_MAX,hybrid%par%comm,ierr)
+
+       red%buf(1:len)=redp(1:len)
+    end if
+
+
+    !$OMP BARRIER
+
+
+
+  end subroutine pmax_mt_r_1d
+
+  ! =======================================
+  ! pmin_mt:
+  !
+  ! thread safe, parallel reduce maximum
+  ! of a one dimensional reduction vector
+  ! =======================================
+
+  subroutine pmin_mt_r_1d(red,redp,len,hybrid)
+    use kinds, only : int_kind
+    use hybrid_mod, only : hybrid_t
+
+    use parallel_mod, only: mpi_min, mpireal_t,abortmp
+
+
+
+
+    type (ReductionBuffer_r_1d_t)     :: red     ! shared memory reduction buffer struct
+    real (kind=real_kind), intent(inout) :: redp(:) ! thread private vector of partial sum
+    integer,               intent(in) :: len     ! buffer length
+    type (hybrid_t),       intent(in) :: hybrid  ! parallel handle
+
+    ! Local variables
+
+
+    integer ierr
+
+    integer (kind=int_kind) :: k
+
+    if (len>red%len) call abortmp('ERROR: threadsafe reduction buffer too small')
+
+
+    !$OMP BARRIER
+    !$OMP CRITICAL (CRITMAX)
+
+    if (red%ctr == 0) red%buf(1:len)= 9.11e30
+    if (red%ctr < hybrid%NThreads) then
+       do k=1,len
+          red%buf(k)=MIN(red%buf(k),redp(k))
+       enddo
+       red%ctr=red%ctr+1
+    end if
+    if (red%ctr == hybrid%NThreads) red%ctr=0
+
+    !$OMP END CRITICAL (CRITMAX)
+
+
+
+    !$OMP BARRIER
+
+    if (hybrid%ithr==0) then
+
+       call MPI_Allreduce(red%buf(1),redp,len,MPIreal_t, &
+            MPI_MIN,hybrid%par%comm,ierr)
+
+       red%buf(1:len)=redp(1:len)
+    end if
+
+
+    !$OMP BARRIER
+
+
+
+  end subroutine pmin_mt_r_1d
+
+! Subprogram not used   subroutine ElementSum_1d(res,variable,type,hybrid)
+! Subprogram not used     use hybrid_mod, only : hybrid_t
+! Subprogram not used     use dimensions_mod, only : nelem
+! Subprogram not used 
+! Subprogram not used   use parallel_mod, only : ORDERED, mpireal_t, mpi_min, mpi_max, mpi_sum, mpi_success
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used     implicit none
+! Subprogram not used 
+! Subprogram not used     ! ==========================
+! Subprogram not used     !     Arguments
+! Subprogram not used     ! ==========================
+! Subprogram not used     real(kind=real_kind),intent(out) :: res
+! Subprogram not used     real(kind=real_kind),intent(in)  :: variable(:)
+! Subprogram not used     integer,intent(in)               :: type
+! Subprogram not used     type (hybrid_t), intent(in)      :: hybrid 
+! Subprogram not used 
+! Subprogram not used     ! ==========================
+! Subprogram not used     !       Local Variables
+! Subprogram not used     ! ==========================
+! Subprogram not used 
+! Subprogram not used     !
+! Subprogram not used     ! Note this is a real kludge here since it may be used for
+! Subprogram not used     !  arrays of size other then nelem
+! Subprogram not used     !
+! Subprogram not used 
+! Subprogram not used     integer                          :: i
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used     integer                           :: errorcode,errorlen
+! Subprogram not used     character*(80) errorstring
+! Subprogram not used 
+! Subprogram not used     real(kind=real_kind)             :: local_sum
+! Subprogram not used     integer                          :: ierr
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used 
+! Subprogram not used     if(hybrid%ithr == 0) then 
+! Subprogram not used           local_sum=SUM(variable)
+! Subprogram not used           call MPI_Barrier(hybrid%par%comm,ierr)
+! Subprogram not used 
+! Subprogram not used           call MPI_Allreduce(local_sum,res,1,MPIreal_t, &
+! Subprogram not used                MPI_SUM,hybrid%par%comm,ierr)
+! Subprogram not used           if(ierr .ne. MPI_SUCCESS) then 
+! Subprogram not used              errorcode=ierr
+! Subprogram not used              call MPI_Error_String(errorcode,errorstring,errorlen,ierr)
+! Subprogram not used              print *,'ElementSum_1d: Error after call to MPI_Allreduce: ',errorstring
+! Subprogram not used           endif
+! Subprogram not used     endif
+! Subprogram not used 
+! Subprogram not used   end subroutine ElementSum_1d
+
+end module reduction_mod

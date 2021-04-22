@@ -1,0 +1,196 @@
+<html>
+<head>
+<title>Listing of RunoffMod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;RunoffMod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 84.13&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module RunoffMod</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">!BOP</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !MODULE: RunoffMod</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     9) <a name="l9" style="background-color: #ffffff">! Module containing utilities for history file and coupler runoff data</a>
+    10) <a name="l10" style="background-color: #ffffff">!</a>
+    11) <a name="l11" style="background-color: #ffffff">! !USES:</a>
+    12) <a name="l12" style="background-color: #ffffff">  use shr_kind_mod, only : r8 =&gt; shr_kind_r8</a>
+    13) <a name="l13" style="background-color: #ffffff">  use mct_mod</a>
+    14) <a name="l14" style="background-color: #ffffff">  use RtmVar         , only : iulog, spval, ispval</a>
+    15) <a name="l15" style="background-color: #ffffff">  use rtm_cpl_indices, only : nt_rtm</a>
+    16) <a name="l16" style="background-color: #ffffff"></a>
+    17) <a name="l17" style="background-color: #ffffff">! !PUBLIC TYPES:</a>
+    18) <a name="l18" style="background-color: #ffffff">  implicit none</a>
+    19) <a name="l19" style="background-color: #ffffff">  private</a>
+    20) <a name="l20" style="background-color: #ffffff"></a>
+    21) <a name="l21" style="background-color: #ffffff">  public :: runoff_flow</a>
+    22) <a name="l22" style="background-color: #ffffff">  type runoff_flow</a>
+    23) <a name="l23" style="background-color: #ffffff">     !    - local initialization</a>
+    24) <a name="l24" style="background-color: #ffffff">     real(r8), pointer :: lonc(:)          ! lon of cell</a>
+    25) <a name="l25" style="background-color: #ffffff">     real(r8), pointer :: latc(:)          ! lat of cell</a>
+    26) <a name="l26" style="background-color: #ffffff">     real(r8), pointer :: area(:)          ! area of cell</a>
+    27) <a name="l27" style="background-color: #ffffff">     integer , pointer :: gindex(:)        ! global index</a>
+    28) <a name="l28" style="background-color: #ffffff">     integer , pointer :: dsi(:)           ! downstream index</a>
+    29) <a name="l29" style="background-color: #ffffff"></a>
+    30) <a name="l30" style="background-color: #ffffff">     !    - local runtime</a>
+    31) <a name="l31" style="background-color: #ffffff">     real(r8), pointer :: runoff(:,:)      ! RTM flow (m**3 H2O/s)</a>
+    32) <a name="l32" style="background-color: #ffffff">     real(r8), pointer :: runofflnd(:,:)   ! runoff masked for land (m**3 H2O/s)</a>
+    33) <a name="l33" style="background-color: #ffffff">     real(r8), pointer :: runoffocn(:,:)   ! runoff masked for ocn  (m**3 H2O/s)</a>
+    34) <a name="l34" style="background-color: #ffffff">     real(r8), pointer :: dvolrdt(:,:)     ! RTM change in storage (mm/s)</a>
+    35) <a name="l35" style="background-color: #ffffff">     real(r8), pointer :: dvolrdtlnd(:,:)  ! dvolrdt masked for land (mm/s)</a>
+    36) <a name="l36" style="background-color: #ffffff">     real(r8), pointer :: dvolrdtocn(:,:)  ! dvolrdt masked for ocn  (mm/s)</a>
+    37) <a name="l37" style="background-color: #ffffff">     real(r8), pointer :: volr(:,:)        ! RTM storage (m**3)</a>
+    38) <a name="l38" style="background-color: #ffffff">     real(r8), pointer :: volrlnd(:,:)     ! RTM storage masked for land (m**3)</a>
+    39) <a name="l39" style="background-color: #ffffff">     real(r8), pointer :: fluxout(:,:)     ! RTM cell tracer outlflux (m3/s)</a>
+    40) <a name="l40" style="background-color: #ffffff">     real(r8), pointer :: fthresh(:)       ! RTM water flood threshold</a>
+    41) <a name="l41" style="background-color: #ffffff">     real(r8), pointer :: flood(:)         ! RTM water (flood) sent back to clm (mm/s)</a>
+    42) <a name="l42" style="background-color: #ffffff"></a>
+    43) <a name="l43" style="background-color: #ffffff">     !    - global </a>
+    44) <a name="l44" style="background-color: #ffffff">     integer , pointer :: mask(:)          ! mask of cell 0=none, 1=lnd, 2=ocn</a>
+    45) <a name="l45" style="background-color: #ffffff">     real(r8), pointer :: rlon(:)          ! rtm longitude list, 1d</a>
+    46) <a name="l46" style="background-color: #ffffff">     real(r8), pointer :: rlat(:)          ! rtm latitude list, 1d</a>
+    47) <a name="l47" style="background-color: #ffffff">     real(r8)          :: totarea          ! global area</a>
+    48) <a name="l48" style="background-color: #ffffff">     integer           :: numr             ! rtm gdc global number of cells</a>
+    49) <a name="l49" style="background-color: #ffffff">     integer           :: numrl            ! rtm gdc global number of lnd cells</a>
+    50) <a name="l50" style="background-color: #ffffff">     integer           :: numro            ! rtm gdc global number of ocn cells</a>
+    51) <a name="l51" style="background-color: #ffffff"></a>
+    52) <a name="l52" style="background-color: #ffffff">     !    - local</a>
+    53) <a name="l53" style="background-color: #ffffff">     integer           :: begr,endr        ! local start/stop indices</a>
+    54) <a name="l54" style="background-color: #ffffff">     integer           :: lnumr            ! local number of cells</a>
+    55) <a name="l55" style="background-color: #ffffff"></a>
+    56) <a name="l56" style="background-color: #ffffff">     !    - 1d field pointers for history files (currently needed)</a>
+    57) <a name="l57" style="background-color: #ffffff">     real(r8), pointer :: runofflnd_nt1(:)</a>
+    58) <a name="l58" style="background-color: #ffffff">     real(r8), pointer :: runofflnd_nt2(:)</a>
+    59) <a name="l59" style="background-color: #ffffff">     real(r8), pointer :: runoffocn_nt1(:)</a>
+    60) <a name="l60" style="background-color: #ffffff">     real(r8), pointer :: runoffocn_nt2(:)</a>
+    61) <a name="l61" style="background-color: #ffffff">     real(r8), pointer :: dvolrdtlnd_nt1(:)</a>
+    62) <a name="l62" style="background-color: #ffffff">     real(r8), pointer :: dvolrdtlnd_nt2(:)</a>
+    63) <a name="l63" style="background-color: #ffffff">     real(r8), pointer :: dvolrdtocn_nt1(:)</a>
+    64) <a name="l64" style="background-color: #ffffff">     real(r8), pointer :: dvolrdtocn_nt2(:)</a>
+    65) <a name="l65" style="background-color: #ffffff">     real(r8), pointer :: volr_nt1(:)</a>
+    66) <a name="l66" style="background-color: #ffffff">     real(r8), pointer :: volr_nt2(:)</a>
+    67) <a name="l67" style="background-color: #ffffff">  end type runoff_flow</a>
+    68) <a name="l68" style="background-color: #ffffff">  !</a>
+    69) <a name="l69" style="background-color: #ffffff">  type (runoff_flow), public :: runoff</a>
+    70) <a name="l70" style="background-color: #ffffff"></a>
+    71) <a name="l71" style="background-color: #ffffff">  public :: RunoffInit</a>
+    72) <a name="l72" style="background-color: #ffffff">  public :: RunoffFinalize</a>
+    73) <a name="l73" style="background-color: #ffffff"></a>
+    74) <a name="l74" style="background-color: #ffffff">contains</a>
+    75) <a name="l75" style="background-color: #ffffff"></a>
+    76) <a name="l76" style="background-color: #ffffff">  subroutine RunoffInit(begr, endr, numr)</a>
+    77) <a name="l77" style="background-color: #ffffff"></a>
+    78) <a name="l78" style="background-color: #ffffff">    integer, intent(in) :: begr, endr, numr</a>
+    79) <a name="l79" style="background-color: #ffffff"></a>
+    80) <a name="l80" style="background-color: #ffffff">    integer :: ier</a>
+    81) <a name="l81" style="background-color: #ffffff"></a>
+    82) <a name="l82" style="background-color: #fafad2">    allocate(runoff%runoff(begr:endr,nt_rtm),     &amp;</a>
+    83) <a name="l83" style="background-color: #fafad2">             runoff%dvolrdt(begr:endr,nt_rtm),    &amp;</a>
+    84) <a name="l84" style="background-color: #fafad2">             runoff%runofflnd(begr:endr,nt_rtm),  &amp;</a>
+    85) <a name="l85" style="background-color: #fafad2">             runoff%dvolrdtlnd(begr:endr,nt_rtm), &amp;</a>
+    86) <a name="l86" style="background-color: #fafad2">             runoff%runoffocn(begr:endr,nt_rtm),  &amp;</a>
+    87) <a name="l87" style="background-color: #fafad2">             runoff%dvolrdtocn(begr:endr,nt_rtm), &amp;</a>
+    88) <a name="l88" style="background-color: #fafad2">             runoff%area(begr:endr),              &amp;</a>
+    89) <a name="l89" style="background-color: #fafad2">             runoff%volr(begr:endr,nt_rtm),       &amp;</a>
+    90) <a name="l90" style="background-color: #fafad2">             runoff%volrlnd(begr:endr,nt_rtm),    &amp;</a>
+    91) <a name="l91" style="background-color: #fafad2">             runoff%fluxout(begr:endr,nt_rtm),    &amp;</a>
+    92) <a name="l92" style="background-color: #fafad2">             runoff%lonc(begr:endr),              &amp;</a>
+    93) <a name="l93" style="background-color: #fafad2">             runoff%latc(begr:endr),              &amp;</a>
+    94) <a name="l94" style="background-color: #fafad2">             runoff%dsi(begr:endr),               &amp;</a>
+    95) <a name="l95" style="background-color: #fafad2">             runoff%runofflnd_nt1(begr:endr),     &amp;</a>
+    96) <a name="l96" style="background-color: #fafad2">             runoff%runofflnd_nt2(begr:endr),     &amp;</a>
+    97) <a name="l97" style="background-color: #fafad2">             runoff%runoffocn_nt1(begr:endr),     &amp;</a>
+    98) <a name="l98" style="background-color: #fafad2">             runoff%runoffocn_nt2(begr:endr),     &amp;</a>
+    99) <a name="l99" style="background-color: #fafad2">             runoff%volr_nt1(begr:endr),          &amp;</a>
+   100) <a name="l100" style="background-color: #fafad2">             runoff%volr_nt2(begr:endr),          &amp;</a>
+   101) <a name="l101" style="background-color: #fafad2">             runoff%dvolrdtlnd_nt1(begr:endr),    &amp;</a>
+   102) <a name="l102" style="background-color: #fafad2">             runoff%dvolrdtlnd_nt2(begr:endr),    &amp;</a>
+   103) <a name="l103" style="background-color: #fafad2">             runoff%dvolrdtocn_nt1(begr:endr),    &amp;</a>
+   104) <a name="l104" style="background-color: #fafad2">             runoff%dvolrdtocn_nt2(begr:endr),    &amp;</a>
+   105) <a name="l105" style="background-color: #fafad2">             runoff%mask(numr),                   &amp;</a>
+   106) <a name="l106" style="background-color: #fafad2">             runoff%gindex(begr:endr),            &amp;</a>
+   107) <a name="l107" style="background-color: #fafad2">             runoff%fthresh(begr:endr),           &amp;</a>
+   108) <a name="l108" style="background-color: #fafad2">             runoff%flood(begr:endr),             &amp;</a>
+   109) <a name="l109" style="background-color: #fafad2">             stat=ier)</a>
+   110) <a name="l110" style="background-color: #fafad2">    if (ier /= 0) then</a>
+   111) <a name="l111" style="background-color: #ffff99">       write(iulog,*)'Rtmini ERROR allocation of runoff local arrays'</a>
+   112) <a name="l112" style="background-color: #ffff99">       call shr_sys_abort</a>
+   113) <a name="l113" style="background-color: #ffff99">    end if</a>
+   114) <a name="l114" style="background-color: #ffff99"></a>
+   115) <a name="l115" style="background-color: #ffffff">    runoff%runoff(:,:)     = 0._r8</a>
+   116) <a name="l116" style="background-color: #ffffff">    runoff%runofflnd(:,:)  = spval</a>
+   117) <a name="l117" style="background-color: #ffffff">    runoff%runoffocn(:,:)  = spval</a>
+   118) <a name="l118" style="background-color: #ffffff">    runoff%dvolrdt(:,:)    = 0._r8</a>
+   119) <a name="l119" style="background-color: #ffffff">    runoff%dvolrdtlnd(:,:) = spval</a>
+   120) <a name="l120" style="background-color: #ffffff">    runoff%dvolrdtocn(:,:) = spval</a>
+   121) <a name="l121" style="background-color: #ffffff">    runoff%volr(:,:)       = 0._r8</a>
+   122) <a name="l122" style="background-color: #ffffff">    runoff%volrlnd(:,:)    = 0._r8</a>
+   123) <a name="l123" style="background-color: #ffffff">    runoff%volr_nt1(:)     = 0._r8</a>
+   124) <a name="l124" style="background-color: #ffffff">    runoff%volr_nt2(:)     = 0._r8</a>
+   125) <a name="l125" style="background-color: #ffffff">    runoff%gindex(:)       = ispval</a>
+   126) <a name="l126" style="background-color: #ffffff">    runoff%fthresh(:)      = spval</a>
+   127) <a name="l127" style="background-color: #ffffff">    runoff%flood(:)        = 0._r8</a>
+   128) <a name="l128" style="background-color: #ffffff"></a>
+   129) <a name="l129" style="background-color: #ffffff">  end subroutine RunoffInit</a>
+   130) <a name="l130" style="background-color: #ffffff"></a>
+   131) <a name="l131" style="background-color: #ffffff">  subroutine RunoffFinalize()</a>
+   132) <a name="l132" style="background-color: #ffffff"></a>
+   133) <a name="l133" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%runoff)) </a><a style="background-color: #ffffff">deallocate(runoff%runoff)</a>
+   134) <a name="l134" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%dvolrdt)) </a><a style="background-color: #ffffff">deallocate(runoff%dvolrdt)</a>
+   135) <a name="l135" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%runofflnd)) </a><a style="background-color: #ffffff">deallocate(runoff%runofflnd)</a>
+   136) <a name="l136" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%dvolrdtlnd)) </a><a style="background-color: #ffffff">deallocate(runoff%dvolrdtlnd)</a>
+   137) <a name="l137" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%runoffocn)) </a><a style="background-color: #ffffff">deallocate(runoff%runoffocn)</a>
+   138) <a name="l138" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%dvolrdtocn)) </a><a style="background-color: #ffffff">deallocate(runoff%dvolrdtocn)</a>
+   139) <a name="l139" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%area)) </a><a style="background-color: #ffffff">deallocate(runoff%area)</a>
+   140) <a name="l140" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%volr)) </a><a style="background-color: #ffffff">deallocate(runoff%volr)</a>
+   141) <a name="l141" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%volrlnd)) </a><a style="background-color: #ffffff">deallocate(runoff%volrlnd)</a>
+   142) <a name="l142" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%fluxout)) </a><a style="background-color: #ffffff">deallocate(runoff%fluxout)</a>
+   143) <a name="l143" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%lonc)) </a><a style="background-color: #ffffff">deallocate(runoff%lonc)</a>
+   144) <a name="l144" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%latc)) </a><a style="background-color: #ffffff">deallocate(runoff%latc)</a>
+   145) <a name="l145" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%rlon)) </a><a style="background-color: #ffffff">deallocate(runoff%rlon)</a>
+   146) <a name="l146" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%rlat)) </a><a style="background-color: #ffffff">deallocate(runoff%rlat)</a>
+   147) <a name="l147" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%dsi)) </a><a style="background-color: #ffffff">deallocate(runoff%dsi)</a>
+   148) <a name="l148" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%runofflnd_nt1)) </a><a style="background-color: #ffffff">deallocate(runoff%runofflnd_nt1)</a>
+   149) <a name="l149" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%runofflnd_nt2)) </a><a style="background-color: #ffffff">deallocate(runoff%runofflnd_nt2)</a>
+   150) <a name="l150" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%runoffocn_nt1)) </a><a style="background-color: #ffffff">deallocate(runoff%runoffocn_nt1)</a>
+   151) <a name="l151" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%runoffocn_nt2)) </a><a style="background-color: #ffffff">deallocate(runoff%runoffocn_nt2)</a>
+   152) <a name="l152" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%volr_nt1)) </a><a style="background-color: #ffffff">deallocate(runoff%volr_nt1)</a>
+   153) <a name="l153" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%volr_nt2)) </a><a style="background-color: #ffffff">deallocate(runoff%volr_nt2)</a>
+   154) <a name="l154" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%dvolrdtlnd_nt1)) </a><a style="background-color: #ffffff">deallocate(runoff%dvolrdtlnd_nt1)</a>
+   155) <a name="l155" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%dvolrdtlnd_nt2)) </a><a style="background-color: #ffffff">deallocate(runoff%dvolrdtlnd_nt2)</a>
+   156) <a name="l156" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%dvolrdtocn_nt1)) </a><a style="background-color: #ffffff">deallocate(runoff%dvolrdtocn_nt1)</a>
+   157) <a name="l157" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%dvolrdtocn_nt2)) </a><a style="background-color: #ffffff">deallocate(runoff%dvolrdtocn_nt2)</a>
+   158) <a name="l158" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%mask)) </a><a style="background-color: #ffffff">deallocate(runoff%mask)</a>
+   159) <a name="l159" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%gindex)) </a><a style="background-color: #ffffff">deallocate(runoff%gindex)</a>
+   160) <a name="l160" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%fthresh)) </a><a style="background-color: #ffffff">deallocate(runoff%fthresh)</a>
+   161) <a name="l161" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(runoff%flood)) </a><a style="background-color: #ffffff">deallocate(runoff%flood)</a>
+   162) <a name="l162" style="background-color: #ffffff"></a>
+   163) <a name="l163" style="background-color: #ffffff">  end subroutine RunoffFinalize</a>
+   164) <a name="l164" style="background-color: #ffffff"></a>
+   165) <a name="l165" style="background-color: #ffffff">end module RunoffMod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

@@ -1,0 +1,384 @@
+<html>
+<head>
+<title>Listing of m_mpout.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;m_mpout.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+     2) <a name="l2" style="background-color: #ffffff">!       NASA/GSFC, Data Assimilation Office, Code 910.3, GEOS/DAS      !</a>
+     3) <a name="l3" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">! CVS $Id$</a>
+     5) <a name="l5" style="background-color: #ffffff">! CVS $Name$  </a>
+     6) <a name="l6" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     7) <a name="l7" style="background-color: #ffffff">!BOP</a>
+     8) <a name="l8" style="background-color: #ffffff">!</a>
+     9) <a name="l9" style="background-color: #ffffff">! !MODULE: m_mpout - a multiple but mergable parallel output module</a>
+    10) <a name="l10" style="background-color: #ffffff">!</a>
+    11) <a name="l11" style="background-color: #ffffff">! !DESCRIPTION:</a>
+    12) <a name="l12" style="background-color: #ffffff">!</a>
+    13) <a name="l13" style="background-color: #ffffff">! !INTERFACE:</a>
+    14) <a name="l14" style="background-color: #ffffff"></a>
+    15) <a name="l15" style="background-color: #ffffff">    module m_mpout</a>
+    16) <a name="l16" style="background-color: #ffffff">      use m_stdio, only : stdout,LEN_FILENAME</a>
+    17) <a name="l17" style="background-color: #ffffff">      implicit none</a>
+    18) <a name="l18" style="background-color: #ffffff">      private	! except</a>
+    19) <a name="l19" style="background-color: #ffffff"></a>
+    20) <a name="l20" style="background-color: #ffffff">      public :: mpout	! The file handle as a Fortran logical unit</a>
+    21) <a name="l21" style="background-color: #ffffff"></a>
+    22) <a name="l22" style="background-color: #ffffff">      public :: mpout_open	! open the multiple output streams</a>
+    23) <a name="l23" style="background-color: #ffffff">      public :: mpout_close	! close the multiple output streams</a>
+    24) <a name="l24" style="background-color: #ffffff">      public :: mpout_sync	! sync. the multiple output streams</a>
+    25) <a name="l25" style="background-color: #ffffff">      public :: mpout_flush	! flush the multople output streams</a>
+    26) <a name="l26" style="background-color: #ffffff">      public :: mpout_ison	! verify if mpout is proper defined</a>
+    27) <a name="l27" style="background-color: #ffffff">      public :: mpout_log	! write a message to mpout</a>
+    28) <a name="l28" style="background-color: #ffffff"></a>
+    29) <a name="l29" style="background-color: #ffffff">      interface mpout_open;  module procedure open_;  end interface</a>
+    30) <a name="l30" style="background-color: #ffffff">      interface mpout_close; module procedure close_; end interface</a>
+    31) <a name="l31" style="background-color: #ffffff">      interface mpout_sync;  module procedure sync_;  end interface</a>
+    32) <a name="l32" style="background-color: #ffffff">      interface mpout_flush; module procedure flush_; end interface</a>
+    33) <a name="l33" style="background-color: #ffffff">      interface mpout_ison;  module procedure ison_;  end interface</a>
+    34) <a name="l34" style="background-color: #ffffff">      interface mpout_log</a>
+    35) <a name="l35" style="background-color: #ffffff">          module procedure log1_</a>
+    36) <a name="l36" style="background-color: #ffffff">          module procedure log2_</a>
+    37) <a name="l37" style="background-color: #ffffff">      end interface</a>
+    38) <a name="l38" style="background-color: #ffffff"></a>
+    39) <a name="l39" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    40) <a name="l40" style="background-color: #ffffff">! 	25Feb98 - Jing Guo &lt;guo@thunder&gt; - initial prototype/prolog/code</a>
+    41) <a name="l41" style="background-color: #ffffff">!	28Sep99 - Jing Guo &lt;guo@thunder&gt;</a>
+    42) <a name="l42" style="background-color: #ffffff">!		- Added additional calls to support the &quot;Violet&quot; system</a>
+    43) <a name="l43" style="background-color: #ffffff">!		  development.</a>
+    44) <a name="l44" style="background-color: #ffffff">!</a>
+    45) <a name="l45" style="background-color: #ffffff">! !DESIGN ISSUES:</a>
+    46) <a name="l46" style="background-color: #ffffff">! \begin{itemize}</a>
+    47) <a name="l47" style="background-color: #ffffff">!</a>
+    48) <a name="l48" style="background-color: #ffffff">! \item	It might be considered useful to implement this module to be</a>
+    49) <a name="l49" style="background-color: #ffffff">!	applicable to a given {\sl communicator}.   The argument</a>
+    50) <a name="l50" style="background-color: #ffffff">!	taken now is to only have one multiple output stream handle</a>
+    51) <a name="l51" style="background-color: #ffffff">!	per excution.  This is consistent with \verb&quot;stdout&quot; in the</a>
+    52) <a name="l52" style="background-color: #ffffff">!	traditional sense. (Jing Guo, 25Feb98)</a>
+    53) <a name="l53" style="background-color: #ffffff">!</a>
+    54) <a name="l54" style="background-color: #ffffff">! \item \verb&quot;mpout_log()&quot; is implemented in a way producing output</a>
+    55) <a name="l55" style="background-color: #ffffff">!	only if \verb&quot;mpout_ison()&quot; (being \verb&quot;.true.&quot;).  The reason</a>
+    56) <a name="l56" style="background-color: #ffffff">!	of not implementing a default output such as \verb&quot;stdout&quot;, is</a>
+    57) <a name="l57" style="background-color: #ffffff">!	hoping to provent too many unexpected output when the system is</a>
+    58) <a name="l58" style="background-color: #ffffff">!	switched to a multiple PE system.  The design principle for</a>
+    59) <a name="l59" style="background-color: #ffffff">!	this module is that \verb&quot;mpout&quot; is basically {\sl not} the same</a>
+    60) <a name="l60" style="background-color: #ffffff">!	module as \verb&quot;stdout&quot;. (Jing Guo, 28Sep99)</a>
+    61) <a name="l61" style="background-color: #ffffff">!</a>
+    62) <a name="l62" style="background-color: #ffffff">! \end{itemize}</a>
+    63) <a name="l63" style="background-color: #ffffff">!EOP</a>
+    64) <a name="l64" style="background-color: #ffffff">!_______________________________________________________________________</a>
+    65) <a name="l65" style="background-color: #ffffff">  character(len=*),parameter :: myname='MCT(MPEU)::m_mpout'</a>
+    66) <a name="l66" style="background-color: #ffffff"></a>
+    67) <a name="l67" style="background-color: #ffffff">  character(len=*),parameter :: def_pfix='mpout'</a>
+    68) <a name="l68" style="background-color: #ffffff"></a>
+    69) <a name="l69" style="background-color: #ffffff">  integer,save :: isec=-1</a>
+    70) <a name="l70" style="background-color: #ffffff">  integer,save :: mpout=stdout</a>
+    71) <a name="l71" style="background-color: #ffffff">  logical,save :: mpout_set=.false.</a>
+    72) <a name="l72" style="background-color: #ffffff">  character(len=LEN_FILENAME-4),save :: upfix=def_pfix</a>
+    73) <a name="l73" style="background-color: #ffffff">  integer,parameter :: mpout_MASK=3	! every four PEs</a>
+    74) <a name="l74" style="background-color: #ffffff"></a>
+    75) <a name="l75" style="background-color: #ffffff">contains</a>
+    76) <a name="l76" style="background-color: #ffffff"></a>
+    77) <a name="l77" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+    78) <a name="l78" style="background-color: #ffffff">!       NASA/GSFC, Data Assimilation Office, Code 910.3, GEOS/DAS      !</a>
+    79) <a name="l79" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    80) <a name="l80" style="background-color: #ffffff">!BOP</a>
+    81) <a name="l81" style="background-color: #ffffff">!</a>
+    82) <a name="l82" style="background-color: #ffffff">! !IROUTINE: open_ - open a multiple files with the same name prefix</a>
+    83) <a name="l83" style="background-color: #ffffff">!</a>
+    84) <a name="l84" style="background-color: #ffffff">! !DESCRIPTION:</a>
+    85) <a name="l85" style="background-color: #ffffff">!</a>
+    86) <a name="l86" style="background-color: #ffffff">! !INTERFACE:</a>
+    87) <a name="l87" style="background-color: #ffffff"></a>
+    88) <a name="l88" style="background-color: #ffffff">    subroutine </a><a style="background-color: #ffcccc">open_(mask,pfix)</a>
+    89) <a name="l89" style="background-color: #ffcccc">      use m_stdio, only : stderr,stdout</a>
+    90) <a name="l90" style="background-color: #ffcccc">      use m_ioutil, only : luavail,opntext</a>
+    91) <a name="l91" style="background-color: #ffcccc">      use m_dropdead, only : die</a>
+    92) <a name="l92" style="background-color: #ffcccc">      use m_mpif90, only : MP_comm_WORLD</a>
+    93) <a name="l93" style="background-color: #ffcccc">      use m_mpif90, only : MP_comm_rank</a>
+    94) <a name="l94" style="background-color: #ffcccc">      use m_mpif90, only : MP_perr</a>
+    95) <a name="l95" style="background-color: #ffcccc">      implicit none</a>
+    96) <a name="l96" style="background-color: #ffcccc">      integer,optional,intent(in) :: mask</a>
+    97) <a name="l97" style="background-color: #ffcccc">      character(len=*),optional,intent(in) :: pfix</a>
+    98) <a name="l98" style="background-color: #ffcccc"></a>
+    99) <a name="l99" style="background-color: #ffcccc">! !EXAMPLES:</a>
+   100) <a name="l100" style="background-color: #ffcccc">!</a>
+   101) <a name="l101" style="background-color: #ffcccc">!   Examples of using mpout_MASK or mask:</a>
+   102) <a name="l102" style="background-color: #ffcccc">!</a>
+   103) <a name="l103" style="background-color: #ffcccc">!	If the mask has all &quot;1&quot; in every bit, there will be no output</a>
+   104) <a name="l104" style="background-color: #ffcccc">!   on every PE, except the PE of rank 0.</a>
+   105) <a name="l105" style="background-color: #ffcccc">!</a>
+   106) <a name="l106" style="background-color: #ffcccc">!	If the mask is 3 or &quot;11&quot;b, any PE of rank with any &quot;dirty&quot; bit</a>
+   107) <a name="l107" style="background-color: #ffcccc">!   in its rank value will not have output.</a>
+   108) <a name="l108" style="background-color: #ffcccc">! </a>
+   109) <a name="l109" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   110) <a name="l110" style="background-color: #ffcccc">! 	25Feb98 - Jing Guo &lt;guo@thunder&gt; - initial prototype/prolog/code</a>
+   111) <a name="l111" style="background-color: #ffcccc">!EOP</a>
+   112) <a name="l112" style="background-color: #ffcccc">!_______________________________________________________________________</a>
+   113) <a name="l113" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::open_'</a>
+   114) <a name="l114" style="background-color: #ffcccc">  integer :: lu</a>
+   115) <a name="l115" style="background-color: #ffcccc">  character(len=4) :: sfix</a>
+   116) <a name="l116" style="background-color: #ffcccc">  integer :: irank</a>
+   117) <a name="l117" style="background-color: #ffcccc">  integer :: ier</a>
+   118) <a name="l118" style="background-color: #ffcccc">  integer :: umask</a>
+   119) <a name="l119" style="background-color: #ffcccc"></a>
+   120) <a name="l120" style="background-color: #ffcccc">	! Set the filename prefix</a>
+   121) <a name="l121" style="background-color: #ffcccc"></a>
+   122) <a name="l122" style="background-color: #ffcccc">  upfix=def_pfix</a>
+   123) <a name="l123" style="background-color: #ffcccc">  if(present(pfix)) upfix=pfix</a>
+   124) <a name="l124" style="background-color: #ffcccc"></a>
+   125) <a name="l125" style="background-color: #ffcccc">	! Set the mask of the PEs with mpout</a>
+   126) <a name="l126" style="background-color: #ffcccc"></a>
+   127) <a name="l127" style="background-color: #ffcccc">  umask=mpout_MASK</a>
+   128) <a name="l128" style="background-color: #ffcccc">  if(present(mask)) umask=mask</a>
+   129) <a name="l129" style="background-color: #ffcccc"></a>
+   130) <a name="l130" style="background-color: #ffcccc">	! If a check is not in place, sent the outputs to stdout</a>
+   131) <a name="l131" style="background-color: #ffcccc"></a>
+   132) <a name="l132" style="background-color: #ffcccc">  mpout=stdout</a>
+   133) <a name="l133" style="background-color: #ffcccc">  mpout_set=.false.</a>
+   134) <a name="l134" style="background-color: #ffcccc"></a>
+   135) <a name="l135" style="background-color: #ffcccc">  call MP_comm_rank(MP_comm_world,irank,ier)</a>
+   136) <a name="l136" style="background-color: #ffcccc">  if(ier /= 0) then</a>
+   137) <a name="l137" style="background-color: #ffcccc">    call MP_perr(myname_,'MP_comm_rank()',ier)</a>
+   138) <a name="l138" style="background-color: #ffcccc">    call die(myname_)</a>
+   139) <a name="l139" style="background-color: #ffcccc">  endif</a>
+   140) <a name="l140" style="background-color: #ffcccc"></a>
+   141) <a name="l141" style="background-color: #ffcccc">  if(iand(irank,umask) == 0) then</a>
+   142) <a name="l142" style="background-color: #ffcccc"></a>
+   143) <a name="l143" style="background-color: #ffcccc">    lu=luavail()</a>
+   144) <a name="l144" style="background-color: #ffcccc">    if(lu &gt; 0) mpout=lu</a>
+   145) <a name="l145" style="background-color: #ffcccc"></a>
+   146) <a name="l146" style="background-color: #ffcccc">    write(sfix,'(a,z3.3)') '.',irank</a>
+   147) <a name="l147" style="background-color: #ffcccc">    call opntext(mpout,trim(upfix)//sfix,'unknown',ier)</a>
+   148) <a name="l148" style="background-color: #ffcccc">    if(ier /= 0) then</a>
+   149) <a name="l149" style="background-color: #ffcccc">      write(stderr,'(4a,i4)') myname_,	&amp;</a>
+   150) <a name="l150" style="background-color: #ffcccc">	': opntext(&quot;',trim(upfix)//sfix,'&quot;) error, ier =',ier</a>
+   151) <a name="l151" style="background-color: #ffcccc">      call die(myname_)</a>
+   152) <a name="l152" style="background-color: #ffcccc">    endif</a>
+   153) <a name="l153" style="background-color: #ffcccc"></a>
+   154) <a name="l154" style="background-color: #ffcccc">    mpout_set=.true.</a>
+   155) <a name="l155" style="background-color: #ffcccc"></a>
+   156) <a name="l156" style="background-color: #ffcccc">    isec=0</a>
+   157) <a name="l157" style="background-color: #ffcccc">    write(mpout,'(a,z8.8,2a)') '.BEGIN.  ',isec,' ',trim(upfix)</a>
+   158) <a name="l158" style="background-color: #ffcccc">  endif</a>
+   159) <a name="l159" style="background-color: #ffcccc"></a>
+   160) <a name="l160" style="background-color: #ffcccc">end subroutine open_</a>
+   161) <a name="l161" style="background-color: #ffffff"></a>
+   162) <a name="l162" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   163) <a name="l163" style="background-color: #ffffff">!       NASA/GSFC, Data Assimilation Office, Code 910.3, GEOS/DAS      !</a>
+   164) <a name="l164" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   165) <a name="l165" style="background-color: #ffffff">!BOP</a>
+   166) <a name="l166" style="background-color: #ffffff">!</a>
+   167) <a name="l167" style="background-color: #ffffff">! !IROUTINE: close_ - close the unit opened by open_</a>
+   168) <a name="l168" style="background-color: #ffffff">!</a>
+   169) <a name="l169" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   170) <a name="l170" style="background-color: #ffffff">!</a>
+   171) <a name="l171" style="background-color: #ffffff">! !INTERFACE:</a>
+   172) <a name="l172" style="background-color: #ffffff"></a>
+   173) <a name="l173" style="background-color: #ffffff">    subroutine </a><a style="background-color: #ffcccc">close_()</a>
+   174) <a name="l174" style="background-color: #ffcccc">      use m_stdio,  only : stderr</a>
+   175) <a name="l175" style="background-color: #ffcccc">      use m_ioutil, only : clstext, luflush</a>
+   176) <a name="l176" style="background-color: #ffcccc">      use m_dropdead, only : die</a>
+   177) <a name="l177" style="background-color: #ffcccc">      implicit none</a>
+   178) <a name="l178" style="background-color: #ffcccc"></a>
+   179) <a name="l179" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   180) <a name="l180" style="background-color: #ffcccc">! 	25Feb98 - Jing Guo &lt;guo@thunder&gt; - initial prototype/prolog/code</a>
+   181) <a name="l181" style="background-color: #ffcccc">!EOP</a>
+   182) <a name="l182" style="background-color: #ffcccc">!_______________________________________________________________________</a>
+   183) <a name="l183" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::close_'</a>
+   184) <a name="l184" style="background-color: #ffcccc">  integer :: ier</a>
+   185) <a name="l185" style="background-color: #ffcccc"></a>
+   186) <a name="l186" style="background-color: #ffcccc">  if(mpout_set) then</a>
+   187) <a name="l187" style="background-color: #ffcccc">    call luflush(mpout)</a>
+   188) <a name="l188" style="background-color: #ffcccc"></a>
+   189) <a name="l189" style="background-color: #ffcccc">    isec=isec+1</a>
+   190) <a name="l190" style="background-color: #ffcccc">    write(mpout,'(a,z8.8,2a)') '.END.    ',isec,' ',trim(upfix)</a>
+   191) <a name="l191" style="background-color: #ffcccc">    endfile(mpout)</a>
+   192) <a name="l192" style="background-color: #ffcccc"></a>
+   193) <a name="l193" style="background-color: #ffcccc">    call clstext(mpout,ier)</a>
+   194) <a name="l194" style="background-color: #ffcccc">    if(ier /= 0) then</a>
+   195) <a name="l195" style="background-color: #ffcccc">      write(stderr,'(2a,i3.3,a,i4)') myname_,	&amp;</a>
+   196) <a name="l196" style="background-color: #ffcccc">	': clstext(&quot;',mpout,'&quot;) error, ier =',ier</a>
+   197) <a name="l197" style="background-color: #ffcccc">      call die(myname_)</a>
+   198) <a name="l198" style="background-color: #ffcccc">    endif</a>
+   199) <a name="l199" style="background-color: #ffcccc">    mpout=stdout</a>
+   200) <a name="l200" style="background-color: #ffcccc">    mpout_set=.false.</a>
+   201) <a name="l201" style="background-color: #ffcccc">  endif</a>
+   202) <a name="l202" style="background-color: #ffcccc"></a>
+   203) <a name="l203" style="background-color: #ffcccc">  isec=-1</a>
+   204) <a name="l204" style="background-color: #ffcccc"></a>
+   205) <a name="l205" style="background-color: #ffcccc">end subroutine close_</a>
+   206) <a name="l206" style="background-color: #ffffff"></a>
+   207) <a name="l207" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   208) <a name="l208" style="background-color: #ffffff">!       NASA/GSFC, Data Assimilation Office, Code 910.3, GEOS/DAS      !</a>
+   209) <a name="l209" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   210) <a name="l210" style="background-color: #ffffff">!BOP</a>
+   211) <a name="l211" style="background-color: #ffffff">!</a>
+   212) <a name="l212" style="background-color: #ffffff">! !IROUTINE: sync_ - write a mark for posible later file merging</a>
+   213) <a name="l213" style="background-color: #ffffff">!</a>
+   214) <a name="l214" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   215) <a name="l215" style="background-color: #ffffff">!</a>
+   216) <a name="l216" style="background-color: #ffffff">! !INTERFACE:</a>
+   217) <a name="l217" style="background-color: #ffffff"></a>
+   218) <a name="l218" style="background-color: #ffffff">    subroutine </a><a style="background-color: #ffcccc">sync_(tag)</a>
+   219) <a name="l219" style="background-color: #ffcccc">      use m_stdio,    only : stderr</a>
+   220) <a name="l220" style="background-color: #ffcccc">      use m_dropdead, only : die</a>
+   221) <a name="l221" style="background-color: #ffcccc">      implicit none</a>
+   222) <a name="l222" style="background-color: #ffcccc">      character(len=*),intent(in) :: tag</a>
+   223) <a name="l223" style="background-color: #ffcccc"></a>
+   224) <a name="l224" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   225) <a name="l225" style="background-color: #ffcccc">! 	25Feb98 - Jing Guo &lt;guo@thunder&gt; - initial prototype/prolog/code</a>
+   226) <a name="l226" style="background-color: #ffcccc">!</a>
+   227) <a name="l227" style="background-color: #ffcccc">! !DESIGN ISSUES:</a>
+   228) <a name="l228" style="background-color: #ffcccc">! \begin{itemize}</a>
+   229) <a name="l229" style="background-color: #ffcccc">!</a>
+   230) <a name="l230" style="background-color: #ffcccc">! \item	Should the variable \verb&quot;tag&quot; be implemented as an optional</a>
+   231) <a name="l231" style="background-color: #ffcccc">!	argument?  Because the current implementation does not require</a>
+   232) <a name="l232" style="background-color: #ffcccc">!	actual synchronization between all threads of the multiple</a>
+   233) <a name="l233" style="background-color: #ffcccc">!	output streams, forcing the user to supply a unique \verb&quot;tag&quot;</a>
+   234) <a name="l234" style="background-color: #ffcccc">!	would make the final multi-stream merging verifiable.  However,</a>
+   235) <a name="l235" style="background-color: #ffcccc">!	since the \verb&quot;tag&quot;s have not been forced to be unique, the</a>
+   236) <a name="l236" style="background-color: #ffcccc">!	synchronization operations are still symbolic.</a>
+   237) <a name="l237" style="background-color: #ffcccc">!	</a>
+   238) <a name="l238" style="background-color: #ffcccc">! \{itemize}</a>
+   239) <a name="l239" style="background-color: #ffcccc">!EOP</a>
+   240) <a name="l240" style="background-color: #ffcccc">!_______________________________________________________________________</a>
+   241) <a name="l241" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::sync_'</a>
+   242) <a name="l242" style="background-color: #ffcccc"></a>
+   243) <a name="l243" style="background-color: #ffcccc">  if(mpout_set) then</a>
+   244) <a name="l244" style="background-color: #ffcccc">    isec=isec+1</a>
+   245) <a name="l245" style="background-color: #ffcccc">    write(mpout,'(a,z8.8,2a)') '.SYNC.   ',isec,' ',trim(tag)</a>
+   246) <a name="l246" style="background-color: #ffcccc">  endif</a>
+   247) <a name="l247" style="background-color: #ffcccc"></a>
+   248) <a name="l248" style="background-color: #ffcccc">end subroutine sync_</a>
+   249) <a name="l249" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   250) <a name="l250" style="background-color: #ffffff">!       NASA/GSFC, Data Assimilation Office, Code 910.3, GEOS/DAS      !</a>
+   251) <a name="l251" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   252) <a name="l252" style="background-color: #ffffff">!BOP</a>
+   253) <a name="l253" style="background-color: #ffffff">!</a>
+   254) <a name="l254" style="background-color: #ffffff">! !IROUTINE: flush_ - flush the multiple output streams</a>
+   255) <a name="l255" style="background-color: #ffffff">!</a>
+   256) <a name="l256" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   257) <a name="l257" style="background-color: #ffffff">!</a>
+   258) <a name="l258" style="background-color: #ffffff">! !INTERFACE:</a>
+   259) <a name="l259" style="background-color: #ffffff"></a>
+   260) <a name="l260" style="background-color: #ffffff">    subroutine </a><a style="background-color: #ffcccc">flush_()</a>
+   261) <a name="l261" style="background-color: #ffcccc">      use m_stdio, only : stderr</a>
+   262) <a name="l262" style="background-color: #ffcccc">      use m_ioutil, only : luflush</a>
+   263) <a name="l263" style="background-color: #ffcccc">      use m_dropdead, only : die</a>
+   264) <a name="l264" style="background-color: #ffcccc">      implicit none</a>
+   265) <a name="l265" style="background-color: #ffcccc"></a>
+   266) <a name="l266" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   267) <a name="l267" style="background-color: #ffcccc">! 	27Feb98 - Jing Guo &lt;guo@thunder&gt; - initial prototype/prolog/code</a>
+   268) <a name="l268" style="background-color: #ffcccc">!EOP</a>
+   269) <a name="l269" style="background-color: #ffcccc">!_______________________________________________________________________</a>
+   270) <a name="l270" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::flush_'</a>
+   271) <a name="l271" style="background-color: #ffcccc"></a>
+   272) <a name="l272" style="background-color: #ffcccc">  if(mpout_set) call luflush(mpout)</a>
+   273) <a name="l273" style="background-color: #ffcccc"></a>
+   274) <a name="l274" style="background-color: #ffcccc">end subroutine flush_</a>
+   275) <a name="l275" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   276) <a name="l276" style="background-color: #ffffff">!       NASA/GSFC, Data Assimilation Office, Code 910.3, GEOS/DAS      !</a>
+   277) <a name="l277" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   278) <a name="l278" style="background-color: #ffffff">!</a>
+   279) <a name="l279" style="background-color: #ffffff">! !IROUTINE: ison_ - decide if the current PE has a defined mpout</a>
+   280) <a name="l280" style="background-color: #ffffff">!</a>
+   281) <a name="l281" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   282) <a name="l282" style="background-color: #ffffff">!</a>
+   283) <a name="l283" style="background-color: #ffffff">!   It needs to be checked to avoid undesired output.</a>
+   284) <a name="l284" style="background-color: #ffffff">!</a>
+   285) <a name="l285" style="background-color: #ffffff">! !INTERFACE:</a>
+   286) <a name="l286" style="background-color: #ffffff"></a>
+   287) <a name="l287" style="background-color: #ffffff">    function </a><a style="background-color: #ffcccc">ison_()</a>
+   288) <a name="l288" style="background-color: #ffcccc">      implicit none</a>
+   289) <a name="l289" style="background-color: #ffcccc">      logical :: ison_</a>
+   290) <a name="l290" style="background-color: #ffcccc"></a>
+   291) <a name="l291" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   292) <a name="l292" style="background-color: #ffcccc">! 	14Sep99	- Jing Guo &lt;guo@dao.gsfc.nasa.gov&gt;</a>
+   293) <a name="l293" style="background-color: #ffcccc">!		- initial prototype/prolog/code</a>
+   294) <a name="l294" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+   295) <a name="l295" style="background-color: #ffcccc"></a>
+   296) <a name="l296" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::ison_'</a>
+   297) <a name="l297" style="background-color: #ffcccc"></a>
+   298) <a name="l298" style="background-color: #ffcccc">  ison_=mpout_set</a>
+   299) <a name="l299" style="background-color: #ffcccc"></a>
+   300) <a name="l300" style="background-color: #ffcccc">end function ison_</a>
+   301) <a name="l301" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   302) <a name="l302" style="background-color: #ffffff">!       ANL/MCS  Mathematics and Computer Science Division             !</a>
+   303) <a name="l303" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   304) <a name="l304" style="background-color: #ffffff">!</a>
+   305) <a name="l305" style="background-color: #ffffff">! !IROUTINE: log1_ - write a message to mpout</a>
+   306) <a name="l306" style="background-color: #ffffff">!</a>
+   307) <a name="l307" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   308) <a name="l308" style="background-color: #ffffff">!</a>
+   309) <a name="l309" style="background-color: #ffffff">! !INTERFACE:</a>
+   310) <a name="l310" style="background-color: #ffffff"></a>
+   311) <a name="l311" style="background-color: #ffffff">    subroutine </a><a style="background-color: #ffcccc">log1_(message)</a>
+   312) <a name="l312" style="background-color: #ffcccc">      implicit none</a>
+   313) <a name="l313" style="background-color: #ffcccc">      character(len=*),intent(in) :: message</a>
+   314) <a name="l314" style="background-color: #ffcccc"></a>
+   315) <a name="l315" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   316) <a name="l316" style="background-color: #ffcccc">! 	07Jan02	- R. Jacob (jacob@mcs.anl.gov)</a>
+   317) <a name="l317" style="background-color: #ffcccc">!		- based on log2_.</a>
+   318) <a name="l318" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+   319) <a name="l319" style="background-color: #ffcccc"></a>
+   320) <a name="l320" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::log1_'</a>
+   321) <a name="l321" style="background-color: #ffcccc"></a>
+   322) <a name="l322" style="background-color: #ffcccc">  if(mpout_set) write(mpout,'(3a)') message</a>
+   323) <a name="l323" style="background-color: #ffcccc"></a>
+   324) <a name="l324" style="background-color: #ffcccc">end subroutine log1_</a>
+   325) <a name="l325" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+   326) <a name="l326" style="background-color: #ffffff">!       NASA/GSFC, Data Assimilation Office, Code 910.3, GEOS/DAS      !</a>
+   327) <a name="l327" style="background-color: #ffffff">!BOP -------------------------------------------------------------------</a>
+   328) <a name="l328" style="background-color: #ffffff">!</a>
+   329) <a name="l329" style="background-color: #ffffff">! !IROUTINE: log2_ - write a message to mpout with a where</a>
+   330) <a name="l330" style="background-color: #ffffff">!</a>
+   331) <a name="l331" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   332) <a name="l332" style="background-color: #ffffff">!</a>
+   333) <a name="l333" style="background-color: #ffffff">! !INTERFACE:</a>
+   334) <a name="l334" style="background-color: #ffffff"></a>
+   335) <a name="l335" style="background-color: #ffffff">    subroutine </a><a style="background-color: #ffcccc">log2_(where,message)</a>
+   336) <a name="l336" style="background-color: #ffcccc">      implicit none</a>
+   337) <a name="l337" style="background-color: #ffcccc">      character(len=*),intent(in) :: where</a>
+   338) <a name="l338" style="background-color: #ffcccc">      character(len=*),intent(in) :: message</a>
+   339) <a name="l339" style="background-color: #ffcccc"></a>
+   340) <a name="l340" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+   341) <a name="l341" style="background-color: #ffcccc">! 	14Sep99	- Jing Guo &lt;guo@dao.gsfc.nasa.gov&gt;</a>
+   342) <a name="l342" style="background-color: #ffcccc">!		- initial prototype/prolog/code</a>
+   343) <a name="l343" style="background-color: #ffcccc">! 	07Jan02	- R. Jacob (jacob@mcs.anl.gov)</a>
+   344) <a name="l344" style="background-color: #ffcccc">!               - change name to log2_</a>
+   345) <a name="l345" style="background-color: #ffcccc">!EOP ___________________________________________________________________</a>
+   346) <a name="l346" style="background-color: #ffcccc"></a>
+   347) <a name="l347" style="background-color: #ffcccc">  character(len=*),parameter :: myname_=myname//'::log2_'</a>
+   348) <a name="l348" style="background-color: #ffcccc"></a>
+   349) <a name="l349" style="background-color: #ffcccc">  if(mpout_set) write(mpout,'(3a)') where,': ',message</a>
+   350) <a name="l350" style="background-color: #ffcccc"></a>
+   351) <a name="l351" style="background-color: #ffcccc">end subroutine log2_</a>
+   352) <a name="l352" style="background-color: #ffffff">end module m_mpout</a>
+   353) <a name="l353" style="background-color: #ffffff">!.</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

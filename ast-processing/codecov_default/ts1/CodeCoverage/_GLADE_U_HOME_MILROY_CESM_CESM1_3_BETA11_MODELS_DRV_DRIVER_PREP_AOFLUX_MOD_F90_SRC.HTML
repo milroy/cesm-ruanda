@@ -1,0 +1,261 @@
+<html>
+<head>
+<title>Listing of prep_aoflux_mod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;prep_aoflux_mod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 66.67&#160;%func&#160;&#160;&#160;&#160; 68.10&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module prep_aoflux_mod</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">  use shr_kind_mod,     only: r8 =&gt; SHR_KIND_R8 </a>
+     4) <a name="l4" style="background-color: #ffffff">  use shr_kind_mod,     only: cs =&gt; SHR_KIND_CS</a>
+     5) <a name="l5" style="background-color: #ffffff">  use shr_kind_mod,     only: cl =&gt; SHR_KIND_CL</a>
+     6) <a name="l6" style="background-color: #ffffff">  use shr_sys_mod,      only: shr_sys_abort, shr_sys_flush</a>
+     7) <a name="l7" style="background-color: #ffffff">  use seq_comm_mct,     only: num_inst_xao, num_inst_frc, num_inst_ocn</a>
+     8) <a name="l8" style="background-color: #ffffff">  use seq_comm_mct,     only: CPLID, logunit</a>
+     9) <a name="l9" style="background-color: #ffffff">  use seq_comm_mct,     only: seq_comm_getData=&gt;seq_comm_setptrs </a>
+    10) <a name="l10" style="background-color: #ffffff">  use seq_infodata_mod, only: seq_infodata_getdata, seq_infodata_type   </a>
+    11) <a name="l11" style="background-color: #ffffff">  use seq_map_type_mod </a>
+    12) <a name="l12" style="background-color: #ffffff">  use seq_map_mod</a>
+    13) <a name="l13" style="background-color: #ffffff">  use seq_flds_mod</a>
+    14) <a name="l14" style="background-color: #ffffff">  use t_drv_timers_mod</a>
+    15) <a name="l15" style="background-color: #ffffff">  use mct_mod</a>
+    16) <a name="l16" style="background-color: #ffffff">  use perf_mod</a>
+    17) <a name="l17" style="background-color: #ffffff">  use component_type_mod, only: component_get_x2c_cx, component_get_c2x_cx</a>
+    18) <a name="l18" style="background-color: #ffffff">  use component_type_mod, only: atm, ocn</a>
+    19) <a name="l19" style="background-color: #ffffff"></a>
+    20) <a name="l20" style="background-color: #ffffff">  implicit none</a>
+    21) <a name="l21" style="background-color: #ffffff">  private ! except</a>
+    22) <a name="l22" style="background-color: #ffffff">  save</a>
+    23) <a name="l23" style="background-color: #ffffff"></a>
+    24) <a name="l24" style="background-color: #ffffff">  !--------------------------------------------------------------------------</a>
+    25) <a name="l25" style="background-color: #ffffff">  ! Public interfaces</a>
+    26) <a name="l26" style="background-color: #ffffff">  !--------------------------------------------------------------------------</a>
+    27) <a name="l27" style="background-color: #ffffff"></a>
+    28) <a name="l28" style="background-color: #ffffff">  public :: prep_aoflux_init</a>
+    29) <a name="l29" style="background-color: #ffffff"></a>
+    30) <a name="l30" style="background-color: #ffffff">  public :: prep_aoflux_calc_xao_ox</a>
+    31) <a name="l31" style="background-color: #ffffff">  public :: prep_aoflux_calc_xao_ax</a>
+    32) <a name="l32" style="background-color: #ffffff"></a>
+    33) <a name="l33" style="background-color: #ffffff">  public :: prep_aoflux_get_xao_ox</a>
+    34) <a name="l34" style="background-color: #ffffff">  public :: prep_aoflux_get_xao_ax</a>
+    35) <a name="l35" style="background-color: #ffffff">  public :: prep_aoflux_get_o2x_ax</a>
+    36) <a name="l36" style="background-color: #ffffff"></a>
+    37) <a name="l37" style="background-color: #ffffff">  !--------------------------------------------------------------------------</a>
+    38) <a name="l38" style="background-color: #ffffff">  ! Private data</a>
+    39) <a name="l39" style="background-color: #ffffff">  !--------------------------------------------------------------------------</a>
+    40) <a name="l40" style="background-color: #ffffff"></a>
+    41) <a name="l41" style="background-color: #ffffff">  ! attribute vectors</a>
+    42) <a name="l42" style="background-color: #ffffff">  type(mct_aVect), pointer :: xao_ox(:)   ! Atm-ocn fluxes, ocn grid, cpl pes </a>
+    43) <a name="l43" style="background-color: #ffffff">  type(mct_aVect), pointer :: xao_ax(:)   ! Atm-ocn fluxes, atm grid, cpl pes </a>
+    44) <a name="l44" style="background-color: #ffffff">  type(mct_aVect), pointer :: o2x_ax(:)   ! only needed if aoflux_grid is 'atm'</a>
+    45) <a name="l45" style="background-color: #ffffff"></a>
+    46) <a name="l46" style="background-color: #ffffff">  ! seq_comm_getData variables</a>
+    47) <a name="l47" style="background-color: #ffffff">  logical :: iamroot_CPLID                ! .true. =&gt; CPLID masterproc</a>
+    48) <a name="l48" style="background-color: #ffffff">  integer :: mpicom_CPLID                 ! MPI cpl communicator</a>
+    49) <a name="l49" style="background-color: #ffffff"></a>
+    50) <a name="l50" style="background-color: #ffffff">  ! seq_infodata_getData variables</a>
+    51) <a name="l51" style="background-color: #ffffff">  !================================================================================================</a>
+    52) <a name="l52" style="background-color: #ffffff"></a>
+    53) <a name="l53" style="background-color: #ffffff">contains</a>
+    54) <a name="l54" style="background-color: #ffffff"></a>
+    55) <a name="l55" style="background-color: #ffffff">  !================================================================================================</a>
+    56) <a name="l56" style="background-color: #ffffff"></a>
+    57) <a name="l57" style="background-color: #ffffff">  subroutine prep_aoflux_init (infodata, fractions_ox, fractions_ax)</a>
+    58) <a name="l58" style="background-color: #ffffff"></a>
+    59) <a name="l59" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+    60) <a name="l60" style="background-color: #ffffff">    ! Description</a>
+    61) <a name="l61" style="background-color: #ffffff">    ! Initialize atm/ocn flux component and compute ocean albedos</a>
+    62) <a name="l62" style="background-color: #ffffff">    ! module variables</a>
+    63) <a name="l63" style="background-color: #ffffff">    !</a>
+    64) <a name="l64" style="background-color: #ffffff">    ! Arguments</a>
+    65) <a name="l65" style="background-color: #ffffff">    type (seq_infodata_type) , intent(inout) :: infodata</a>
+    66) <a name="l66" style="background-color: #ffffff">    type(mct_aVect)          , intent(in)    :: fractions_ox(:) </a>
+    67) <a name="l67" style="background-color: #ffffff">    type(mct_aVect)          , intent(in)    :: fractions_ax(:) </a>
+    68) <a name="l68" style="background-color: #ffffff">    !</a>
+    69) <a name="l69" style="background-color: #ffffff">    ! Local Variables</a>
+    70) <a name="l70" style="background-color: #ffffff">    integer                     :: exi  , efi, eoi</a>
+    71) <a name="l71" style="background-color: #ffffff">    integer                     :: lsize_o</a>
+    72) <a name="l72" style="background-color: #ffffff">    integer                     :: lsize_a</a>
+    73) <a name="l73" style="background-color: #ffffff">    character(SHR_KIND_CS)      :: aoflux_grid ! grid for atm ocn flux calc</a>
+    74) <a name="l74" style="background-color: #ffffff">    type(mct_avect) , pointer   :: a2x_ax</a>
+    75) <a name="l75" style="background-color: #ffffff">    type(mct_avect) , pointer   :: o2x_ox</a>
+    76) <a name="l76" style="background-color: #ffffff">    character(*)    , parameter :: subname = '(prep_aoflux_init)'</a>
+    77) <a name="l77" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+    78) <a name="l78" style="background-color: #ffffff"></a>
+    79) <a name="l79" style="background-color: #ffffff">    call seq_infodata_getdata(infodata,  &amp;</a>
+    80) <a name="l80" style="background-color: #ffffff">         aoflux_grid=aoflux_grid)</a>
+    81) <a name="l81" style="background-color: #ffffff"></a>
+    82) <a name="l82" style="background-color: #ffffff">    call seq_comm_getdata(CPLID, &amp;</a>
+    83) <a name="l83" style="background-color: #ffffff">         mpicom=mpicom_CPLID, iamroot=iamroot_CPLID)</a>
+    84) <a name="l84" style="background-color: #ffffff"></a>
+    85) <a name="l85" style="background-color: #ffffff">    a2x_ax =&gt; component_get_c2x_cx(atm(1)) </a>
+    86) <a name="l86" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(a2x_ax)) then</a>
+    87) <a name="l87" style="background-color: #ffffff">       lsize_a = mct_aVect_lsize(a2x_ax)</a>
+    88) <a name="l88" style="background-color: #ffffff">    else</a>
+    89) <a name="l89" style="background-color: #ffff99">       lsize_a = 0</a>
+    90) <a name="l90" style="background-color: #ffff99">    end if</a>
+    91) <a name="l91" style="background-color: #ffff99"></a>
+    92) <a name="l92" style="background-color: #ffffff">    o2x_ox =&gt; component_get_c2x_cx(ocn(1)) </a>
+    93) <a name="l93" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">associated(o2x_ox)) then </a>
+    94) <a name="l94" style="background-color: #ffffff">       lsize_o = mct_aVect_lsize(o2x_ox)</a>
+    95) <a name="l95" style="background-color: #ffffff">    else</a>
+    96) <a name="l96" style="background-color: #ffff99">       lsize_o = 0</a>
+    97) <a name="l97" style="background-color: #ffff99">    end if</a>
+    98) <a name="l98" style="background-color: #ffff99"></a>
+    99) <a name="l99" style="background-color: #fafad2">    allocate(xao_ax(num_inst_xao))</a>
+   100) <a name="l100" style="background-color: #ffffff">    do exi = 1,num_inst_xao</a>
+   101) <a name="l101" style="background-color: #ffffff">       call mct_aVect_init(xao_ax(exi), rList=seq_flds_xao_fields, lsize=lsize_a)</a>
+   102) <a name="l102" style="background-color: #ffffff">       call mct_aVect_zero(xao_ax(exi))</a>
+   103) <a name="l103" style="background-color: #ffffff">    end do</a>
+   104) <a name="l104" style="background-color: #fafad2">    allocate(xao_ox(num_inst_xao))</a>
+   105) <a name="l105" style="background-color: #ffffff">    do exi = 1,num_inst_xao</a>
+   106) <a name="l106" style="background-color: #ffffff">       call mct_aVect_init(xao_ox(exi), rList=seq_flds_xao_fields, lsize=lsize_o)</a>
+   107) <a name="l107" style="background-color: #ffffff">       call mct_aVect_zero(xao_ox(exi))</a>
+   108) <a name="l108" style="background-color: #ffffff">    enddo</a>
+   109) <a name="l109" style="background-color: #ffffff"></a>
+   110) <a name="l110" style="background-color: #ffffff">    if (aoflux_grid == 'atm') then</a>
+   111) <a name="l111" style="background-color: #ffff99">       allocate(o2x_ax(num_inst_ocn))</a>
+   112) <a name="l112" style="background-color: #ffff99">       do eoi = 1,num_inst_ocn</a>
+   113) <a name="l113" style="background-color: #ffff99">          call mct_aVect_init(o2x_ax(eoi), rList=seq_flds_o2x_fields, lsize=lsize_a)</a>
+   114) <a name="l114" style="background-color: #ffff99">          call mct_aVect_zero(o2x_ax(eoi))</a>
+   115) <a name="l115" style="background-color: #ffff99">       enddo</a>
+   116) <a name="l116" style="background-color: #ffff99">    end if</a>
+   117) <a name="l117" style="background-color: #ffff99"></a>
+   118) <a name="l118" style="background-color: #ffffff">  end subroutine prep_aoflux_init</a>
+   119) <a name="l119" style="background-color: #ffffff"></a>
+   120) <a name="l120" style="background-color: #ffffff">  !================================================================================================</a>
+   121) <a name="l121" style="background-color: #ffffff"></a>
+   122) <a name="l122" style="background-color: #ffffff">  subroutine prep_aoflux_calc_xao_ax(fractions_ox, flds, timer)</a>
+   123) <a name="l123" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+   124) <a name="l124" style="background-color: #ffffff">    ! Description</a>
+   125) <a name="l125" style="background-color: #ffffff">    ! Create xao_ox </a>
+   126) <a name="l126" style="background-color: #ffffff">    !</a>
+   127) <a name="l127" style="background-color: #ffffff">    ! Uses</a>
+   128) <a name="l128" style="background-color: #ffffff">    use prep_atm_mod, only: prep_atm_get_mapper_So2a</a>
+   129) <a name="l129" style="background-color: #ffffff">    use prep_atm_mod, only: prep_atm_get_mapper_Fo2a</a>
+   130) <a name="l130" style="background-color: #ffffff">    !</a>
+   131) <a name="l131" style="background-color: #ffffff">    ! Arguments</a>
+   132) <a name="l132" style="background-color: #ffffff">    type(mct_aVect) , intent(in)    :: fractions_ox(:)</a>
+   133) <a name="l133" style="background-color: #ffffff">    character(len=*), intent(in)    :: flds</a>
+   134) <a name="l134" style="background-color: #ffffff">    character(len=*), intent(in)    :: timer</a>
+   135) <a name="l135" style="background-color: #ffffff">    !</a>
+   136) <a name="l136" style="background-color: #ffffff">    ! Local Variables</a>
+   137) <a name="l137" style="background-color: #ffffff">    type(seq_map)   , pointer :: mapper_So2a</a>
+   138) <a name="l138" style="background-color: #ffffff">    type(seq_map)   , pointer :: mapper_Fo2a</a>
+   139) <a name="l139" style="background-color: #ffffff">    integer :: exi, efi</a>
+   140) <a name="l140" style="background-color: #ffffff">    character(*), parameter :: subname = '(prep_aoflux_calc_xao_ax)'</a>
+   141) <a name="l141" style="background-color: #ffffff">    character(*), parameter :: F00 = &quot;('&quot;//subname//&quot; : ', 4A )&quot;</a>
+   142) <a name="l142" style="background-color: #ffffff">    !---------------------------------------------------------------</a>
+   143) <a name="l143" style="background-color: #ffffff"></a>
+   144) <a name="l144" style="background-color: #ffffff">    call t_drvstartf (trim(timer),barrier=mpicom_CPLID)</a>
+   145) <a name="l145" style="background-color: #ffffff">    if (trim(flds) == 'albedos') then</a>
+   146) <a name="l146" style="background-color: #ffffff">       do exi = 1,num_inst_xao</a>
+   147) <a name="l147" style="background-color: #ffffff">          efi = mod((exi-1),num_inst_frc) + 1</a>
+   148) <a name="l148" style="background-color: #ffffff"></a>
+   149) <a name="l149" style="background-color: #ffffff">          mapper_So2a =&gt; prep_atm_get_mapper_So2a()</a>
+   150) <a name="l150" style="background-color: #ffffff">          call seq_map_map(mapper_So2a, xao_ox(exi), xao_ax(exi), &amp;</a>
+   151) <a name="l151" style="background-color: #ffffff">               fldlist=seq_flds_xao_albedo, norm=.true., &amp;</a>
+   152) <a name="l152" style="background-color: #ffffff">               avwts_s=fractions_ox(efi),avwtsfld_s='ofrac')</a>
+   153) <a name="l153" style="background-color: #ffffff">       enddo</a>
+   154) <a name="l154" style="background-color: #ffffff">    end if</a>
+   155) <a name="l155" style="background-color: #ffffff"></a>
+   156) <a name="l156" style="background-color: #ffffff">    if (trim(flds) == 'states_and_fluxes') then</a>
+   157) <a name="l157" style="background-color: #ffffff">       do exi = 1,num_inst_xao</a>
+   158) <a name="l158" style="background-color: #ffffff">          efi = mod((exi-1),num_inst_frc) + 1</a>
+   159) <a name="l159" style="background-color: #ffffff"></a>
+   160) <a name="l160" style="background-color: #ffffff">          mapper_So2a =&gt; prep_atm_get_mapper_So2a()</a>
+   161) <a name="l161" style="background-color: #ffffff">          call seq_map_map(mapper_So2a, xao_ox(exi), xao_ax(exi), &amp;</a>
+   162) <a name="l162" style="background-color: #ffffff">               fldlist=seq_flds_xao_states, norm=.true., &amp;</a>
+   163) <a name="l163" style="background-color: #ffffff">               avwts_s=fractions_ox(efi),avwtsfld_s='ofrac')</a>
+   164) <a name="l164" style="background-color: #ffffff"></a>
+   165) <a name="l165" style="background-color: #ffffff">          mapper_Fo2a =&gt; prep_atm_get_mapper_Fo2a()</a>
+   166) <a name="l166" style="background-color: #ffffff">          call seq_map_map(mapper_Fo2a, xao_ox(exi), xao_ax(exi),&amp;</a>
+   167) <a name="l167" style="background-color: #ffffff">               fldlist=seq_flds_xao_fluxes, norm=.true., &amp;</a>
+   168) <a name="l168" style="background-color: #ffffff">               avwts_s=fractions_ox(efi),avwtsfld_s='ofrac')</a>
+   169) <a name="l169" style="background-color: #ffffff">       enddo</a>
+   170) <a name="l170" style="background-color: #ffffff">    end if</a>
+   171) <a name="l171" style="background-color: #ffffff">    call t_drvstopf  (trim(timer))</a>
+   172) <a name="l172" style="background-color: #ffffff"></a>
+   173) <a name="l173" style="background-color: #ffffff">  end subroutine prep_aoflux_calc_xao_ax</a>
+   174) <a name="l174" style="background-color: #ffffff"></a>
+   175) <a name="l175" style="background-color: #ffffff">  !================================================================================================</a>
+   176) <a name="l176" style="background-color: #ffffff"></a>
+   177) <a name="l177" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">prep_aoflux_calc_xao_ox(timer)</a>
+   178) <a name="l178" style="background-color: #ffcccc">    !---------------------------------------------------------------</a>
+   179) <a name="l179" style="background-color: #ffcccc">    ! Description</a>
+   180) <a name="l180" style="background-color: #ffcccc">    ! Create xao_ox </a>
+   181) <a name="l181" style="background-color: #ffcccc">    !</a>
+   182) <a name="l182" style="background-color: #ffcccc">    ! Uses</a>
+   183) <a name="l183" style="background-color: #ffcccc">    use prep_ocn_mod, only: prep_ocn_get_mapper_Fa2o</a>
+   184) <a name="l184" style="background-color: #ffcccc">    !</a>
+   185) <a name="l185" style="background-color: #ffcccc">    ! Arguments</a>
+   186) <a name="l186" style="background-color: #ffcccc">    character(len=*), intent(in)    :: timer</a>
+   187) <a name="l187" style="background-color: #ffcccc">    !</a>
+   188) <a name="l188" style="background-color: #ffcccc">    ! Local Variables</a>
+   189) <a name="l189" style="background-color: #ffcccc">    type(seq_map), pointer :: mapper_Fa2o</a>
+   190) <a name="l190" style="background-color: #ffcccc">    integer :: exi</a>
+   191) <a name="l191" style="background-color: #ffcccc">    character(*), parameter :: subname = '(prep_aoflux_calc_xao_ax)'</a>
+   192) <a name="l192" style="background-color: #ffcccc">    character(*), parameter :: F00 = &quot;('&quot;//subname//&quot; : ', 4A )&quot;</a>
+   193) <a name="l193" style="background-color: #ffcccc">    !---------------------------------------------------------------</a>
+   194) <a name="l194" style="background-color: #ffcccc"></a>
+   195) <a name="l195" style="background-color: #ffcccc">    ! this mapping has to be done with area overlap mapping for all fields </a>
+   196) <a name="l196" style="background-color: #ffcccc">    ! due to the masking of the xao_ax data and the fact that a2oS is bilinear</a>
+   197) <a name="l197" style="background-color: #ffcccc"></a>
+   198) <a name="l198" style="background-color: #ffcccc">    call t_drvstartf (trim(timer),barrier=mpicom_CPLID)</a>
+   199) <a name="l199" style="background-color: #ffcccc">    do exi = 1,num_inst_xao </a>
+   200) <a name="l200" style="background-color: #ffcccc">       if (iamroot_CPLID .and. exi == 1) then </a>
+   201) <a name="l201" style="background-color: #ffcccc">          write(logunit,F00) 'Calling map_atm2ocn_mct for mapping xao_ax to xao_ox'</a>
+   202) <a name="l202" style="background-color: #ffcccc">       end if</a>
+   203) <a name="l203" style="background-color: #ffcccc"></a>
+   204) <a name="l204" style="background-color: #ffcccc">       mapper_Fa2o =&gt; prep_ocn_get_mapper_Fa2o()</a>
+   205) <a name="l205" style="background-color: #ffcccc">       call seq_map_map(mapper_Fa2o, xao_ax(exi), xao_ox(exi), norm=.true.)</a>
+   206) <a name="l206" style="background-color: #ffcccc">    enddo</a>
+   207) <a name="l207" style="background-color: #ffcccc">    call t_drvstopf  (trim(timer))</a>
+   208) <a name="l208" style="background-color: #ffcccc"></a>
+   209) <a name="l209" style="background-color: #ffcccc">  end subroutine prep_aoflux_calc_xao_ox</a>
+   210) <a name="l210" style="background-color: #ffffff"></a>
+   211) <a name="l211" style="background-color: #ffffff">  !================================================================================================</a>
+   212) <a name="l212" style="background-color: #ffffff"></a>
+   213) <a name="l213" style="background-color: #ffffff">  function prep_aoflux_get_xao_ox()</a>
+   214) <a name="l214" style="background-color: #ffffff">    type(mct_aVect), pointer :: prep_aoflux_get_xao_ox(:)</a>
+   215) <a name="l215" style="background-color: #ffffff">    prep_aoflux_get_xao_ox =&gt; xao_ox(:)   </a>
+   216) <a name="l216" style="background-color: #ffffff">  end function prep_aoflux_get_xao_ox</a>
+   217) <a name="l217" style="background-color: #ffffff"></a>
+   218) <a name="l218" style="background-color: #ffffff">  function prep_aoflux_get_xao_ax()</a>
+   219) <a name="l219" style="background-color: #ffffff">    type(mct_aVect), pointer :: prep_aoflux_get_xao_ax(:)</a>
+   220) <a name="l220" style="background-color: #ffffff">    prep_aoflux_get_xao_ax =&gt; xao_ax(:)   </a>
+   221) <a name="l221" style="background-color: #ffffff">  end function prep_aoflux_get_xao_ax</a>
+   222) <a name="l222" style="background-color: #ffffff"></a>
+   223) <a name="l223" style="background-color: #ffffff">  function </a><a style="background-color: #ffcccc">prep_aoflux_get_o2x_ax()</a>
+   224) <a name="l224" style="background-color: #ffcccc">    type(mct_aVect), pointer :: prep_aoflux_get_o2x_ax(:)</a>
+   225) <a name="l225" style="background-color: #ffcccc">    prep_aoflux_get_o2x_ax =&gt; o2x_ax(:)   </a>
+   226) <a name="l226" style="background-color: #ffcccc">  end function prep_aoflux_get_o2x_ax</a>
+   227) <a name="l227" style="background-color: #ffffff"></a>
+   228) <a name="l228" style="background-color: #ffffff">end module prep_aoflux_mod</a>
+   229) <a name="l229" style="background-color: #ffffff"></a>
+   230) <a name="l230" style="background-color: #ffffff"></a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

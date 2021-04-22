@@ -1,0 +1,530 @@
+<html>
+<head>
+<title>Listing of Hydrology1Mod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;Hydrology1Mod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 97.92&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module Hydrology1Mod</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">!BOP</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !MODULE:  Hydrology1Mod</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     9) <a name="l9" style="background-color: #ffffff">! Calculation of</a>
+    10) <a name="l10" style="background-color: #ffffff">! (1) water storage of intercepted precipitation</a>
+    11) <a name="l11" style="background-color: #ffffff">! (2) direct throughfall and canopy drainage of precipitation</a>
+    12) <a name="l12" style="background-color: #ffffff">! (3) the fraction of foliage covered by water and the fraction</a>
+    13) <a name="l13" style="background-color: #ffffff">!     of foliage that is dry and transpiring.</a>
+    14) <a name="l14" style="background-color: #ffffff">! (4) snow layer initialization if the snow accumulation exceeds 10 mm.</a>
+    15) <a name="l15" style="background-color: #ffffff">!</a>
+    16) <a name="l16" style="background-color: #ffffff">! !PUBLIC TYPES:</a>
+    17) <a name="l17" style="background-color: #ffffff">   implicit none</a>
+    18) <a name="l18" style="background-color: #ffffff">   save</a>
+    19) <a name="l19" style="background-color: #ffffff">!</a>
+    20) <a name="l20" style="background-color: #ffffff">! !PUBLIC MEMBER FUNCTIONS:</a>
+    21) <a name="l21" style="background-color: #ffffff">   public :: Hydrology1</a>
+    22) <a name="l22" style="background-color: #ffffff">!</a>
+    23) <a name="l23" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    24) <a name="l24" style="background-color: #ffffff">! Created by Mariana Vertenstein</a>
+    25) <a name="l25" style="background-color: #ffffff">!</a>
+    26) <a name="l26" style="background-color: #ffffff">!EOP</a>
+    27) <a name="l27" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    28) <a name="l28" style="background-color: #ffffff"></a>
+    29) <a name="l29" style="background-color: #ffffff">contains</a>
+    30) <a name="l30" style="background-color: #ffffff"></a>
+    31) <a name="l31" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    32) <a name="l32" style="background-color: #ffffff">!BOP</a>
+    33) <a name="l33" style="background-color: #ffffff">!</a>
+    34) <a name="l34" style="background-color: #ffffff">! !IROUTINE: Hydrology1</a>
+    35) <a name="l35" style="background-color: #ffffff">!</a>
+    36) <a name="l36" style="background-color: #ffffff">! !INTERFACE:</a>
+    37) <a name="l37" style="background-color: #ffffff">   subroutine Hydrology1(lbc, ubc, lbp, ubp, num_nolakec, filter_nolakec, &amp;</a>
+    38) <a name="l38" style="background-color: #ffffff">                         num_nolakep, filter_nolakep)</a>
+    39) <a name="l39" style="background-color: #ffffff">!</a>
+    40) <a name="l40" style="background-color: #ffffff">! !DESCRIPTION:</a>
+    41) <a name="l41" style="background-color: #ffffff">! Calculation of</a>
+    42) <a name="l42" style="background-color: #ffffff">! (1) water storage of intercepted precipitation</a>
+    43) <a name="l43" style="background-color: #ffffff">! (2) direct throughfall and canopy drainage of precipitation</a>
+    44) <a name="l44" style="background-color: #ffffff">! (3) the fraction of foliage covered by water and the fraction</a>
+    45) <a name="l45" style="background-color: #ffffff">!     of foliage that is dry and transpiring.</a>
+    46) <a name="l46" style="background-color: #ffffff">! (4) snow layer initialization if the snow accumulation exceeds 10 mm.</a>
+    47) <a name="l47" style="background-color: #ffffff">! Note:  The evaporation loss is taken off after the calculation of leaf</a>
+    48) <a name="l48" style="background-color: #ffffff">! temperature in the subroutine clm\_leaftem.f90, not in this subroutine.</a>
+    49) <a name="l49" style="background-color: #ffffff">!</a>
+    50) <a name="l50" style="background-color: #ffffff">! !USES:</a>
+    51) <a name="l51" style="background-color: #ffffff">    use shr_kind_mod , only : r8 =&gt; shr_kind_r8</a>
+    52) <a name="l52" style="background-color: #ffffff">    use clmtype</a>
+    53) <a name="l53" style="background-color: #ffffff">    use clm_atmlnd   , only : clm_a2l</a>
+    54) <a name="l54" style="background-color: #ffffff">    use clm_varcon   , only : tfrz, istice, istwet, istsoil, istice_mec, isturb, &amp;</a>
+    55) <a name="l55" style="background-color: #ffffff">                              icol_roof, icol_sunwall, icol_shadewall</a>
+    56) <a name="l56" style="background-color: #ffffff">    use clm_varcon   , only : istcrop</a>
+    57) <a name="l57" style="background-color: #ffffff">    use FracWetMod   , only : FracWet</a>
+    58) <a name="l58" style="background-color: #ffffff">    use clm_time_manager , only : get_step_size</a>
+    59) <a name="l59" style="background-color: #ffffff">    use subgridAveMod, only : p2c</a>
+    60) <a name="l60" style="background-color: #ffffff">    use SNICARMod    , only : snw_rds_min</a>
+    61) <a name="l61" style="background-color: #ffffff"></a>
+    62) <a name="l62" style="background-color: #ffffff">!</a>
+    63) <a name="l63" style="background-color: #ffffff">! !ARGUMENTS:</a>
+    64) <a name="l64" style="background-color: #ffffff">    implicit none</a>
+    65) <a name="l65" style="background-color: #ffffff">    integer, intent(in) :: lbp, ubp                     ! pft bounds</a>
+    66) <a name="l66" style="background-color: #ffffff">    integer, intent(in) :: lbc, ubc                     ! column bounds</a>
+    67) <a name="l67" style="background-color: #ffffff">    integer, intent(in) :: num_nolakec                  ! number of column non-lake points in column filter</a>
+    68) <a name="l68" style="background-color: #ffffff">    integer, intent(in) :: filter_nolakec(ubc-lbc+1)    ! column filter for non-lake points</a>
+    69) <a name="l69" style="background-color: #ffffff">    integer, intent(in) :: num_nolakep                  ! number of pft non-lake points in pft filter</a>
+    70) <a name="l70" style="background-color: #ffffff">    integer, intent(in) :: filter_nolakep(ubp-lbp+1)    ! pft filter for non-lake points</a>
+    71) <a name="l71" style="background-color: #ffffff">!</a>
+    72) <a name="l72" style="background-color: #ffffff">! !CALLED FROM:</a>
+    73) <a name="l73" style="background-color: #ffffff">! subroutine clm_driver1</a>
+    74) <a name="l74" style="background-color: #ffffff">!</a>
+    75) <a name="l75" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    76) <a name="l76" style="background-color: #ffffff">! 15 September 1999: Yongjiu Dai; Initial code</a>
+    77) <a name="l77" style="background-color: #ffffff">! 15 December 1999:  Paul Houser and Jon Radakovich; F90 Revision</a>
+    78) <a name="l78" style="background-color: #ffffff">! 2/15/02, Peter Thornton: Migrated to new data structures. Required</a>
+    79) <a name="l79" style="background-color: #ffffff">! adding a PFT loop.</a>
+    80) <a name="l80" style="background-color: #ffffff">! 4/26/05, Peter Thornton: Made the canopy interception factor fpi max=0.25</a>
+    81) <a name="l81" style="background-color: #ffffff">!   the default behavior</a>
+    82) <a name="l82" style="background-color: #ffffff">!</a>
+    83) <a name="l83" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+    84) <a name="l84" style="background-color: #ffffff">!</a>
+    85) <a name="l85" style="background-color: #ffffff">! local pointers to original implicit in arrays</a>
+    86) <a name="l86" style="background-color: #ffffff">!</a>
+    87) <a name="l87" style="background-color: #ffffff">    real(r8), pointer :: qflx_floodg(:)   ! gridcell flux of flood water from RTM</a>
+    88) <a name="l88" style="background-color: #ffffff">    real(r8), pointer :: qflx_floodc(:)   ! column flux of flood water from RTM</a>
+    89) <a name="l89" style="background-color: #ffffff">    integer , pointer :: cgridcell(:)      ! columns's gridcell</a>
+    90) <a name="l90" style="background-color: #ffffff">    integer , pointer :: clandunit(:)      ! columns's landunit</a>
+    91) <a name="l91" style="background-color: #ffffff">    integer , pointer :: pgridcell(:)      ! pft's gridcell</a>
+    92) <a name="l92" style="background-color: #ffffff">    integer , pointer :: plandunit(:)      ! pft's landunit</a>
+    93) <a name="l93" style="background-color: #ffffff">    integer , pointer :: pcolumn(:)        ! pft's column</a>
+    94) <a name="l94" style="background-color: #ffffff">    integer , pointer :: npfts(:)          ! number of pfts in column</a>
+    95) <a name="l95" style="background-color: #ffffff">    integer , pointer :: pfti(:)           ! column's beginning pft index</a>
+    96) <a name="l96" style="background-color: #ffffff">    integer , pointer :: ltype(:)          ! landunit type</a>
+    97) <a name="l97" style="background-color: #ffffff">    integer , pointer :: ctype(:)          ! column type</a>
+    98) <a name="l98" style="background-color: #ffffff">    real(r8), pointer :: forc_rain(:)      ! rain rate [mm/s]</a>
+    99) <a name="l99" style="background-color: #ffffff">    real(r8), pointer :: forc_snow(:)      ! snow rate [mm/s]</a>
+   100) <a name="l100" style="background-color: #ffffff">    real(r8), pointer :: forc_t(:)         ! atmospheric temperature (Kelvin)</a>
+   101) <a name="l101" style="background-color: #ffffff">    logical , pointer :: do_capsnow(:)     ! true =&gt; do snow capping</a>
+   102) <a name="l102" style="background-color: #ffffff">    real(r8), pointer :: t_grnd(:)         ! ground temperature (Kelvin)</a>
+   103) <a name="l103" style="background-color: #ffffff">    real(r8), pointer :: dewmx(:)          ! Maximum allowed dew [mm]</a>
+   104) <a name="l104" style="background-color: #ffffff">    integer , pointer :: frac_veg_nosno(:) ! fraction of veg not covered by snow (0/1 now) [-]</a>
+   105) <a name="l105" style="background-color: #ffffff">    real(r8), pointer :: elai(:)           ! one-sided leaf area index with burying by snow</a>
+   106) <a name="l106" style="background-color: #ffffff">    real(r8), pointer :: esai(:)           ! one-sided stem area index with burying by snow</a>
+   107) <a name="l107" style="background-color: #ffffff">    real(r8), pointer :: h2ocan_loss(:)    ! canopy water mass balance term (column)</a>
+   108) <a name="l108" style="background-color: #ffffff">    real(r8), pointer :: irrig_rate(:)     ! current irrigation rate (applied if n_irrig_steps_left &gt; 0) [mm/s]</a>
+   109) <a name="l109" style="background-color: #ffffff">!</a>
+   110) <a name="l110" style="background-color: #ffffff">! local pointers to original implicit inout arrays</a>
+   111) <a name="l111" style="background-color: #ffffff">!</a>
+   112) <a name="l112" style="background-color: #ffffff">    integer , pointer :: snl(:)            ! number of snow layers</a>
+   113) <a name="l113" style="background-color: #ffffff">    real(r8), pointer :: snowdp(:)         ! snow height (m)</a>
+   114) <a name="l114" style="background-color: #ffffff">    real(r8), pointer :: h2osno(:)         ! snow water (mm H2O)</a>
+   115) <a name="l115" style="background-color: #ffffff">    real(r8), pointer :: h2ocan(:)         ! total canopy water (mm H2O)</a>
+   116) <a name="l116" style="background-color: #ffffff">    real(r8), pointer :: qflx_irrig(:)          ! irrigation amount (mm/s)</a>
+   117) <a name="l117" style="background-color: #ffffff">    integer, pointer  :: n_irrig_steps_left(:)  ! number of time steps for which we still need to irrigate today</a>
+   118) <a name="l118" style="background-color: #ffffff">!</a>
+   119) <a name="l119" style="background-color: #ffffff">! local pointers to original implicit out arrays</a>
+   120) <a name="l120" style="background-color: #ffffff">!</a>
+   121) <a name="l121" style="background-color: #ffffff">    real(r8), pointer :: qflx_prec_intr(:)     ! interception of precipitation [mm/s]</a>
+   122) <a name="l122" style="background-color: #ffffff">    real(r8), pointer :: qflx_prec_grnd(:)     ! water onto ground including canopy runoff [kg/(m2 s)]</a>
+   123) <a name="l123" style="background-color: #ffffff">    real(r8), pointer :: qflx_snwcp_liq(:)     ! excess rainfall due to snow capping (mm H2O /s) [+]</a>
+   124) <a name="l124" style="background-color: #ffffff">    real(r8), pointer :: qflx_snwcp_ice(:)     ! excess snowfall due to snow capping (mm H2O /s) [+]</a>
+   125) <a name="l125" style="background-color: #ffffff">    real(r8), pointer :: qflx_snow_grnd_pft(:) ! snow on ground after interception (mm H2O/s) [+]</a>
+   126) <a name="l126" style="background-color: #ffffff">    real(r8), pointer :: qflx_snow_grnd_col(:) ! snow on ground after interception (mm H2O/s) [+]</a>
+   127) <a name="l127" style="background-color: #ffffff">    real(r8), pointer :: qflx_rain_grnd(:)     ! rain on ground after interception (mm H2O/s) [+]</a>
+   128) <a name="l128" style="background-color: #ffffff">    real(r8), pointer :: fwet(:)               ! fraction of canopy that is wet (0 to 1)</a>
+   129) <a name="l129" style="background-color: #ffffff">    real(r8), pointer :: fdry(:)               ! fraction of foliage that is green and dry [-] (new)</a>
+   130) <a name="l130" style="background-color: #ffffff">    real(r8), pointer :: zi(:,:)               ! interface level below a &quot;z&quot; level (m)</a>
+   131) <a name="l131" style="background-color: #ffffff">    real(r8), pointer :: dz(:,:)               ! layer depth (m)</a>
+   132) <a name="l132" style="background-color: #ffffff">    real(r8), pointer :: z(:,:)                ! layer thickness (m)</a>
+   133) <a name="l133" style="background-color: #ffffff">    real(r8), pointer :: t_soisno(:,:)         ! soil temperature (Kelvin)</a>
+   134) <a name="l134" style="background-color: #ffffff">    real(r8), pointer :: h2osoi_ice(:,:)       ! ice lens (kg/m2)</a>
+   135) <a name="l135" style="background-color: #ffffff">    real(r8), pointer :: h2osoi_liq(:,:)       ! liquid water (kg/m2)</a>
+   136) <a name="l136" style="background-color: #ffffff">    real(r8), pointer :: frac_iceold(:,:)      ! fraction of ice relative to the tot water</a>
+   137) <a name="l137" style="background-color: #ffffff">    real(r8), pointer :: snw_rds(:,:)          ! effective snow grain radius (col,lyr) [microns, m^-6]</a>
+   138) <a name="l138" style="background-color: #ffffff">    real(r8), pointer :: mss_bcpho(:,:)        ! mass of hydrophobic BC in snow (col,lyr) [kg]</a>
+   139) <a name="l139" style="background-color: #ffffff">    real(r8), pointer :: mss_bcphi(:,:)        ! mass of hydrophilic BC in snow (col,lyr) [kg]</a>
+   140) <a name="l140" style="background-color: #ffffff">    real(r8), pointer :: mss_bctot(:,:)        ! total mass of BC in snow (col,lyr) [kg]</a>
+   141) <a name="l141" style="background-color: #ffffff">    real(r8), pointer :: mss_bc_col(:)         ! total column mass of BC in snow (col,lyr) [kg]</a>
+   142) <a name="l142" style="background-color: #ffffff">    real(r8), pointer :: mss_bc_top(:)         ! total top-layer mass of BC (col,lyr) [kg]</a>
+   143) <a name="l143" style="background-color: #ffffff">    real(r8), pointer :: mss_ocpho(:,:)        ! mass of hydrophobic OC in snow (col,lyr) [kg]</a>
+   144) <a name="l144" style="background-color: #ffffff">    real(r8), pointer :: mss_ocphi(:,:)        ! mass of hydrophilic OC in snow (col,lyr) [kg]</a>
+   145) <a name="l145" style="background-color: #ffffff">    real(r8), pointer :: mss_octot(:,:)        ! total mass of OC in snow (col,lyr) [kg]</a>
+   146) <a name="l146" style="background-color: #ffffff">    real(r8), pointer :: mss_oc_col(:)         ! total column mass of OC in snow (col,lyr) [kg]</a>
+   147) <a name="l147" style="background-color: #ffffff">    real(r8), pointer :: mss_oc_top(:)         ! total top-layer mass of OC (col,lyr) [kg]</a>
+   148) <a name="l148" style="background-color: #ffffff">    real(r8), pointer :: mss_dst1(:,:)         ! mass of dust species 1 in snow (col,lyr) [kg]</a>
+   149) <a name="l149" style="background-color: #ffffff">    real(r8), pointer :: mss_dst2(:,:)         ! mass of dust species 2 in snow (col,lyr) [kg]</a>
+   150) <a name="l150" style="background-color: #ffffff">    real(r8), pointer :: mss_dst3(:,:)         ! mass of dust species 3 in snow (col,lyr) [kg]</a>
+   151) <a name="l151" style="background-color: #ffffff">    real(r8), pointer :: mss_dst4(:,:)         ! mass of dust species 4 in snow (col,lyr) [kg]</a>
+   152) <a name="l152" style="background-color: #ffffff">    real(r8), pointer :: mss_dsttot(:,:)       ! total mass of dust in snow (col,lyr) [kg]</a>
+   153) <a name="l153" style="background-color: #ffffff">    real(r8), pointer :: mss_dst_col(:)        ! total column mass of dust in snow (col,lyr) [kg]</a>
+   154) <a name="l154" style="background-color: #ffffff">    real(r8), pointer :: mss_dst_top(:)        ! total top-layer mass of dust in snow (col,lyr) [kg]</a>
+   155) <a name="l155" style="background-color: #ffffff">!</a>
+   156) <a name="l156" style="background-color: #ffffff">!</a>
+   157) <a name="l157" style="background-color: #ffffff">! !OTHER LOCAL VARIABLES:</a>
+   158) <a name="l158" style="background-color: #ffffff">!EOP</a>
+   159) <a name="l159" style="background-color: #ffffff">!</a>
+   160) <a name="l160" style="background-color: #ffffff">    integer  :: f                            ! filter index</a>
+   161) <a name="l161" style="background-color: #ffffff">    integer  :: pi                           ! pft index</a>
+   162) <a name="l162" style="background-color: #ffffff">    integer  :: p                            ! pft index</a>
+   163) <a name="l163" style="background-color: #ffffff">    integer  :: c                            ! column index</a>
+   164) <a name="l164" style="background-color: #ffffff">    integer  :: l                            ! landunit index</a>
+   165) <a name="l165" style="background-color: #ffffff">    integer  :: g                            ! gridcell index</a>
+   166) <a name="l166" style="background-color: #ffffff">    integer  :: newnode                      ! flag when new snow node is set, (1=yes, 0=no)</a>
+   167) <a name="l167" style="background-color: #ffffff">    real(r8) :: dtime                        ! land model time step (sec)</a>
+   168) <a name="l168" style="background-color: #ffffff">    real(r8) :: h2ocanmx                     ! maximum allowed water on canopy [mm]</a>
+   169) <a name="l169" style="background-color: #ffffff">    real(r8) :: fpi                          ! coefficient of interception</a>
+   170) <a name="l170" style="background-color: #ffffff">    real(r8) :: xrun                         ! excess water that exceeds the leaf capacity [mm/s]</a>
+   171) <a name="l171" style="background-color: #ffffff">    real(r8) :: dz_snowf                     ! layer thickness rate change due to precipitation [mm/s]</a>
+   172) <a name="l172" style="background-color: #ffffff">    real(r8) :: bifall                       ! bulk density of newly fallen dry snow [kg/m3]</a>
+   173) <a name="l173" style="background-color: #ffffff">    real(r8) :: fracsnow(lbp:ubp)            ! frac of precipitation that is snow</a>
+   174) <a name="l174" style="background-color: #ffffff">    real(r8) :: fracrain(lbp:ubp)            ! frac of precipitation that is rain</a>
+   175) <a name="l175" style="background-color: #ffffff">    real(r8) :: qflx_candrip(lbp:ubp)        ! rate of canopy runoff and snow falling off canopy [mm/s]</a>
+   176) <a name="l176" style="background-color: #ffffff">    real(r8) :: qflx_through_rain(lbp:ubp)   ! direct rain throughfall [mm/s]</a>
+   177) <a name="l177" style="background-color: #ffffff">    real(r8) :: qflx_through_snow(lbp:ubp)   ! direct snow throughfall [mm/s]</a>
+   178) <a name="l178" style="background-color: #ffffff">    real(r8) :: qflx_prec_grnd_snow(lbp:ubp) ! snow precipitation incident on ground [mm/s]</a>
+   179) <a name="l179" style="background-color: #ffffff">    real(r8) :: qflx_prec_grnd_rain(lbp:ubp) ! rain precipitation incident on ground [mm/s]</a>
+   180) <a name="l180" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   181) <a name="l181" style="background-color: #ffffff"></a>
+   182) <a name="l182" style="background-color: #ffffff">    ! Assign local pointers to derived type members (gridcell-level)</a>
+   183) <a name="l183" style="background-color: #ffffff"></a>
+   184) <a name="l184" style="background-color: #ffffff">    pgridcell          =&gt; pft%gridcell</a>
+   185) <a name="l185" style="background-color: #ffffff">    forc_rain          =&gt; clm_a2l%forc_rain</a>
+   186) <a name="l186" style="background-color: #ffffff">    forc_snow          =&gt; clm_a2l%forc_snow</a>
+   187) <a name="l187" style="background-color: #ffffff"></a>
+   188) <a name="l188" style="background-color: #ffffff">    ! Assign local pointers to derived type members (landunit-level)</a>
+   189) <a name="l189" style="background-color: #ffffff"></a>
+   190) <a name="l190" style="background-color: #ffffff">    ltype              =&gt; lun%itype</a>
+   191) <a name="l191" style="background-color: #ffffff"></a>
+   192) <a name="l192" style="background-color: #ffffff">    ! Assign local pointers to derived type members (column-level)</a>
+   193) <a name="l193" style="background-color: #ffffff"></a>
+   194) <a name="l194" style="background-color: #ffffff">    qflx_floodg        =&gt; clm_a2l%forc_flood</a>
+   195) <a name="l195" style="background-color: #ffffff">    qflx_floodc        =&gt; cwf%qflx_floodc</a>
+   196) <a name="l196" style="background-color: #ffffff">    cgridcell          =&gt; col%gridcell</a>
+   197) <a name="l197" style="background-color: #ffffff">    clandunit          =&gt; col%landunit</a>
+   198) <a name="l198" style="background-color: #ffffff">    ctype              =&gt; col%itype</a>
+   199) <a name="l199" style="background-color: #ffffff">    pfti               =&gt; col%pfti</a>
+   200) <a name="l200" style="background-color: #ffffff">    npfts              =&gt; col%npfts</a>
+   201) <a name="l201" style="background-color: #ffffff">    do_capsnow         =&gt; cps%do_capsnow</a>
+   202) <a name="l202" style="background-color: #ffffff">    forc_t             =&gt; ces%forc_t</a>
+   203) <a name="l203" style="background-color: #ffffff">    t_grnd             =&gt; ces%t_grnd</a>
+   204) <a name="l204" style="background-color: #ffffff">    snl                =&gt; cps%snl</a>
+   205) <a name="l205" style="background-color: #ffffff">    snowdp             =&gt; cps%snowdp</a>
+   206) <a name="l206" style="background-color: #ffffff">    h2osno             =&gt; cws%h2osno</a>
+   207) <a name="l207" style="background-color: #ffffff">    zi                 =&gt; cps%zi</a>
+   208) <a name="l208" style="background-color: #ffffff">    dz                 =&gt; cps%dz</a>
+   209) <a name="l209" style="background-color: #ffffff">    z                  =&gt; cps%z</a>
+   210) <a name="l210" style="background-color: #ffffff">    frac_iceold        =&gt; cps%frac_iceold</a>
+   211) <a name="l211" style="background-color: #ffffff">    t_soisno           =&gt; ces%t_soisno</a>
+   212) <a name="l212" style="background-color: #ffffff">    h2osoi_ice         =&gt; cws%h2osoi_ice</a>
+   213) <a name="l213" style="background-color: #ffffff">    h2osoi_liq         =&gt; cws%h2osoi_liq</a>
+   214) <a name="l214" style="background-color: #ffffff">    qflx_snow_grnd_col =&gt; pwf_a%qflx_snow_grnd</a>
+   215) <a name="l215" style="background-color: #ffffff">    h2ocan_loss        =&gt; cwf%h2ocan_loss</a>
+   216) <a name="l216" style="background-color: #ffffff">    snw_rds            =&gt; cps%snw_rds</a>
+   217) <a name="l217" style="background-color: #ffffff">    mss_bcpho          =&gt; cps%mss_bcpho</a>
+   218) <a name="l218" style="background-color: #ffffff">    mss_bcphi          =&gt; cps%mss_bcphi</a>
+   219) <a name="l219" style="background-color: #ffffff">    mss_bctot          =&gt; cps%mss_bctot</a>
+   220) <a name="l220" style="background-color: #ffffff">    mss_bc_col         =&gt; cps%mss_bc_col</a>
+   221) <a name="l221" style="background-color: #ffffff">    mss_bc_top         =&gt; cps%mss_bc_top</a>
+   222) <a name="l222" style="background-color: #ffffff">    mss_ocpho          =&gt; cps%mss_ocpho</a>
+   223) <a name="l223" style="background-color: #ffffff">    mss_ocphi          =&gt; cps%mss_ocphi</a>
+   224) <a name="l224" style="background-color: #ffffff">    mss_octot          =&gt; cps%mss_octot</a>
+   225) <a name="l225" style="background-color: #ffffff">    mss_oc_col         =&gt; cps%mss_oc_col</a>
+   226) <a name="l226" style="background-color: #ffffff">    mss_oc_top         =&gt; cps%mss_oc_top</a>
+   227) <a name="l227" style="background-color: #ffffff">    mss_dst1           =&gt; cps%mss_dst1</a>
+   228) <a name="l228" style="background-color: #ffffff">    mss_dst2           =&gt; cps%mss_dst2</a>
+   229) <a name="l229" style="background-color: #ffffff">    mss_dst3           =&gt; cps%mss_dst3</a>
+   230) <a name="l230" style="background-color: #ffffff">    mss_dst4           =&gt; cps%mss_dst4</a>
+   231) <a name="l231" style="background-color: #ffffff">    mss_dsttot         =&gt; cps%mss_dsttot</a>
+   232) <a name="l232" style="background-color: #ffffff">    mss_dst_col        =&gt; cps%mss_dst_col</a>
+   233) <a name="l233" style="background-color: #ffffff">    mss_dst_top        =&gt; cps%mss_dst_top</a>
+   234) <a name="l234" style="background-color: #ffffff"></a>
+   235) <a name="l235" style="background-color: #ffffff">    ! Assign local pointers to derived type members (pft-level)</a>
+   236) <a name="l236" style="background-color: #ffffff"></a>
+   237) <a name="l237" style="background-color: #ffffff">    plandunit          =&gt; pft%landunit</a>
+   238) <a name="l238" style="background-color: #ffffff">    pcolumn            =&gt; pft%column</a>
+   239) <a name="l239" style="background-color: #ffffff">    dewmx              =&gt; pps%dewmx</a>
+   240) <a name="l240" style="background-color: #ffffff">    frac_veg_nosno     =&gt; pps%frac_veg_nosno</a>
+   241) <a name="l241" style="background-color: #ffffff">    elai               =&gt; pps%elai</a>
+   242) <a name="l242" style="background-color: #ffffff">    esai               =&gt; pps%esai</a>
+   243) <a name="l243" style="background-color: #ffffff">    h2ocan             =&gt; pws%h2ocan</a>
+   244) <a name="l244" style="background-color: #ffffff">    qflx_prec_intr     =&gt; pwf%qflx_prec_intr</a>
+   245) <a name="l245" style="background-color: #ffffff">    qflx_prec_grnd     =&gt; pwf%qflx_prec_grnd</a>
+   246) <a name="l246" style="background-color: #ffffff">    qflx_snwcp_liq     =&gt; pwf%qflx_snwcp_liq</a>
+   247) <a name="l247" style="background-color: #ffffff">    qflx_snwcp_ice     =&gt; pwf%qflx_snwcp_ice</a>
+   248) <a name="l248" style="background-color: #ffffff">    qflx_snow_grnd_pft =&gt; pwf%qflx_snow_grnd</a>
+   249) <a name="l249" style="background-color: #ffffff">    qflx_rain_grnd     =&gt; pwf%qflx_rain_grnd</a>
+   250) <a name="l250" style="background-color: #ffffff">    fwet               =&gt; pps%fwet</a>
+   251) <a name="l251" style="background-color: #ffffff">    fdry               =&gt; pps%fdry</a>
+   252) <a name="l252" style="background-color: #ffffff">    irrig_rate         =&gt; cps%irrig_rate</a>
+   253) <a name="l253" style="background-color: #ffffff">    n_irrig_steps_left =&gt; cps%n_irrig_steps_left</a>
+   254) <a name="l254" style="background-color: #ffffff">    qflx_irrig         =&gt; cwf%qflx_irrig</a>
+   255) <a name="l255" style="background-color: #ffffff"></a>
+   256) <a name="l256" style="background-color: #ffffff">    ! Compute time step</a>
+   257) <a name="l257" style="background-color: #ffffff"></a>
+   258) <a name="l258" style="background-color: #ffffff">    dtime = get_step_size()</a>
+   259) <a name="l259" style="background-color: #ffffff"></a>
+   260) <a name="l260" style="background-color: #ffffff">    ! Start pft loop</a>
+   261) <a name="l261" style="background-color: #ffffff"></a>
+   262) <a name="l262" style="background-color: #ffffff">    do f = 1, num_nolakep</a>
+   263) <a name="l263" style="background-color: #ffffff">       p = filter_nolakep(f)</a>
+   264) <a name="l264" style="background-color: #ffffff">       g = pgridcell(p)</a>
+   265) <a name="l265" style="background-color: #ffffff">       l = plandunit(p)</a>
+   266) <a name="l266" style="background-color: #ffffff">       c = pcolumn(p)</a>
+   267) <a name="l267" style="background-color: #ffffff">       </a>
+   268) <a name="l268" style="background-color: #ffffff">       ! Canopy interception and precipitation onto ground surface</a>
+   269) <a name="l269" style="background-color: #ffffff">       ! Add precipitation to leaf water</a>
+   270) <a name="l270" style="background-color: #ffffff"></a>
+   271) <a name="l271" style="background-color: #ffffff">       if (ltype(l)==istsoil .or. ltype(l)==istwet .or. ltype(l)==isturb .or. &amp;</a>
+   272) <a name="l272" style="background-color: #ffffff">           ltype(l)==istcrop) then</a>
+   273) <a name="l273" style="background-color: #ffffff">          qflx_candrip(p) = 0._r8      ! rate of canopy runoff</a>
+   274) <a name="l274" style="background-color: #ffffff">          qflx_through_snow(p) = 0._r8 ! rain precipitation direct through canopy</a>
+   275) <a name="l275" style="background-color: #ffffff">          qflx_through_rain(p) = 0._r8 ! snow precipitation direct through canopy</a>
+   276) <a name="l276" style="background-color: #ffffff">          qflx_prec_intr(p) = 0._r8    ! total intercepted precipitation</a>
+   277) <a name="l277" style="background-color: #ffffff">          fracsnow(p) = 0._r8          ! fraction of input precip that is snow</a>
+   278) <a name="l278" style="background-color: #ffffff">          fracrain(p) = 0._r8          ! fraction of input precip that is rain</a>
+   279) <a name="l279" style="background-color: #ffffff"></a>
+   280) <a name="l280" style="background-color: #ffffff">          if (ctype(c) /= icol_sunwall .and. ctype(c) /= icol_shadewall) then</a>
+   281) <a name="l281" style="background-color: #ffffff">             if (frac_veg_nosno(p) == 1 .and. (forc_rain(g) + forc_snow(g)) &gt; 0._r8) then</a>
+   282) <a name="l282" style="background-color: #ffffff"></a>
+   283) <a name="l283" style="background-color: #ffffff">                ! determine fraction of input precipitation that is snow and rain</a>
+   284) <a name="l284" style="background-color: #ffffff"></a>
+   285) <a name="l285" style="background-color: #ffffff">                fracsnow(p) = forc_snow(g)/(forc_snow(g) + forc_rain(g))</a>
+   286) <a name="l286" style="background-color: #ffffff">                fracrain(p) = forc_rain(g)/(forc_snow(g) + forc_rain(g))</a>
+   287) <a name="l287" style="background-color: #ffffff">                </a>
+   288) <a name="l288" style="background-color: #ffffff">                ! The leaf water capacities for solid and liquid are different,</a>
+   289) <a name="l289" style="background-color: #ffffff">                ! generally double for snow, but these are of somewhat less</a>
+   290) <a name="l290" style="background-color: #ffffff">                ! significance for the water budget because of lower evap. rate at</a>
+   291) <a name="l291" style="background-color: #ffffff">                ! lower temperature.  Hence, it is reasonable to assume that</a>
+   292) <a name="l292" style="background-color: #ffffff">                ! vegetation storage of solid water is the same as liquid water.</a>
+   293) <a name="l293" style="background-color: #ffffff">                h2ocanmx = dewmx(p) * (elai(p) + esai(p))</a>
+   294) <a name="l294" style="background-color: #ffffff">                </a>
+   295) <a name="l295" style="background-color: #ffffff">                ! Coefficient of interception</a>
+   296) <a name="l296" style="background-color: #ffffff">                ! set fraction of potential interception to max 0.25</a>
+   297) <a name="l297" style="background-color: #ffffff">                fpi = 0.25_r8*(1._r8 - exp(-0.5_r8*(elai(p) + esai(p))))</a>
+   298) <a name="l298" style="background-color: #ffffff">                </a>
+   299) <a name="l299" style="background-color: #ffffff">                ! Direct throughfall</a>
+   300) <a name="l300" style="background-color: #ffffff">                qflx_through_snow(p) = forc_snow(g) * (1._r8-fpi)</a>
+   301) <a name="l301" style="background-color: #ffffff">                qflx_through_rain(p) = forc_rain(g) * (1._r8-fpi)</a>
+   302) <a name="l302" style="background-color: #ffffff">                </a>
+   303) <a name="l303" style="background-color: #ffffff">                ! Intercepted precipitation [mm/s]</a>
+   304) <a name="l304" style="background-color: #ffffff">                qflx_prec_intr(p) = (forc_snow(g) + forc_rain(g)) * fpi</a>
+   305) <a name="l305" style="background-color: #ffffff">                </a>
+   306) <a name="l306" style="background-color: #ffffff">                ! Water storage of intercepted precipitation and dew</a>
+   307) <a name="l307" style="background-color: #ffffff">                h2ocan(p) = max(0._r8, h2ocan(p) + dtime*qflx_prec_intr(p))</a>
+   308) <a name="l308" style="background-color: #ffffff">                </a>
+   309) <a name="l309" style="background-color: #ffffff">                ! Initialize rate of canopy runoff and snow falling off canopy</a>
+   310) <a name="l310" style="background-color: #ffffff">                qflx_candrip(p) = 0._r8</a>
+   311) <a name="l311" style="background-color: #ffffff">                </a>
+   312) <a name="l312" style="background-color: #ffffff">                ! Excess water that exceeds the leaf capacity</a>
+   313) <a name="l313" style="background-color: #ffffff">                xrun = (h2ocan(p) - h2ocanmx)/dtime</a>
+   314) <a name="l314" style="background-color: #ffffff">                </a>
+   315) <a name="l315" style="background-color: #ffffff">                ! Test on maximum dew on leaf</a>
+   316) <a name="l316" style="background-color: #ffffff">                ! Note if xrun &gt; 0 then h2ocan must be at least h2ocanmx</a>
+   317) <a name="l317" style="background-color: #ffffff">                if (xrun &gt; 0._r8) then</a>
+   318) <a name="l318" style="background-color: #ffffff">                   qflx_candrip(p) = xrun</a>
+   319) <a name="l319" style="background-color: #ffffff">                   h2ocan(p) = h2ocanmx</a>
+   320) <a name="l320" style="background-color: #ffffff">                end if</a>
+   321) <a name="l321" style="background-color: #ffffff">                </a>
+   322) <a name="l322" style="background-color: #ffffff">             end if</a>
+   323) <a name="l323" style="background-color: #ffffff">          end if</a>
+   324) <a name="l324" style="background-color: #ffffff"></a>
+   325) <a name="l325" style="background-color: #ffffff">       else if (ltype(l)</a><a style="background-color: #ffff99">==istice .or. ltype(l)==istice_mec) then</a>
+   326) <a name="l326" style="background-color: #ffff99"></a>
+   327) <a name="l327" style="background-color: #ffffff">          h2ocan(p)            = 0._r8</a>
+   328) <a name="l328" style="background-color: #ffffff">          qflx_candrip(p)      = 0._r8</a>
+   329) <a name="l329" style="background-color: #ffffff">          qflx_through_snow(p) = 0._r8</a>
+   330) <a name="l330" style="background-color: #ffffff">          qflx_through_rain(p) = 0._r8</a>
+   331) <a name="l331" style="background-color: #ffffff">          qflx_prec_intr(p)    = 0._r8</a>
+   332) <a name="l332" style="background-color: #ffffff">          fracsnow(p)          = 0._r8</a>
+   333) <a name="l333" style="background-color: #ffffff">          fracrain(p)          = 0._r8</a>
+   334) <a name="l334" style="background-color: #ffffff"></a>
+   335) <a name="l335" style="background-color: #ffffff">       end if</a>
+   336) <a name="l336" style="background-color: #ffffff"></a>
+   337) <a name="l337" style="background-color: #ffffff">       ! Precipitation onto ground (kg/(m2 s))</a>
+   338) <a name="l338" style="background-color: #ffffff">       ! PET, 1/18/2005: Added new terms for mass balance correction</a>
+   339) <a name="l339" style="background-color: #ffffff">       ! due to dynamic pft weight shifting (column-level h2ocan_loss)</a>
+   340) <a name="l340" style="background-color: #ffffff">       ! Because the fractionation between rain and snow is indeterminate if</a>
+   341) <a name="l341" style="background-color: #ffffff">       ! rain + snow = 0, I am adding this very small flux only to the rain</a>
+   342) <a name="l342" style="background-color: #ffffff">       ! components.</a>
+   343) <a name="l343" style="background-color: #ffffff"></a>
+   344) <a name="l344" style="background-color: #ffffff">       if (ctype(c) /= icol_sunwall .and. ctype(c) /= icol_shadewall) then</a>
+   345) <a name="l345" style="background-color: #ffffff">          if (frac_veg_nosno(p) == 0) then</a>
+   346) <a name="l346" style="background-color: #ffffff">             qflx_prec_grnd_snow(p) = forc_snow(g)</a>
+   347) <a name="l347" style="background-color: #ffffff">             qflx_prec_grnd_rain(p) = forc_rain(g) + h2ocan_loss(c)</a>
+   348) <a name="l348" style="background-color: #ffffff">          else</a>
+   349) <a name="l349" style="background-color: #ffffff">             qflx_prec_grnd_snow(p) = qflx_through_snow(p) + (qflx_candrip(p) * fracsnow(p))</a>
+   350) <a name="l350" style="background-color: #ffffff">             qflx_prec_grnd_rain(p) = qflx_through_rain(p) + (qflx_candrip(p) * fracrain(p)) + h2ocan_loss(c)</a>
+   351) <a name="l351" style="background-color: #ffffff">          end if</a>
+   352) <a name="l352" style="background-color: #ffffff">       ! Urban sunwall and shadewall have no intercepted precipitation</a>
+   353) <a name="l353" style="background-color: #ffffff">       else</a>
+   354) <a name="l354" style="background-color: #ffffff">          qflx_prec_grnd_snow(p) = 0.</a>
+   355) <a name="l355" style="background-color: #ffffff">          qflx_prec_grnd_rain(p) = 0.</a>
+   356) <a name="l356" style="background-color: #ffffff">       end if</a>
+   357) <a name="l357" style="background-color: #ffffff"></a>
+   358) <a name="l358" style="background-color: #ffffff">       ! Determine whether we're irrigating here; set qflx_irrig appropriately</a>
+   359) <a name="l359" style="background-color: #ffffff">       if (n_irrig_steps_left(c) &gt; 0) then</a>
+   360) <a name="l360" style="background-color: #ffff99">          qflx_irrig(c)         = irrig_rate(c)</a>
+   361) <a name="l361" style="background-color: #ffff99">          n_irrig_steps_left(c) = n_irrig_steps_left(c) - 1</a>
+   362) <a name="l362" style="background-color: #ffff99">       else</a>
+   363) <a name="l363" style="background-color: #ffffff">          qflx_irrig(c) = 0._r8</a>
+   364) <a name="l364" style="background-color: #ffffff">       end if</a>
+   365) <a name="l365" style="background-color: #ffffff"></a>
+   366) <a name="l366" style="background-color: #ffffff">       ! Add irrigation water directly onto ground (bypassing canopy interception)</a>
+   367) <a name="l367" style="background-color: #ffffff">       ! Note that it's still possible that (some of) this irrigation water will runoff (as runoff is computed later)</a>
+   368) <a name="l368" style="background-color: #ffffff">       qflx_prec_grnd_rain(p) = qflx_prec_grnd_rain(p) + qflx_irrig(c)</a>
+   369) <a name="l369" style="background-color: #ffffff"></a>
+   370) <a name="l370" style="background-color: #ffffff">       ! Done irrigation</a>
+   371) <a name="l371" style="background-color: #ffffff"></a>
+   372) <a name="l372" style="background-color: #ffffff">       qflx_prec_grnd(p) = qflx_prec_grnd_snow(p) + qflx_prec_grnd_rain(p)</a>
+   373) <a name="l373" style="background-color: #ffffff"></a>
+   374) <a name="l374" style="background-color: #ffffff">       if (do_capsnow(c)) then</a>
+   375) <a name="l375" style="background-color: #ffffff">          qflx_snwcp_liq(p) = qflx_prec_grnd_rain(p)</a>
+   376) <a name="l376" style="background-color: #ffffff">          qflx_snwcp_ice(p) = qflx_prec_grnd_snow(p)</a>
+   377) <a name="l377" style="background-color: #ffffff"></a>
+   378) <a name="l378" style="background-color: #ffffff">          qflx_snow_grnd_pft(p) = 0._r8</a>
+   379) <a name="l379" style="background-color: #ffffff">          qflx_rain_grnd(p) = 0._r8</a>
+   380) <a name="l380" style="background-color: #ffffff">       else</a>
+   381) <a name="l381" style="background-color: #ffffff">          qflx_snwcp_liq(p) = 0._r8</a>
+   382) <a name="l382" style="background-color: #ffffff">          qflx_snwcp_ice(p) = 0._r8</a>
+   383) <a name="l383" style="background-color: #ffffff">          qflx_snow_grnd_pft(p) = qflx_prec_grnd_snow(p)           ! ice onto ground (mm/s)</a>
+   384) <a name="l384" style="background-color: #ffffff">          qflx_rain_grnd(p)     = qflx_prec_grnd_rain(p)           ! liquid water onto ground (mm/s)</a>
+   385) <a name="l385" style="background-color: #ffffff">       end if</a>
+   386) <a name="l386" style="background-color: #ffffff"></a>
+   387) <a name="l387" style="background-color: #ffffff">    end do ! (end pft loop)</a>
+   388) <a name="l388" style="background-color: #ffffff"></a>
+   389) <a name="l389" style="background-color: #ffffff">    ! Determine the fraction of foliage covered by water and the</a>
+   390) <a name="l390" style="background-color: #ffffff">    ! fraction of foliage that is dry and transpiring.</a>
+   391) <a name="l391" style="background-color: #ffffff"></a>
+   392) <a name="l392" style="background-color: #ffffff">    call FracWet(num_nolakep, filter_nolakep)</a>
+   393) <a name="l393" style="background-color: #ffffff"></a>
+   394) <a name="l394" style="background-color: #ffffff">    ! Update column level state variables for snow.</a>
+   395) <a name="l395" style="background-color: #ffffff"></a>
+   396) <a name="l396" style="background-color: #ffffff">    call p2c(num_nolakec, filter_nolakec, qflx_snow_grnd_pft, qflx_snow_grnd_col)</a>
+   397) <a name="l397" style="background-color: #ffffff"></a>
+   398) <a name="l398" style="background-color: #ffffff">!rtm_flood: apply gridcell flood water flux to non-lake columns</a>
+   399) <a name="l399" style="background-color: #ffffff">!                    no inputs to urban wall columns, as above with atm inputs</a>
+   400) <a name="l400" style="background-color: #ffffff">!dir$ concurrent</a>
+   401) <a name="l401" style="background-color: #ffffff">!cdir nodep</a>
+   402) <a name="l402" style="background-color: #ffffff">    do f = 1, num_nolakec</a>
+   403) <a name="l403" style="background-color: #ffffff">       c = filter_nolakec(f)</a>
+   404) <a name="l404" style="background-color: #ffffff">       g = cgridcell(c)</a>
+   405) <a name="l405" style="background-color: #ffffff">       if (ctype(c) /= icol_sunwall .and. ctype(c) /= icol_shadewall) then      </a>
+   406) <a name="l406" style="background-color: #ffffff">          qflx_floodc(c) = qflx_floodg(g)</a>
+   407) <a name="l407" style="background-color: #ffffff">       else</a>
+   408) <a name="l408" style="background-color: #ffffff">          qflx_floodc(c) = 0._r8</a>
+   409) <a name="l409" style="background-color: #ffffff">       endif    </a>
+   410) <a name="l410" style="background-color: #ffffff">    enddo</a>
+   411) <a name="l411" style="background-color: #ffffff">!rtm_flood</a>
+   412) <a name="l412" style="background-color: #ffffff"></a>
+   413) <a name="l413" style="background-color: #ffffff">    ! Determine snow height and snow water</a>
+   414) <a name="l414" style="background-color: #ffffff"></a>
+   415) <a name="l415" style="background-color: #ffffff">    do f = 1, num_nolakec</a>
+   416) <a name="l416" style="background-color: #ffffff">       c = filter_nolakec(f)</a>
+   417) <a name="l417" style="background-color: #ffffff">       l = clandunit(c)</a>
+   418) <a name="l418" style="background-color: #ffffff">       g = cgridcell(c)</a>
+   419) <a name="l419" style="background-color: #ffffff"></a>
+   420) <a name="l420" style="background-color: #ffffff">       ! Use Alta relationship, Anderson(1976); LaChapelle(1961),</a>
+   421) <a name="l421" style="background-color: #ffffff">       ! U.S.Department of Agriculture Forest Service, Project F,</a>
+   422) <a name="l422" style="background-color: #ffffff">       ! Progress Rep. 1, Alta Avalanche Study Center:Snow Layer Densification.</a>
+   423) <a name="l423" style="background-color: #ffffff"></a>
+   424) <a name="l424" style="background-color: #ffffff">       if (do_capsnow(c)) then</a>
+   425) <a name="l425" style="background-color: #ffffff">          dz_snowf = 0._r8</a>
+   426) <a name="l426" style="background-color: #ffffff">       else</a>
+   427) <a name="l427" style="background-color: #ffffff">          if (forc_t(c) &gt; tfrz + 2._r8) then</a>
+   428) <a name="l428" style="background-color: #ffffff">             bifall=50._r8 + 1.7_r8*(17.0_r8)**1.5_r8</a>
+   429) <a name="l429" style="background-color: #ffffff">          else if (forc_t(c) &gt; tfrz - 15._r8) then</a>
+   430) <a name="l430" style="background-color: #ffffff">             bifall=50._r8 + 1.7_r8*(forc_t(c) - tfrz + 15._r8)**1.5_r8</a>
+   431) <a name="l431" style="background-color: #ffffff">          else</a>
+   432) <a name="l432" style="background-color: #ffffff">             bifall=50._r8</a>
+   433) <a name="l433" style="background-color: #ffffff">          end if</a>
+   434) <a name="l434" style="background-color: #ffffff">          dz_snowf = qflx_snow_grnd_col(c)/bifall</a>
+   435) <a name="l435" style="background-color: #ffffff">          snowdp(c) = snowdp(c) + dz_snowf*dtime</a>
+   436) <a name="l436" style="background-color: #ffffff">          h2osno(c) = h2osno(c) + qflx_snow_grnd_col(c)*dtime  ! snow water equivalent (mm)</a>
+   437) <a name="l437" style="background-color: #ffffff"></a>
+   438) <a name="l438" style="background-color: #ffffff">       end if</a>
+   439) <a name="l439" style="background-color: #ffffff"></a>
+   440) <a name="l440" style="background-color: #ffffff">       if (ltype(l)==istwet .and. t_grnd(c)&gt;tfrz) then</a>
+   441) <a name="l441" style="background-color: #ffffff">          h2osno(c)=0._r8</a>
+   442) <a name="l442" style="background-color: #ffffff">          snowdp(c)=0._r8</a>
+   443) <a name="l443" style="background-color: #ffffff">       end if</a>
+   444) <a name="l444" style="background-color: #ffffff"></a>
+   445) <a name="l445" style="background-color: #ffffff">       ! When the snow accumulation exceeds 10 mm, initialize snow layer</a>
+   446) <a name="l446" style="background-color: #ffffff">       ! Currently, the water temperature for the precipitation is simply set</a>
+   447) <a name="l447" style="background-color: #ffffff">       ! as the surface air temperature</a>
+   448) <a name="l448" style="background-color: #ffffff"></a>
+   449) <a name="l449" style="background-color: #ffffff">       newnode = 0    ! flag for when snow node will be initialized</a>
+   450) <a name="l450" style="background-color: #ffffff">       if (snl(c) == 0 .and. qflx_snow_grnd_col(c) &gt; 0.0_r8 .and. snowdp(c) &gt;= 0.01_r8) then</a>
+   451) <a name="l451" style="background-color: #ffffff">          newnode = 1</a>
+   452) <a name="l452" style="background-color: #ffffff">          snl(c) = -1</a>
+   453) <a name="l453" style="background-color: #ffffff">          dz(c,0) = snowdp(c)                       ! meter</a>
+   454) <a name="l454" style="background-color: #ffffff">          z(c,0) = -0.5_r8*dz(c,0)</a>
+   455) <a name="l455" style="background-color: #ffffff">          zi(c,-1) = -dz(c,0)</a>
+   456) <a name="l456" style="background-color: #ffffff">          t_soisno(c,0) = min(tfrz, forc_t(c))      ! K</a>
+   457) <a name="l457" style="background-color: #ffffff">          h2osoi_ice(c,0) = h2osno(c)               ! kg/m2</a>
+   458) <a name="l458" style="background-color: #ffffff">          h2osoi_liq(c,0) = 0._r8                   ! kg/m2</a>
+   459) <a name="l459" style="background-color: #ffffff">          frac_iceold(c,0) = 1._r8</a>
+   460) <a name="l460" style="background-color: #ffffff">       </a>
+   461) <a name="l461" style="background-color: #ffffff"></a>
+   462) <a name="l462" style="background-color: #ffffff">          ! intitialize SNICAR variables for fresh snow:</a>
+   463) <a name="l463" style="background-color: #ffffff">          snw_rds(c,0)    = snw_rds_min</a>
+   464) <a name="l464" style="background-color: #ffffff"></a>
+   465) <a name="l465" style="background-color: #ffffff">          mss_bcpho(c,:)  = 0._r8</a>
+   466) <a name="l466" style="background-color: #ffffff">          mss_bcphi(c,:)  = 0._r8</a>
+   467) <a name="l467" style="background-color: #ffffff">          mss_bctot(c,:)  = 0._r8</a>
+   468) <a name="l468" style="background-color: #ffffff">          mss_bc_col(c)   = 0._r8</a>
+   469) <a name="l469" style="background-color: #ffffff">          mss_bc_top(c)   = 0._r8</a>
+   470) <a name="l470" style="background-color: #ffffff"></a>
+   471) <a name="l471" style="background-color: #ffffff">          mss_ocpho(c,:)  = 0._r8</a>
+   472) <a name="l472" style="background-color: #ffffff">          mss_ocphi(c,:)  = 0._r8</a>
+   473) <a name="l473" style="background-color: #ffffff">          mss_octot(c,:)  = 0._r8</a>
+   474) <a name="l474" style="background-color: #ffffff">          mss_oc_col(c)   = 0._r8</a>
+   475) <a name="l475" style="background-color: #ffffff">          mss_oc_top(c)   = 0._r8</a>
+   476) <a name="l476" style="background-color: #ffffff"></a>
+   477) <a name="l477" style="background-color: #ffffff">          mss_dst1(c,:)   = 0._r8</a>
+   478) <a name="l478" style="background-color: #ffffff">          mss_dst2(c,:)   = 0._r8</a>
+   479) <a name="l479" style="background-color: #ffffff">          mss_dst3(c,:)   = 0._r8</a>
+   480) <a name="l480" style="background-color: #ffffff">          mss_dst4(c,:)   = 0._r8</a>
+   481) <a name="l481" style="background-color: #ffffff">          mss_dsttot(c,:) = 0._r8</a>
+   482) <a name="l482" style="background-color: #ffffff">          mss_dst_col(c)  = 0._r8</a>
+   483) <a name="l483" style="background-color: #ffffff">          mss_dst_top(c)  = 0._r8</a>
+   484) <a name="l484" style="background-color: #ffffff">       end if</a>
+   485) <a name="l485" style="background-color: #ffffff"></a>
+   486) <a name="l486" style="background-color: #ffffff">       ! The change of ice partial density of surface node due to precipitation.</a>
+   487) <a name="l487" style="background-color: #ffffff">       ! Only ice part of snowfall is added here, the liquid part will be added</a>
+   488) <a name="l488" style="background-color: #ffffff">       ! later.</a>
+   489) <a name="l489" style="background-color: #ffffff"></a>
+   490) <a name="l490" style="background-color: #ffffff">       if (snl(c) &lt; 0 .and. newnode == 0) then</a>
+   491) <a name="l491" style="background-color: #ffffff">          h2osoi_ice(c,snl(c)+1) = h2osoi_ice(c,snl(c)+1)+dtime*qflx_snow_grnd_col(c)</a>
+   492) <a name="l492" style="background-color: #ffffff">          dz(c,snl(c)+1) = dz(c,snl(c)+1)+dz_snowf*dtime</a>
+   493) <a name="l493" style="background-color: #ffffff">       end if</a>
+   494) <a name="l494" style="background-color: #ffffff"></a>
+   495) <a name="l495" style="background-color: #ffffff">    end do</a>
+   496) <a name="l496" style="background-color: #ffffff"></a>
+   497) <a name="l497" style="background-color: #ffffff">  end subroutine Hydrology1</a>
+   498) <a name="l498" style="background-color: #ffffff"></a>
+   499) <a name="l499" style="background-color: #ffffff">end module Hydrology1Mod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

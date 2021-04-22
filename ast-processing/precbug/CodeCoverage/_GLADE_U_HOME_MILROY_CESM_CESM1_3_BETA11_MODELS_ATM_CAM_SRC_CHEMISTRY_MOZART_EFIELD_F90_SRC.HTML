@@ -1,0 +1,1633 @@
+<html>
+<head>
+<title>Listing of efield.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;efield.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff"></a>
+     2) <a name="l2" style="background-color: #ffffff">      module efield</a>
+     3) <a name="l3" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+     4) <a name="l4" style="background-color: #ffffff">! description: calculates the electric potential for a given year,</a>
+     5) <a name="l5" style="background-color: #ffffff">!      day of year,UT, F10.7, B_z(K_p)</a>
+     6) <a name="l6" style="background-color: #ffffff">!     - low/midlatitudes electric potential is from an empirical model from</a>
+     7) <a name="l7" style="background-color: #ffffff">!       L.Scherliess ludger@gaim.cass.usu.edu</a>
+     8) <a name="l8" style="background-color: #ffffff">!     - high latitude electric potential is from Weimer96 model</a>
+     9) <a name="l9" style="background-color: #ffffff">!     - the transition zone is smoothed</a>
+    10) <a name="l10" style="background-color: #ffffff">!     - output is the horizontal global electric field in magnetic coordinates direction</a>
+    11) <a name="l11" style="background-color: #ffffff">!      at every magnetic local time grid point expressed in degrees (0 deg-0MLT; 360deg 24 MLT)</a>
+    12) <a name="l12" style="background-color: #ffffff">!</a>
+    13) <a name="l13" style="background-color: #ffffff">! input </a>
+    14) <a name="l14" style="background-color: #ffffff">!      integer :: iday,     ! day number of year</a>
+    15) <a name="l15" style="background-color: #ffffff">!                 iyear     ! year</a>
+    16) <a name="l16" style="background-color: #ffffff">!      real(r8):: ut,       ! universal time </a>
+    17) <a name="l17" style="background-color: #ffffff">!                 F10.7,    ! solar flux       (see ionosphere module)</a>
+    18) <a name="l18" style="background-color: #ffffff">!                 bz        ! component of IMF (see ionosphere module)</a>
+    19) <a name="l19" style="background-color: #ffffff">! output</a>
+    20) <a name="l20" style="background-color: #ffffff">!      real(r8) ::               &amp;</a>
+    21) <a name="l21" style="background-color: #ffffff">!       ed1(0:nmlon,0:nmlat),    &amp;  ! zonal electric field Ed1  [V/m] </a>
+    22) <a name="l22" style="background-color: #ffffff">!       ed2(0:nmlon,0:nmlat)        ! meridional electric field Ed2/sin I_m  [V/m]  </a>
+    23) <a name="l23" style="background-color: #ffffff">!</a>
+    24) <a name="l24" style="background-color: #ffffff">! notes:</a>
+    25) <a name="l25" style="background-color: #ffffff">!</a>
+    26) <a name="l26" style="background-color: #ffffff">! - !to be done (commented out): input S_a F10.7/ Kp from WACCM and calculate B_z </a>
+    27) <a name="l27" style="background-color: #ffffff">!    from these inputs</a>
+    28) <a name="l28" style="background-color: #ffffff">! - assume regular geomagnetic grid </a>
+    29) <a name="l29" style="background-color: #ffffff">! - uses average year 365.24 days/year 30.6001 day/mo s. Weimer</a>
+    30) <a name="l30" style="background-color: #ffffff">! - get_tilt works only for iyear &gt;= 1900</a>
+    31) <a name="l31" style="background-color: #ffffff">! - Weimer model 1996, Dan Weimer (not with the updates from B.Emery)</a>
+    32) <a name="l32" style="background-color: #ffffff">! - fixed parameters: B_z, B_y units nT  CHANGE THIS</a>
+    33) <a name="l33" style="background-color: #ffffff">!                     F10.7</a>
+    34) <a name="l34" style="background-color: #ffffff">! - we assume that the reference height is 300km for the emperical potential model</a>
+    35) <a name="l35" style="background-color: #ffffff">! - as a first approximation the electric field is constant in height</a>
+    36) <a name="l36" style="background-color: #ffffff">!   WATCH what is the upper boundary condition in WACCM</a>
+    37) <a name="l37" style="background-color: #ffffff">! - for all the calculation done here we set the reference height to the same </a>
+    38) <a name="l38" style="background-color: #ffffff">!   value as in tiegcm (hr=130km)</a>
+    39) <a name="l39" style="background-color: #ffffff">! - 12/15/03 input value iseasav : replaced by day -&gt; month and day of month</a>
+    40) <a name="l40" style="background-color: #ffffff">! - 12/15/03 S_aM calculated according to Scherliess draft paper and added</a>
+    41) <a name="l41" style="background-color: #ffffff">!   S_aM(corrected) = 90*(S_aM+1) to get variation in fig 1 Scherliess draft</a>
+    42) <a name="l42" style="background-color: #ffffff">!</a>
+    43) <a name="l43" style="background-color: #ffffff">! Author: A. Maute Dec 2003  am 12/30/03 </a>
+    44) <a name="l44" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+    45) <a name="l45" style="background-color: #ffffff"></a>
+    46) <a name="l46" style="background-color: #ffffff">      use shr_kind_mod,  only: r8 =&gt; shr_kind_r8</a>
+    47) <a name="l47" style="background-color: #ffffff">      use physconst,     only: pi</a>
+    48) <a name="l48" style="background-color: #ffffff">      use abortutils,    only: endrun</a>
+    49) <a name="l49" style="background-color: #ffffff">      use cam_logfile,   only: iulog</a>
+    50) <a name="l50" style="background-color: #ffffff">   </a>
+    51) <a name="l51" style="background-color: #ffffff">      implicit none</a>
+    52) <a name="l52" style="background-color: #ffffff"></a>
+    53) <a name="l53" style="background-color: #ffffff">      public :: efield_init,  &amp; ! interface routine</a>
+    54) <a name="l54" style="background-color: #ffffff">                get_efield      ! interface routine</a>
+    55) <a name="l55" style="background-color: #ffffff">      public :: ed1,          &amp; ! zonal electric field Ed1  [V/m] </a>
+    56) <a name="l56" style="background-color: #ffffff">                ed2,          &amp; ! meridional electric field Ed2 [V/m] </a>
+    57) <a name="l57" style="background-color: #ffffff">                potent,       &amp; ! electric potential [V]</a>
+    58) <a name="l58" style="background-color: #ffffff">	        nmlon, nmlat, &amp; ! dimension of mag. grid </a>
+    59) <a name="l59" style="background-color: #ffffff">                dlatm, dlonm, &amp; ! grid spacing of mag. grid </a>
+    60) <a name="l60" style="background-color: #ffffff">	        ylonm, ylatm    ! magnetic longitudes/latitudes (deg)</a>
+    61) <a name="l61" style="background-color: #ffffff">      private</a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">      integer ::  &amp;</a>
+    64) <a name="l64" style="background-color: #ffffff">        iday,     &amp;      ! day number of year</a>
+    65) <a name="l65" style="background-color: #ffffff">        iyear,    &amp;      ! year</a>
+    66) <a name="l66" style="background-color: #ffffff">        iday_m,   &amp;      ! day of month</a>
+    67) <a name="l67" style="background-color: #ffffff">        imo              ! month</a>
+    68) <a name="l68" style="background-color: #ffffff">      real(r8) ::  ut    ! universal time  </a>
+    69) <a name="l69" style="background-color: #ffffff"></a>
+    70) <a name="l70" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+    71) <a name="l71" style="background-color: #ffffff">! solar parameters</a>
+    72) <a name="l72" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+    73) <a name="l73" style="background-color: #ffffff">      real(r8) ::   f107d           ! 10.7 cm solar flux</a>
+    74) <a name="l74" style="background-color: #ffffff">      real(r8) ::   by              ! By component of IMF [nT]</a>
+    75) <a name="l75" style="background-color: #ffffff">      real(r8) ::   bz              ! Bz component of IMF [nT]</a>
+    76) <a name="l76" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+    77) <a name="l77" style="background-color: #ffffff">! mag. grid dimensions (assumed resolution of 2deg)</a>
+    78) <a name="l78" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+    79) <a name="l79" style="background-color: #ffffff">      integer, parameter ::  &amp;</a>
+    80) <a name="l80" style="background-color: #ffffff">      nmlon = 180,       &amp;  ! mlon </a>
+    81) <a name="l81" style="background-color: #ffffff">      nmlat = 90,        &amp;  ! mlat</a>
+    82) <a name="l82" style="background-color: #ffffff">      nmlath= nmlat/2,   &amp;  ! mlat/2</a>
+    83) <a name="l83" style="background-color: #ffffff">      nmlonh= nmlon/2,   &amp;  ! mlon/2</a>
+    84) <a name="l84" style="background-color: #ffffff">      nmlonp1 = nmlon+1, &amp;  ! mlon+1 </a>
+    85) <a name="l85" style="background-color: #ffffff">      nmlatp1 = nmlat+1     ! mlat+1</a>
+    86) <a name="l86" style="background-color: #ffffff"></a>
+    87) <a name="l87" style="background-color: #ffffff">      real(r8) ::        &amp;</a>
+    88) <a name="l88" style="background-color: #ffffff">        ylatm(0:nmlat),  &amp;   ! magnetic latitudes (deg)</a>
+    89) <a name="l89" style="background-color: #ffffff">        ylonm(0:nmlon),  &amp;   ! magnetic longitudes (deg)</a>
+    90) <a name="l90" style="background-color: #ffffff">        dlonm,	         &amp;   ! delon lon grid spacing</a>
+    91) <a name="l91" style="background-color: #ffffff">        dlatm		     ! delat lat grid spacing</a>
+    92) <a name="l92" style="background-color: #ffffff"></a>
+    93) <a name="l93" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+    94) <a name="l94" style="background-color: #ffffff">! array on magnetic grid:    </a>
+    95) <a name="l95" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+    96) <a name="l96" style="background-color: #ffffff">      real(r8) ::                &amp;</a>
+    97) <a name="l97" style="background-color: #ffffff">        potent(0:nmlon,0:nmlat), &amp;  ! electric potential   [V]  </a>
+    98) <a name="l98" style="background-color: #ffffff">        ed1(0:nmlon,0:nmlat),    &amp;  ! zonal electric field Ed1  [V/m] </a>
+    99) <a name="l99" style="background-color: #ffffff">        ed2(0:nmlon,0:nmlat)        ! meridional electric field Ed2/sin I_m  [V/m]  </a>
+   100) <a name="l100" style="background-color: #ffffff">       </a>
+   101) <a name="l101" style="background-color: #ffffff">      real(r8) :: &amp;</a>
+   102) <a name="l102" style="background-color: #ffffff">       date,  &amp; ! iyear+iday+ut</a>
+   103) <a name="l103" style="background-color: #ffffff">       day      ! iday+ut</a>
+   104) <a name="l104" style="background-color: #ffffff"></a>
+   105) <a name="l105" style="background-color: #ffffff">      logical, parameter :: iutav=.false.   ! .true.  means UT-averaging </a>
+   106) <a name="l106" style="background-color: #ffffff">                                            ! .false. means no UT-averaging</a>
+   107) <a name="l107" style="background-color: #ffffff">      real(r8), parameter ::          &amp;</a>
+   108) <a name="l108" style="background-color: #ffffff">        v_sw = 400._r8 	                   ! solar wind velocity [km/s]</a>
+   109) <a name="l109" style="background-color: #ffffff"></a>
+   110) <a name="l110" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+   111) <a name="l111" style="background-color: #ffffff">! boundary for Weimer</a>
+   112) <a name="l112" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+   113) <a name="l113" style="background-color: #ffffff">      real(r8), parameter :: bnd_wei = 44._r8 ! colat. [deg]</a>
+   114) <a name="l114" style="background-color: #ffffff">      integer :: nmlat_wei</a>
+   115) <a name="l115" style="background-color: #ffffff">      </a>
+   116) <a name="l116" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+   117) <a name="l117" style="background-color: #ffffff">! flag for choosing factors for empirical low latitude model      </a>
+   118) <a name="l118" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+   119) <a name="l119" style="background-color: #ffffff">      integer, parameter ::  iseasav = 0  ! flag for season </a>
+   120) <a name="l120" style="background-color: #ffffff"></a>
+   121) <a name="l121" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+   122) <a name="l122" style="background-color: #ffffff">! constants:</a>
+   123) <a name="l123" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+   124) <a name="l124" style="background-color: #ffffff">      real(r8), parameter ::        &amp; </a>
+   125) <a name="l125" style="background-color: #ffffff">     	r_e  =  6.371e6_r8,         &amp;  ! radius_earth [m] (same as for apex.F90)</a>
+   126) <a name="l126" style="background-color: #ffffff">        h_r  = 130.0e3_r8,          &amp;  ! reference height [m] (same as for apex.F90)</a>
+   127) <a name="l127" style="background-color: #ffffff">     	dy2yr= 365.24_r8,           &amp;  ! day per avg. year used in Weimer</a>
+   128) <a name="l128" style="background-color: #ffffff">     	dy2mo= 30.6001_r8  	       ! day per avg. month used in Weimer</a>
+   129) <a name="l129" style="background-color: #ffffff"></a>
+   130) <a name="l130" style="background-color: #ffffff">      real(r8) :: &amp;</a>
+   131) <a name="l131" style="background-color: #ffffff">     	rtd ,     &amp;    ! radians -&gt; deg</a>
+   132) <a name="l132" style="background-color: #ffffff">     	dtr,      &amp;    ! deg -&gt; radians</a>
+   133) <a name="l133" style="background-color: #ffffff">     	sqr2,     &amp;      </a>
+   134) <a name="l134" style="background-color: #ffffff">     	hr2rd,    &amp;    ! pi/12 hrs</a>
+   135) <a name="l135" style="background-color: #ffffff">     	dy2rd,    &amp;    ! 2*pi/365.24  average year</a>
+   136) <a name="l136" style="background-color: #ffffff">     	deg2mlt,  &amp;    ! for mlon to deg</a>
+   137) <a name="l137" style="background-color: #ffffff">     	mlt2deg,  &amp;    ! for mlt to mlon</a>
+   138) <a name="l138" style="background-color: #ffffff">        sinIm_mag(0:nmlat)    ! sinIm</a>
+   139) <a name="l139" style="background-color: #ffffff"></a>
+   140) <a name="l140" style="background-color: #ffffff">      integer :: jmin, jmax   ! latitude index for interpolation of </a>
+   141) <a name="l141" style="background-color: #ffffff">                              ! northward e-field ed2 at mag. equator</a>
+   142) <a name="l142" style="background-color: #ffffff"></a>
+   143) <a name="l143" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+   144) <a name="l144" style="background-color: #ffffff">!  for spherical harmonics</a>
+   145) <a name="l145" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+   146) <a name="l146" style="background-color: #ffffff">      integer, parameter ::   &amp;</a>
+   147) <a name="l147" style="background-color: #ffffff">     	nm   = 19,     &amp;</a>
+   148) <a name="l148" style="background-color: #ffffff">     	mm   = 18,     &amp;					</a>
+   149) <a name="l149" style="background-color: #ffffff">     	nmp  = nm + 1, &amp;					       </a>
+   150) <a name="l150" style="background-color: #ffffff">     	mmp  = mm + 1	  </a>
+   151) <a name="l151" style="background-color: #ffffff"></a>
+   152) <a name="l152" style="background-color: #ffffff">      real(r8) :: r(0:nm,0:mm)      ! R_n^m</a>
+   153) <a name="l153" style="background-color: #ffffff">      real(r8) :: pmopmmo(0:mm)     ! sqrt(1+1/2m)</a>
+   154) <a name="l154" style="background-color: #ffffff"></a>
+   155) <a name="l155" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+   156) <a name="l156" style="background-color: #ffffff">!  index for factors f_m(mlt),f_l(UT),f_-k(d)</a>
+   157) <a name="l157" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+   158) <a name="l158" style="background-color: #ffffff">      integer, parameter :: ni = 1091  ! for n=12 m=-18:18</a>
+   159) <a name="l159" style="background-color: #ffffff">      integer :: imax                                         ! max number of index</a>
+   160) <a name="l160" style="background-color: #ffffff">      integer,dimension(0:ni) :: &amp;</a>
+   161) <a name="l161" style="background-color: #ffffff">     	kf, &amp;</a>
+   162) <a name="l162" style="background-color: #ffffff">     	lf, &amp;</a>
+   163) <a name="l163" style="background-color: #ffffff">     	mf, &amp;</a>
+   164) <a name="l164" style="background-color: #ffffff">     	nf, &amp;</a>
+   165) <a name="l165" style="background-color: #ffffff">     	jf</a>
+   166) <a name="l166" style="background-color: #ffffff">      real(r8) :: ft(1:3,0:2)  ! used for f_-k(season,k)</a>
+   167) <a name="l167" style="background-color: #ffffff"></a>
+   168) <a name="l168" style="background-color: #ffffff">      real(r8) ::  a_klnm(0:ni)        !  A_klm</a>
+   169) <a name="l169" style="background-color: #ffffff">      real(r8) ::  a_lf(0:ni)          ! A_klmn^lf for minimum &amp;</a>
+   170) <a name="l170" style="background-color: #ffffff">      real(r8) ::  a_hf(0:ni)          ! A_klmn^hf for maximum</a>
+   171) <a name="l171" style="background-color: #ffffff"></a>
+   172) <a name="l172" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+   173) <a name="l173" style="background-color: #ffffff">! high_latitude boundary</a>
+   174) <a name="l174" style="background-color: #ffffff">!------------------------------------------------------------------------------ </a>
+   175) <a name="l175" style="background-color: #ffffff">      real(r8), parameter ::  &amp; </a>
+   176) <a name="l176" style="background-color: #ffffff">     	ef_max  = 0.015_r8,   &amp;  ! max e-field for high latitude boundary location [V/m]</a>
+   177) <a name="l177" style="background-color: #ffffff">     	lat_sft = 54._r8	 ! shift of highlat_bnd to 54 deg</a>
+   178) <a name="l178" style="background-color: #ffffff">      integer :: ilat_sft        ! index of shift for high latitude boundary</a>
+   179) <a name="l179" style="background-color: #ffffff">      integer, parameter :: nmax_sin = 2 ! max. wave number to be represented</a>
+   180) <a name="l180" style="background-color: #ffffff">      logical, parameter :: debug =.false.</a>
+   181) <a name="l181" style="background-color: #ffffff"></a>
+   182) <a name="l182" style="background-color: #ffffff">      contains</a>
+   183) <a name="l183" style="background-color: #ffffff"></a>
+   184) <a name="l184" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">efield_init(efield_lflux_file, efield_hflux_file, efield_wei96_file)</a>
+   185) <a name="l185" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   186) <a name="l186" style="background-color: #ffcccc">! Purpose: read in and set up coefficients needed for electric field</a>
+   187) <a name="l187" style="background-color: #ffcccc">!          calculation (independent of time &amp; geog. location)</a>
+   188) <a name="l188" style="background-color: #ffcccc">!</a>
+   189) <a name="l189" style="background-color: #ffcccc">! Method:</a>
+   190) <a name="l190" style="background-color: #ffcccc">!</a>
+   191) <a name="l191" style="background-color: #ffcccc">! Author: A. Maute Dec 2003  am 12/17/03 </a>
+   192) <a name="l192" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   193) <a name="l193" style="background-color: #ffcccc">      character(len=*), intent(in) :: efield_lflux_file</a>
+   194) <a name="l194" style="background-color: #ffcccc">      character(len=*), intent(in) :: efield_hflux_file</a>
+   195) <a name="l195" style="background-color: #ffcccc">      character(len=*), intent(in) :: efield_wei96_file</a>
+   196) <a name="l196" style="background-color: #ffcccc"></a>
+   197) <a name="l197" style="background-color: #ffcccc">      call constants	 ! calculate constants</a>
+   198) <a name="l198" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   199) <a name="l199" style="background-color: #ffcccc">! low/midlatitude potential from Scherliess model</a>
+   200) <a name="l200" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   201) <a name="l201" style="background-color: #ffcccc">      call read_acoef (efield_lflux_file, efield_hflux_file)	! read in A_klnm for given S_aM</a>
+   202) <a name="l202" style="background-color: #ffcccc">      call index_quiet  ! set up index for f_m(mlt),f_l(UT),f_-k(d)</a>
+   203) <a name="l203" style="background-color: #ffcccc">      call prep_fk	! set up the constant factors for f_k</a>
+   204) <a name="l204" style="background-color: #ffcccc">      call prep_pnm	! set up the constant factors for P_n^m &amp; dP/d phi</a>
+   205) <a name="l205" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   206) <a name="l206" style="background-color: #ffcccc">! following part should be independent of time &amp; location if IMF constant</a>
+   207) <a name="l207" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   208) <a name="l208" style="background-color: #ffcccc">      call ReadCoef (efield_wei96_file)</a>
+   209) <a name="l209" style="background-color: #ffcccc"></a>
+   210) <a name="l210" style="background-color: #ffcccc">      end subroutine efield_init</a>
+   211) <a name="l211" style="background-color: #ffffff"></a>
+   212) <a name="l212" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">get_efield</a>
+   213) <a name="l213" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   214) <a name="l214" style="background-color: #ffcccc">! Purpose: calculates the global electric potential field on the</a>
+   215) <a name="l215" style="background-color: #ffcccc">!          geomagnetic grid (MLT in deg) and derives the electric field </a>
+   216) <a name="l216" style="background-color: #ffcccc">!</a>
+   217) <a name="l217" style="background-color: #ffcccc">! Method:</a>
+   218) <a name="l218" style="background-color: #ffcccc">!</a>
+   219) <a name="l219" style="background-color: #ffcccc">! Author: A. Maute Dec 2003  am 12/17/03    </a>
+   220) <a name="l220" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   221) <a name="l221" style="background-color: #ffcccc"></a>
+   222) <a name="l222" style="background-color: #ffcccc">      use time_manager,   only : get_curr_calday, get_curr_date</a>
+   223) <a name="l223" style="background-color: #ffcccc">      use mo_solar_parms, only : get_solar_parms</a>
+   224) <a name="l224" style="background-color: #ffcccc">      use mag_parms,      only : get_mag_parms</a>
+   225) <a name="l225" style="background-color: #ffcccc">      use cam_control_mod, only: magfield_fix_year</a>
+   226) <a name="l226" style="background-color: #ffcccc">      use spmd_utils,      only: masterproc</a>
+   227) <a name="l227" style="background-color: #ffcccc"></a>
+   228) <a name="l228" style="background-color: #ffcccc">      integer :: idum1, idum2, tod ! time of day [s] </a>
+   229) <a name="l229" style="background-color: #ffcccc"></a>
+   230) <a name="l230" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   231) <a name="l231" style="background-color: #ffcccc">! get current calendar day of year &amp; date components </a>
+   232) <a name="l232" style="background-color: #ffcccc">! valid at end of current timestep</a>
+   233) <a name="l233" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   234) <a name="l234" style="background-color: #ffcccc">      iday = get_curr_calday()                   ! day of year</a>
+   235) <a name="l235" style="background-color: #ffcccc">      call get_curr_date (iyear,imo,iday_m,tod)  ! year, time of day [sec]</a>
+   236) <a name="l236" style="background-color: #ffcccc">      iyear = magfield_fix_year</a>
+   237) <a name="l237" style="background-color: #ffcccc"></a>
+   238) <a name="l238" style="background-color: #ffcccc">      if( iyear &lt; 1900 ) then</a>
+   239) <a name="l239" style="background-color: #ffcccc">        write(iulog,&quot;(/,'&gt;&gt;&gt; get_efield: year &lt; 1900 not possible: year=',i5)&quot;) iyear</a>
+   240) <a name="l240" style="background-color: #ffcccc">        call endrun</a>
+   241) <a name="l241" style="background-color: #ffcccc">      end if</a>
+   242) <a name="l242" style="background-color: #ffcccc"></a>
+   243) <a name="l243" style="background-color: #ffcccc">      ut = tod/3600._r8                   ! UT of day [sec]</a>
+   244) <a name="l244" style="background-color: #ffcccc"></a>
+   245) <a name="l245" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   246) <a name="l246" style="background-color: #ffcccc">! get solar parms</a>
+   247) <a name="l247" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   248) <a name="l248" style="background-color: #ffcccc">      call get_solar_parms( f107_s = f107d )</a>
+   249) <a name="l249" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   250) <a name="l250" style="background-color: #ffcccc">! get mag parms</a>
+   251) <a name="l251" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   252) <a name="l252" style="background-color: #ffcccc">      call get_mag_parms( by = by, bz = bz )</a>
+   253) <a name="l253" style="background-color: #ffcccc">#ifdef EFIELD_DIAGS</a>
+   254) <a name="l254" style="background-color: #ffcccc">      if( masterproc ) then</a>
+   255) <a name="l255" style="background-color: #ffcccc">         write(iulog,*) 'get_efield: f107d,by,bz = ', f107d,by,bz </a>
+   256) <a name="l256" style="background-color: #ffcccc">      end if</a>
+   257) <a name="l257" style="background-color: #ffcccc">#endif</a>
+   258) <a name="l258" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   259) <a name="l259" style="background-color: #ffcccc">! ajust S_a</a>
+   260) <a name="l260" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   261) <a name="l261" style="background-color: #ffcccc">      call adj_S_a</a>
+   262) <a name="l262" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   263) <a name="l263" style="background-color: #ffcccc">! calculate global electric potential    </a>
+   264) <a name="l264" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   265) <a name="l265" style="background-color: #ffcccc">      call GlobalElPotential</a>
+   266) <a name="l266" style="background-color: #ffcccc"></a>
+   267) <a name="l267" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   268) <a name="l268" style="background-color: #ffcccc">! calculate derivative of global electric potential </a>
+   269) <a name="l269" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   270) <a name="l270" style="background-color: #ffcccc">      call DerivPotential</a>
+   271) <a name="l271" style="background-color: #ffcccc"></a>
+   272) <a name="l272" style="background-color: #ffcccc">      end subroutine get_efield</a>
+   273) <a name="l273" style="background-color: #ffffff"></a>
+   274) <a name="l274" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">GlobalElPotential</a>
+   275) <a name="l275" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   276) <a name="l276" style="background-color: #ffcccc">! Purpose: calculates the global electric potential field on the</a>
+   277) <a name="l277" style="background-color: #ffcccc">!          geomagnetic grid (MLT in deg) </a>
+   278) <a name="l278" style="background-color: #ffcccc">!</a>
+   279) <a name="l279" style="background-color: #ffcccc">! Method: rewritten code from Luedger Scherliess (11/20/99 LS)</a>
+   280) <a name="l280" style="background-color: #ffcccc">!     routine to calculate the global electric potential in magnetic</a>
+   281) <a name="l281" style="background-color: #ffcccc">!     Apex coordinates (Latitude and MLT).</a>
+   282) <a name="l282" style="background-color: #ffcccc">!     High Latitude Model is Weimer 1996.</a>
+   283) <a name="l283" style="background-color: #ffcccc">!     Midlatitude model is Scherliess 1999.</a>
+   284) <a name="l284" style="background-color: #ffcccc">!     Interpolation in a transition region at about 60 degree </a>
+   285) <a name="l285" style="background-color: #ffcccc">!     magnetic apex lat</a>
+   286) <a name="l286" style="background-color: #ffcccc">!</a>
+   287) <a name="l287" style="background-color: #ffcccc">! Author: A. Maute Dec 2003  am 12/17/03 </a>
+   288) <a name="l288" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   289) <a name="l289" style="background-color: #ffcccc"></a>
+   290) <a name="l290" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   291) <a name="l291" style="background-color: #ffcccc">! local variables</a>
+   292) <a name="l292" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   293) <a name="l293" style="background-color: #ffcccc">      integer  :: ilon, ilat, idlat</a>
+   294) <a name="l294" style="background-color: #ffcccc">      integer  :: ihlat_bnd(0:nmlon)                  ! high latitude boundary</a>
+   295) <a name="l295" style="background-color: #ffcccc">      integer  :: itrans_width(0:nmlon)               ! width of transition zone</a>
+   296) <a name="l296" style="background-color: #ffcccc">      real(r8) :: mlt, mlon, mlat, mlat_90, pot</a>
+   297) <a name="l297" style="background-color: #ffcccc">      real(r8) :: pot_midlat(0:nmlon,0:nmlat)         ! potential from L. Scherliess model</a>
+   298) <a name="l298" style="background-color: #ffcccc">      real(r8) :: pot_highlat(0:nmlon,0:nmlat)        ! potential from Weimer model</a>
+   299) <a name="l299" style="background-color: #ffcccc">      real(r8) :: pot_highlats(0:nmlon,0:nmlat)	      ! smoothed potential from Weimer model</a>
+   300) <a name="l300" style="background-color: #ffcccc"></a>
+   301) <a name="l301" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   302) <a name="l302" style="background-color: #ffcccc">! Externals</a>
+   303) <a name="l303" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   304) <a name="l304" style="background-color: #ffcccc">      real(r8),external :: EpotVal        ! in wei96.f</a>
+   305) <a name="l305" style="background-color: #ffcccc"></a>
+   306) <a name="l306" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   307) <a name="l307" style="background-color: #ffcccc">! convert to date and day	</a>
+   308) <a name="l308" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   309) <a name="l309" style="background-color: #ffcccc">      day  = iday + ut/24._r8</a>
+   310) <a name="l310" style="background-color: #ffcccc">      date = iyear + day/dy2yr</a>
+   311) <a name="l311" style="background-color: #ffcccc"></a>
+   312) <a name="l312" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   313) <a name="l313" style="background-color: #ffcccc">! low/midlatitude electric potential - empirical model Scherliess 1999  </a>
+   314) <a name="l314" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   315) <a name="l315" style="background-color: #ffcccc">!$omp parallel do private(ilat, ilon, mlat, pot)</a>
+   316) <a name="l316" style="background-color: #ffcccc">      do ilat = 0,nmlath                        ! Calculate only for one magn. hemisphere</a>
+   317) <a name="l317" style="background-color: #ffcccc">	mlat = ylatm(ilat)                      ! mag. latitude</a>
+   318) <a name="l318" style="background-color: #ffcccc">        do ilon = 0,nmlon	                ! lon. loop</a>
+   319) <a name="l319" style="background-color: #ffcccc">          call efield_mid( mlat, ylonm(ilon), pot )</a>
+   320) <a name="l320" style="background-color: #ffcccc">	  pot_midlat(ilon,ilat+nmlath) = pot	! SH/NH symmetry </a>
+   321) <a name="l321" style="background-color: #ffcccc">	  pot_midlat(ilon,nmlath-ilat) = pot</a>
+   322) <a name="l322" style="background-color: #ffcccc">        end do</a>
+   323) <a name="l323" style="background-color: #ffcccc">      end do</a>
+   324) <a name="l324" style="background-color: #ffcccc"></a>
+   325) <a name="l325" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   326) <a name="l326" style="background-color: #ffcccc">! hight latitude potential from Weimer model</a>
+   327) <a name="l327" style="background-color: #ffcccc">! at the poles Weimer potential is not longitudinal dependent</a>
+   328) <a name="l328" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   329) <a name="l329" style="background-color: #ffcccc">      call prep_weimer                             ! calculate IMF angle &amp; magnitude, tilt</a>
+   330) <a name="l330" style="background-color: #ffcccc"></a>
+   331) <a name="l331" style="background-color: #ffcccc">!$omp parallel do private(ilat, ilon, mlat_90, pot)</a>
+   332) <a name="l332" style="background-color: #ffcccc">      do ilat = 0,nmlat_wei 	                   ! Calculate only for one magn. hemisphere</a>
+   333) <a name="l333" style="background-color: #ffcccc">        mlat_90 = 90._r8 - ylatm(ilat)             ! mag. latitude</a>
+   334) <a name="l334" style="background-color: #ffcccc">        do ilon = 0,nmlon</a>
+   335) <a name="l335" style="background-color: #ffcccc">    	  pot  = 1000._r8*EpotVal( mlat_90, ylonm(ilon)*deg2mlt )     ! calculate potential (kv -&gt; v)</a>
+   336) <a name="l336" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   337) <a name="l337" style="background-color: #ffcccc">! NH/SH symmetry</a>
+   338) <a name="l338" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   339) <a name="l339" style="background-color: #ffcccc">    	  pot_highlat(ilon,ilat)        = pot</a>
+   340) <a name="l340" style="background-color: #ffcccc">    	  pot_highlat(ilon,nmlat-ilat)  = pot</a>
+   341) <a name="l341" style="background-color: #ffcccc">    	  pot_highlats(ilon,ilat)       = pot</a>
+   342) <a name="l342" style="background-color: #ffcccc">    	  pot_highlats(ilon,nmlat-ilat) = pot</a>
+   343) <a name="l343" style="background-color: #ffcccc">        end do</a>
+   344) <a name="l344" style="background-color: #ffcccc">      end do     </a>
+   345) <a name="l345" style="background-color: #ffcccc"></a>
+   346) <a name="l346" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   347) <a name="l347" style="background-color: #ffcccc">! weighted smoothing of high latitude potential</a>
+   348) <a name="l348" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   349) <a name="l349" style="background-color: #ffcccc">      idlat = 2              ! smooth over -2:2 = 5 grid points</a>
+   350) <a name="l350" style="background-color: #ffcccc">      call pot_latsmo( pot_highlats, idlat )</a>
+   351) <a name="l351" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   352) <a name="l352" style="background-color: #ffcccc">! calculate the height latitude bounday ihl_bnd</a>
+   353) <a name="l353" style="background-color: #ffcccc">! 1. calculate E field from weimar model</a>
+   354) <a name="l354" style="background-color: #ffcccc">!    boundary is set where the total electric field exceeds</a>
+   355) <a name="l355" style="background-color: #ffcccc">!    0.015 V/m (corresp. approx. to 300 m/s)</a>
+   356) <a name="l356" style="background-color: #ffcccc">! 2. moved halfways to 54 deg </a>
+   357) <a name="l357" style="background-color: #ffcccc">! output : index 0-pole nmlath-equator</a>
+   358) <a name="l358" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   359) <a name="l359" style="background-color: #ffcccc">      call highlat_getbnd( ihlat_bnd )</a>
+   360) <a name="l360" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   361) <a name="l361" style="background-color: #ffcccc">! 3. adjust high latitude boundary sinusoidally</a>
+   362) <a name="l362" style="background-color: #ffcccc">!    calculate width of transition zone</a>
+   363) <a name="l363" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   364) <a name="l364" style="background-color: #ffcccc">      call bnd_sinus( ihlat_bnd, itrans_width ) </a>
+   365) <a name="l365" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   366) <a name="l366" style="background-color: #ffcccc">! 4. ajust high latitude potential to low latitude potential      </a>
+   367) <a name="l367" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   368) <a name="l368" style="background-color: #ffcccc">      call highlat_adjust( pot_highlats, pot_highlat, pot_midlat, ihlat_bnd )</a>
+   369) <a name="l369" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   370) <a name="l370" style="background-color: #ffcccc">! interpolation of high and low/midlatitude potential in the</a>
+   371) <a name="l371" style="background-color: #ffcccc">! transition zone and put it into global potent array</a>
+   372) <a name="l372" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   373) <a name="l373" style="background-color: #ffcccc">      call interp_poten( pot_highlats, pot_highlat, pot_midlat, ihlat_bnd, itrans_width) </a>
+   374) <a name="l374" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   375) <a name="l375" style="background-color: #ffcccc">! potential weighted smoothing in latitude</a>
+   376) <a name="l376" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   377) <a name="l377" style="background-color: #ffcccc">      idlat = 2                 ! smooth over -2:2 = 5 grid points</a>
+   378) <a name="l378" style="background-color: #ffcccc">      call pot_latsmo2( potent, idlat )</a>
+   379) <a name="l379" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   380) <a name="l380" style="background-color: #ffcccc">! potential smoothing in longitude</a>
+   381) <a name="l381" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   382) <a name="l382" style="background-color: #ffcccc">      idlat = nmlon/48          ! smooth over -idlat:idlat grid points</a>
+   383) <a name="l383" style="background-color: #ffcccc">      call pot_lonsmo( potent, idlat )</a>
+   384) <a name="l384" style="background-color: #ffcccc"></a>
+   385) <a name="l385" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   386) <a name="l386" style="background-color: #ffcccc">! output</a>
+   387) <a name="l387" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   388) <a name="l388" style="background-color: #ffcccc">! output ( change later to netcdf file)</a>
+   389) <a name="l389" style="background-color: #ffcccc">!      do ilat=0,nmlat</a>
+   390) <a name="l390" style="background-color: #ffcccc">!       do ilon=0,nmlon</a>
+   391) <a name="l391" style="background-color: #ffcccc">!         write(iulog,'(4(x,f12.5))') ylatm(ilat),ylonm(ilon), &amp;</a>
+   392) <a name="l392" style="background-color: #ffcccc">!           potent(ilon,ilat),potent(ilon,nmlat-ilat)</a>
+   393) <a name="l393" style="background-color: #ffcccc">!         write(iulog,'(4(x,f12.5))') ylatm(ilat),ylonm(ilon), &amp;</a>
+   394) <a name="l394" style="background-color: #ffcccc">!           potent(ilon,ilat),potent(ilon,nmlat-ilat)</a>
+   395) <a name="l395" style="background-color: #ffcccc">!	write(iulog,'(f10.3)') potent(ilon,ilat)</a>
+   396) <a name="l396" style="background-color: #ffcccc">!       end do</a>
+   397) <a name="l397" style="background-color: #ffcccc">!      end do</a>
+   398) <a name="l398" style="background-color: #ffcccc"></a>
+   399) <a name="l399" style="background-color: #ffcccc">      end subroutine GlobalElPotential</a>
+   400) <a name="l400" style="background-color: #ffffff"></a>
+   401) <a name="l401" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">ff( ph, mt, f )                                                    </a>
+   402) <a name="l402" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   403) <a name="l403" style="background-color: #ffcccc">! Purpose: calculate F for normalized associated Legendre polynomial P_n^m</a>
+   404) <a name="l404" style="background-color: #ffcccc">!          Ref.: Richmond J.Atm.Ter.Phys. 1974</a>
+   405) <a name="l405" style="background-color: #ffcccc">!</a>
+   406) <a name="l406" style="background-color: #ffcccc">! Method:  f_m(phi) = sqrt(2) sin(m phi) m &gt; 0</a>
+   407) <a name="l407" style="background-color: #ffcccc">!                   = 1                  m = 0</a>
+   408) <a name="l408" style="background-color: #ffcccc">!                   = sqrt(2) cos(m phi) m &lt; 0</a>
+   409) <a name="l409" style="background-color: #ffcccc">!</a>
+   410) <a name="l410" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/18/03</a>
+   411) <a name="l411" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   412) <a name="l412" style="background-color: #ffcccc"></a>
+   413) <a name="l413" style="background-color: #ffcccc">      implicit none</a>
+   414) <a name="l414" style="background-color: #ffcccc"></a>
+   415) <a name="l415" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   416) <a name="l416" style="background-color: #ffcccc">! dummy arguments</a>
+   417) <a name="l417" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   418) <a name="l418" style="background-color: #ffcccc">      integer,intent(in)   :: mt</a>
+   419) <a name="l419" style="background-color: #ffcccc">      real(r8),intent(in)  :: ph	! geo. longitude of 0SLT (ut*15)</a>
+   420) <a name="l420" style="background-color: #ffcccc">      real(r8),intent(out) :: f(-mt:mt)</a>
+   421) <a name="l421" style="background-color: #ffcccc"></a>
+   422) <a name="l422" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   423) <a name="l423" style="background-color: #ffcccc">! local variables</a>
+   424) <a name="l424" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   425) <a name="l425" style="background-color: #ffcccc">      integer  :: m, i, j, mmo</a>
+   426) <a name="l426" style="background-color: #ffcccc">      real(r8) :: sp, cp    </a>
+   427) <a name="l427" style="background-color: #ffcccc"></a>
+   428) <a name="l428" style="background-color: #ffcccc">      sp   = sin( ph/rtd )</a>
+   429) <a name="l429" style="background-color: #ffcccc">      cp   = cos( ph/rtd )</a>
+   430) <a name="l430" style="background-color: #ffcccc">      f(0) = 1.e0_r8</a>
+   431) <a name="l431" style="background-color: #ffcccc">                                                                </a>
+   432) <a name="l432" style="background-color: #ffcccc">      f(-1) = sqr2*cp</a>
+   433) <a name="l433" style="background-color: #ffcccc">      f(1)  = sqr2*sp      								 </a>
+   434) <a name="l434" style="background-color: #ffcccc">      do m = 2,mt</a>
+   435) <a name="l435" style="background-color: #ffcccc">        mmo   = m - 1  </a>
+   436) <a name="l436" style="background-color: #ffcccc">        f(m)  = f(-mmo)*sp + cp*f(mmo)</a>
+   437) <a name="l437" style="background-color: #ffcccc">        f(-m) = f(-mmo)*cp - sp*f(mmo)</a>
+   438) <a name="l438" style="background-color: #ffcccc">      end do      </a>
+   439) <a name="l439" style="background-color: #ffcccc"></a>
+   440) <a name="l440" style="background-color: #ffcccc">      end subroutine ff                                                                      </a>
+   441) <a name="l441" style="background-color: #ffffff"></a>
+   442) <a name="l442" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">pnm( ct, p )</a>
+   443) <a name="l443" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   444) <a name="l444" style="background-color: #ffcccc">! Purpose: normalized associated Legendre polynomial P_n^m</a>
+   445) <a name="l445" style="background-color: #ffcccc">!          Ref.: Richmond J.Atm.Ter.Phys. 1974</a>
+   446) <a name="l446" style="background-color: #ffcccc">! Method:</a>
+   447) <a name="l447" style="background-color: #ffcccc">!   P_m^m    = sqrt(1+1/2m)*si*P_m-1^m-1                  m&gt;0</a>
+   448) <a name="l448" style="background-color: #ffcccc">!   P_n^m    = [cos*P_n-1^m - R_n-1^m*P_n-2^m ]/R_n^m     n&gt;m&gt;=0</a>
+   449) <a name="l449" style="background-color: #ffcccc">!   dP/d phi = n*cos*P_n^m/sin-(2*n+1)*R_n^m*P_n-1^m/sin  n&gt;=m&gt;=0</a>
+   450) <a name="l450" style="background-color: #ffcccc">!   R_n^m    = sqrt[ (n^2-m^2)/(4n^2-1) ]</a>
+   451) <a name="l451" style="background-color: #ffcccc">!</a>
+   452) <a name="l452" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/18/03</a>
+   453) <a name="l453" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   454) <a name="l454" style="background-color: #ffcccc"></a>
+   455) <a name="l455" style="background-color: #ffcccc">      implicit none</a>
+   456) <a name="l456" style="background-color: #ffcccc"></a>
+   457) <a name="l457" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   458) <a name="l458" style="background-color: #ffcccc">! dummy arguments</a>
+   459) <a name="l459" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   460) <a name="l460" style="background-color: #ffcccc">      real(r8), intent(inout) :: ct ! cos(colat)                 </a>
+   461) <a name="l461" style="background-color: #ffcccc">      real(r8), intent(inout) :: p(0:nm,0:mm)</a>
+   462) <a name="l462" style="background-color: #ffcccc"></a>
+   463) <a name="l463" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   464) <a name="l464" style="background-color: #ffcccc">! local variables</a>
+   465) <a name="l465" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   466) <a name="l466" style="background-color: #ffcccc">      integer  :: mp, m, n, np</a>
+   467) <a name="l467" style="background-color: #ffcccc">      real(r8) :: pm2, st</a>
+   468) <a name="l468" style="background-color: #ffcccc"></a>
+   469) <a name="l469" style="background-color: #ffcccc">!      ct = min( ct,.99_r8 )		! cos(colat)</a>
+   470) <a name="l470" style="background-color: #ffcccc">      st = sqrt( 1._r8 - ct*ct ) 	! sin(colat)</a>
+   471) <a name="l471" style="background-color: #ffcccc"></a>
+   472) <a name="l472" style="background-color: #ffcccc">      p(0,0) = 1._r8  </a>
+   473) <a name="l473" style="background-color: #ffcccc">      do mp = 1,mmp  ! m+1=1,mm+1</a>
+   474) <a name="l474" style="background-color: #ffcccc">        m = mp - 1</a>
+   475) <a name="l475" style="background-color: #ffcccc">	if( m &gt;= 1 ) then</a>
+   476) <a name="l476" style="background-color: #ffcccc">           p(m,m) = pmopmmo(m)*p(m-1,m-1)*st 			</a>
+   477) <a name="l477" style="background-color: #ffcccc">	end if</a>
+   478) <a name="l478" style="background-color: #ffcccc">	pm2 = 0._r8                                                                  </a>
+   479) <a name="l479" style="background-color: #ffcccc">	do n = mp,nm                    ! n=m+1,N</a>
+   480) <a name="l480" style="background-color: #ffcccc">	   np     = n + 1</a>
+   481) <a name="l481" style="background-color: #ffcccc">	   p(n,m) = (ct*p(n-1,m) - r(n-1,m)*pm2)/r(n,m)</a>
+   482) <a name="l482" style="background-color: #ffcccc">	   pm2    = p(n-1,m)</a>
+   483) <a name="l483" style="background-color: #ffcccc">        end do</a>
+   484) <a name="l484" style="background-color: #ffcccc">      end do</a>
+   485) <a name="l485" style="background-color: #ffcccc"></a>
+   486) <a name="l486" style="background-color: #ffcccc">      end subroutine pnm                                                                         </a>
+   487) <a name="l487" style="background-color: #ffffff"></a>
+   488) <a name="l488" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">prep_pnm</a>
+   489) <a name="l489" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   490) <a name="l490" style="background-color: #ffcccc">! Purpose: constant factors for normalized associated Legendre polynomial P_n^m</a>
+   491) <a name="l491" style="background-color: #ffcccc">!          Ref.: Richmond J.Atm.Ter.Phys. 1974</a>
+   492) <a name="l492" style="background-color: #ffcccc">!</a>
+   493) <a name="l493" style="background-color: #ffcccc">! Method:</a>
+   494) <a name="l494" style="background-color: #ffcccc">!   PmoPmmo(m) = sqrt(1+1/2m)</a>
+   495) <a name="l495" style="background-color: #ffcccc">!   R_n^m      = sqrt[ (n^2-m^2)/(4n^2-1) ]</a>
+   496) <a name="l496" style="background-color: #ffcccc">!</a>
+   497) <a name="l497" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/18/03</a>
+   498) <a name="l498" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   499) <a name="l499" style="background-color: #ffcccc"></a>
+   500) <a name="l500" style="background-color: #ffcccc">      implicit none                </a>
+   501) <a name="l501" style="background-color: #ffcccc"></a>
+   502) <a name="l502" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   503) <a name="l503" style="background-color: #ffcccc">! local variables</a>
+   504) <a name="l504" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   505) <a name="l505" style="background-color: #ffcccc">      integer  :: mp, m, n</a>
+   506) <a name="l506" style="background-color: #ffcccc">      real(r8) :: xms, xns, den</a>
+   507) <a name="l507" style="background-color: #ffcccc"></a>
+   508) <a name="l508" style="background-color: #ffcccc">      do mp = 1, mmp            ! m+1 = 1,mm+1                                     </a>
+   509) <a name="l509" style="background-color: #ffcccc">	m = mp - 1                                               </a>
+   510) <a name="l510" style="background-color: #ffcccc">	xms = m*m                                                </a>
+   511) <a name="l511" style="background-color: #ffcccc">	if( mp /= 1 ) then</a>
+   512) <a name="l512" style="background-color: #ffcccc">           pmopmmo(m) = sqrt( 1._r8 + .5_r8/M )</a>
+   513) <a name="l513" style="background-color: #ffcccc">	end if</a>
+   514) <a name="l514" style="background-color: #ffcccc">	do n = m,nm      ! n = m,N                                     </a>
+   515) <a name="l515" style="background-color: #ffcccc">	  xns    = n*n                                       </a>
+   516) <a name="l516" style="background-color: #ffcccc">	  den    = max(4._r8*xns - 1._r8,1._r8)</a>
+   517) <a name="l517" style="background-color: #ffcccc">	  r(n,m) = sqrt( (xns  - xms)/den )</a>
+   518) <a name="l518" style="background-color: #ffcccc">	end do                 </a>
+   519) <a name="l519" style="background-color: #ffcccc">      end do </a>
+   520) <a name="l520" style="background-color: #ffcccc"></a>
+   521) <a name="l521" style="background-color: #ffcccc">      end subroutine prep_pnm                                                                         </a>
+   522) <a name="l522" style="background-color: #ffffff"></a>
+   523) <a name="l523" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">index_quiet</a>
+   524) <a name="l524" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   525) <a name="l525" style="background-color: #ffcccc">! Purpose: set up index for factors f_m(mlt),f_l(UT),f_-k(d) to</a>
+   526) <a name="l526" style="background-color: #ffcccc">!    describe the electric potential Phi for the empirical model   </a>
+   527) <a name="l527" style="background-color: #ffcccc">!</a>
+   528) <a name="l528" style="background-color: #ffcccc">! Method:</a>
+   529) <a name="l529" style="background-color: #ffcccc">!    Phi = sum_k sum_l sum_m sum_n [ A_klmn * P_n^m *f_m(mlt)*f_l(UT)*f_-k(d)]</a>
+   530) <a name="l530" style="background-color: #ffcccc">!    - since the electric potential is symmetric about the equator</a>
+   531) <a name="l531" style="background-color: #ffcccc">!      n+m odd terms are set zero resp. not used</a>
+   532) <a name="l532" style="background-color: #ffcccc">!    - in the summation for calculation Phi the index have the following</a>
+   533) <a name="l533" style="background-color: #ffcccc">!      range n=1,12 and m=-n,n, k=0,2 l=-2,2</a>
+   534) <a name="l534" style="background-color: #ffcccc">!</a>
+   535) <a name="l535" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/18/03</a>
+   536) <a name="l536" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   537) <a name="l537" style="background-color: #ffcccc"></a>
+   538) <a name="l538" style="background-color: #ffcccc">      implicit none</a>
+   539) <a name="l539" style="background-color: #ffcccc"></a>
+   540) <a name="l540" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   541) <a name="l541" style="background-color: #ffcccc">!	... local variables</a>
+   542) <a name="l542" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   543) <a name="l543" style="background-color: #ffcccc">      integer :: i, j, k, l, n, m</a>
+   544) <a name="l544" style="background-color: #ffcccc"></a>
+   545) <a name="l545" style="background-color: #ffcccc">      i = 0 	! initialize</a>
+   546) <a name="l546" style="background-color: #ffcccc">      j = 1 </a>
+   547) <a name="l547" style="background-color: #ffcccc">      do k = 2,0,-1</a>
+   548) <a name="l548" style="background-color: #ffcccc">        do l = -2,2</a>
+   549) <a name="l549" style="background-color: #ffcccc">          if( k == 2 .and. abs(l) == 2 ) then</a>
+   550) <a name="l550" style="background-color: #ffcccc">             cycle</a>
+   551) <a name="l551" style="background-color: #ffcccc">          end if</a>
+   552) <a name="l552" style="background-color: #ffcccc">          do n = 1,12</a>
+   553) <a name="l553" style="background-color: #ffcccc">            do m = -18,18 </a>
+   554) <a name="l554" style="background-color: #ffcccc">              if( abs(m) &lt;= n ) then		    !  |m| &lt; n</a>
+   555) <a name="l555" style="background-color: #ffcccc">                if( (((n-m)/2)*2) == (n-m) ) then   ! only n+m even</a>
+   556) <a name="l556" style="background-color: #ffcccc">             	  if( n-abs(m) &lt;= 9 ) then	    ! n-|m| &lt;= 9 why?</a>
+   557) <a name="l557" style="background-color: #ffcccc">             	    kf(i) = 2-k</a>
+   558) <a name="l558" style="background-color: #ffcccc">             	    lf(i) = l</a>
+   559) <a name="l559" style="background-color: #ffcccc">             	    nf(i) = n</a>
+   560) <a name="l560" style="background-color: #ffcccc">             	    mf(i) = m</a>
+   561) <a name="l561" style="background-color: #ffcccc">             	    jf(i) = j</a>
+   562) <a name="l562" style="background-color: #ffcccc">             	    i	  = i + 1	 ! counter</a>
+   563) <a name="l563" style="background-color: #ffcccc">                  end if</a>
+   564) <a name="l564" style="background-color: #ffcccc">                end if</a>
+   565) <a name="l565" style="background-color: #ffcccc">              end if</a>
+   566) <a name="l566" style="background-color: #ffcccc">            end do ! m</a>
+   567) <a name="l567" style="background-color: #ffcccc">          end do ! n</a>
+   568) <a name="l568" style="background-color: #ffcccc">        end do ! l</a>
+   569) <a name="l569" style="background-color: #ffcccc">      end do ! k</a>
+   570) <a name="l570" style="background-color: #ffcccc"></a>
+   571) <a name="l571" style="background-color: #ffcccc">      imax = i - 1  </a>
+   572) <a name="l572" style="background-color: #ffcccc">      if(imax /= ni ) then    ! check if imax == ni </a>
+   573) <a name="l573" style="background-color: #ffcccc">        write(iulog,'(a19,i5,a18,i5)') 'index_quiet: imax= ',imax, &amp;</a>
+   574) <a name="l574" style="background-color: #ffcccc">          ' not equal to ni =',ni </a>
+   575) <a name="l575" style="background-color: #ffcccc">        call endrun('index_quiet ERROR')</a>
+   576) <a name="l576" style="background-color: #ffcccc">      end if							</a>
+   577) <a name="l577" style="background-color: #ffcccc">      if(debug) write(iulog,*) 'imax=',imax</a>
+   578) <a name="l578" style="background-color: #ffcccc"></a>
+   579) <a name="l579" style="background-color: #ffcccc">      end subroutine index_quiet                                                           </a>
+   580) <a name="l580" style="background-color: #ffffff"></a>
+   581) <a name="l581" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">read_acoef (efield_lflux_file, efield_hflux_file)</a>
+   582) <a name="l582" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   583) <a name="l583" style="background-color: #ffcccc">! Purpose:  </a>
+   584) <a name="l584" style="background-color: #ffcccc">!    1. read in coefficients A_klmn^lf for solar cycle minimum and</a>
+   585) <a name="l585" style="background-color: #ffcccc">!      A_klmn^hf for maximum </a>
+   586) <a name="l586" style="background-color: #ffcccc">!    2. adjust S_a (f107d) such that if S_a&lt;80 or S_a &gt; 220 it has reasonable numbers</a>
+   587) <a name="l587" style="background-color: #ffcccc">!      S_aM = [atan{(S_a-65)^2/90^2}-a90]/[a180-a90]</a>
+   588) <a name="l588" style="background-color: #ffcccc">!      a90  = atan [(90-65)/90]^2</a>
+   589) <a name="l589" style="background-color: #ffcccc">!      a180 = atan [(180-65)/90]^2</a>
+   590) <a name="l590" style="background-color: #ffcccc">!    3. inter/extrapolation of the coefficient to the actual flux which is</a>
+   591) <a name="l591" style="background-color: #ffcccc">!      given by the user</a>
+   592) <a name="l592" style="background-color: #ffcccc">!      A_klmn = S_aM [A_klmn^hf-A_klmn^lf]/90. + 2*A_klmn^lf-A_klmn^hf</a>
+   593) <a name="l593" style="background-color: #ffcccc">!</a>
+   594) <a name="l594" style="background-color: #ffcccc">! Method:</a>
+   595) <a name="l595" style="background-color: #ffcccc">!</a>
+   596) <a name="l596" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/19/03</a>
+   597) <a name="l597" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   598) <a name="l598" style="background-color: #ffcccc"></a>
+   599) <a name="l599" style="background-color: #ffcccc">      use ioFileMod,     only : getfil</a>
+   600) <a name="l600" style="background-color: #ffcccc">      use units,         only : getunit, freeunit</a>
+   601) <a name="l601" style="background-color: #ffcccc"></a>
+   602) <a name="l602" style="background-color: #ffcccc">      character(len=*), intent(in) :: efield_lflux_file</a>
+   603) <a name="l603" style="background-color: #ffcccc">      character(len=*), intent(in) :: efield_hflux_file</a>
+   604) <a name="l604" style="background-color: #ffcccc"></a>
+   605) <a name="l605" style="background-color: #ffcccc">      integer  :: i,ios,unit,istat</a>
+   606) <a name="l606" style="background-color: #ffcccc">      character (len=256):: locfn</a>
+   607) <a name="l607" style="background-color: #ffcccc"></a>
+   608) <a name="l608" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   609) <a name="l609" style="background-color: #ffcccc">!  get coefficients file for solar minimum: </a>
+   610) <a name="l610" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   611) <a name="l611" style="background-color: #ffcccc">      unit     = getunit()</a>
+   612) <a name="l612" style="background-color: #ffcccc">      call getfil( efield_lflux_file, locfn, 0 )</a>
+   613) <a name="l613" style="background-color: #ffcccc"></a>
+   614) <a name="l614" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   615) <a name="l615" style="background-color: #ffcccc">! open datafile with coefficients A_klnm</a>
+   616) <a name="l616" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   617) <a name="l617" style="background-color: #ffcccc">      if (debug) write(iulog,*) 'read_acoef: open file ',trim(locfn),' unit ',unit</a>
+   618) <a name="l618" style="background-color: #ffcccc">      open(unit=unit,file=trim(locfn), &amp;</a>
+   619) <a name="l619" style="background-color: #ffcccc">           status = 'old',iostat = ios)</a>
+   620) <a name="l620" style="background-color: #ffcccc">      if(ios.gt.0) then</a>
+   621) <a name="l621" style="background-color: #ffcccc">	write(iulog,*) 'read_acoef: error in opening coeff_lf file',' unit ',unit</a>
+   622) <a name="l622" style="background-color: #ffcccc">        call endrun</a>
+   623) <a name="l623" style="background-color: #ffcccc">      end if</a>
+   624) <a name="l624" style="background-color: #ffcccc"></a>
+   625) <a name="l625" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   626) <a name="l626" style="background-color: #ffcccc">! read datafile with coefficients A_klnm</a>
+   627) <a name="l627" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   628) <a name="l628" style="background-color: #ffcccc">      if (debug) write(iulog,*) 'read_acoef: read file ',trim(locfn),' unit ',unit</a>
+   629) <a name="l629" style="background-color: #ffcccc">      read(unit,*,iostat = ios) a_lf</a>
+   630) <a name="l630" style="background-color: #ffcccc">      if(ios.gt.0) then</a>
+   631) <a name="l631" style="background-color: #ffcccc">	write(iulog,*) 'read_acoef: error in reading coeff_lf file',' unit ',unit</a>
+   632) <a name="l632" style="background-color: #ffcccc">        call endrun</a>
+   633) <a name="l633" style="background-color: #ffcccc">      end if</a>
+   634) <a name="l634" style="background-color: #ffcccc"></a>
+   635) <a name="l635" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   636) <a name="l636" style="background-color: #ffcccc">! close &amp; free unit      </a>
+   637) <a name="l637" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   638) <a name="l638" style="background-color: #ffcccc">      close(unit)</a>
+   639) <a name="l639" style="background-color: #ffcccc">      call freeunit(unit)</a>
+   640) <a name="l640" style="background-color: #ffcccc">      if (debug) write(iulog,*) 'read_acoef: free unit ',unit</a>
+   641) <a name="l641" style="background-color: #ffcccc"></a>
+   642) <a name="l642" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   643) <a name="l643" style="background-color: #ffcccc">!  get coefficients file for solar maximum: </a>
+   644) <a name="l644" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   645) <a name="l645" style="background-color: #ffcccc">      unit     = getunit()</a>
+   646) <a name="l646" style="background-color: #ffcccc">      call getfil( efield_hflux_file, locfn, 0 )</a>
+   647) <a name="l647" style="background-color: #ffcccc"></a>
+   648) <a name="l648" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   649) <a name="l649" style="background-color: #ffcccc">! open datafile with coefficients A_klnm</a>
+   650) <a name="l650" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   651) <a name="l651" style="background-color: #ffcccc">      if (debug) write(iulog,*) 'read_acoef: open file ',trim(locfn),' unit ',unit</a>
+   652) <a name="l652" style="background-color: #ffcccc">      open(unit=unit,file=trim(locfn), &amp;</a>
+   653) <a name="l653" style="background-color: #ffcccc">           status = 'old',iostat = ios)</a>
+   654) <a name="l654" style="background-color: #ffcccc">      if(ios.gt.0) then</a>
+   655) <a name="l655" style="background-color: #ffcccc">	write(iulog,*) 'read_acoef: error in opening coeff_hf file',' unit ',unit</a>
+   656) <a name="l656" style="background-color: #ffcccc">        call endrun</a>
+   657) <a name="l657" style="background-color: #ffcccc">      end if</a>
+   658) <a name="l658" style="background-color: #ffcccc"></a>
+   659) <a name="l659" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   660) <a name="l660" style="background-color: #ffcccc">! read datafile with coefficients A_klnm</a>
+   661) <a name="l661" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   662) <a name="l662" style="background-color: #ffcccc">      if (debug) write(iulog,*) 'read_acoef: read file ',trim(locfn)</a>
+   663) <a name="l663" style="background-color: #ffcccc">      read(unit,*,iostat = ios) a_hf</a>
+   664) <a name="l664" style="background-color: #ffcccc">      if(ios.gt.0) then</a>
+   665) <a name="l665" style="background-color: #ffcccc">	write(iulog,*) 'read_acoef: error in reading coeff_hf file',' unit ',unit</a>
+   666) <a name="l666" style="background-color: #ffcccc">        call endrun</a>
+   667) <a name="l667" style="background-color: #ffcccc">      end if</a>
+   668) <a name="l668" style="background-color: #ffcccc"></a>
+   669) <a name="l669" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   670) <a name="l670" style="background-color: #ffcccc">! close &amp; free unit      </a>
+   671) <a name="l671" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   672) <a name="l672" style="background-color: #ffcccc">      close(unit)</a>
+   673) <a name="l673" style="background-color: #ffcccc">      call freeunit(unit)</a>
+   674) <a name="l674" style="background-color: #ffcccc">      if (debug) write(iulog,*) 'read_acoef: free unit ',unit</a>
+   675) <a name="l675" style="background-color: #ffcccc"></a>
+   676) <a name="l676" style="background-color: #ffcccc">      end subroutine read_acoef</a>
+   677) <a name="l677" style="background-color: #ffffff"></a>
+   678) <a name="l678" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">adj_S_a</a>
+   679) <a name="l679" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   680) <a name="l680" style="background-color: #ffcccc">! adjust S_a -&gt; S_aM   eqn.8-11 Scherliess draft</a>
+   681) <a name="l681" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   682) <a name="l682" style="background-color: #ffcccc"></a>
+   683) <a name="l683" style="background-color: #ffcccc">      implicit none</a>
+   684) <a name="l684" style="background-color: #ffcccc"></a>
+   685) <a name="l685" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   686) <a name="l686" style="background-color: #ffcccc">! local variables</a>
+   687) <a name="l687" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   688) <a name="l688" style="background-color: #ffcccc">      integer  :: i</a>
+   689) <a name="l689" style="background-color: #ffcccc">      real(r8) :: x2, y2, a90, a180, S_aM</a>
+   690) <a name="l690" style="background-color: #ffcccc"></a>
+   691) <a name="l691" style="background-color: #ffcccc">      x2 = 90._r8*90._r8</a>
+   692) <a name="l692" style="background-color: #ffcccc">      y2 = (90._r8 - 65._r8)</a>
+   693) <a name="l693" style="background-color: #ffcccc">      y2 = y2*y2</a>
+   694) <a name="l694" style="background-color: #ffcccc">      a90  = atan2(y2,x2)</a>
+   695) <a name="l695" style="background-color: #ffcccc">      y2 = (180._r8 - 65._r8)</a>
+   696) <a name="l696" style="background-color: #ffcccc">      y2 = y2*y2</a>
+   697) <a name="l697" style="background-color: #ffcccc">      a180 = atan2(y2,x2)</a>
+   698) <a name="l698" style="background-color: #ffcccc">!     y2 = (S_a-65._r8)</a>
+   699) <a name="l699" style="background-color: #ffcccc">      y2 = (f107d - 65._r8)</a>
+   700) <a name="l700" style="background-color: #ffcccc">      y2 = y2*y2</a>
+   701) <a name="l701" style="background-color: #ffcccc">      S_aM = (atan2(y2,x2) - a90)/(a180 - a90) </a>
+   702) <a name="l702" style="background-color: #ffcccc">      S_aM = 90._r8*(1._r8 + S_aM)</a>
+   703) <a name="l703" style="background-color: #ffcccc">      if(debug) write(iulog,*) 'f107d=',f107d,' S_aM =',S_aM</a>
+   704) <a name="l704" style="background-color: #ffcccc">      if(debug) write(iulog,*) 'By=',by</a>
+   705) <a name="l705" style="background-color: #ffcccc"></a>
+   706) <a name="l706" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   707) <a name="l707" style="background-color: #ffcccc">! inter/extrapolate to S_a (f107d)</a>
+   708) <a name="l708" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   709) <a name="l709" style="background-color: #ffcccc">      do i = 0,ni                       ! eqn.8 Scherliess draft</a>
+   710) <a name="l710" style="background-color: #ffcccc">        a_klnm(i) = S_aM*(a_hf(i) - a_lf(i))/90._r8 + 2._r8*a_lf(i) - a_hf(i)</a>
+   711) <a name="l711" style="background-color: #ffcccc">! for testing like in original code</a>
+   712) <a name="l712" style="background-color: #ffcccc">!        a_klnm(i)=S_a*(a_hf(i)-a_lf(i))/90.+2.*a_lf(i)-a_hf(i)</a>
+   713) <a name="l713" style="background-color: #ffcccc">!        a_klnm(i)=f107d*(a_hf(i)-a_lf(i))/90.+2.*a_lf(i)-a_hf(i)</a>
+   714) <a name="l714" style="background-color: #ffcccc">      end do</a>
+   715) <a name="l715" style="background-color: #ffcccc"></a>
+   716) <a name="l716" style="background-color: #ffcccc">      end subroutine adj_S_a</a>
+   717) <a name="l717" style="background-color: #ffffff"></a>
+   718) <a name="l718" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">constants</a>
+   719) <a name="l719" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   720) <a name="l720" style="background-color: #ffcccc">! Purpose: set up constant values (e.g. magnetic grid, convertion</a>
+   721) <a name="l721" style="background-color: #ffcccc">!      constants etc)</a>
+   722) <a name="l722" style="background-color: #ffcccc">!</a>
+   723) <a name="l723" style="background-color: #ffcccc">! Method:</a>
+   724) <a name="l724" style="background-color: #ffcccc">!</a>
+   725) <a name="l725" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/19/03</a>
+   726) <a name="l726" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   727) <a name="l727" style="background-color: #ffcccc"></a>
+   728) <a name="l728" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   729) <a name="l729" style="background-color: #ffcccc">! local variables</a>
+   730) <a name="l730" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   731) <a name="l731" style="background-color: #ffcccc">      integer  :: i,j</a>
+   732) <a name="l732" style="background-color: #ffcccc">      real(r8) :: fac,lat</a>
+   733) <a name="l733" style="background-color: #ffcccc"></a>
+   734) <a name="l734" style="background-color: #ffcccc">      rtd     = 180._r8/pi	        ! radians -&gt; deg</a>
+   735) <a name="l735" style="background-color: #ffcccc">      dtr     = pi/180._r8	        ! deg -&gt; radians</a>
+   736) <a name="l736" style="background-color: #ffcccc">      sqr2    = sqrt(2.e0_r8)</a>
+   737) <a name="l737" style="background-color: #ffcccc">      hr2rd   = pi/12._r8	        ! pi/12 hrs</a>
+   738) <a name="l738" style="background-color: #ffcccc">      dy2rd   = 2._r8*pi/dy2yr          ! 2*pi/365.24  average year</a>
+   739) <a name="l739" style="background-color: #ffcccc">      deg2mlt = 24._r8/360._r8          ! convert degrees to MLT hours</a>
+   740) <a name="l740" style="background-color: #ffcccc">      mlt2deg = 360._r8/24._r8          ! for mlt to mlon       </a>
+   741) <a name="l741" style="background-color: #ffcccc"></a>
+   742) <a name="l742" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   743) <a name="l743" style="background-color: #ffcccc">! Set grid deltas:</a>
+   744) <a name="l744" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   745) <a name="l745" style="background-color: #ffcccc">      dlatm = 180._r8/nmlat</a>
+   746) <a name="l746" style="background-color: #ffcccc">      dlonm = 360._r8/nmlon</a>
+   747) <a name="l747" style="background-color: #ffcccc"></a>
+   748) <a name="l748" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   749) <a name="l749" style="background-color: #ffcccc">! Set magnetic latitude array </a>
+   750) <a name="l750" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   751) <a name="l751" style="background-color: #ffcccc">      do j = 0,nmlat</a>
+   752) <a name="l752" style="background-color: #ffcccc">        ylatm(j) = j*dlatm</a>
+   753) <a name="l753" style="background-color: #ffcccc">        lat = (ylatm(j) - 90._r8)*dtr</a>
+   754) <a name="l754" style="background-color: #ffcccc">	fac = cos(lat)                   ! sinIm = 2*sin(lam_m)/sqrt[4-3*cos^2(lam_m)]</a>
+   755) <a name="l755" style="background-color: #ffcccc">	fac = 4._r8 - 3._r8*fac*fac</a>
+   756) <a name="l756" style="background-color: #ffcccc">	fac = 2._r8/sqrt( fac )</a>
+   757) <a name="l757" style="background-color: #ffcccc">	sinIm_mag(j) = fac*sin( lat )</a>
+   758) <a name="l758" style="background-color: #ffcccc">      end do </a>
+   759) <a name="l759" style="background-color: #ffcccc"></a>
+   760) <a name="l760" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   761) <a name="l761" style="background-color: #ffcccc">! Set magnetic longitude array</a>
+   762) <a name="l762" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   763) <a name="l763" style="background-color: #ffcccc">      do i = 0,nmlon</a>
+   764) <a name="l764" style="background-color: #ffcccc">        ylonm(i) = i*dlonm</a>
+   765) <a name="l765" style="background-color: #ffcccc">      end do ! i=1,nmlonp1</a>
+   766) <a name="l766" style="background-color: #ffcccc"></a>
+   767) <a name="l767" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   768) <a name="l768" style="background-color: #ffcccc">! find boundary index for weimer</a>
+   769) <a name="l769" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   770) <a name="l770" style="background-color: #ffcccc">      do j = 0,nmlat</a>
+   771) <a name="l771" style="background-color: #ffcccc">        nmlat_wei = j</a>
+   772) <a name="l772" style="background-color: #ffcccc">        if( bnd_wei &lt;= ylatm(j) ) then</a>
+   773) <a name="l773" style="background-color: #ffcccc">           exit</a>
+   774) <a name="l774" style="background-color: #ffcccc">        end if</a>
+   775) <a name="l775" style="background-color: #ffcccc">      end do </a>
+   776) <a name="l776" style="background-color: #ffcccc"></a>
+   777) <a name="l777" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   778) <a name="l778" style="background-color: #ffcccc">! find latitudinal shift</a>
+   779) <a name="l779" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   780) <a name="l780" style="background-color: #ffcccc">      do j = 0,nmlat</a>
+   781) <a name="l781" style="background-color: #ffcccc">        ilat_sft = j</a>
+   782) <a name="l782" style="background-color: #ffcccc">        if( lat_sft &lt;= ylatm(j) ) then</a>
+   783) <a name="l783" style="background-color: #ffcccc">           exit</a>
+   784) <a name="l784" style="background-color: #ffcccc">        end if</a>
+   785) <a name="l785" style="background-color: #ffcccc">      end do </a>
+   786) <a name="l786" style="background-color: #ffcccc"></a>
+   787) <a name="l787" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   788) <a name="l788" style="background-color: #ffcccc">! find index for linear interpolation of ed2 at mag.equator </a>
+   789) <a name="l789" style="background-color: #ffcccc">! use 12 deg - same as in TIEGCM      </a>
+   790) <a name="l790" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   791) <a name="l791" style="background-color: #ffcccc">      do j = 0,nmlat</a>
+   792) <a name="l792" style="background-color: #ffcccc">        lat = ylatm(j) - 90._r8</a>
+   793) <a name="l793" style="background-color: #ffcccc">        if( lat &lt;= -12._r8 ) then</a>
+   794) <a name="l794" style="background-color: #ffcccc">	  jmin = j</a>
+   795) <a name="l795" style="background-color: #ffcccc">        else if( lat &gt; 12._r8 ) then</a>
+   796) <a name="l796" style="background-color: #ffcccc">	  jmax = j</a>
+   797) <a name="l797" style="background-color: #ffcccc">	  exit</a>
+   798) <a name="l798" style="background-color: #ffcccc">       end if</a>
+   799) <a name="l799" style="background-color: #ffcccc">      end do</a>
+   800) <a name="l800" style="background-color: #ffcccc"></a>
+   801) <a name="l801" style="background-color: #ffcccc">      end subroutine constants</a>
+   802) <a name="l802" style="background-color: #ffffff"></a>
+   803) <a name="l803" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">prep_fk</a>
+   804) <a name="l804" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   805) <a name="l805" style="background-color: #ffcccc">! Purpose: set up constants factors for f_-k(day) used for empirical model</a>
+   806) <a name="l806" style="background-color: #ffcccc">!     to calculate the electric potential</a>
+   807) <a name="l807" style="background-color: #ffcccc">!</a>
+   808) <a name="l808" style="background-color: #ffcccc">! Method:</a>
+   809) <a name="l809" style="background-color: #ffcccc">!</a>
+   810) <a name="l810" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/19/03</a>
+   811) <a name="l811" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   812) <a name="l812" style="background-color: #ffcccc"></a>
+   813) <a name="l813" style="background-color: #ffcccc">      ft(1,0) = .75_r8*sqrt( 6.e0_r8 )/pi			</a>
+   814) <a name="l814" style="background-color: #ffcccc">      ft(1,1) = 2.e0_r8*ft(1,0)					      </a>
+   815) <a name="l815" style="background-color: #ffcccc">      ft(1,2) = 1.e0_r8						      </a>
+   816) <a name="l816" style="background-color: #ffcccc">      ft(2,0) = ft(1,0) 					      </a>
+   817) <a name="l817" style="background-color: #ffcccc">      ft(2,1) = -ft(1,1)					      </a>
+   818) <a name="l818" style="background-color: #ffcccc">      ft(2,2) = 1.e0_r8						      </a>
+   819) <a name="l819" style="background-color: #ffcccc">      ft(3,0) = ft(2,1) 					      </a>
+   820) <a name="l820" style="background-color: #ffcccc">      ft(3,1) = 0._r8						      </a>
+   821) <a name="l821" style="background-color: #ffcccc">      ft(3,2) = 1.e0_r8							   </a>
+   822) <a name="l822" style="background-color: #ffcccc"></a>
+   823) <a name="l823" style="background-color: #ffcccc">      end subroutine prep_fk</a>
+   824) <a name="l824" style="background-color: #ffffff"></a>
+   825) <a name="l825" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">set_fkflfs( fk, fl, fs )</a>
+   826) <a name="l826" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   827) <a name="l827" style="background-color: #ffcccc">! Purpose:  set f_-k(day) depending on seasonal flag used for empirical model</a>
+   828) <a name="l828" style="background-color: #ffcccc">!     to calculate the electric potential</a>
+   829) <a name="l829" style="background-color: #ffcccc">!</a>
+   830) <a name="l830" style="background-color: #ffcccc">! Method:</a>
+   831) <a name="l831" style="background-color: #ffcccc">!</a>
+   832) <a name="l832" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/20/03</a>
+   833) <a name="l833" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   834) <a name="l834" style="background-color: #ffcccc"></a>
+   835) <a name="l835" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   836) <a name="l836" style="background-color: #ffcccc">!	... dummy arguments</a>
+   837) <a name="l837" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   838) <a name="l838" style="background-color: #ffcccc">      real(r8), intent(out) ::  &amp;</a>
+   839) <a name="l839" style="background-color: #ffcccc">     	fk(0:2),  &amp;	                ! f_-k(day) </a>
+   840) <a name="l840" style="background-color: #ffcccc">     	fl(-2:2), &amp;	                ! f_l(ut)  </a>
+   841) <a name="l841" style="background-color: #ffcccc">     	fs(2)		                ! f_s(f10.7) </a>
+   842) <a name="l842" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   843) <a name="l843" style="background-color: #ffcccc">! local variables</a>
+   844) <a name="l844" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   845) <a name="l845" style="background-color: #ffcccc">      integer  :: lp</a>
+   846) <a name="l846" style="background-color: #ffcccc">      real(r8) :: ang</a>
+   847) <a name="l847" style="background-color: #ffcccc">      real(r8) :: lon_ut</a>
+   848) <a name="l848" style="background-color: #ffcccc"></a>
+   849) <a name="l849" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   850) <a name="l850" style="background-color: #ffcccc">! f_-k(day) </a>
+   851) <a name="l851" style="background-color: #ffcccc">! use factors for iseasav == 0 - Scherliess had iseasav as an input parameter</a>
+   852) <a name="l852" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   853) <a name="l853" style="background-color: #ffcccc">      lp = iseasav</a>
+   854) <a name="l854" style="background-color: #ffcccc">      if( iseasav == 0 ) then</a>
+   855) <a name="l855" style="background-color: #ffcccc">        ang   = (day + 9._r8)*dy2rd</a>
+   856) <a name="l856" style="background-color: #ffcccc">        fk(0) = sqr2*cos( 2._r8*ang )</a>
+   857) <a name="l857" style="background-color: #ffcccc">        fk(1) = sqr2*cos( ang )</a>
+   858) <a name="l858" style="background-color: #ffcccc">        fk(2) = 1._r8</a>
+   859) <a name="l859" style="background-color: #ffcccc">      else if( iseasav &gt;= 1 .and. iseasav &lt;= 3 ) then</a>
+   860) <a name="l860" style="background-color: #ffcccc">        fk(0) = ft(lp,0)</a>
+   861) <a name="l861" style="background-color: #ffcccc">        fk(1) = ft(lp,1)</a>
+   862) <a name="l862" style="background-color: #ffcccc">        fk(2) = ft(lp,2)</a>
+   863) <a name="l863" style="background-color: #ffcccc">      else if( iseasav == 4 ) then</a>
+   864) <a name="l864" style="background-color: #ffcccc">        fk(0) =0._r8</a>
+   865) <a name="l865" style="background-color: #ffcccc">        fk(1) =0._r8</a>
+   866) <a name="l866" style="background-color: #ffcccc">        fk(2) =1._r8</a>
+   867) <a name="l867" style="background-color: #ffcccc">      end if</a>
+   868) <a name="l868" style="background-color: #ffcccc"></a>
+   869) <a name="l869" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   870) <a name="l870" style="background-color: #ffcccc">! f_l(ut) </a>
+   871) <a name="l871" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   872) <a name="l872" style="background-color: #ffcccc">      lon_ut = 15._r8*ut        ! 15.*mlt - xmlon + 69. </a>
+   873) <a name="l873" style="background-color: #ffcccc">      call ff( lon_ut, 2, fl )                                                 </a>
+   874) <a name="l874" style="background-color: #ffcccc">      if( iutav ) then  	! UT-averaging</a>
+   875) <a name="l875" style="background-color: #ffcccc">     </a>
+   876) <a name="l876" style="background-color: #ffcccc">	ang   = fl(0)</a>
+   877) <a name="l877" style="background-color: #ffcccc">        fl(:) = 0._r8</a>
+   878) <a name="l878" style="background-color: #ffcccc">        fl(0) = ang</a>
+   879) <a name="l879" style="background-color: #ffcccc">	</a>
+   880) <a name="l880" style="background-color: #ffcccc">      end if</a>
+   881) <a name="l881" style="background-color: #ffcccc"></a>
+   882) <a name="l882" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   883) <a name="l883" style="background-color: #ffcccc">! f_s(f10.7)  only fs(1) used  	</a>
+   884) <a name="l884" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   885) <a name="l885" style="background-color: #ffcccc">      fs(1) = 1._r8</a>
+   886) <a name="l886" style="background-color: #ffcccc">!     fs(2) = S_a			  </a>
+   887) <a name="l887" style="background-color: #ffcccc">      fs(2) = f107d			  </a>
+   888) <a name="l888" style="background-color: #ffcccc"></a>
+   889) <a name="l889" style="background-color: #ffcccc">      end subroutine set_fkflfs</a>
+   890) <a name="l890" style="background-color: #ffffff"></a>
+   891) <a name="l891" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">efield_mid( mlat, mlon, pot )</a>
+   892) <a name="l892" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   893) <a name="l893" style="background-color: #ffcccc">! Purpose: calculate the electric potential for low and </a>
+   894) <a name="l894" style="background-color: #ffcccc">!      midlatitudes from an empirical model (Scherliess 1999)</a>
+   895) <a name="l895" style="background-color: #ffcccc">!</a>
+   896) <a name="l896" style="background-color: #ffcccc">! Method:</a>
+   897) <a name="l897" style="background-color: #ffcccc">!</a>
+   898) <a name="l898" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/20/03</a>
+   899) <a name="l899" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   900) <a name="l900" style="background-color: #ffcccc"></a>
+   901) <a name="l901" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   902) <a name="l902" style="background-color: #ffcccc">!	... dummy arguments</a>
+   903) <a name="l903" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   904) <a name="l904" style="background-color: #ffcccc">      real(r8), intent(in)  :: mlat, mlon</a>
+   905) <a name="l905" style="background-color: #ffcccc">      real(r8), intent(out) :: pot               ! electric potential (V)</a>
+   906) <a name="l906" style="background-color: #ffcccc"></a>
+   907) <a name="l907" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   908) <a name="l908" style="background-color: #ffcccc">! local variables</a>
+   909) <a name="l909" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   910) <a name="l910" style="background-color: #ffcccc">      integer  :: i, mp, np, nn</a>
+   911) <a name="l911" style="background-color: #ffcccc">      real(r8) :: mod_mlat, ct, x</a>
+   912) <a name="l912" style="background-color: #ffcccc">      real(r8) :: fk(0:2)      	    ! f_-k(day) </a>
+   913) <a name="l913" style="background-color: #ffcccc">      real(r8) :: fl(-2:2)          ! f_l(ut)  </a>
+   914) <a name="l914" style="background-color: #ffcccc">      real(r8) :: fs(2)	            ! f_s(f10.7) </a>
+   915) <a name="l915" style="background-color: #ffcccc">      real(r8) :: f(-18:18)</a>
+   916) <a name="l916" style="background-color: #ffcccc">      real(r8) :: p(0:nm,0:mm)      ! P_n^m	 spherical harmonics</a>
+   917) <a name="l917" style="background-color: #ffcccc"></a>
+   918) <a name="l918" style="background-color: #ffcccc">      pot = 0._r8 ! initialize                                        </a>
+   919) <a name="l919" style="background-color: #ffcccc"></a>
+   920) <a name="l920" style="background-color: #ffcccc">      mod_mlat = mlat</a>
+   921) <a name="l921" style="background-color: #ffcccc">      if( abs(mlat) &lt;= 0.5_r8 ) then</a>
+   922) <a name="l922" style="background-color: #ffcccc">         mod_mlat = 0.5_r8                     ! avoid geomag.equator</a>
+   923) <a name="l923" style="background-color: #ffcccc">      end if</a>
+   924) <a name="l924" style="background-color: #ffcccc"></a>
+   925) <a name="l925" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   926) <a name="l926" style="background-color: #ffcccc">! set f_-k, f_l, f_s depending on seasonal flag</a>
+   927) <a name="l927" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   928) <a name="l928" style="background-color: #ffcccc">      call set_fkflfs( fk, fl, fs ) </a>
+   929) <a name="l929" style="background-color: #ffcccc">      </a>
+   930) <a name="l930" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   931) <a name="l931" style="background-color: #ffcccc">! spherical harmonics </a>
+   932) <a name="l932" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   933) <a name="l933" style="background-color: #ffcccc">      ct = cos( (90._r8 - mod_mlat)*dtr )  ! magnetic colatitude </a>
+   934) <a name="l934" style="background-color: #ffcccc">      call pnm( ct, p )	                   ! calculate P_n^m</a>
+   935) <a name="l935" style="background-color: #ffcccc">      call ff( mlon, 18, f )               ! calculate f_m (phi) why 18 if N=12                              </a>
+   936) <a name="l936" style="background-color: #ffcccc"></a>
+   937) <a name="l937" style="background-color: #ffcccc">      do i = 0,imax  </a>
+   938) <a name="l938" style="background-color: #ffcccc">        mp  = mf(i)                                                      </a>
+   939) <a name="l939" style="background-color: #ffcccc">        np  = nf(i)</a>
+   940) <a name="l940" style="background-color: #ffcccc">        nn  = abs(mp)                      !   P_n^m = P_n^-m  </a>
+   941) <a name="l941" style="background-color: #ffcccc">        x   = a_klnm(i)* fl(lf(i)) * fk(kf(i)) * fs(jf(i))</a>
+   942) <a name="l942" style="background-color: #ffcccc">	pot = pot + x*f(mp)*p(np,nn) </a>
+   943) <a name="l943" style="background-color: #ffcccc">      end do </a>
+   944) <a name="l944" style="background-color: #ffcccc">      </a>
+   945) <a name="l945" style="background-color: #ffcccc">      end subroutine efield_mid                                              </a>
+   946) <a name="l946" style="background-color: #ffffff"></a>
+   947) <a name="l947" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">prep_weimer</a>
+   948) <a name="l948" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   949) <a name="l949" style="background-color: #ffcccc">! Purpose:  for Weimer model calculate IMF angle, IMF magnitude</a>
+   950) <a name="l950" style="background-color: #ffcccc">!  tilt of earth</a>
+   951) <a name="l951" style="background-color: #ffcccc">!</a>
+   952) <a name="l952" style="background-color: #ffcccc">! Method: using functions and subroutines from Weimer Model 1996</a>
+   953) <a name="l953" style="background-color: #ffcccc">!     output:  angle, &amp;  ! IMF angle</a>
+   954) <a name="l954" style="background-color: #ffcccc">!     	       bt,    &amp;  ! IMF magnitude</a>
+   955) <a name="l955" style="background-color: #ffcccc">!     	       tilt      ! tilt of earth</a>
+   956) <a name="l956" style="background-color: #ffcccc">!</a>
+   957) <a name="l957" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/20/03</a>
+   958) <a name="l958" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   959) <a name="l959" style="background-color: #ffcccc"></a>
+   960) <a name="l960" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   961) <a name="l961" style="background-color: #ffcccc">!  local variables</a>
+   962) <a name="l962" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   963) <a name="l963" style="background-color: #ffcccc">      real(r8) ::  &amp;</a>
+   964) <a name="l964" style="background-color: #ffcccc">        angle,  &amp;  ! IMF angle</a>
+   965) <a name="l965" style="background-color: #ffcccc">	bt,     &amp;  ! IMF magnitude</a>
+   966) <a name="l966" style="background-color: #ffcccc">	tilt       ! tilt of earth</a>
+   967) <a name="l967" style="background-color: #ffcccc"></a>
+   968) <a name="l968" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   969) <a name="l969" style="background-color: #ffcccc">! function declarations</a>
+   970) <a name="l970" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   971) <a name="l971" style="background-color: #ffcccc">      real(r8), external :: get_tilt	 ! in wei96.f</a>
+   972) <a name="l972" style="background-color: #ffcccc"></a>
+   973) <a name="l973" style="background-color: #ffcccc">      if( by == 0._r8 .and. bz == 0._r8) then</a>
+   974) <a name="l974" style="background-color: #ffcccc">         angle = 0._r8</a>
+   975) <a name="l975" style="background-color: #ffcccc">      else</a>
+   976) <a name="l976" style="background-color: #ffcccc">         angle = atan2( by,bz )</a>
+   977) <a name="l977" style="background-color: #ffcccc">      end if</a>
+   978) <a name="l978" style="background-color: #ffcccc">      </a>
+   979) <a name="l979" style="background-color: #ffcccc">      angle = angle*rtd</a>
+   980) <a name="l980" style="background-color: #ffcccc">      call adjust( angle )</a>
+   981) <a name="l981" style="background-color: #ffcccc">      bt = sqrt( by*by + bz*bz )</a>
+   982) <a name="l982" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   983) <a name="l983" style="background-color: #ffcccc">! use month and day of month - calculated with average no.of days per month</a>
+   984) <a name="l984" style="background-color: #ffcccc">! as in Weimer</a>
+   985) <a name="l985" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+   986) <a name="l986" style="background-color: #ffcccc">      if(debug) write(iulog,*) 'prep_weimer: day-&gt;day of month',iday,imo,iday_m,ut</a>
+   987) <a name="l987" style="background-color: #ffcccc">      tilt = get_tilt( iyear, imo, iday_m, ut )</a>
+   988) <a name="l988" style="background-color: #ffcccc"></a>
+   989) <a name="l989" style="background-color: #ffcccc">       if(debug) then</a>
+   990) <a name="l990" style="background-color: #ffcccc">        write(iulog,&quot;(/,'efield prep_weimer:')&quot;)</a>
+   991) <a name="l991" style="background-color: #ffcccc">        write(iulog,*)  '  Bz   =',bz</a>
+   992) <a name="l992" style="background-color: #ffcccc">        write(iulog,*)  '  By   =',by</a>
+   993) <a name="l993" style="background-color: #ffcccc">        write(iulog,*)  '  Bt   =',bt</a>
+   994) <a name="l994" style="background-color: #ffcccc">        write(iulog,*)  '  angle=',angle</a>
+   995) <a name="l995" style="background-color: #ffcccc">        write(iulog,*)  '  VSW  =',v_sw</a>
+   996) <a name="l996" style="background-color: #ffcccc">        write(iulog,*)  '  tilt =',tilt</a>
+   997) <a name="l997" style="background-color: #ffcccc">       end if</a>
+   998) <a name="l998" style="background-color: #ffcccc"></a>
+   999) <a name="l999" style="background-color: #ffcccc">      call SetModel( angle, bt, tilt, v_sw )</a>
+  1000) <a name="l1000" style="background-color: #ffcccc"></a>
+  1001) <a name="l1001" style="background-color: #ffcccc">      end subroutine prep_weimer</a>
+  1002) <a name="l1002" style="background-color: #ffffff"></a>
+  1003) <a name="l1003" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">pot_latsmo( pot, idlat )  ! pots == pot_highlats</a>
+  1004) <a name="l1004" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1005) <a name="l1005" style="background-color: #ffcccc">! Purpose: smoothing in latitude of  potential</a>
+  1006) <a name="l1006" style="background-color: #ffcccc">!</a>
+  1007) <a name="l1007" style="background-color: #ffcccc">! Method: weighted smoothing in latitude </a>
+  1008) <a name="l1008" style="background-color: #ffcccc">! assume regular grid spacing</a>
+  1009) <a name="l1009" style="background-color: #ffcccc">!</a>
+  1010) <a name="l1010" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/20/03</a>
+  1011) <a name="l1011" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1012) <a name="l1012" style="background-color: #ffcccc"></a>
+  1013) <a name="l1013" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1014) <a name="l1014" style="background-color: #ffcccc">!	... dummy arguments</a>
+  1015) <a name="l1015" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1016) <a name="l1016" style="background-color: #ffcccc">      integer, intent(in)     :: idlat</a>
+  1017) <a name="l1017" style="background-color: #ffcccc">      real(r8), intent(inout) :: pot(0:nmlon,0:nmlat)</a>
+  1018) <a name="l1018" style="background-color: #ffcccc"></a>
+  1019) <a name="l1019" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1020) <a name="l1020" style="background-color: #ffcccc">! local variables</a>
+  1021) <a name="l1021" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1022) <a name="l1022" style="background-color: #ffcccc">      integer  :: ilon, ilat, id</a>
+  1023) <a name="l1023" style="background-color: #ffcccc">      real(r8) :: wgt, del</a>
+  1024) <a name="l1024" style="background-color: #ffcccc">      real(r8) :: w(-idlat:idlat)</a>
+  1025) <a name="l1025" style="background-color: #ffcccc">!     real(r8) :: pot_smo(0:nmlat) ! temp array for smooth. potential</a>
+  1026) <a name="l1026" style="background-color: #ffcccc">      real(r8) :: pot_smo(0:nmlon,0:nmlat_wei) ! temp array for smooth. potential</a>
+  1027) <a name="l1027" style="background-color: #ffcccc"></a>
+  1028) <a name="l1028" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1029) <a name="l1029" style="background-color: #ffcccc">! weighting factors (regular grid spacing) </a>
+  1030) <a name="l1030" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1031) <a name="l1031" style="background-color: #ffcccc">      wgt = 0._r8 </a>
+  1032) <a name="l1032" style="background-color: #ffcccc">      do id = -idlat,idlat</a>
+  1033) <a name="l1033" style="background-color: #ffcccc">	del   = abs(id)*dlatm	! delta lat_m</a>
+  1034) <a name="l1034" style="background-color: #ffcccc">	w(id) = 1._r8/(del + 1._r8)</a>
+  1035) <a name="l1035" style="background-color: #ffcccc">        wgt   = wgt + w(id)</a>
+  1036) <a name="l1036" style="background-color: #ffcccc">      end do</a>
+  1037) <a name="l1037" style="background-color: #ffcccc">      wgt = 1._r8/wgt</a>
+  1038) <a name="l1038" style="background-color: #ffcccc"></a>
+  1039) <a name="l1039" style="background-color: #ffcccc">!     do ilon = 0,nmlon</a>
+  1040) <a name="l1040" style="background-color: #ffcccc">!        do ilat = idlat,nmlat_wei-idlat</a>
+  1041) <a name="l1041" style="background-color: #ffcccc">!       do ilat = idlat,nmlat-idlat</a>
+  1042) <a name="l1042" style="background-color: #ffcccc">!         pot_smo(ilat) = 0._r8</a>
+  1043) <a name="l1043" style="background-color: #ffcccc">!         do id = -idlat,idlat	!  org. was degree now grid points</a>
+  1044) <a name="l1044" style="background-color: #ffcccc">!           pot_smo(ilat) = pot_smo(ilat) + w(id)*pot(ilon,ilat+id)</a>
+  1045) <a name="l1045" style="background-color: #ffcccc">!           write(iulog,&quot;('pot_latsmo: ilon=',i3,' ilat=',i3,' id=',i3,' pot(ilon,ilat+id)=',e12.4)&quot;) ilon,ilat,id,pot(ilon,ilat+id)</a>
+  1046) <a name="l1046" style="background-color: #ffcccc">!         end do</a>
+  1047) <a name="l1047" style="background-color: #ffcccc">!         pot_smo(ilat)       = pot_smo(ilat)*wgt</a>
+  1048) <a name="l1048" style="background-color: #ffcccc">!         pot_smo(nmlat-ilat) = pot_smo(ilat)</a>
+  1049) <a name="l1049" style="background-color: #ffcccc">!       end do</a>
+  1050) <a name="l1050" style="background-color: #ffcccc">!      pot(ilon,idlat:nmlat-idlat) =  &amp;        ! copy back into pot</a>
+  1051) <a name="l1051" style="background-color: #ffcccc">!         pot_smo(idlat:nmlat-idlat)</a>
+  1052) <a name="l1052" style="background-color: #ffcccc">!        pot(ilon,idlat:nmlat_wei-idlat)       = pot_smo(idlat:nmlat_wei-idlat)</a>
+  1053) <a name="l1053" style="background-color: #ffcccc">!       pot(ilon,nmlat-nmlat_wei+idlat:nmlat) = pot_smo(nmlat-nmlat_wei+idlat:nmlat)</a>
+  1054) <a name="l1054" style="background-color: #ffcccc">!        pot(ilon,nmlat-nmlat_wei+idlat:nmlat-idlat) = pot_smo(nmlat-nmlat_wei+idlat:nmlat-idlat)</a>
+  1055) <a name="l1055" style="background-color: #ffcccc">!     end do</a>
+  1056) <a name="l1056" style="background-color: #ffcccc"></a>
+  1057) <a name="l1057" style="background-color: #ffcccc">!$omp parallel do private(ilat)</a>
+  1058) <a name="l1058" style="background-color: #ffcccc">      do ilat = idlat,nmlat_wei-idlat</a>
+  1059) <a name="l1059" style="background-color: #ffcccc">         pot_smo(:,ilat) = matmul( pot(:,ilat-idlat:ilat+idlat),w )*wgt</a>
+  1060) <a name="l1060" style="background-color: #ffcccc">      end do</a>
+  1061) <a name="l1061" style="background-color: #ffcccc"></a>
+  1062) <a name="l1062" style="background-color: #ffcccc">      do ilat = idlat,nmlat_wei-idlat</a>
+  1063) <a name="l1063" style="background-color: #ffcccc">         pot(:,ilat)       = pot_smo(:,ilat)</a>
+  1064) <a name="l1064" style="background-color: #ffcccc">         pot(:,nmlat-ilat) = pot_smo(:,ilat)</a>
+  1065) <a name="l1065" style="background-color: #ffcccc">      end do</a>
+  1066) <a name="l1066" style="background-color: #ffcccc"></a>
+  1067) <a name="l1067" style="background-color: #ffcccc">      end subroutine pot_latsmo</a>
+  1068) <a name="l1068" style="background-color: #ffffff"></a>
+  1069) <a name="l1069" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">pot_latsmo2( pot, idlat ) </a>
+  1070) <a name="l1070" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1071) <a name="l1071" style="background-color: #ffcccc">! Purpose:  smoothing in latitude of  potential</a>
+  1072) <a name="l1072" style="background-color: #ffcccc">!</a>
+  1073) <a name="l1073" style="background-color: #ffcccc">! Method: weighted smoothing in latitude </a>
+  1074) <a name="l1074" style="background-color: #ffcccc">!         assume regular grid spacing</a>
+  1075) <a name="l1075" style="background-color: #ffcccc">!</a>
+  1076) <a name="l1076" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/20/03</a>
+  1077) <a name="l1077" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1078) <a name="l1078" style="background-color: #ffcccc"></a>
+  1079) <a name="l1079" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1080) <a name="l1080" style="background-color: #ffcccc">!	... dummy arguments</a>
+  1081) <a name="l1081" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1082) <a name="l1082" style="background-color: #ffcccc">      integer, intent(in)     :: idlat</a>
+  1083) <a name="l1083" style="background-color: #ffcccc">      real(r8), intent(inout) :: pot(0:nmlon,0:nmlat)</a>
+  1084) <a name="l1084" style="background-color: #ffcccc"></a>
+  1085) <a name="l1085" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1086) <a name="l1086" style="background-color: #ffcccc">! local variables</a>
+  1087) <a name="l1087" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1088) <a name="l1088" style="background-color: #ffcccc">      integer  :: ilon, ilat, id</a>
+  1089) <a name="l1089" style="background-color: #ffcccc">      real(r8) :: wgt, del</a>
+  1090) <a name="l1090" style="background-color: #ffcccc">      real(r8) :: w(-idlat:idlat)</a>
+  1091) <a name="l1091" style="background-color: #ffcccc">!     real(r8) :: pot_smo(0:nmlat) ! temp array for smooth. potential</a>
+  1092) <a name="l1092" style="background-color: #ffcccc">      real(r8) :: pot_smo(0:nmlon,0:nmlath) ! temp array for smooth. potential</a>
+  1093) <a name="l1093" style="background-color: #ffcccc"></a>
+  1094) <a name="l1094" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1095) <a name="l1095" style="background-color: #ffcccc">! weighting factors (regular grid spacing)  </a>
+  1096) <a name="l1096" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1097) <a name="l1097" style="background-color: #ffcccc">      wgt = 0._r8</a>
+  1098) <a name="l1098" style="background-color: #ffcccc">      do id = -idlat,idlat</a>
+  1099) <a name="l1099" style="background-color: #ffcccc">	del   = abs(id)*dlatm	! delta lat_m</a>
+  1100) <a name="l1100" style="background-color: #ffcccc">	w(id) = 1._r8/(del + 1._r8)</a>
+  1101) <a name="l1101" style="background-color: #ffcccc">        wgt   = wgt + w(id)</a>
+  1102) <a name="l1102" style="background-color: #ffcccc">      end do</a>
+  1103) <a name="l1103" style="background-color: #ffcccc">      wgt = 1._r8/wgt</a>
+  1104) <a name="l1104" style="background-color: #ffcccc"></a>
+  1105) <a name="l1105" style="background-color: #ffcccc">!     do ilon = 0,nmlon</a>
+  1106) <a name="l1106" style="background-color: #ffcccc">!       do ilat = idlat,nmlath-idlat  ! ilat = 5:175</a>
+  1107) <a name="l1107" style="background-color: #ffcccc">!         pot_smo(ilat) = 0._r8</a>
+  1108) <a name="l1108" style="background-color: #ffcccc">!         do id = -idlat,idlat	!  org. was degree now grid points</a>
+  1109) <a name="l1109" style="background-color: #ffcccc">!           pot_smo(ilat) = pot_smo(ilat) + w(id)*pot(ilon,ilat+id)</a>
+  1110) <a name="l1110" style="background-color: #ffcccc">!         end do</a>
+  1111) <a name="l1111" style="background-color: #ffcccc">!         pot_smo(ilat) = pot_smo(ilat)*wgt</a>
+  1112) <a name="l1112" style="background-color: #ffcccc">!       end do</a>
+  1113) <a name="l1113" style="background-color: #ffcccc">!       pot(ilon,idlat:nmlath-idlat) = pot_smo(idlat:nmlath-idlat) ! copy back into pot</a>
+  1114) <a name="l1114" style="background-color: #ffcccc">!     end do</a>
+  1115) <a name="l1115" style="background-color: #ffcccc"></a>
+  1116) <a name="l1116" style="background-color: #ffcccc">!$omp parallel do private(ilat)</a>
+  1117) <a name="l1117" style="background-color: #ffcccc">      do ilat = idlat,nmlath-idlat</a>
+  1118) <a name="l1118" style="background-color: #ffcccc">         pot_smo(:,ilat) = matmul( pot(:,ilat-idlat:ilat+idlat),w )*wgt</a>
+  1119) <a name="l1119" style="background-color: #ffcccc">      end do</a>
+  1120) <a name="l1120" style="background-color: #ffcccc"></a>
+  1121) <a name="l1121" style="background-color: #ffcccc">      do ilat = idlat,nmlath-idlat</a>
+  1122) <a name="l1122" style="background-color: #ffcccc">         pot(:,ilat) = pot_smo(:,ilat)</a>
+  1123) <a name="l1123" style="background-color: #ffcccc">      end do</a>
+  1124) <a name="l1124" style="background-color: #ffcccc"></a>
+  1125) <a name="l1125" style="background-color: #ffcccc">      end subroutine pot_latsmo2</a>
+  1126) <a name="l1126" style="background-color: #ffffff"></a>
+  1127) <a name="l1127" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">pot_lonsmo( pot, idlon ) </a>
+  1128) <a name="l1128" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1129) <a name="l1129" style="background-color: #ffcccc">! Purpose: smoothing in longitude of potential</a>
+  1130) <a name="l1130" style="background-color: #ffcccc">!</a>
+  1131) <a name="l1131" style="background-color: #ffcccc">! Method:  weighted smoothing in longitude</a>
+  1132) <a name="l1132" style="background-color: #ffcccc">!          assume regular grid spacing</a>
+  1133) <a name="l1133" style="background-color: #ffcccc">!</a>
+  1134) <a name="l1134" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/20/03</a>
+  1135) <a name="l1135" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1136) <a name="l1136" style="background-color: #ffcccc"></a>
+  1137) <a name="l1137" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1138) <a name="l1138" style="background-color: #ffcccc">!	... dummy arguments</a>
+  1139) <a name="l1139" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1140) <a name="l1140" style="background-color: #ffcccc">      integer, intent(in)     :: idlon</a>
+  1141) <a name="l1141" style="background-color: #ffcccc">      real(r8), intent(inout) :: pot(0:nmlon,0:nmlat)</a>
+  1142) <a name="l1142" style="background-color: #ffcccc"></a>
+  1143) <a name="l1143" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1144) <a name="l1144" style="background-color: #ffcccc">! local variables</a>
+  1145) <a name="l1145" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1146) <a name="l1146" style="background-color: #ffcccc">      integer  :: ilon, ilat, id, iabs</a>
+  1147) <a name="l1147" style="background-color: #ffcccc">      real(r8) :: wgt, del</a>
+  1148) <a name="l1148" style="background-color: #ffcccc">      real(r8) :: w(-idlon:idlon)</a>
+  1149) <a name="l1149" style="background-color: #ffcccc">      real(r8) :: pot_smo(0:nmlath) ! temp array for smooth. potential</a>
+  1150) <a name="l1150" style="background-color: #ffcccc">      real(r8) :: tmp(-idlon:nmlon+idlon) ! temp array for smooth. potential</a>
+  1151) <a name="l1151" style="background-color: #ffcccc"></a>
+  1152) <a name="l1152" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1153) <a name="l1153" style="background-color: #ffcccc">! weighting factors (regular grid spacing) </a>
+  1154) <a name="l1154" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1155) <a name="l1155" style="background-color: #ffcccc">      wgt = 0._r8</a>
+  1156) <a name="l1156" style="background-color: #ffcccc">      do id = -idlon,idlon</a>
+  1157) <a name="l1157" style="background-color: #ffcccc">	del   = abs(id)*dlonm	! delta lon_m</a>
+  1158) <a name="l1158" style="background-color: #ffcccc">	w(id) = 1._r8/(del + 1._r8)</a>
+  1159) <a name="l1159" style="background-color: #ffcccc">        wgt   = wgt + w(id)</a>
+  1160) <a name="l1160" style="background-color: #ffcccc">      end do</a>
+  1161) <a name="l1161" style="background-color: #ffcccc">     wgt = 1._r8/wgt</a>
+  1162) <a name="l1162" style="background-color: #ffcccc"></a>
+  1163) <a name="l1163" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1164) <a name="l1164" style="background-color: #ffcccc">! averaging     </a>
+  1165) <a name="l1165" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1166) <a name="l1166" style="background-color: #ffcccc">!     do ilon = 0,nmlon</a>
+  1167) <a name="l1167" style="background-color: #ffcccc">!       do ilat = 0,nmlath</a>
+  1168) <a name="l1168" style="background-color: #ffcccc">!         pot_smo(ilat) = 0._r8</a>
+  1169) <a name="l1169" style="background-color: #ffcccc">!         do id = -idlon,idlon	                  !  org. was degree now grid points</a>
+  1170) <a name="l1170" style="background-color: #ffcccc">!           iabs = ilon + id</a>
+  1171) <a name="l1171" style="background-color: #ffcccc">!           if( iabs &gt; nmlon ) then</a>
+  1172) <a name="l1172" style="background-color: #ffcccc">!              iabs = iabs - nmlon ! test if wrap around</a>
+  1173) <a name="l1173" style="background-color: #ffcccc">!           end if</a>
+  1174) <a name="l1174" style="background-color: #ffcccc">!           if( iabs &lt; 0 ) then</a>
+  1175) <a name="l1175" style="background-color: #ffcccc">!              iabs = iabs + nmlon ! test if wrap around</a>
+  1176) <a name="l1176" style="background-color: #ffcccc">!           end if</a>
+  1177) <a name="l1177" style="background-color: #ffcccc">!           pot_smo(ilat) = pot_smo(ilat) + w(id)*pot(iabs,ilat)</a>
+  1178) <a name="l1178" style="background-color: #ffcccc">!         end do</a>
+  1179) <a name="l1179" style="background-color: #ffcccc">!         pot_smo(ilat)  = pot_smo(ilat)*wgt</a>
+  1180) <a name="l1180" style="background-color: #ffcccc">!         pot(ilon,ilat) = pot_smo(ilat)       ! copy back into pot </a>
+  1181) <a name="l1181" style="background-color: #ffcccc">!         pot(ilon,nmlat-ilat) = pot_smo(ilat) ! copy back into pot    </a>
+  1182) <a name="l1182" style="background-color: #ffcccc">!       end do   </a>
+  1183) <a name="l1183" style="background-color: #ffcccc">!     end do</a>
+  1184) <a name="l1184" style="background-color: #ffcccc"></a>
+  1185) <a name="l1185" style="background-color: #ffcccc">!$omp parallel do private(ilat,ilon,tmp)</a>
+  1186) <a name="l1186" style="background-color: #ffcccc">      do ilat = 0,nmlath</a>
+  1187) <a name="l1187" style="background-color: #ffcccc">          tmp(0:nmlon)             = pot(0:nmlon,ilat)</a>
+  1188) <a name="l1188" style="background-color: #ffcccc">          tmp(-idlon:-1)           = pot(nmlon-idlon:nmlon-1,ilat)</a>
+  1189) <a name="l1189" style="background-color: #ffcccc">          tmp(nmlon+1:nmlon+idlon) = pot(1:idlon,ilat)</a>
+  1190) <a name="l1190" style="background-color: #ffcccc">          do ilon = 0,nmlon</a>
+  1191) <a name="l1191" style="background-color: #ffcccc">	     pot(ilon,ilat) = dot_product( tmp(ilon-idlon:ilon+idlon),w )*wgt</a>
+  1192) <a name="l1192" style="background-color: #ffcccc">	     pot(ilon,nmlat-ilat) = pot(ilon,ilat)</a>
+  1193) <a name="l1193" style="background-color: #ffcccc">          end do   </a>
+  1194) <a name="l1194" style="background-color: #ffcccc">      end do</a>
+  1195) <a name="l1195" style="background-color: #ffcccc">      </a>
+  1196) <a name="l1196" style="background-color: #ffcccc">      end subroutine pot_lonsmo</a>
+  1197) <a name="l1197" style="background-color: #ffffff"></a>
+  1198) <a name="l1198" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">highlat_getbnd( ihlat_bnd ) </a>
+  1199) <a name="l1199" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1200) <a name="l1200" style="background-color: #ffcccc">! Purpose: calculate the height latitude bounday index ihl_bnd</a>
+  1201) <a name="l1201" style="background-color: #ffcccc">!</a>
+  1202) <a name="l1202" style="background-color: #ffcccc">! Method:</a>
+  1203) <a name="l1203" style="background-color: #ffcccc">! 1. calculate E field from weimar model</a>
+  1204) <a name="l1204" style="background-color: #ffcccc">!    boundary is set where the total electric field exceeds</a>
+  1205) <a name="l1205" style="background-color: #ffcccc">!    0.015 V/m (corresp. approx. to 300 m/s)</a>
+  1206) <a name="l1206" style="background-color: #ffcccc">! 2. moved halfways to 54 deg not necessarily equatorwards as in the</a>
+  1207) <a name="l1207" style="background-color: #ffcccc">!    original comment from L. Scherliess- or?</a>
+  1208) <a name="l1208" style="background-color: #ffcccc">!</a>
+  1209) <a name="l1209" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/20/03</a>
+  1210) <a name="l1210" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1211) <a name="l1211" style="background-color: #ffcccc"></a>
+  1212) <a name="l1212" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1213) <a name="l1213" style="background-color: #ffcccc">!	... dummy arguments</a>
+  1214) <a name="l1214" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1215) <a name="l1215" style="background-color: #ffcccc">      integer, intent(out) :: ihlat_bnd(0:nmlon)</a>
+  1216) <a name="l1216" style="background-color: #ffcccc"></a>
+  1217) <a name="l1217" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1218) <a name="l1218" style="background-color: #ffcccc">! local variables</a>
+  1219) <a name="l1219" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1220) <a name="l1220" style="background-color: #ffcccc">      integer  :: ilon, ilat, ilat_sft_rvs</a>
+  1221) <a name="l1221" style="background-color: #ffcccc">      real(r8) :: mlat, mlt, es, ez, e_tot</a>
+  1222) <a name="l1222" style="background-color: #ffcccc"></a>
+  1223) <a name="l1223" style="background-color: #ffcccc">      ilat_sft_rvs = nmlath - ilat_sft          ! pole =0, equ=90</a>
+  1224) <a name="l1224" style="background-color: #ffcccc">!$omp parallel do private(ilat,ilon,mlt,mlat,es,ez,e_tot)</a>
+  1225) <a name="l1225" style="background-color: #ffcccc">      do ilon = 0,nmlon                         ! long.</a>
+  1226) <a name="l1226" style="background-color: #ffcccc">	ihlat_bnd(ilon) = 0</a>
+  1227) <a name="l1227" style="background-color: #ffcccc">        mlt  = ylonm(ilon)*deg2mlt              ! mag.local time ?</a>
+  1228) <a name="l1228" style="background-color: #ffcccc">        do ilat = nmlat_wei+1,0,-1              ! lat. loop moving torwards pole</a>
+  1229) <a name="l1229" style="background-color: #ffcccc">	  mlat = 90._r8 - ylatm(ilat)           ! mag. latitude pole = 90 equator = 0</a>
+  1230) <a name="l1230" style="background-color: #ffcccc">          call gecmp( mlat, mlt, es, ez )	! get electric field</a>
+  1231) <a name="l1231" style="background-color: #ffcccc">          e_tot = sqrt( es**2 + ez**2 )</a>
+  1232) <a name="l1232" style="background-color: #ffcccc">          if( abs(e_tot) &gt;= ef_max ) then                        ! e-filed &gt; limit -&gt; boundary</a>
+  1233) <a name="l1233" style="background-color: #ffcccc">            ihlat_bnd(ilon) = ilat - (ilat - ilat_sft_rvs)/2     ! shift boundary to lat_sft (54deg)</a>
+  1234) <a name="l1234" style="background-color: #ffcccc">            exit</a>
+  1235) <a name="l1235" style="background-color: #ffcccc">          end if</a>
+  1236) <a name="l1236" style="background-color: #ffcccc">        end do</a>
+  1237) <a name="l1237" style="background-color: #ffcccc">      end do     </a>
+  1238) <a name="l1238" style="background-color: #ffcccc"></a>
+  1239) <a name="l1239" style="background-color: #ffcccc">!     write(iulog,&quot;('highlat_getbnd: ihlat_bnd=',/,(12i6))&quot;) ihlat_bnd</a>
+  1240) <a name="l1240" style="background-color: #ffcccc"></a>
+  1241) <a name="l1241" style="background-color: #ffcccc">      end subroutine highlat_getbnd</a>
+  1242) <a name="l1242" style="background-color: #ffffff"></a>
+  1243) <a name="l1243" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">bnd_sinus( ihlat_bnd, itrans_width )  </a>
+  1244) <a name="l1244" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1245) <a name="l1245" style="background-color: #ffcccc">! Purpose: </a>
+  1246) <a name="l1246" style="background-color: #ffcccc">!   1. adjust high latitude boundary (ihlat_bnd) sinusoidally</a>
+  1247) <a name="l1247" style="background-color: #ffcccc">!   2. width of transition zone from midlatitude potential to high latitude</a>
+  1248) <a name="l1248" style="background-color: #ffcccc">!      potential (itrans_width)</a>
+  1249) <a name="l1249" style="background-color: #ffcccc">!</a>
+  1250) <a name="l1250" style="background-color: #ffcccc">! Method:</a>
+  1251) <a name="l1251" style="background-color: #ffcccc">! 1.adjust boundary sinusoidally</a>
+  1252) <a name="l1252" style="background-color: #ffcccc">!   max. wave number to be represented nmax_sin</a>
+  1253) <a name="l1253" style="background-color: #ffcccc">!   RHS(mi) = Sum_phi Sum_(mi=-nmax_sin)^_(mi=nmax_sin) f_mi(phi)*hlat_bnd(phi) </a>
+  1254) <a name="l1254" style="background-color: #ffcccc">!   U(mi,mk)   = Sum_phi Sum_(mi=-nmax_sin)^_(mi=nmax_sin) f_mi(phi) *</a>
+  1255) <a name="l1255" style="background-color: #ffcccc">!                Sum_(mk=-nmax_sin)^_(mk=nmax_sin) f_mk(phi)</a>
+  1256) <a name="l1256" style="background-color: #ffcccc">!   single values decomposition of U</a>
+  1257) <a name="l1257" style="background-color: #ffcccc">!   solving U*LSG = RHS </a>
+  1258) <a name="l1258" style="background-color: #ffcccc">!   calculating hlat_bnd:</a>
+  1259) <a name="l1259" style="background-color: #ffcccc">!   hlat_bnd = Sum_(mi=-nmax_sin)^_(mi=nmax_sin) f_mi(phi)*LSG(mi)</a>
+  1260) <a name="l1260" style="background-color: #ffcccc">!</a>
+  1261) <a name="l1261" style="background-color: #ffcccc">! 2. width of transition zone from midlatitude potential to high latitude</a>
+  1262) <a name="l1262" style="background-color: #ffcccc">!    potential</a>
+  1263) <a name="l1263" style="background-color: #ffcccc">!    trans_width(phi)=8.-2.*cos(phi) </a>
+  1264) <a name="l1264" style="background-color: #ffcccc">!</a>
+  1265) <a name="l1265" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/20/03</a>
+  1266) <a name="l1266" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1267) <a name="l1267" style="background-color: #ffcccc"></a>
+  1268) <a name="l1268" style="background-color: #ffcccc">      use sv_decomp, only : svdcmp, svbksb</a>
+  1269) <a name="l1269" style="background-color: #ffcccc">     </a>
+  1270) <a name="l1270" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1271) <a name="l1271" style="background-color: #ffcccc">!	... dummy arguments</a>
+  1272) <a name="l1272" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1273) <a name="l1273" style="background-color: #ffcccc">      integer, intent(inout) :: ihlat_bnd(0:nmlon)    ! loaction of boundary</a>
+  1274) <a name="l1274" style="background-color: #ffcccc">      integer, intent(out)   :: itrans_width(0:nmlon) ! width of transition zone</a>
+  1275) <a name="l1275" style="background-color: #ffcccc"></a>
+  1276) <a name="l1276" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1277) <a name="l1277" style="background-color: #ffcccc">! local variables</a>
+  1278) <a name="l1278" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1279) <a name="l1279" style="background-color: #ffcccc">      integer, parameter :: nmax_a = 2*nmax_sin+1 ! absolute array length</a>
+  1280) <a name="l1280" style="background-color: #ffcccc">      integer, parameter :: ishf   = nmax_sin+1</a>
+  1281) <a name="l1281" style="background-color: #ffcccc">      integer  :: ilon, i, i1, j, bnd</a>
+  1282) <a name="l1282" style="background-color: #ffcccc">      real(r8) :: sum, mlon</a>
+  1283) <a name="l1283" style="background-color: #ffcccc">      real(r8) :: rhs(nmax_a)</a>
+  1284) <a name="l1284" style="background-color: #ffcccc">      real(r8) :: lsg(nmax_a)</a>
+  1285) <a name="l1285" style="background-color: #ffcccc">      real(r8) :: u(nmax_a,nmax_a)</a>
+  1286) <a name="l1286" style="background-color: #ffcccc">      real(r8) :: v(nmax_a,nmax_a)</a>
+  1287) <a name="l1287" style="background-color: #ffcccc">      real(r8) :: w(nmax_a,nmax_a)</a>
+  1288) <a name="l1288" style="background-color: #ffcccc">      real(r8) :: f(-nmax_sin:nmax_sin,0:nmlon)</a>
+  1289) <a name="l1289" style="background-color: #ffcccc"></a>
+  1290) <a name="l1290" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1291) <a name="l1291" style="background-color: #ffcccc">!    Sinusoidal Boundary calculation</a>
+  1292) <a name="l1292" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1293) <a name="l1293" style="background-color: #ffcccc">      rhs(:) = 0._r8</a>
+  1294) <a name="l1294" style="background-color: #ffcccc">      lsg(:) = 0._r8</a>
+  1295) <a name="l1295" style="background-color: #ffcccc">      u(:,:) = 0._r8</a>
+  1296) <a name="l1296" style="background-color: #ffcccc">      v(:,:) = 0._r8</a>
+  1297) <a name="l1297" style="background-color: #ffcccc">      w(:,:) = 0._r8</a>
+  1298) <a name="l1298" style="background-color: #ffcccc"></a>
+  1299) <a name="l1299" style="background-color: #ffcccc">      do ilon = 0,nmlon                  ! long.</a>
+  1300) <a name="l1300" style="background-color: #ffcccc">        bnd  = nmlath - ihlat_bnd(ilon)  ! switch from pole=0 to pole =90</a>
+  1301) <a name="l1301" style="background-color: #ffcccc">        call ff( ylonm(ilon), nmax_sin, f(-nmax_sin,ilon) )</a>
+  1302) <a name="l1302" style="background-color: #ffcccc">        do i = -nmax_sin,nmax_sin</a>
+  1303) <a name="l1303" style="background-color: #ffcccc">	  i1 = i + ishf</a>
+  1304) <a name="l1304" style="background-color: #ffcccc">          rhs(i1) = rhs(i1) + f(i,ilon) * bnd</a>
+  1305) <a name="l1305" style="background-color: #ffcccc">!	  write(iulog,*) 'rhs ',ilon,i1,bnd,f(i,ilon),rhs(i+ishf)</a>
+  1306) <a name="l1306" style="background-color: #ffcccc">          do j = -nmax_sin,nmax_sin </a>
+  1307) <a name="l1307" style="background-color: #ffcccc">            u(i1,j+ishf) = u(i1,j+ishf) + f(i,ilon)*f(j,ilon)</a>
+  1308) <a name="l1308" style="background-color: #ffcccc">!	    write(iulog,*) 'u ',ilon,i1,j+ishf,u(i+ishf,j+ishf)</a>
+  1309) <a name="l1309" style="background-color: #ffcccc">          end do</a>
+  1310) <a name="l1310" style="background-color: #ffcccc">        end do</a>
+  1311) <a name="l1311" style="background-color: #ffcccc">      end do</a>
+  1312) <a name="l1312" style="background-color: #ffcccc"></a>
+  1313) <a name="l1313" style="background-color: #ffcccc">!     if (debug) write(iulog,*) ' Single Value Decomposition'</a>
+  1314) <a name="l1314" style="background-color: #ffcccc">      call svdcmp( u, nmax_a, nmax_a, nmax_a, nmax_a, w, v )</a>
+  1315) <a name="l1315" style="background-color: #ffcccc"></a>
+  1316) <a name="l1316" style="background-color: #ffcccc">!     if (debug) write(iulog,*) ' Solving'</a>
+  1317) <a name="l1317" style="background-color: #ffcccc">      call svbksb( u, w, v, nmax_a, nmax_a, nmax_a, nmax_a, rhs, lsg )</a>
+  1318) <a name="l1318" style="background-color: #ffcccc">!      </a>
+  1319) <a name="l1319" style="background-color: #ffcccc">      do ilon = 0,nmlon  ! long.</a>
+  1320) <a name="l1320" style="background-color: #ffcccc">!       sum = 0._r8</a>
+  1321) <a name="l1321" style="background-color: #ffcccc">	sum = dot_product( lsg(-nmax_sin+ishf:nmax_sin+ishf),f(-nmax_sin:nmax_sin,ilon) )</a>
+  1322) <a name="l1322" style="background-color: #ffcccc">!       do i = -nmax_sin,nmax_sin</a>
+  1323) <a name="l1323" style="background-color: #ffcccc">!         sum = sum + lsg(i+ishf)*f(i,ilon)  </a>
+  1324) <a name="l1324" style="background-color: #ffcccc">!       end do</a>
+  1325) <a name="l1325" style="background-color: #ffcccc">        ihlat_bnd(ilon)    = nmlath - int( sum + .5_r8 )                                ! closest point</a>
+  1326) <a name="l1326" style="background-color: #ffcccc">        itrans_width(ilon) = int( 8._r8 - 2._r8*cos( ylonm(ilon)*dtr ) + .5_r8 )/dlatm  ! 6 to 10 deg.</a>
+  1327) <a name="l1327" style="background-color: #ffcccc">      end do      </a>
+  1328) <a name="l1328" style="background-color: #ffcccc">!     write(iulog,&quot;('bnd_sinus: ihlat_bnd=',/,(12i6))&quot;) ihlat_bnd</a>
+  1329) <a name="l1329" style="background-color: #ffcccc">!     write(iulog,&quot;('bnd_sinus: itrans_width=',/,(12i6))&quot;) itrans_width</a>
+  1330) <a name="l1330" style="background-color: #ffcccc"></a>
+  1331) <a name="l1331" style="background-color: #ffcccc">      end subroutine bnd_sinus</a>
+  1332) <a name="l1332" style="background-color: #ffffff"></a>
+  1333) <a name="l1333" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">highlat_adjust( pot_highlats, pot_highlat, pot_midlat, ihlat_bnd )</a>
+  1334) <a name="l1334" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1335) <a name="l1335" style="background-color: #ffcccc">! Purpose: Adjust mid/low latitude electric potential and high latitude</a>
+  1336) <a name="l1336" style="background-color: #ffcccc">!          potential such that there are continous across the mid to high </a>
+  1337) <a name="l1337" style="background-color: #ffcccc">!          latitude boundary</a>
+  1338) <a name="l1338" style="background-color: #ffcccc">!</a>
+  1339) <a name="l1339" style="background-color: #ffcccc">! Method:</a>
+  1340) <a name="l1340" style="background-color: #ffcccc">! 1. integrate Phi_low/mid(phi,bnd) along the boundary mid to high latitude</a>
+  1341) <a name="l1341" style="background-color: #ffcccc">! 2. integrate Phi_high(phi,bnd) along the boundary mid to high latitude</a>
+  1342) <a name="l1342" style="background-color: #ffcccc">! 3. adjust Phi_high by delta =</a>
+  1343) <a name="l1343" style="background-color: #ffcccc">!    Int_phi Phi_high(phi,bnd) d phi/360. - Int_phi Phi_low/mid(phi,bnd) d phi/360.</a>
+  1344) <a name="l1344" style="background-color: #ffcccc">!</a>
+  1345) <a name="l1345" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/21/03</a>
+  1346) <a name="l1346" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1347) <a name="l1347" style="background-color: #ffcccc"></a>
+  1348) <a name="l1348" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1349) <a name="l1349" style="background-color: #ffcccc">!	... dummy arguments</a>
+  1350) <a name="l1350" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1351) <a name="l1351" style="background-color: #ffcccc">      integer, intent(in)     :: ihlat_bnd(0:nmlon)	                  ! boundary mid to high latitude</a>
+  1352) <a name="l1352" style="background-color: #ffcccc">      real(r8), intent(in)    :: pot_midlat(0:nmlon,0:nmlat)              ! low/mid latitude potentail</a>
+  1353) <a name="l1353" style="background-color: #ffcccc">      real(r8), intent(inout) :: pot_highlat(0:nmlon,0:nmlat)             ! high_lat potential</a>
+  1354) <a name="l1354" style="background-color: #ffcccc">      real(r8), intent(inout) :: pot_highlats(0:nmlon,0:nmlat)            ! high_lat potential! smoothed high_lat potential</a>
+  1355) <a name="l1355" style="background-color: #ffcccc"></a>
+  1356) <a name="l1356" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1357) <a name="l1357" style="background-color: #ffcccc">! local:     </a>
+  1358) <a name="l1358" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1359) <a name="l1359" style="background-color: #ffcccc">      integer  :: bnd, ilon, ilat, ilatS, ibnd60, ibnd_hl</a>
+  1360) <a name="l1360" style="background-color: #ffcccc">      real(r8) :: pot60, pot_hl, del</a>
+  1361) <a name="l1361" style="background-color: #ffcccc"></a>
+  1362) <a name="l1362" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1363) <a name="l1363" style="background-color: #ffcccc">! 1. integrate Phi_low/mid(phi,bnd) along the boundary mid to high latitude</a>
+  1364) <a name="l1364" style="background-color: #ffcccc">! 2. integrate Phi_high(phi,bnd) along the boundary mid to high latitude</a>
+  1365) <a name="l1365" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1366) <a name="l1366" style="background-color: #ffcccc">      pot60  = 0._r8</a>
+  1367) <a name="l1367" style="background-color: #ffcccc">      pot_hl = 0._r8</a>
+  1368) <a name="l1368" style="background-color: #ffcccc">      do ilon = 1,nmlon  ! long.           ! bnd -&gt; eq to pole 0:90</a>
+  1369) <a name="l1369" style="background-color: #ffcccc">    	ibnd60  = nmlat - ihlat_bnd(ilon)   ! 0:180 pole to pole</a>
+  1370) <a name="l1370" style="background-color: #ffcccc">    	ibnd_hl = ihlat_bnd(ilon)         ! colatitude</a>
+  1371) <a name="l1371" style="background-color: #ffcccc">        pot60   = pot60 + pot_midlat(ilon,ibnd60)</a>
+  1372) <a name="l1372" style="background-color: #ffcccc">        pot_hl  = pot_hl + pot_highlats(ilon,ibnd_hl)</a>
+  1373) <a name="l1373" style="background-color: #ffcccc">      end do</a>
+  1374) <a name="l1374" style="background-color: #ffcccc">      pot60  = pot60/(nmlon)</a>
+  1375) <a name="l1375" style="background-color: #ffcccc">      pot_hl = pot_hl/(nmlon)</a>
+  1376) <a name="l1376" style="background-color: #ffcccc">      </a>
+  1377) <a name="l1377" style="background-color: #ffcccc">      if (debug) write(iulog,*) 'Mid-Latitude Boundary Potential =',pot60</a>
+  1378) <a name="l1378" style="background-color: #ffcccc">      if (debug) write(iulog,*) 'High-Latitude Boundary Potential=',pot_hl</a>
+  1379) <a name="l1379" style="background-color: #ffcccc"></a>
+  1380) <a name="l1380" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1381) <a name="l1381" style="background-color: #ffcccc">! 3. adjust Phi_high by delta =</a>
+  1382) <a name="l1382" style="background-color: #ffcccc">!    Int_phi Phi_high(phi,bnd) d phi/360. - Int_phi Phi_low/mid(phi,bnd) d phi/360.</a>
+  1383) <a name="l1383" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1384) <a name="l1384" style="background-color: #ffcccc">      del = pot_hl - pot60</a>
+  1385) <a name="l1385" style="background-color: #ffcccc"></a>
+  1386) <a name="l1386" style="background-color: #ffcccc">!$omp parallel do private(ilat,ilon,ilats)</a>
+  1387) <a name="l1387" style="background-color: #ffcccc">      do ilat = 0,nmlat_wei      ! colatitude</a>
+  1388) <a name="l1388" style="background-color: #ffcccc">        ilats = nmlat - ilat</a>
+  1389) <a name="l1389" style="background-color: #ffcccc">        do ilon = 0,nmlon</a>
+  1390) <a name="l1390" style="background-color: #ffcccc">	  pot_highlat(ilon,ilat)   = pot_highlat(ilon,ilat)   - del</a>
+  1391) <a name="l1391" style="background-color: #ffcccc">	  pot_highlat(ilon,ilats)  = pot_highlat(ilon,ilats)  - del</a>
+  1392) <a name="l1392" style="background-color: #ffcccc">	  pot_highlats(ilon,ilat)  = pot_highlats(ilon,ilat)  - del</a>
+  1393) <a name="l1393" style="background-color: #ffcccc">	  pot_highlats(ilon,ilats) = pot_highlats(ilon,ilats) - del</a>
+  1394) <a name="l1394" style="background-color: #ffcccc">        end do</a>
+  1395) <a name="l1395" style="background-color: #ffcccc">      end do</a>
+  1396) <a name="l1396" style="background-color: #ffcccc"></a>
+  1397) <a name="l1397" style="background-color: #ffcccc">      end subroutine highlat_adjust</a>
+  1398) <a name="l1398" style="background-color: #ffffff"></a>
+  1399) <a name="l1399" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">interp_poten( pot_highlats, pot_highlat, pot_midlat, &amp;</a>
+  1400) <a name="l1400" style="background-color: #ffcccc">                               ihlat_bnd, itrans_width ) </a>
+  1401) <a name="l1401" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1402) <a name="l1402" style="background-color: #ffcccc">! Purpose: construct a smooth global electric potential field </a>
+  1403) <a name="l1403" style="background-color: #ffcccc">!</a>
+  1404) <a name="l1404" style="background-color: #ffcccc">! Method: construct one global potential field</a>
+  1405) <a name="l1405" style="background-color: #ffcccc">! 1. low/mid latitude: |lam| &lt; bnd-trans_width</a>
+  1406) <a name="l1406" style="background-color: #ffcccc">!   Phi(phi,lam) = Phi_low(phi,lam)</a>
+  1407) <a name="l1407" style="background-color: #ffcccc">! 2. high latitude: |lam| &gt; bnd+trans_width</a>
+  1408) <a name="l1408" style="background-color: #ffcccc">!   Phi(phi,lam) = Phi_hl(phi,lam)</a>
+  1409) <a name="l1409" style="background-color: #ffcccc">! 3. transition zone: bnd-trans_width &lt;= lam &lt;= bnd+trans_width </a>
+  1410) <a name="l1410" style="background-color: #ffcccc">! a. interpolate between high and low/midlatitude potential</a>
+  1411) <a name="l1411" style="background-color: #ffcccc">!   Phi*(phi,lam) = 1/15*[ 5/(2*trans_width) * {Phi_low(phi,bnd-trans_width)*</a>
+  1412) <a name="l1412" style="background-color: #ffcccc">!   [-lam+bnd+trans_width] + Phi_hl(phi,bnd+trans_width)*</a>
+  1413) <a name="l1413" style="background-color: #ffcccc">!   [lam-bnd+trans_width]} + 10/(2*trans_width) {Phi_low(phi,lam)*</a>
+  1414) <a name="l1414" style="background-color: #ffcccc">!   [-lam+bnd+trans_width] + Phi_hl(phi,lam)*</a>
+  1415) <a name="l1415" style="background-color: #ffcccc">!   [lam-bnd+trans_width]}]</a>
+  1416) <a name="l1416" style="background-color: #ffcccc">! b.  Interpolate between just calculated Potential and the high latitude</a>
+  1417) <a name="l1417" style="background-color: #ffcccc">!    potential in a 3 degree zone poleward of the boundary:</a>
+  1418) <a name="l1418" style="background-color: #ffcccc">!    bnd+trans_width &lt; lam &lt;= bnd+trans_width+ 3 deg </a>
+  1419) <a name="l1419" style="background-color: #ffcccc">!   Phi(phi,lam) = 1/3 { [3-(lam-bnd-trans_width)]* Phi*(phi,lam) +</a>
+  1420) <a name="l1420" style="background-color: #ffcccc">!   [lam-bnd-trans_width)]* Phi_hl*(phi,lam) }</a>
+  1421) <a name="l1421" style="background-color: #ffcccc">!</a>
+  1422) <a name="l1422" style="background-color: #ffcccc">! Author: A. Maute Nov 2003  am 11/21/03      </a>
+  1423) <a name="l1423" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1424) <a name="l1424" style="background-color: #ffcccc"></a>
+  1425) <a name="l1425" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1426) <a name="l1426" style="background-color: #ffcccc">!	... dummy arguments</a>
+  1427) <a name="l1427" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1428) <a name="l1428" style="background-color: #ffcccc">      integer, intent(in)  :: ihlat_bnd(0:nmlon)</a>
+  1429) <a name="l1429" style="background-color: #ffcccc">      integer, intent(in)  :: itrans_width(0:nmlon)</a>
+  1430) <a name="l1430" style="background-color: #ffcccc">      real(r8), intent(in) :: pot_highlats(0:nmlon,0:nmlat)</a>
+  1431) <a name="l1431" style="background-color: #ffcccc">      real(r8), intent(in) :: pot_highlat(0:nmlon,0:nmlat)</a>
+  1432) <a name="l1432" style="background-color: #ffcccc">      real(r8), intent(in) :: pot_midlat(0:nmlon,0:nmlat)</a>
+  1433) <a name="l1433" style="background-color: #ffcccc"></a>
+  1434) <a name="l1434" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1435) <a name="l1435" style="background-color: #ffcccc">! local variables</a>
+  1436) <a name="l1436" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1437) <a name="l1437" style="background-color: #ffcccc">      real(r8), parameter :: fac = 1._r8/3._r8</a>
+  1438) <a name="l1438" style="background-color: #ffcccc">      integer  :: ilon, ilat</a>
+  1439) <a name="l1439" style="background-color: #ffcccc">      integer  :: ibnd, tw, hb1, hb2, lat_ind</a>
+  1440) <a name="l1440" style="background-color: #ffcccc">      integer  :: j1, j2</a>
+  1441) <a name="l1441" style="background-color: #ffcccc">      real(r8) :: a, b, lat, b1, b2</a>
+  1442) <a name="l1442" style="background-color: #ffcccc">      real(r8) :: wrk1, wrk2</a>
+  1443) <a name="l1443" style="background-color: #ffcccc"></a>
+  1444) <a name="l1444" style="background-color: #ffcccc">!$omp parallel do private(ilat,ilon,ibnd,tw)</a>
+  1445) <a name="l1445" style="background-color: #ffcccc">      do ilon = 0,nmlon</a>
+  1446) <a name="l1446" style="background-color: #ffcccc">        ibnd = ihlat_bnd(ilon)     ! high latitude boundary index</a>
+  1447) <a name="l1447" style="background-color: #ffcccc">	tw   = itrans_width(ilon)  ! width of transition zone (index)</a>
+  1448) <a name="l1448" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1449) <a name="l1449" style="background-color: #ffcccc">! 1. low/mid latitude: |lam| &lt; bnd-trans_width</a>
+  1450) <a name="l1450" style="background-color: #ffcccc">!   Phi(phi,lam) = Phi_low(phi,lam)</a>
+  1451) <a name="l1451" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1452) <a name="l1452" style="background-color: #ffcccc">        do ilat = 0,nmlath-(ibnd+tw+1)</a>
+  1453) <a name="l1453" style="background-color: #ffcccc">          potent(ilon,nmlath+ilat) = pot_midlat(ilon,nmlath+ilat)</a>
+  1454) <a name="l1454" style="background-color: #ffcccc">          potent(ilon,nmlath-ilat) = pot_midlat(ilon,nmlath+ilat)</a>
+  1455) <a name="l1455" style="background-color: #ffcccc">        end do</a>
+  1456) <a name="l1456" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1457) <a name="l1457" style="background-color: #ffcccc">! 2. high latitude: |lam| &gt; bnd+trans_width</a>
+  1458) <a name="l1458" style="background-color: #ffcccc">!   Phi(phi,lam) = Phi_hl(phi,lam)</a>
+  1459) <a name="l1459" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1460) <a name="l1460" style="background-color: #ffcccc">        do ilat = 0,ibnd-tw-1</a>
+  1461) <a name="l1461" style="background-color: #ffcccc">          potent(ilon,ilat)       = pot_highlats(ilon,nmlat-ilat)</a>
+  1462) <a name="l1462" style="background-color: #ffcccc">          potent(ilon,nmlat-ilat) = pot_highlats(ilon,nmlat-ilat)</a>
+  1463) <a name="l1463" style="background-color: #ffcccc">        end do</a>
+  1464) <a name="l1464" style="background-color: #ffcccc">      end do</a>
+  1465) <a name="l1465" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1466) <a name="l1466" style="background-color: #ffcccc">! 3. transition zone: bnd-trans_width &lt;= lam &lt;= bnd+trans_width </a>
+  1467) <a name="l1467" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1468) <a name="l1468" style="background-color: #ffcccc">! a. interpolate between high and low/midlatitude potential</a>
+  1469) <a name="l1469" style="background-color: #ffcccc">! update only southern hemisphere (northern hemisphere is copied</a>
+  1470) <a name="l1470" style="background-color: #ffcccc">! after smoothing)</a>
+  1471) <a name="l1471" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1472) <a name="l1472" style="background-color: #ffcccc">!$omp parallel do private(ilat,ilon,ibnd,tw,a,b,b1,b2,hb1,hb2,lat_ind,j1,j2,wrk1,wrk2)</a>
+  1473) <a name="l1473" style="background-color: #ffcccc">      do ilon = 0,nmlon</a>
+  1474) <a name="l1474" style="background-color: #ffcccc">        ibnd = ihlat_bnd(ilon)          ! high latitude boundary index</a>
+  1475) <a name="l1475" style="background-color: #ffcccc">	tw   = itrans_width(ilon)       ! width of transition zone (index)</a>
+  1476) <a name="l1476" style="background-color: #ffcccc">        a    = 1._r8/(2._r8*tw)</a>
+  1477) <a name="l1477" style="background-color: #ffcccc">	b1   = (nmlath - ibnd + tw)*a</a>
+  1478) <a name="l1478" style="background-color: #ffcccc">	b2   = (nmlath - ibnd - tw)*a</a>
+  1479) <a name="l1479" style="background-color: #ffcccc">	hb1  = nmlath - (ibnd + tw)</a>
+  1480) <a name="l1480" style="background-color: #ffcccc">	j1   = nmlath - hb1</a>
+  1481) <a name="l1481" style="background-color: #ffcccc">	hb2  = nmlath - (ibnd - tw)</a>
+  1482) <a name="l1482" style="background-color: #ffcccc">	j2   = nmlath - hb2</a>
+  1483) <a name="l1483" style="background-color: #ffcccc">	wrk1 = pot_midlat(ilon,j1)</a>
+  1484) <a name="l1484" style="background-color: #ffcccc">	wrk2 = pot_highlats(ilon,j2)</a>
+  1485) <a name="l1485" style="background-color: #ffcccc">!        write(iulog,*) 'pot_all ',ilon,hb1,hb2,nmlath -ibnd,tw</a>
+  1486) <a name="l1486" style="background-color: #ffcccc">	do ilat = ibnd-tw,ibnd+tw</a>
+  1487) <a name="l1487" style="background-color: #ffcccc">	  lat_ind = nmlath - ilat</a>
+  1488) <a name="l1488" style="background-color: #ffcccc">          potent(ilon,ilat) = &amp;</a>
+  1489) <a name="l1489" style="background-color: #ffcccc">     	     fac*((wrk1 + 2._r8*pot_midlat(ilon,ilat))*(b1 - a*lat_ind) &amp;</a>
+  1490) <a name="l1490" style="background-color: #ffcccc">     	          + (wrk2 + 2._r8*pot_highlats(ilon,ilat))*(a*lat_ind - b2))</a>
+  1491) <a name="l1491" style="background-color: #ffcccc">          potent(ilon,nmlat-ilat) = potent(ilon,ilat)</a>
+  1492) <a name="l1492" style="background-color: #ffcccc">        end do</a>
+  1493) <a name="l1493" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1494) <a name="l1494" style="background-color: #ffcccc">! b.  Interpolate between just calculated Potential and the high latitude</a>
+  1495) <a name="l1495" style="background-color: #ffcccc">!    potential in a 3 degree zone poleward of the boundary</a>
+  1496) <a name="l1496" style="background-color: #ffcccc">!----------------------------------------------------------------------------                                                                   </a>
+  1497) <a name="l1497" style="background-color: #ffcccc">	do ilat = hb2+1,nmlath</a>
+  1498) <a name="l1498" style="background-color: #ffcccc">	  a = max( 3._r8/dlatm - (ilat - hb2 - 1),0._r8 )</a>
+  1499) <a name="l1499" style="background-color: #ffcccc">	  b = 3._r8/dlatm - a</a>
+  1500) <a name="l1500" style="background-color: #ffcccc">          potent(ilon,nmlath-ilat) = (a*potent(ilon,nmlath-ilat)   &amp;</a>
+  1501) <a name="l1501" style="background-color: #ffcccc">                                      + b*pot_highlat(ilon,nmlath-ilat))/3._r8*dlatm</a>
+  1502) <a name="l1502" style="background-color: #ffcccc">          potent(ilon,nmlath+ilat) = potent(ilon,nmlath-ilat)</a>
+  1503) <a name="l1503" style="background-color: #ffcccc">        end do</a>
+  1504) <a name="l1504" style="background-color: #ffcccc">      end do      </a>
+  1505) <a name="l1505" style="background-color: #ffcccc"></a>
+  1506) <a name="l1506" style="background-color: #ffcccc">      end subroutine interp_poten</a>
+  1507) <a name="l1507" style="background-color: #ffffff"></a>
+  1508) <a name="l1508" style="background-color: #ffffff">      subroutine </a><a style="background-color: #ffcccc">DerivPotential</a>
+  1509) <a name="l1509" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1510) <a name="l1510" style="background-color: #ffcccc">! Purpose: calulates the electric field [V/m] from the electric potential</a>
+  1511) <a name="l1511" style="background-color: #ffcccc">!</a>
+  1512) <a name="l1512" style="background-color: #ffcccc">! Method:  Richmond [1995] eqn 5.9-5.10</a>
+  1513) <a name="l1513" style="background-color: #ffcccc">! ed1(:,:) = Ed1 = - 1/[R cos lam_m] d PHI/d phi_m</a>
+  1514) <a name="l1514" style="background-color: #ffcccc">! ed2(:,:) = Ed2 = 1/R d PHI/d lam_m /sin I_m</a>
+  1515) <a name="l1515" style="background-color: #ffcccc">! R = R_e + h_r we assume a reference height of 130 km which is also</a>
+  1516) <a name="l1516" style="background-color: #ffcccc">! used in the TIEGCM code</a>
+  1517) <a name="l1517" style="background-color: #ffcccc">!</a>
+  1518) <a name="l1518" style="background-color: #ffcccc">! Author: A. Maute Dec 2003  am 12/16/03</a>
+  1519) <a name="l1519" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1520) <a name="l1520" style="background-color: #ffcccc"></a>
+  1521) <a name="l1521" style="background-color: #ffcccc">      integer  :: i, j, ip1f, ip2f, ip3f</a>
+  1522) <a name="l1522" style="background-color: #ffcccc">      real(r8) :: coslm, r, fac, wrk</a>
+  1523) <a name="l1523" style="background-color: #ffcccc">      real(r8) :: wrk1d(0:nmlon)</a>
+  1524) <a name="l1524" style="background-color: #ffcccc"></a>
+  1525) <a name="l1525" style="background-color: #ffcccc">      r = r_e + h_r  ! earth radius + reference height [m]</a>
+  1526) <a name="l1526" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1527) <a name="l1527" style="background-color: #ffcccc">! ed2= Ed2 is the equatorward/downward component of the electric field, at all </a>
+  1528) <a name="l1528" style="background-color: #ffcccc">! geomagnetic grid points (central differencing)</a>
+  1529) <a name="l1529" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1530) <a name="l1530" style="background-color: #ffcccc">      fac = .5_r8/(dlatm*dtr*r)</a>
+  1531) <a name="l1531" style="background-color: #ffcccc">!$omp parallel do private(j, i, wrk )</a>
+  1532) <a name="l1532" style="background-color: #ffcccc">      do j = 1,nmlath-1		! southern hemisphere</a>
+  1533) <a name="l1533" style="background-color: #ffcccc">        wrk = fac/sinIm_mag(j)</a>
+  1534) <a name="l1534" style="background-color: #ffcccc">        do i = 0,nmlon</a>
+  1535) <a name="l1535" style="background-color: #ffcccc">          ed2(i,j) = (potent(i,j+1) - potent(i,j-1))*wrk</a>
+  1536) <a name="l1536" style="background-color: #ffcccc">        end do</a>
+  1537) <a name="l1537" style="background-color: #ffcccc">      end do</a>
+  1538) <a name="l1538" style="background-color: #ffcccc"></a>
+  1539) <a name="l1539" style="background-color: #ffcccc">!$omp parallel do private(j, i, wrk )</a>
+  1540) <a name="l1540" style="background-color: #ffcccc">      do j = nmlath+1,nmlat-1	! northern hemisphere</a>
+  1541) <a name="l1541" style="background-color: #ffcccc">        wrk = fac/sinIm_mag(j)</a>
+  1542) <a name="l1542" style="background-color: #ffcccc">        do i = 0,nmlon</a>
+  1543) <a name="l1543" style="background-color: #ffcccc">          ed2(i,j) = (potent(i,j+1) - potent(i,j-1))*wrk</a>
+  1544) <a name="l1544" style="background-color: #ffcccc">        end do</a>
+  1545) <a name="l1545" style="background-color: #ffcccc">      end do</a>
+  1546) <a name="l1546" style="background-color: #ffcccc"></a>
+  1547) <a name="l1547" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1548) <a name="l1548" style="background-color: #ffcccc">! Interpolate of ed2 between between -12 &lt;= lam_m &lt;= 12 degrees:</a>
+  1549) <a name="l1549" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1550) <a name="l1550" style="background-color: #ffcccc">      wrk1d(:) = ed2(:,jmax) - ed2(:,jmin)</a>
+  1551) <a name="l1551" style="background-color: #ffcccc">      do j = jmin+1,jmax-1</a>
+  1552) <a name="l1552" style="background-color: #ffcccc">        fac = (ylatm(j) - ylatm(jmin))/(ylatm(jmax) - ylatm(jmin))</a>
+  1553) <a name="l1553" style="background-color: #ffcccc">        do i = 0,nmlon</a>
+  1554) <a name="l1554" style="background-color: #ffcccc">	    ed2(i,j) = ed2(i,jmin) + fac*wrk1d(i)</a>
+  1555) <a name="l1555" style="background-color: #ffcccc">	end do</a>
+  1556) <a name="l1556" style="background-color: #ffcccc">      end do</a>
+  1557) <a name="l1557" style="background-color: #ffcccc"></a>
+  1558) <a name="l1558" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1559) <a name="l1559" style="background-color: #ffcccc">! ed1= Ed1 is the zonal component of the electric field, at all </a>
+  1560) <a name="l1560" style="background-color: #ffcccc">! geomagnetic grid points (central differencing)</a>
+  1561) <a name="l1561" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1562) <a name="l1562" style="background-color: #ffcccc">      fac = .5_r8/(dlonm*dtr*r)</a>
+  1563) <a name="l1563" style="background-color: #ffcccc">!$omp parallel do private(j, i, wrk, coslm )</a>
+  1564) <a name="l1564" style="background-color: #ffcccc">      do j = 1,nmlat-1</a>
+  1565) <a name="l1565" style="background-color: #ffcccc">        coslm = ylatm(j) - 90._r8</a>
+  1566) <a name="l1566" style="background-color: #ffcccc">        coslm = cos( coslm*dtr )</a>
+  1567) <a name="l1567" style="background-color: #ffcccc">        wrk = fac/coslm</a>
+  1568) <a name="l1568" style="background-color: #ffcccc">        do i = 1,nmlon-1</a>
+  1569) <a name="l1569" style="background-color: #ffcccc">          ed1(i,j) = -(potent(i+1,j) - potent(i-1,j))*wrk</a>
+  1570) <a name="l1570" style="background-color: #ffcccc">        end do</a>
+  1571) <a name="l1571" style="background-color: #ffcccc">	i = 0</a>
+  1572) <a name="l1572" style="background-color: #ffcccc">	ed1(i,j)     = -(potent(i+1,j) - potent(nmlon-1,j))*wrk</a>
+  1573) <a name="l1573" style="background-color: #ffcccc">	ed1(nmlon,j) = ed1(i,j)</a>
+  1574) <a name="l1574" style="background-color: #ffcccc">      end do</a>
+  1575) <a name="l1575" style="background-color: #ffcccc"></a>
+  1576) <a name="l1576" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1577) <a name="l1577" style="background-color: #ffcccc">! Poles:</a>
+  1578) <a name="l1578" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+  1579) <a name="l1579" style="background-color: #ffcccc">      do i = 0,nmlon</a>
+  1580) <a name="l1580" style="background-color: #ffcccc">        ip1f = i + nmlon/4</a>
+  1581) <a name="l1581" style="background-color: #ffcccc">        if( ip1f &gt; nmlon ) then</a>
+  1582) <a name="l1582" style="background-color: #ffcccc">           ip1f = ip1f - nmlon</a>
+  1583) <a name="l1583" style="background-color: #ffcccc">        end if</a>
+  1584) <a name="l1584" style="background-color: #ffcccc">        ip2f = i + nmlon/2</a>
+  1585) <a name="l1585" style="background-color: #ffcccc">        if( ip2f &gt; nmlon ) then</a>
+  1586) <a name="l1586" style="background-color: #ffcccc">           ip2f = ip2f - nmlon</a>
+  1587) <a name="l1587" style="background-color: #ffcccc">        end if</a>
+  1588) <a name="l1588" style="background-color: #ffcccc">        ip3f = i + 3*nmlon/4</a>
+  1589) <a name="l1589" style="background-color: #ffcccc">        if( ip3f &gt; nmlon ) then</a>
+  1590) <a name="l1590" style="background-color: #ffcccc">           ip3f = ip3f - nmlon</a>
+  1591) <a name="l1591" style="background-color: #ffcccc">        end if</a>
+  1592) <a name="l1592" style="background-color: #ffcccc">        ed1(i,0)     = .25_r8*(ed1(i,1) - ed1(ip2f,1) + ed2(ip1f,1) - ed2(ip3f,1))</a>
+  1593) <a name="l1593" style="background-color: #ffcccc">        ed1(i,nmlat) = .25_r8*(ed1(i,nmlat-1) - ed1(ip2f,nmlat-1) &amp;</a>
+  1594) <a name="l1594" style="background-color: #ffcccc">                               + ed2(ip1f,nmlat-1) - ed2(ip3f,nmlat-1))</a>
+  1595) <a name="l1595" style="background-color: #ffcccc">        ed2(i,0)     = .25_r8*(ed2(i,1) - ed2(ip2f,1) - ed1(ip1f,1) + ed1(ip3f,1))</a>
+  1596) <a name="l1596" style="background-color: #ffcccc">        ed2(i,nmlat) = .25_r8*(ed2(i,nmlat-1) - ed2(ip2f,nmlat-1) &amp;</a>
+  1597) <a name="l1597" style="background-color: #ffcccc">                               - ed1(ip1f,nmlat-1) + ed1(ip3f,nmlat-1))</a>
+  1598) <a name="l1598" style="background-color: #ffcccc">      end do</a>
+  1599) <a name="l1599" style="background-color: #ffcccc"></a>
+  1600) <a name="l1600" style="background-color: #ffcccc">      end subroutine DerivPotential</a>
+  1601) <a name="l1601" style="background-color: #ffffff"></a>
+  1602) <a name="l1602" style="background-color: #ffffff">   end module efield</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

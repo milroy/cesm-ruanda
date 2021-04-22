@@ -1,0 +1,348 @@
+<html>
+<head>
+<title>Listing of CNVegStructUpdateMod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;CNVegStructUpdateMod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module CNVegStructUpdateMod</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">!BOP</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !MODULE: CNVegStructUpdateMod</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     9) <a name="l9" style="background-color: #ffffff">! Module for vegetation structure updates (LAI, SAI, htop, hbot)</a>
+    10) <a name="l10" style="background-color: #ffffff">!</a>
+    11) <a name="l11" style="background-color: #ffffff">! !USES:</a>
+    12) <a name="l12" style="background-color: #ffffff">    use shr_kind_mod, only: r8 =&gt; shr_kind_r8</a>
+    13) <a name="l13" style="background-color: #ffffff">    implicit none</a>
+    14) <a name="l14" style="background-color: #ffffff">    save</a>
+    15) <a name="l15" style="background-color: #ffffff">    private</a>
+    16) <a name="l16" style="background-color: #ffffff">! !PUBLIC MEMBER FUNCTIONS:</a>
+    17) <a name="l17" style="background-color: #ffffff">    public :: CNVegStructUpdate</a>
+    18) <a name="l18" style="background-color: #ffffff">!</a>
+    19) <a name="l19" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    20) <a name="l20" style="background-color: #ffffff">! 4/23/2004: Created by Peter Thornton</a>
+    21) <a name="l21" style="background-color: #ffffff">!</a>
+    22) <a name="l22" style="background-color: #ffffff">!EOP</a>
+    23) <a name="l23" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    24) <a name="l24" style="background-color: #ffffff"></a>
+    25) <a name="l25" style="background-color: #ffffff">contains</a>
+    26) <a name="l26" style="background-color: #ffffff"></a>
+    27) <a name="l27" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    28) <a name="l28" style="background-color: #ffffff">!BOP</a>
+    29) <a name="l29" style="background-color: #ffffff">!</a>
+    30) <a name="l30" style="background-color: #ffffff">! !IROUTINE: CNVegStructUpdate</a>
+    31) <a name="l31" style="background-color: #ffffff">!</a>
+    32) <a name="l32" style="background-color: #ffffff">! !INTERFACE:</a>
+    33) <a name="l33" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">CNVegStructUpdate(num_soilp, filter_soilp)</a>
+    34) <a name="l34" style="background-color: #ffcccc">!</a>
+    35) <a name="l35" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+    36) <a name="l36" style="background-color: #ffcccc">! On the radiation time step, use C state variables and epc to diagnose</a>
+    37) <a name="l37" style="background-color: #ffcccc">! vegetation structure (LAI, SAI, height)</a>
+    38) <a name="l38" style="background-color: #ffcccc">!</a>
+    39) <a name="l39" style="background-color: #ffcccc">! !USES:</a>
+    40) <a name="l40" style="background-color: #ffcccc">   use clmtype</a>
+    41) <a name="l41" style="background-color: #ffcccc">   use clm_atmlnd   , only: clm_a2l</a>
+    42) <a name="l42" style="background-color: #ffcccc">   use pftvarcon    , only: noveg, nc3crop, nirrig, nbrdlf_evr_shrub, nbrdlf_dcd_brl_shrub</a>
+    43) <a name="l43" style="background-color: #ffcccc">   use pftvarcon    , only: ncorn, npcropmin, ztopmx, laimx</a>
+    44) <a name="l44" style="background-color: #ffcccc">   use clm_varctl   , only: iulog, use_cndv</a>
+    45) <a name="l45" style="background-color: #ffcccc">   use shr_sys_mod  , only: shr_sys_flush</a>
+    46) <a name="l46" style="background-color: #ffcccc">   use shr_const_mod, only: SHR_CONST_PI</a>
+    47) <a name="l47" style="background-color: #ffcccc">   use clm_time_manager , only : get_rad_step_size</a>
+    48) <a name="l48" style="background-color: #ffcccc">!</a>
+    49) <a name="l49" style="background-color: #ffcccc">! !ARGUMENTS:</a>
+    50) <a name="l50" style="background-color: #ffcccc">   implicit none</a>
+    51) <a name="l51" style="background-color: #ffcccc">   integer, intent(in) :: num_soilp                 ! number of column soil points in pft filter</a>
+    52) <a name="l52" style="background-color: #ffcccc">   integer, intent(in) :: filter_soilp(:)   ! pft filter for soil points</a>
+    53) <a name="l53" style="background-color: #ffcccc">!</a>
+    54) <a name="l54" style="background-color: #ffcccc">! !CALLED FROM:</a>
+    55) <a name="l55" style="background-color: #ffcccc">! subroutine CNEcosystemDyn</a>
+    56) <a name="l56" style="background-color: #ffcccc">!</a>
+    57) <a name="l57" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+    58) <a name="l58" style="background-color: #ffcccc">! 10/28/03: Created by Peter Thornton</a>
+    59) <a name="l59" style="background-color: #ffcccc">! 2/29/08, David Lawrence: revised snow burial fraction for short vegetation</a>
+    60) <a name="l60" style="background-color: #ffcccc">!</a>
+    61) <a name="l61" style="background-color: #ffcccc">! !LOCAL VARIABLES:</a>
+    62) <a name="l62" style="background-color: #ffcccc">! local pointers to implicit in scalars</a>
+    63) <a name="l63" style="background-color: #ffcccc">!</a>
+    64) <a name="l64" style="background-color: #ffcccc">   real(r8), pointer :: allom2(:)     ! ecophys const</a>
+    65) <a name="l65" style="background-color: #ffcccc">   real(r8), pointer :: allom3(:)     ! ecophys const</a>
+    66) <a name="l66" style="background-color: #ffcccc">   real(r8), pointer :: nind(:)       ! number of individuals (#/m**2)</a>
+    67) <a name="l67" style="background-color: #ffcccc">   real(r8), pointer :: fpcgrid(:)    ! fractional area of pft (pft area/nat veg area)</a>
+    68) <a name="l68" style="background-color: #ffcccc">   integer , pointer :: ivt(:)        ! pft vegetation type</a>
+    69) <a name="l69" style="background-color: #ffcccc">   integer , pointer :: pcolumn(:)    ! column index associated with each pft</a>
+    70) <a name="l70" style="background-color: #ffcccc">   integer , pointer :: pgridcell(:)  ! pft's gridcell index</a>
+    71) <a name="l71" style="background-color: #ffcccc">   real(r8), pointer :: snowdp(:)     ! snow height (m)</a>
+    72) <a name="l72" style="background-color: #ffcccc">   real(r8), pointer :: leafc(:)      ! (gC/m2) leaf C</a>
+    73) <a name="l73" style="background-color: #ffcccc">   real(r8), pointer :: deadstemc(:)  ! (gC/m2) dead stem C</a>
+    74) <a name="l74" style="background-color: #ffcccc">   real(r8), pointer :: woody(:)      !binary flag for woody lifeform (1=woody, 0=not woody)</a>
+    75) <a name="l75" style="background-color: #ffcccc">   real(r8), pointer :: slatop(:)     !specific leaf area at top of canopy, projected area basis [m^2/gC]</a>
+    76) <a name="l76" style="background-color: #ffcccc">   real(r8), pointer :: dsladlai(:)   !dSLA/dLAI, projected area basis [m^2/gC]</a>
+    77) <a name="l77" style="background-color: #ffcccc">   real(r8), pointer :: z0mr(:)       !ratio of momentum roughness length to canopy top height (-)</a>
+    78) <a name="l78" style="background-color: #ffcccc">   real(r8), pointer :: displar(:)    !ratio of displacement height to canopy top height (-)</a>
+    79) <a name="l79" style="background-color: #ffcccc">   real(r8), pointer :: forc_hgt_u_pft(:) ! observational height of wind at pft-level [m]</a>
+    80) <a name="l80" style="background-color: #ffcccc">   real(r8), pointer :: dwood(:)      ! density of wood (gC/m^3)</a>
+    81) <a name="l81" style="background-color: #ffcccc">!</a>
+    82) <a name="l82" style="background-color: #ffcccc">! local pointers to implicit in/out scalars</a>
+    83) <a name="l83" style="background-color: #ffcccc">!</a>
+    84) <a name="l84" style="background-color: #ffcccc">   integer , pointer :: frac_veg_nosno_alb(:) ! frac of vegetation not covered by snow [-]</a>
+    85) <a name="l85" style="background-color: #ffcccc">   real(r8), pointer :: tlai(:) !one-sided leaf area index, no burying by snow</a>
+    86) <a name="l86" style="background-color: #ffcccc">   real(r8), pointer :: tsai(:) !one-sided stem area index, no burying by snow</a>
+    87) <a name="l87" style="background-color: #ffcccc">   real(r8), pointer :: htop(:) !canopy top (m)</a>
+    88) <a name="l88" style="background-color: #ffcccc">   real(r8), pointer :: hbot(:) !canopy bottom (m)</a>
+    89) <a name="l89" style="background-color: #ffcccc">   real(r8), pointer :: elai(:)     ! one-sided leaf area index with burying by snow</a>
+    90) <a name="l90" style="background-color: #ffcccc">   real(r8), pointer :: esai(:)     ! one-sided stem area index with burying by snow</a>
+    91) <a name="l91" style="background-color: #ffcccc">   real(r8), pointer :: htmx(:)     ! max hgt attained by a crop during yr (m)</a>
+    92) <a name="l92" style="background-color: #ffcccc">   integer , pointer :: peaklai(:)  ! 1: max allowed lai; 0: not at max</a>
+    93) <a name="l93" style="background-color: #ffcccc">   integer , pointer :: harvdate(:) ! harvest date</a>
+    94) <a name="l94" style="background-color: #ffcccc">!</a>
+    95) <a name="l95" style="background-color: #ffcccc">! local pointers to implicit out scalars</a>
+    96) <a name="l96" style="background-color: #ffcccc">!</a>
+    97) <a name="l97" style="background-color: #ffcccc">!</a>
+    98) <a name="l98" style="background-color: #ffcccc">! !OTHER LOCAL VARIABLES:</a>
+    99) <a name="l99" style="background-color: #ffcccc">   integer :: p,c,g        !indices</a>
+   100) <a name="l100" style="background-color: #ffcccc">   integer :: fp           !lake filter indices</a>
+   101) <a name="l101" style="background-color: #ffcccc">   real(r8):: taper        ! ratio of height:radius_breast_height (tree allometry)</a>
+   102) <a name="l102" style="background-color: #ffcccc">   real(r8):: stocking     ! #stems / ha (stocking density)</a>
+   103) <a name="l103" style="background-color: #ffcccc">   real(r8):: ol           ! thickness of canopy layer covered by snow (m)</a>
+   104) <a name="l104" style="background-color: #ffcccc">   real(r8):: fb           ! fraction of canopy layer covered by snow</a>
+   105) <a name="l105" style="background-color: #ffcccc">   real(r8) :: tlai_old    ! for use in Zeng tsai formula</a>
+   106) <a name="l106" style="background-color: #ffcccc">   real(r8) :: tsai_old    ! for use in Zeng tsai formula</a>
+   107) <a name="l107" style="background-color: #ffcccc">   real(r8) :: tsai_min    ! PFT derived minimum tsai</a>
+   108) <a name="l108" style="background-color: #ffcccc">   real(r8) :: tsai_alpha  ! monthly decay rate of tsai</a>
+   109) <a name="l109" style="background-color: #ffcccc">   real(r8) dt             ! radiation time step (sec)</a>
+   110) <a name="l110" style="background-color: #ffcccc"></a>
+   111) <a name="l111" style="background-color: #ffcccc">   real(r8), parameter :: dtsmonth = 2592000._r8 ! number of seconds in a 30 day month (60x60x24x30)</a>
+   112) <a name="l112" style="background-color: #ffcccc">!EOP</a>
+   113) <a name="l113" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   114) <a name="l114" style="background-color: #ffcccc">! tsai formula from Zeng et. al. 2002, Journal of Climate, p1835</a>
+   115) <a name="l115" style="background-color: #ffcccc">!</a>
+   116) <a name="l116" style="background-color: #ffcccc">! tsai(p) = max( tsai_alpha(ivt(p))*tsai_old + max(tlai_old-tlai(p),0_r8), tsai_min(ivt(p)) )</a>
+   117) <a name="l117" style="background-color: #ffcccc">! notes:</a>
+   118) <a name="l118" style="background-color: #ffcccc">! * RHS tsai &amp; tlai are from previous timestep</a>
+   119) <a name="l119" style="background-color: #ffcccc">! * should create tsai_alpha(ivt(p)) &amp; tsai_min(ivt(p)) in pftvarcon.F90 - slevis</a>
+   120) <a name="l120" style="background-color: #ffcccc">! * all non-crop pfts use same values:</a>
+   121) <a name="l121" style="background-color: #ffcccc">!   crop    tsai_alpha,tsai_min = 0.0,0.1</a>
+   122) <a name="l122" style="background-color: #ffcccc">!   noncrop tsai_alpha,tsai_min = 0.5,1.0  (includes bare soil and urban)</a>
+   123) <a name="l123" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+   124) <a name="l124" style="background-color: #ffcccc"></a>
+   125) <a name="l125" style="background-color: #ffcccc">   ! assign local pointers to derived type arrays (in)</a>
+   126) <a name="l126" style="background-color: #ffcccc">    allom2                         =&gt; dgv_pftcon%allom2</a>
+   127) <a name="l127" style="background-color: #ffcccc">    allom3                         =&gt; dgv_pftcon%allom3</a>
+   128) <a name="l128" style="background-color: #ffcccc">    nind                           =&gt; pdgvs%nind</a>
+   129) <a name="l129" style="background-color: #ffcccc">    fpcgrid                        =&gt; pdgvs%fpcgrid</a>
+   130) <a name="l130" style="background-color: #ffcccc">    ivt                            =&gt; pft%itype</a>
+   131) <a name="l131" style="background-color: #ffcccc">    pcolumn                        =&gt; pft%column</a>
+   132) <a name="l132" style="background-color: #ffcccc">    pgridcell                      =&gt; pft%gridcell</a>
+   133) <a name="l133" style="background-color: #ffcccc">    leafc                          =&gt; pcs%leafc</a>
+   134) <a name="l134" style="background-color: #ffcccc">    deadstemc                      =&gt; pcs%deadstemc</a>
+   135) <a name="l135" style="background-color: #ffcccc">    snowdp                         =&gt; cps%snowdp</a>
+   136) <a name="l136" style="background-color: #ffcccc">    woody                          =&gt; pftcon%woody</a>
+   137) <a name="l137" style="background-color: #ffcccc">    slatop                         =&gt; pftcon%slatop</a>
+   138) <a name="l138" style="background-color: #ffcccc">    dsladlai                       =&gt; pftcon%dsladlai</a>
+   139) <a name="l139" style="background-color: #ffcccc">    z0mr                           =&gt; pftcon%z0mr</a>
+   140) <a name="l140" style="background-color: #ffcccc">    displar                        =&gt; pftcon%displar</a>
+   141) <a name="l141" style="background-color: #ffcccc">    dwood                          =&gt; pftcon%dwood</a>
+   142) <a name="l142" style="background-color: #ffcccc"></a>
+   143) <a name="l143" style="background-color: #ffcccc">   ! assign local pointers to derived type arrays (out)</a>
+   144) <a name="l144" style="background-color: #ffcccc">    tlai                           =&gt; pps%tlai</a>
+   145) <a name="l145" style="background-color: #ffcccc">    tsai                           =&gt; pps%tsai</a>
+   146) <a name="l146" style="background-color: #ffcccc">    htop                           =&gt; pps%htop</a>
+   147) <a name="l147" style="background-color: #ffcccc">    hbot                           =&gt; pps%hbot</a>
+   148) <a name="l148" style="background-color: #ffcccc">    elai                           =&gt; pps%elai</a>
+   149) <a name="l149" style="background-color: #ffcccc">    esai                           =&gt; pps%esai</a>
+   150) <a name="l150" style="background-color: #ffcccc">    frac_veg_nosno_alb             =&gt; pps%frac_veg_nosno_alb</a>
+   151) <a name="l151" style="background-color: #ffcccc">    htmx                           =&gt; pps%htmx</a>
+   152) <a name="l152" style="background-color: #ffcccc">    peaklai                        =&gt; pps%peaklai</a>
+   153) <a name="l153" style="background-color: #ffcccc">    harvdate                       =&gt; pps%harvdate</a>
+   154) <a name="l154" style="background-color: #ffcccc">    forc_hgt_u_pft                 =&gt; pps%forc_hgt_u_pft</a>
+   155) <a name="l155" style="background-color: #ffcccc"></a>
+   156) <a name="l156" style="background-color: #ffcccc">   dt = real( get_rad_step_size(), r8 )</a>
+   157) <a name="l157" style="background-color: #ffcccc"></a>
+   158) <a name="l158" style="background-color: #ffcccc">   ! constant allometric parameters</a>
+   159) <a name="l159" style="background-color: #ffcccc">   taper = 200._r8</a>
+   160) <a name="l160" style="background-color: #ffcccc">   stocking = 1000._r8</a>
+   161) <a name="l161" style="background-color: #ffcccc"></a>
+   162) <a name="l162" style="background-color: #ffcccc">   ! convert from stems/ha -&gt; stems/m^2</a>
+   163) <a name="l163" style="background-color: #ffcccc">   stocking = stocking / 10000._r8</a>
+   164) <a name="l164" style="background-color: #ffcccc"></a>
+   165) <a name="l165" style="background-color: #ffcccc">   ! pft loop</a>
+   166) <a name="l166" style="background-color: #ffcccc">   do fp = 1,num_soilp</a>
+   167) <a name="l167" style="background-color: #ffcccc">      p = filter_soilp(fp)</a>
+   168) <a name="l168" style="background-color: #ffcccc">      c = pcolumn(p)</a>
+   169) <a name="l169" style="background-color: #ffcccc">      g = pgridcell(p)</a>
+   170) <a name="l170" style="background-color: #ffcccc"></a>
+   171) <a name="l171" style="background-color: #ffcccc">      if (ivt(p) /= noveg) then</a>
+   172) <a name="l172" style="background-color: #ffcccc"></a>
+   173) <a name="l173" style="background-color: #ffcccc">          tlai_old = tlai(p) ! n-1 value</a>
+   174) <a name="l174" style="background-color: #ffcccc">          tsai_old = tsai(p) ! n-1 value</a>
+   175) <a name="l175" style="background-color: #ffcccc"></a>
+   176) <a name="l176" style="background-color: #ffcccc">          ! update the leaf area index based on leafC and SLA</a>
+   177) <a name="l177" style="background-color: #ffcccc">          ! Eq 3 from Thornton and Zimmerman, 2007, J Clim, 20, 3902-3923. </a>
+   178) <a name="l178" style="background-color: #ffcccc">          if (dsladlai(ivt(p)) &gt; 0._r8) then</a>
+   179) <a name="l179" style="background-color: #ffcccc">             tlai(p) = (slatop(ivt(p))*(exp(leafc(p)*dsladlai(ivt(p))) - 1._r8))/dsladlai(ivt(p))</a>
+   180) <a name="l180" style="background-color: #ffcccc">          else</a>
+   181) <a name="l181" style="background-color: #ffcccc">             tlai(p) = slatop(ivt(p)) * leafc(p)</a>
+   182) <a name="l182" style="background-color: #ffcccc">          end if</a>
+   183) <a name="l183" style="background-color: #ffcccc">          tlai(p) = max(0._r8, tlai(p))</a>
+   184) <a name="l184" style="background-color: #ffcccc"></a>
+   185) <a name="l185" style="background-color: #ffcccc">          ! update the stem area index and height based on LAI, stem mass, and veg type.</a>
+   186) <a name="l186" style="background-color: #ffcccc">          ! With the exception of htop for woody vegetation, this follows the DGVM logic.</a>
+   187) <a name="l187" style="background-color: #ffcccc"></a>
+   188) <a name="l188" style="background-color: #ffcccc">          ! tsai formula from Zeng et. al. 2002, Journal of Climate, p1835 (see notes)</a>
+   189) <a name="l189" style="background-color: #ffcccc">          ! Assumes doalb time step .eq. CLM time step, SAI min and monthly decay factor</a>
+   190) <a name="l190" style="background-color: #ffcccc">          ! alpha are set by PFT, and alpha is scaled to CLM time step by multiplying by</a>
+   191) <a name="l191" style="background-color: #ffcccc">          ! dt and dividing by dtsmonth (seconds in average 30 day month)</a>
+   192) <a name="l192" style="background-color: #ffcccc">          ! tsai_min scaled by 0.5 to match MODIS satellite derived values</a>
+   193) <a name="l193" style="background-color: #ffcccc">          if (ivt(p) == nc3crop .or. ivt(p) == nirrig) then ! generic crops</a>
+   194) <a name="l194" style="background-color: #ffcccc"></a>
+   195) <a name="l195" style="background-color: #ffcccc">             tsai_alpha = 1.0_r8-1.0_r8*dt/dtsmonth</a>
+   196) <a name="l196" style="background-color: #ffcccc">             tsai_min = 0.1_r8</a>
+   197) <a name="l197" style="background-color: #ffcccc">          else</a>
+   198) <a name="l198" style="background-color: #ffcccc">             tsai_alpha = 1.0_r8-0.5_r8*dt/dtsmonth</a>
+   199) <a name="l199" style="background-color: #ffcccc">             tsai_min = 1.0_r8</a>
+   200) <a name="l200" style="background-color: #ffcccc">          end if</a>
+   201) <a name="l201" style="background-color: #ffcccc">          tsai_min = tsai_min * 0.5_r8</a>
+   202) <a name="l202" style="background-color: #ffcccc">          tsai(p) = max(tsai_alpha*tsai_old+max(tlai_old-tlai(p),0._r8),tsai_min)</a>
+   203) <a name="l203" style="background-color: #ffcccc"></a>
+   204) <a name="l204" style="background-color: #ffcccc">          if (woody(ivt(p)) == 1._r8) then</a>
+   205) <a name="l205" style="background-color: #ffcccc"></a>
+   206) <a name="l206" style="background-color: #ffcccc">             ! trees and shrubs</a>
+   207) <a name="l207" style="background-color: #ffcccc"></a>
+   208) <a name="l208" style="background-color: #ffcccc">             ! if shrubs have a squat taper </a>
+   209) <a name="l209" style="background-color: #ffcccc">             if (ivt(p) &gt;= nbrdlf_evr_shrub .and. ivt(p) &lt;= nbrdlf_dcd_brl_shrub) then</a>
+   210) <a name="l210" style="background-color: #ffcccc">                taper = 10._r8</a>
+   211) <a name="l211" style="background-color: #ffcccc">             ! otherwise have a tall taper</a>
+   212) <a name="l212" style="background-color: #ffcccc">             else</a>
+   213) <a name="l213" style="background-color: #ffcccc">                taper = 200._r8</a>
+   214) <a name="l214" style="background-color: #ffcccc">             end if</a>
+   215) <a name="l215" style="background-color: #ffcccc"></a>
+   216) <a name="l216" style="background-color: #ffcccc">             ! trees and shrubs for now have a very simple allometry, with hard-wired</a>
+   217) <a name="l217" style="background-color: #ffcccc">             ! stem taper (height:radius) and hard-wired stocking density (#individuals/area)</a>
+   218) <a name="l218" style="background-color: #ffcccc">             if (use_cndv) then</a>
+   219) <a name="l219" style="background-color: #ffcccc">                if (fpcgrid(p) &gt; 0._r8 .and. nind(p) &gt; 0._r8) then</a>
+   220) <a name="l220" style="background-color: #ffcccc">                   stocking = nind(p)/fpcgrid(p) !#ind/m2 nat veg area -&gt; #ind/m2 pft area</a>
+   221) <a name="l221" style="background-color: #ffcccc">                   ! lpj's htop w/ cn's stemdiam</a>
+   222) <a name="l222" style="background-color: #ffcccc">                   htop(p) = allom2(ivt(p)) * ( (24._r8 * deadstemc(p) / &amp;</a>
+   223) <a name="l223" style="background-color: #ffcccc">                        (SHR_CONST_PI * stocking * dwood(ivt(p)) * taper))**(1._r8/3._r8) )**allom3(ivt(p)) </a>
+   224) <a name="l224" style="background-color: #ffcccc">                else</a>
+   225) <a name="l225" style="background-color: #ffcccc">                   htop(p) = 0._r8</a>
+   226) <a name="l226" style="background-color: #ffcccc">                end if</a>
+   227) <a name="l227" style="background-color: #ffcccc">             else</a>
+   228) <a name="l228" style="background-color: #ffcccc">                htop(p) = ((3._r8 * deadstemc(p) * taper * taper)/ &amp;</a>
+   229) <a name="l229" style="background-color: #ffcccc">                     (SHR_CONST_PI * stocking * dwood(ivt(p))))**(1._r8/3._r8)</a>
+   230) <a name="l230" style="background-color: #ffcccc">             end if</a>
+   231) <a name="l231" style="background-color: #ffcccc"></a>
+   232) <a name="l232" style="background-color: #ffcccc">             ! Peter Thornton, 5/3/2004</a>
+   233) <a name="l233" style="background-color: #ffcccc">             ! Adding test to keep htop from getting too close to forcing height for windspeed</a>
+   234) <a name="l234" style="background-color: #ffcccc">             ! Also added for grass, below, although it is not likely to ever be an issue.</a>
+   235) <a name="l235" style="background-color: #ffcccc">             htop(p) = min(htop(p),(forc_hgt_u_pft(p)/(displar(ivt(p))+z0mr(ivt(p))))-3._r8)</a>
+   236) <a name="l236" style="background-color: #ffcccc"></a>
+   237) <a name="l237" style="background-color: #ffcccc">             ! Peter Thornton, 8/11/2004</a>
+   238) <a name="l238" style="background-color: #ffcccc">             ! Adding constraint to keep htop from going to 0.0.</a>
+   239) <a name="l239" style="background-color: #ffcccc">             ! This becomes an issue when fire mortality is pushing deadstemc</a>
+   240) <a name="l240" style="background-color: #ffcccc">             ! to 0.0.</a>
+   241) <a name="l241" style="background-color: #ffcccc">             htop(p) = max(htop(p), 0.01_r8)</a>
+   242) <a name="l242" style="background-color: #ffcccc"></a>
+   243) <a name="l243" style="background-color: #ffcccc">             hbot(p) = max(0._r8, min(3._r8, htop(p)-1._r8))</a>
+   244) <a name="l244" style="background-color: #ffcccc"></a>
+   245) <a name="l245" style="background-color: #ffcccc">          else if (ivt(p) &gt;= npcropmin) then ! prognostic crops</a>
+   246) <a name="l246" style="background-color: #ffcccc"></a>
+   247) <a name="l247" style="background-color: #ffcccc">             if (tlai(p) &gt;= laimx(ivt(p))) peaklai(p) = 1 ! used in CNAllocation</a>
+   248) <a name="l248" style="background-color: #ffcccc"></a>
+   249) <a name="l249" style="background-color: #ffcccc">             if (ivt(p) == ncorn) then</a>
+   250) <a name="l250" style="background-color: #ffcccc">                tsai(p) = 0.1_r8 * tlai(p)</a>
+   251) <a name="l251" style="background-color: #ffcccc">             else</a>
+   252) <a name="l252" style="background-color: #ffcccc">                tsai(p) = 0.2_r8 * tlai(p)</a>
+   253) <a name="l253" style="background-color: #ffcccc">             end if</a>
+   254) <a name="l254" style="background-color: #ffcccc"></a>
+   255) <a name="l255" style="background-color: #ffcccc">             ! &quot;stubble&quot; after harvest</a>
+   256) <a name="l256" style="background-color: #ffcccc">             if (harvdate(p) &lt; 999 .and. tlai(p) == 0._r8) then</a>
+   257) <a name="l257" style="background-color: #ffcccc">                tsai(p) = 0.25_r8</a>
+   258) <a name="l258" style="background-color: #ffcccc">                htmx(p) = 0._r8</a>
+   259) <a name="l259" style="background-color: #ffcccc">                peaklai(p) = 0</a>
+   260) <a name="l260" style="background-color: #ffcccc">             end if</a>
+   261) <a name="l261" style="background-color: #ffcccc">             !if (harvdate(p) &lt; 999 .and. tlai(p) &gt; 0._r8) write(iulog,*) 'CNVegStructUpdate: tlai&gt;0 after harvest!' ! remove after initial debugging?</a>
+   262) <a name="l262" style="background-color: #ffcccc"></a>
+   263) <a name="l263" style="background-color: #ffcccc">             ! canopy top and bottom heights</a>
+   264) <a name="l264" style="background-color: #ffcccc">             htop(p) = ztopmx(ivt(p)) * (min(tlai(p)/(laimx(ivt(p))-1._r8),1._r8))**2</a>
+   265) <a name="l265" style="background-color: #ffcccc">             htmx(p) = max(htmx(p), htop(p))</a>
+   266) <a name="l266" style="background-color: #ffcccc">             htop(p) = max(0.05_r8, max(htmx(p),htop(p)))</a>
+   267) <a name="l267" style="background-color: #ffcccc">             hbot(p) = 0.02_r8</a>
+   268) <a name="l268" style="background-color: #ffcccc">          else ! generic crops and ...</a>
+   269) <a name="l269" style="background-color: #ffcccc">             ! grasses</a>
+   270) <a name="l270" style="background-color: #ffcccc"></a>
+   271) <a name="l271" style="background-color: #ffcccc">             ! height for grasses depends only on LAI</a>
+   272) <a name="l272" style="background-color: #ffcccc">             htop(p) = max(0.25_r8, tlai(p) * 0.25_r8)</a>
+   273) <a name="l273" style="background-color: #ffcccc"></a>
+   274) <a name="l274" style="background-color: #ffcccc">             htop(p) = min(htop(p),(forc_hgt_u_pft(p)/(displar(ivt(p))+z0mr(ivt(p))))-3._r8)</a>
+   275) <a name="l275" style="background-color: #ffcccc"></a>
+   276) <a name="l276" style="background-color: #ffcccc">             ! Peter Thornton, 8/11/2004</a>
+   277) <a name="l277" style="background-color: #ffcccc">             ! Adding constraint to keep htop from going to 0.0.</a>
+   278) <a name="l278" style="background-color: #ffcccc">             htop(p) = max(htop(p), 0.01_r8)</a>
+   279) <a name="l279" style="background-color: #ffcccc"></a>
+   280) <a name="l280" style="background-color: #ffcccc">             hbot(p) = max(0.0_r8, min(0.05_r8, htop(p)-0.20_r8))</a>
+   281) <a name="l281" style="background-color: #ffcccc">          end if</a>
+   282) <a name="l282" style="background-color: #ffcccc"></a>
+   283) <a name="l283" style="background-color: #ffcccc">      else</a>
+   284) <a name="l284" style="background-color: #ffcccc">          tlai(p) = 0._r8</a>
+   285) <a name="l285" style="background-color: #ffcccc">          tsai(p) = 0._r8</a>
+   286) <a name="l286" style="background-color: #ffcccc">          htop(p) = 0._r8</a>
+   287) <a name="l287" style="background-color: #ffcccc">          hbot(p) = 0._r8</a>
+   288) <a name="l288" style="background-color: #ffcccc">      end if</a>
+   289) <a name="l289" style="background-color: #ffcccc">      </a>
+   290) <a name="l290" style="background-color: #ffcccc">      ! adjust lai and sai for burying by snow. </a>
+   291) <a name="l291" style="background-color: #ffcccc"></a>
+   292) <a name="l292" style="background-color: #ffcccc">      ! snow burial fraction for short vegetation (e.g. grasses) as in</a>
+   293) <a name="l293" style="background-color: #ffcccc">      ! Wang and Zeng, 2007.</a>
+   294) <a name="l294" style="background-color: #ffcccc">      if (ivt(p) &gt; noveg .and. ivt(p) &lt;= nbrdlf_dcd_brl_shrub ) then</a>
+   295) <a name="l295" style="background-color: #ffcccc">         ol = min( max(snowdp(c)-hbot(p), 0._r8), htop(p)-hbot(p))</a>
+   296) <a name="l296" style="background-color: #ffcccc">         fb = 1._r8 - ol / max(1.e-06_r8, htop(p)-hbot(p))</a>
+   297) <a name="l297" style="background-color: #ffcccc">      else</a>
+   298) <a name="l298" style="background-color: #ffcccc">         fb = 1._r8 - max(min(snowdp(c),0.2_r8),0._r8)/0.2_r8   ! 0.2m is assumed</a>
+   299) <a name="l299" style="background-color: #ffcccc">              !depth of snow required for complete burial of grasses</a>
+   300) <a name="l300" style="background-color: #ffcccc">      endif</a>
+   301) <a name="l301" style="background-color: #ffcccc"></a>
+   302) <a name="l302" style="background-color: #ffcccc">      elai(p) = max(tlai(p)*fb, 0.0_r8)</a>
+   303) <a name="l303" style="background-color: #ffcccc">      esai(p) = max(tsai(p)*fb, 0.0_r8)</a>
+   304) <a name="l304" style="background-color: #ffcccc"></a>
+   305) <a name="l305" style="background-color: #ffcccc">      ! Fraction of vegetation free of snow</a>
+   306) <a name="l306" style="background-color: #ffcccc">      if ((elai(p) + esai(p)) &gt; 0._r8) then</a>
+   307) <a name="l307" style="background-color: #ffcccc">         frac_veg_nosno_alb(p) = 1</a>
+   308) <a name="l308" style="background-color: #ffcccc">      else</a>
+   309) <a name="l309" style="background-color: #ffcccc">         frac_veg_nosno_alb(p) = 0</a>
+   310) <a name="l310" style="background-color: #ffcccc">      end if</a>
+   311) <a name="l311" style="background-color: #ffcccc"></a>
+   312) <a name="l312" style="background-color: #ffcccc">   end do</a>
+   313) <a name="l313" style="background-color: #ffcccc"></a>
+   314) <a name="l314" style="background-color: #ffcccc">end subroutine CNVegStructUpdate</a>
+   315) <a name="l315" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   316) <a name="l316" style="background-color: #ffffff"></a>
+   317) <a name="l317" style="background-color: #ffffff">end module CNVegStructUpdateMod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

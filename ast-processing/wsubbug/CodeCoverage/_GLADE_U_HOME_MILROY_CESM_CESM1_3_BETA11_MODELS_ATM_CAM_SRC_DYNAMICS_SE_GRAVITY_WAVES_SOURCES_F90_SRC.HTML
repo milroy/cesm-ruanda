@@ -1,0 +1,198 @@
+<html>
+<head>
+<title>Listing of gravity_waves_sources.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;gravity_waves_sources.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module gravity_waves_sources</a>
+     2) <a name="l2" style="background-color: #ffffff">  use derivative_mod, only : derivative_t</a>
+     3) <a name="l3" style="background-color: #ffffff">  use dimensions_mod, only : np,nlev</a>
+     4) <a name="l4" style="background-color: #ffffff">  use edge_mod, only       : EdgeBuffer_t</a>
+     5) <a name="l5" style="background-color: #ffffff">  use element_mod, only    : element_t</a>
+     6) <a name="l6" style="background-color: #ffffff">  use hybrid_mod, only     : hybrid_t</a>
+     7) <a name="l7" style="background-color: #ffffff">  use kinds, only          : real_kind</a>
+     8) <a name="l8" style="background-color: #ffffff">  use shr_kind_mod, only   : r8 =&gt; shr_kind_r8</a>
+     9) <a name="l9" style="background-color: #ffffff">  use thread_mod, only   : nthreads</a>
+    10) <a name="l10" style="background-color: #ffffff"></a>
+    11) <a name="l11" style="background-color: #ffffff">  implicit none</a>
+    12) <a name="l12" style="background-color: #ffffff">  private</a>
+    13) <a name="l13" style="background-color: #ffffff">  save</a>
+    14) <a name="l14" style="background-color: #ffffff">  </a>
+    15) <a name="l15" style="background-color: #ffffff">  !! gravity_waves_sources created by S Santos, 10 Aug 2011</a>
+    16) <a name="l16" style="background-color: #ffffff">  !! </a>
+    17) <a name="l17" style="background-color: #ffffff">  !! gws_src_fnct starts parallel environment and computes frontogenesis</a>
+    18) <a name="l18" style="background-color: #ffffff">  !!   for use by WACCM (via dp_coupling)</a>
+    19) <a name="l19" style="background-color: #ffffff"> </a>
+    20) <a name="l20" style="background-color: #ffffff">  public  :: gws_src_fnct</a>
+    21) <a name="l21" style="background-color: #ffffff">  public  :: gws_init</a>
+    22) <a name="l22" style="background-color: #ffffff">  private :: compute_frontogenesis</a>
+    23) <a name="l23" style="background-color: #ffffff">  </a>
+    24) <a name="l24" style="background-color: #ffffff">  type (EdgeBuffer_t) :: edge3</a>
+    25) <a name="l25" style="background-color: #ffffff">  type (derivative_t), allocatable   :: deriv(:)</a>
+    26) <a name="l26" style="background-color: #ffffff">  real(r8) :: psurf_ref</a>
+    27) <a name="l27" style="background-color: #ffffff"></a>
+    28) <a name="l28" style="background-color: #ffffff">!----------------------------------------------------------------------</a>
+    29) <a name="l29" style="background-color: #ffffff">CONTAINS</a>
+    30) <a name="l30" style="background-color: #ffffff">!----------------------------------------------------------------------</a>
+    31) <a name="l31" style="background-color: #ffffff"></a>
+    32) <a name="l32" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">gws_init</a>
+    33) <a name="l33" style="background-color: #ffcccc">    use edge_mod, only       : initEdgeBuffer</a>
+    34) <a name="l34" style="background-color: #ffcccc">    use hycoef, only         : hypi</a>
+    35) <a name="l35" style="background-color: #ffcccc">    use pmgrid, only         : plev</a>
+    36) <a name="l36" style="background-color: #ffcccc">    implicit none</a>
+    37) <a name="l37" style="background-color: #ffcccc">    </a>
+    38) <a name="l38" style="background-color: #ffcccc">    ! Set up variables similar to dyn_comp and prim_driver_mod initializations</a>
+    39) <a name="l39" style="background-color: #ffcccc">    call initEdgeBuffer(edge3,3*nlev)</a>
+    40) <a name="l40" style="background-color: #ffcccc">    allocate(deriv(0:Nthreads-1))</a>
+    41) <a name="l41" style="background-color: #ffcccc">    </a>
+    42) <a name="l42" style="background-color: #ffcccc">    psurf_ref = hypi(plev+1)</a>
+    43) <a name="l43" style="background-color: #ffcccc"></a>
+    44) <a name="l44" style="background-color: #ffcccc">  end subroutine gws_init</a>
+    45) <a name="l45" style="background-color: #ffffff"></a>
+    46) <a name="l46" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">gws_src_fnct(elem, tl, frontgf, frontga)</a>
+    47) <a name="l47" style="background-color: #ffcccc">    use derivative_mod, only  : derivinit</a>
+    48) <a name="l48" style="background-color: #ffcccc">    use dimensions_mod, only  : npsq, nelemd</a>
+    49) <a name="l49" style="background-color: #ffcccc">    use dof_mod, only         : UniquePoints</a>
+    50) <a name="l50" style="background-color: #ffcccc">    use dyn_comp, only        : dom_mt</a>
+    51) <a name="l51" style="background-color: #ffcccc">    use hybrid_mod, only      : hybrid_create</a>
+    52) <a name="l52" style="background-color: #ffcccc">    use parallel_mod, only    : par</a>
+    53) <a name="l53" style="background-color: #ffcccc">    use ppgrid, only          : pver</a>
+    54) <a name="l54" style="background-color: #ffcccc">    use thread_mod, only      : omp_get_thread_num</a>
+    55) <a name="l55" style="background-color: #ffcccc">    implicit none</a>
+    56) <a name="l56" style="background-color: #ffcccc">    type (element_t), intent(inout), dimension(:) :: elem</a>
+    57) <a name="l57" style="background-color: #ffcccc">    integer, intent(in)          :: tl</a>
+    58) <a name="l58" style="background-color: #ffcccc">    real (kind=real_kind), intent(out) :: frontgf(npsq,pver,nelemd)</a>
+    59) <a name="l59" style="background-color: #ffcccc">    real (kind=real_kind), intent(out) :: frontga(npsq,pver,nelemd)</a>
+    60) <a name="l60" style="background-color: #ffcccc">    </a>
+    61) <a name="l61" style="background-color: #ffcccc">    ! Local variables</a>
+    62) <a name="l62" style="background-color: #ffcccc">    type (hybrid_t) :: hybrid</a>
+    63) <a name="l63" style="background-color: #ffcccc">    integer :: nets, nete, ithr, ncols, ie</a>
+    64) <a name="l64" style="background-color: #ffcccc">    real(kind=real_kind), allocatable  ::  frontgf_thr(:,:,:,:)</a>
+    65) <a name="l65" style="background-color: #ffcccc">    real(kind=real_kind), allocatable  ::  frontga_thr(:,:,:,:)</a>
+    66) <a name="l66" style="background-color: #ffcccc">    </a>
+    67) <a name="l67" style="background-color: #ffcccc">    !$OMP PARALLEL DEFAULT(SHARED), PRIVATE(ithr,nets,nete,hybrid,ie,ncols,frontgf_thr,frontga_thr)</a>
+    68) <a name="l68" style="background-color: #ffcccc">    ithr=omp_get_thread_num()</a>
+    69) <a name="l69" style="background-color: #ffcccc">    nets=dom_mt(ithr)%start</a>
+    70) <a name="l70" style="background-color: #ffcccc">    nete=dom_mt(ithr)%end</a>
+    71) <a name="l71" style="background-color: #ffcccc">    hybrid = hybrid_create(par,ithr,NThreads)</a>
+    72) <a name="l72" style="background-color: #ffcccc">    call derivinit(deriv(hybrid%ithr))</a>
+    73) <a name="l73" style="background-color: #ffcccc">    allocate(frontgf_thr(np,np,nlev,nets:nete))</a>
+    74) <a name="l74" style="background-color: #ffcccc">    allocate(frontga_thr(np,np,nlev,nets:nete))</a>
+    75) <a name="l75" style="background-color: #ffcccc">    call compute_frontogenesis(frontgf_thr,frontga_thr,tl,elem,deriv(hybrid%ithr),hybrid,nets,nete)</a>
+    76) <a name="l76" style="background-color: #ffcccc">    do ie=nets,nete</a>
+    77) <a name="l77" style="background-color: #ffcccc">       ncols = elem(ie)%idxP%NumUniquePts</a>
+    78) <a name="l78" style="background-color: #ffcccc">       call UniquePoints(elem(ie)%idxP, nlev, frontgf_thr(:,:,:,ie), frontgf(1:ncols,:,ie))</a>
+    79) <a name="l79" style="background-color: #ffcccc">       call UniquePoints(elem(ie)%idxP, nlev, frontga_thr(:,:,:,ie), frontga(1:ncols,:,ie))</a>
+    80) <a name="l80" style="background-color: #ffcccc">    end do</a>
+    81) <a name="l81" style="background-color: #ffcccc">    deallocate(frontga_thr)</a>
+    82) <a name="l82" style="background-color: #ffcccc">    deallocate(frontgf_thr)</a>
+    83) <a name="l83" style="background-color: #ffcccc">    !$OMP END PARALLEL</a>
+    84) <a name="l84" style="background-color: #ffcccc"></a>
+    85) <a name="l85" style="background-color: #ffcccc">  end subroutine gws_src_fnct</a>
+    86) <a name="l86" style="background-color: #ffcccc"></a><a style="background-color: #ffffff">  </a>
+    87) <a name="l87" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">compute_frontogenesis(frontgf,frontga,tl,elem,ederiv,hybrid,nets,nete)</a>
+    88) <a name="l88" style="background-color: #ffcccc">  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!</a>
+    89) <a name="l89" style="background-color: #ffcccc">  ! compute frontogenesis function F</a>
+    90) <a name="l90" style="background-color: #ffcccc">  !   F =  -gradth dot C</a>
+    91) <a name="l91" style="background-color: #ffcccc">  ! with:</a>
+    92) <a name="l92" style="background-color: #ffcccc">  !   theta  = potential temperature</a>
+    93) <a name="l93" style="background-color: #ffcccc">  !   gradth = grad(theta)</a>
+    94) <a name="l94" style="background-color: #ffcccc">  !   C = ( gradth dot grad ) U</a>
+    95) <a name="l95" style="background-color: #ffcccc">  ! </a>
+    96) <a name="l96" style="background-color: #ffcccc">  ! Original by Mark Taylor, July 2011</a>
+    97) <a name="l97" style="background-color: #ffcccc">  ! Change by Santos, 10 Aug 2011:</a>
+    98) <a name="l98" style="background-color: #ffcccc">  ! Integrated into gravity_waves_sources module, several arguments made global</a>
+    99) <a name="l99" style="background-color: #ffcccc">  !  to prevent repeated allocation/initialization</a>
+   100) <a name="l100" style="background-color: #ffcccc">  ! </a>
+   101) <a name="l101" style="background-color: #ffcccc">  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!</a>
+   102) <a name="l102" style="background-color: #ffcccc">    use physical_constants, only : kappa</a>
+   103) <a name="l103" style="background-color: #ffcccc">    use derivative_mod, only : gradient_sphere, ugradv_sphere</a>
+   104) <a name="l104" style="background-color: #ffcccc">    use edge_mod, only : edgevpack, edgevunpack</a>
+   105) <a name="l105" style="background-color: #ffcccc">    use bndry_mod, only : bndry_exchangev</a>
+   106) <a name="l106" style="background-color: #ffcccc">    use dyn_comp, only : hvcoord</a>
+   107) <a name="l107" style="background-color: #ffcccc">    implicit none</a>
+   108) <a name="l108" style="background-color: #ffcccc">    type (hybrid_t)      , intent(in) :: hybrid</a>
+   109) <a name="l109" style="background-color: #ffcccc">    type (element_t)     , intent(inout), target :: elem(:)</a>
+   110) <a name="l110" style="background-color: #ffcccc">    type (derivative_t)  , intent(in) :: ederiv</a>
+   111) <a name="l111" style="background-color: #ffcccc">    integer, intent(in) :: nets,nete</a>
+   112) <a name="l112" style="background-color: #ffcccc">    integer, intent(in) :: tl ! timelevel to use</a>
+   113) <a name="l113" style="background-color: #ffcccc">    real(kind=real_kind), intent(out) ::  frontgf(np,np,nlev,nets:nete)</a>
+   114) <a name="l114" style="background-color: #ffcccc">    real(kind=real_kind), intent(out) ::  frontga(np,np,nlev,nets:nete)</a>
+   115) <a name="l115" style="background-color: #ffcccc">  </a>
+   116) <a name="l116" style="background-color: #ffcccc">    ! local</a>
+   117) <a name="l117" style="background-color: #ffcccc">    integer :: k,kptr,i,j,ie,component</a>
+   118) <a name="l118" style="background-color: #ffcccc">    real(kind=real_kind)  ::  gradth(np,np,2,nlev,nets:nete)  ! grad(theta)</a>
+   119) <a name="l119" style="background-color: #ffcccc">    real(kind=real_kind)  :: p(np,np)        ! pressure at mid points</a>
+   120) <a name="l120" style="background-color: #ffcccc">    real(kind=real_kind)  :: theta(np,np)    ! potential temperature at mid points</a>
+   121) <a name="l121" style="background-color: #ffcccc">    real(kind=real_kind)  ::  C(np,np,2)     </a>
+   122) <a name="l122" style="background-color: #ffcccc">    </a>
+   123) <a name="l123" style="background-color: #ffcccc">    do ie=nets,nete</a>
+   124) <a name="l124" style="background-color: #ffcccc">       do k=1,nlev</a>
+   125) <a name="l125" style="background-color: #ffcccc">!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1</a>
+   126) <a name="l126" style="background-color: #ffcccc">        ! potential temperature: theta = T (p/p0)^kappa</a>
+   127) <a name="l127" style="background-color: #ffcccc">!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!1</a>
+   128) <a name="l128" style="background-color: #ffcccc">          </a>
+   129) <a name="l129" style="background-color: #ffcccc">          ! pressure at mid points</a>
+   130) <a name="l130" style="background-color: #ffcccc">          p(:,:)   = hvcoord%hyam(k)*hvcoord%ps0 + hvcoord%hybm(k)*elem(ie)%state%ps_v(:,:,tl)</a>
+   131) <a name="l131" style="background-color: #ffcccc">          theta(:,:) = elem(ie)%state%T(:,:,k,tl)*(psurf_ref / p(:,:))**kappa</a>
+   132) <a name="l132" style="background-color: #ffcccc">          gradth(:,:,:,k,ie) = gradient_sphere(theta,ederiv,elem(ie)%Dinv)</a>
+   133) <a name="l133" style="background-color: #ffcccc">          </a>
+   134) <a name="l134" style="background-color: #ffcccc">          ! compute C = (grad(theta) dot grad ) u</a>
+   135) <a name="l135" style="background-color: #ffcccc">          C(:,:,:) = ugradv_sphere(gradth(:,:,:,k,ie), elem(ie)%state%v(:,:,:,k,tl),ederiv,elem(ie))</a>
+   136) <a name="l136" style="background-color: #ffcccc">          </a>
+   137) <a name="l137" style="background-color: #ffcccc">          ! gradth dot C</a>
+   138) <a name="l138" style="background-color: #ffcccc">          frontgf(:,:,k,ie) = -( C(:,:,1)*gradth(:,:,1,k,ie) +  C(:,:,2)*gradth(:,:,2,k,ie)  )</a>
+   139) <a name="l139" style="background-color: #ffcccc">          </a>
+   140) <a name="l140" style="background-color: #ffcccc">          ! apply mass matrix</a>
+   141) <a name="l141" style="background-color: #ffcccc">          gradth(:,:,1,k,ie)=gradth(:,:,1,k,ie)*elem(ie)%spheremp(:,:)</a>
+   142) <a name="l142" style="background-color: #ffcccc">          gradth(:,:,2,k,ie)=gradth(:,:,2,k,ie)*elem(ie)%spheremp(:,:)</a>
+   143) <a name="l143" style="background-color: #ffcccc">          frontgf(:,:,k,ie)=frontgf(:,:,k,ie)*elem(ie)%spheremp(:,:)</a>
+   144) <a name="l144" style="background-color: #ffcccc">          </a>
+   145) <a name="l145" style="background-color: #ffcccc">       enddo</a>
+   146) <a name="l146" style="background-color: #ffcccc">       ! pack</a>
+   147) <a name="l147" style="background-color: #ffcccc">       call edgeVpack(edge3, frontgf(:,:,:,ie),nlev,0,elem(ie)%desc)</a>
+   148) <a name="l148" style="background-color: #ffcccc">       call edgeVpack(edge3, gradth(:,:,:,:,ie),2*nlev,nlev,elem(ie)%desc)</a>
+   149) <a name="l149" style="background-color: #ffcccc">    enddo</a>
+   150) <a name="l150" style="background-color: #ffcccc">    call bndry_exchangeV(hybrid,edge3)</a>
+   151) <a name="l151" style="background-color: #ffcccc">    do ie=nets,nete</a>
+   152) <a name="l152" style="background-color: #ffcccc">       call edgeVunpack(edge3, frontgf(:,:,:,ie),nlev,0,elem(ie)%desc)</a>
+   153) <a name="l153" style="background-color: #ffcccc">       call edgeVunpack(edge3, gradth(:,:,:,:,ie),2*nlev,nlev,elem(ie)%desc)</a>
+   154) <a name="l154" style="background-color: #ffcccc">       ! apply inverse mass matrix,</a>
+   155) <a name="l155" style="background-color: #ffcccc">       do k=1,nlev</a>
+   156) <a name="l156" style="background-color: #ffcccc">          gradth(:,:,1,k,ie)=gradth(:,:,1,k,ie)*elem(ie)%rspheremp(:,:)</a>
+   157) <a name="l157" style="background-color: #ffcccc">          gradth(:,:,2,k,ie)=gradth(:,:,2,k,ie)*elem(ie)%rspheremp(:,:)</a>
+   158) <a name="l158" style="background-color: #ffcccc">          frontgf(:,:,k,ie)=frontgf(:,:,k,ie)*elem(ie)%rspheremp(:,:)</a>
+   159) <a name="l159" style="background-color: #ffcccc">          </a>
+   160) <a name="l160" style="background-color: #ffcccc">          ! Frontogenesis angle</a>
+   161) <a name="l161" style="background-color: #ffcccc">          frontga(:,:,k,ie) = atan2 ( gradth(:,:,2,k,ie) , gradth(:,:,1,k,ie) + 1.e-10_real_kind )</a>
+   162) <a name="l162" style="background-color: #ffcccc">       enddo</a>
+   163) <a name="l163" style="background-color: #ffcccc">    enddo</a>
+   164) <a name="l164" style="background-color: #ffcccc">  end subroutine compute_frontogenesis</a>
+   165) <a name="l165" style="background-color: #ffffff"></a>
+   166) <a name="l166" style="background-color: #ffffff"></a>
+   167) <a name="l167" style="background-color: #ffffff">end module gravity_waves_sources</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

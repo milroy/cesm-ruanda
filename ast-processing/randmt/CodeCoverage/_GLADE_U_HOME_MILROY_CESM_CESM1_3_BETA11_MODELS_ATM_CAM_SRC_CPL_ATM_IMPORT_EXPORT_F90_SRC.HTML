@@ -1,0 +1,292 @@
+<html>
+<head>
+<title>Listing of atm_import_export.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;atm_import_export.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 62.35&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module atm_import_export</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">  use shr_kind_mod  , only: r8 =&gt; shr_kind_r8, cl=&gt;shr_kind_cl</a>
+     4) <a name="l4" style="background-color: #ffffff">  implicit none</a>
+     5) <a name="l5" style="background-color: #ffffff"></a>
+     6) <a name="l6" style="background-color: #ffffff">contains</a>
+     7) <a name="l7" style="background-color: #ffffff"></a>
+     8) <a name="l8" style="background-color: #ffffff">  subroutine atm_import( x2a, cam_in )</a>
+     9) <a name="l9" style="background-color: #ffffff"></a>
+    10) <a name="l10" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+    11) <a name="l11" style="background-color: #ffffff">    use cam_cpl_indices</a>
+    12) <a name="l12" style="background-color: #ffffff">    use camsrfexch,     only: cam_in_t</a>
+    13) <a name="l13" style="background-color: #ffffff">    use phys_grid ,     only: get_ncols_p</a>
+    14) <a name="l14" style="background-color: #ffffff">    use ppgrid    ,     only: begchunk, endchunk       </a>
+    15) <a name="l15" style="background-color: #ffffff">    use shr_const_mod,  only: shr_const_stebol</a>
+    16) <a name="l16" style="background-color: #ffffff">    use seq_drydep_mod, only: n_drydep</a>
+    17) <a name="l17" style="background-color: #ffffff">    use co2_cycle     , only: c_i, co2_readFlux_ocn, co2_readFlux_fuel</a>
+    18) <a name="l18" style="background-color: #ffffff">    use co2_cycle     , only: co2_transport, co2_time_interp_ocn, co2_time_interp_fuel</a>
+    19) <a name="l19" style="background-color: #ffffff">    use co2_cycle     , only: data_flux_ocn, data_flux_fuel</a>
+    20) <a name="l20" style="background-color: #ffffff">    use physconst     , only: mwco2</a>
+    21) <a name="l21" style="background-color: #ffffff">    use time_manager  , only: is_first_step</a>
+    22) <a name="l22" style="background-color: #ffffff">    !</a>
+    23) <a name="l23" style="background-color: #ffffff">    ! Arguments</a>
+    24) <a name="l24" style="background-color: #ffffff">    !</a>
+    25) <a name="l25" style="background-color: #ffffff">    real(r8)      , intent(in)    :: x2a(:,:)</a>
+    26) <a name="l26" style="background-color: #ffffff">    type(cam_in_t), intent(inout) :: cam_in(begchunk:endchunk)</a>
+    27) <a name="l27" style="background-color: #ffffff">    !</a>
+    28) <a name="l28" style="background-color: #ffffff">    ! Local variables</a>
+    29) <a name="l29" style="background-color: #ffffff">    !		</a>
+    30) <a name="l30" style="background-color: #ffffff">    integer            :: i,lat,n,c,ig  ! indices</a>
+    31) <a name="l31" style="background-color: #ffffff">    integer            :: ncols         ! number of columns</a>
+    32) <a name="l32" style="background-color: #ffffff">    logical, save      :: first_time = .true.</a>
+    33) <a name="l33" style="background-color: #ffffff">    integer, parameter :: ndst = 2</a>
+    34) <a name="l34" style="background-color: #ffffff">    integer, target    :: spc_ndx(ndst)</a>
+    35) <a name="l35" style="background-color: #ffffff">    integer, pointer   :: dst_a5_ndx, dst_a7_ndx</a>
+    36) <a name="l36" style="background-color: #ffffff">    integer, pointer   :: dst_a1_ndx, dst_a3_ndx</a>
+    37) <a name="l37" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+    38) <a name="l38" style="background-color: #ffffff"></a>
+    39) <a name="l39" style="background-color: #ffffff">    ! ccsm sign convention is that fluxes are positive downward</a>
+    40) <a name="l40" style="background-color: #ffffff"></a>
+    41) <a name="l41" style="background-color: #ffffff">    ig=1</a>
+    42) <a name="l42" style="background-color: #ffffff">    do c=begchunk,endchunk</a>
+    43) <a name="l43" style="background-color: #ffffff">       ncols = get_ncols_p(c) </a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">       do i =1,ncols                                                               </a>
+    46) <a name="l46" style="background-color: #ffffff">          cam_in(c)%wsx(i)       = -x2a(index_x2a_Faxx_taux,ig)     </a>
+    47) <a name="l47" style="background-color: #ffffff">          cam_in(c)%wsy(i)       = -x2a(index_x2a_Faxx_tauy,ig)     </a>
+    48) <a name="l48" style="background-color: #ffffff">          cam_in(c)%lhf(i)       = -x2a(index_x2a_Faxx_lat, ig)     </a>
+    49) <a name="l49" style="background-color: #ffffff">          cam_in(c)%shf(i)       = -x2a(index_x2a_Faxx_sen, ig)     </a>
+    50) <a name="l50" style="background-color: #ffffff">          cam_in(c)%lwup(i)      = -x2a(index_x2a_Faxx_lwup,ig)    </a>
+    51) <a name="l51" style="background-color: #ffffff">          cam_in(c)%cflx(i,1)    = -x2a(index_x2a_Faxx_evap,ig)                </a>
+    52) <a name="l52" style="background-color: #ffffff">          cam_in(c)%asdir(i)     =  x2a(index_x2a_Sx_avsdr, ig)  </a>
+    53) <a name="l53" style="background-color: #ffffff">          cam_in(c)%aldir(i)     =  x2a(index_x2a_Sx_anidr, ig)  </a>
+    54) <a name="l54" style="background-color: #ffffff">          cam_in(c)%asdif(i)     =  x2a(index_x2a_Sx_avsdf, ig)  </a>
+    55) <a name="l55" style="background-color: #ffffff">          cam_in(c)%aldif(i)     =  x2a(index_x2a_Sx_anidf, ig)</a>
+    56) <a name="l56" style="background-color: #ffffff">          cam_in(c)%ts(i)        =  x2a(index_x2a_Sx_t,     ig)  </a>
+    57) <a name="l57" style="background-color: #ffffff">          cam_in(c)%sst(i)       =  x2a(index_x2a_So_t,     ig)             </a>
+    58) <a name="l58" style="background-color: #ffffff">          cam_in(c)%snowhland(i) =  x2a(index_x2a_Sl_snowh, ig)  </a>
+    59) <a name="l59" style="background-color: #ffffff">          cam_in(c)%snowhice(i)  =  x2a(index_x2a_Si_snowh, ig)  </a>
+    60) <a name="l60" style="background-color: #ffffff">          cam_in(c)%tref(i)      =  x2a(index_x2a_Sx_tref,  ig)  </a>
+    61) <a name="l61" style="background-color: #ffffff">          cam_in(c)%qref(i)      =  x2a(index_x2a_Sx_qref,  ig)</a>
+    62) <a name="l62" style="background-color: #ffffff">          cam_in(c)%u10(i)       =  x2a(index_x2a_Sx_u10,   ig)</a>
+    63) <a name="l63" style="background-color: #ffffff">          cam_in(c)%icefrac(i)   =  x2a(index_x2a_Sf_ifrac, ig)  </a>
+    64) <a name="l64" style="background-color: #ffffff">          cam_in(c)%ocnfrac(i)   =  x2a(index_x2a_Sf_ofrac, ig)</a>
+    65) <a name="l65" style="background-color: #ffffff">	  cam_in(c)%landfrac(i)  =  x2a(index_x2a_Sf_lfrac, ig)</a>
+    66) <a name="l66" style="background-color: #ffffff">          if ( </a><a style="background-color: #fafad2">associated(cam_in(c)%ram1) ) &amp;</a>
+    67) <a name="l67" style="background-color: #ffffff">               cam_in(c)%ram1(i) =  x2a(index_x2a_Sl_ram1 , ig)</a>
+    68) <a name="l68" style="background-color: #ffffff">          if ( </a><a style="background-color: #fafad2">associated(cam_in(c)%fv) ) &amp;</a>
+    69) <a name="l69" style="background-color: #ffffff">               cam_in(c)%fv(i)   =  x2a(index_x2a_Sl_fv   , ig)</a>
+    70) <a name="l70" style="background-color: #ffffff">          if ( </a><a style="background-color: #fafad2">associated(cam_in(c)%soilw) ) &amp;</a>
+    71) <a name="l71" style="background-color: #ffff99">               cam_in(c)%soilw(i) =  x2a(index_x2a_Sl_soilw, ig)</a>
+    72) <a name="l72" style="background-color: #ffffff">          if ( </a><a style="background-color: #fafad2">associated(cam_in(c)%dstflx) ) then</a>
+    73) <a name="l73" style="background-color: #ffffff">             cam_in(c)%dstflx(i,1) = x2a(index_x2a_Fall_flxdst1, ig)</a>
+    74) <a name="l74" style="background-color: #ffffff">             cam_in(c)%dstflx(i,2) = x2a(index_x2a_Fall_flxdst2, ig)</a>
+    75) <a name="l75" style="background-color: #ffffff">             cam_in(c)%dstflx(i,3) = x2a(index_x2a_Fall_flxdst3, ig)</a>
+    76) <a name="l76" style="background-color: #ffffff">             cam_in(c)%dstflx(i,4) = x2a(index_x2a_Fall_flxdst4, ig)</a>
+    77) <a name="l77" style="background-color: #ffffff">          endif</a>
+    78) <a name="l78" style="background-color: #ffffff">          if ( </a><a style="background-color: #fafad2">associated(cam_in(c)%meganflx) ) then</a>
+    79) <a name="l79" style="background-color: #ffff99">             cam_in(c)%meganflx(i,1:shr_megan_mechcomps_n) = &amp;</a>
+    80) <a name="l80" style="background-color: #ffff99">                  x2a(index_x2a_Fall_flxvoc:index_x2a_Fall_flxvoc+shr_megan_mechcomps_n-1, ig)</a>
+    81) <a name="l81" style="background-color: #ffff99">          endif</a>
+    82) <a name="l82" style="background-color: #ffff99"></a>
+    83) <a name="l83" style="background-color: #ffff99">          ! dry dep velocities</a>
+    84) <a name="l84" style="background-color: #ffffff">          if ( index_x2a_Sl_ddvel/=0 .and. n_drydep&gt;0 ) then</a>
+    85) <a name="l85" style="background-color: #ffffff">             cam_in(c)%depvel(i,:n_drydep) = &amp;</a>
+    86) <a name="l86" style="background-color: #ffffff">                  x2a(index_x2a_Sl_ddvel:index_x2a_Sl_ddvel+n_drydep-1, ig)</a>
+    87) <a name="l87" style="background-color: #ffffff">          endif</a>
+    88) <a name="l88" style="background-color: #ffffff">          !</a>
+    89) <a name="l89" style="background-color: #ffffff">          ! fields needed to calculate water isotopes to ocean evaporation processes</a>
+    90) <a name="l90" style="background-color: #ffffff">          !</a>
+    91) <a name="l91" style="background-color: #ffffff">          cam_in(c)%ustar(i) = x2a(index_x2a_So_ustar,ig)</a>
+    92) <a name="l92" style="background-color: #ffffff">          cam_in(c)%re(i)    = x2a(index_x2a_So_re   ,ig)</a>
+    93) <a name="l93" style="background-color: #ffffff">          cam_in(c)%ssq(i)   = x2a(index_x2a_So_ssq  ,ig)</a>
+    94) <a name="l94" style="background-color: #ffffff">          !</a>
+    95) <a name="l95" style="background-color: #ffffff">          ! bgc scenarios</a>
+    96) <a name="l96" style="background-color: #ffffff">          !</a>
+    97) <a name="l97" style="background-color: #ffffff">          if (index_x2a_Fall_fco2_lnd /= 0) then</a>
+    98) <a name="l98" style="background-color: #ffff99">             cam_in(c)%fco2_lnd(i) = -x2a(index_x2a_Fall_fco2_lnd,ig)</a>
+    99) <a name="l99" style="background-color: #ffff99">          end if</a>
+   100) <a name="l100" style="background-color: #ffffff">          if (index_x2a_Faoo_fco2_ocn /= 0) then</a>
+   101) <a name="l101" style="background-color: #ffff99">             cam_in(c)%fco2_ocn(i) = -x2a(index_x2a_Faoo_fco2_ocn,ig)</a>
+   102) <a name="l102" style="background-color: #ffff99">          end if</a>
+   103) <a name="l103" style="background-color: #ffffff">          if (index_x2a_Faoo_fdms_ocn /= 0) then</a>
+   104) <a name="l104" style="background-color: #ffff99">             cam_in(c)%fdms(i)     = -x2a(index_x2a_Faoo_fdms_ocn,ig)</a>
+   105) <a name="l105" style="background-color: #ffff99">          end if</a>
+   106) <a name="l106" style="background-color: #ffff99"></a>
+   107) <a name="l107" style="background-color: #ffff99">          ig=ig+1</a>
+   108) <a name="l108" style="background-color: #ffff99"></a>
+   109) <a name="l109" style="background-color: #ffff99">       end do</a>
+   110) <a name="l110" style="background-color: #ffff99">    end do</a>
+   111) <a name="l111" style="background-color: #ffff99"></a>
+   112) <a name="l112" style="background-color: #ffff99">    ! Get total co2 flux from components,</a>
+   113) <a name="l113" style="background-color: #ffff99">    ! Note - co2_transport determines if cam_in(c)%cflx(i,c_i(1:4)) is allocated</a>
+   114) <a name="l114" style="background-color: #ffff99"></a>
+   115) <a name="l115" style="background-color: #ffff99">    if (</a><a style="background-color: #ffffff">co2_transport()) then</a>
+   116) <a name="l116" style="background-color: #ffffff"></a>
+   117) <a name="l117" style="background-color: #ffffff">       ! Interpolate in time for flux data read in</a>
+   118) <a name="l118" style="background-color: #ffff99">       if (co2_readFlux_ocn) then</a>
+   119) <a name="l119" style="background-color: #ffff99">          call co2_time_interp_ocn</a>
+   120) <a name="l120" style="background-color: #ffff99">       end if</a>
+   121) <a name="l121" style="background-color: #ffff99">       if (co2_readFlux_fuel) then</a>
+   122) <a name="l122" style="background-color: #ffff99">          call co2_time_interp_fuel</a>
+   123) <a name="l123" style="background-color: #ffff99">       end if</a>
+   124) <a name="l124" style="background-color: #ffff99">       </a>
+   125) <a name="l125" style="background-color: #ffff99">       ! from ocn : data read in or from coupler or zero</a>
+   126) <a name="l126" style="background-color: #ffff99">       ! from fuel: data read in or zero</a>
+   127) <a name="l127" style="background-color: #ffff99">       ! from lnd : through coupler or zero</a>
+   128) <a name="l128" style="background-color: #ffff99">       do c=begchunk,endchunk</a>
+   129) <a name="l129" style="background-color: #ffff99">          ncols = get_ncols_p(c)                                                 </a>
+   130) <a name="l130" style="background-color: #ffff99">          do i=1,ncols                                                               </a>
+   131) <a name="l131" style="background-color: #ffff99">             </a>
+   132) <a name="l132" style="background-color: #ffff99">             ! all co2 fluxes in unit kgCO2/m2/s ! co2 flux from ocn </a>
+   133) <a name="l133" style="background-color: #ffff99">             if (index_x2a_Faoo_fco2_ocn /= 0) then</a>
+   134) <a name="l134" style="background-color: #ffff99">                cam_in(c)%cflx(i,c_i(1)) = cam_in(c)%fco2_ocn(i)</a>
+   135) <a name="l135" style="background-color: #ffff99">             else if (co2_readFlux_ocn) then </a>
+   136) <a name="l136" style="background-color: #ffff99">                ! convert from molesCO2/m2/s to kgCO2/m2/s</a>
+   137) <a name="l137" style="background-color: #ffff99">                cam_in(c)%cflx(i,c_i(1)) = &amp;</a>
+   138) <a name="l138" style="background-color: #ffff99">                     -data_flux_ocn%co2flx(i,c)*(1._r8- cam_in(c)%landfrac(i)) &amp;</a>
+   139) <a name="l139" style="background-color: #ffff99">                     *mwco2*1.0e-3_r8</a>
+   140) <a name="l140" style="background-color: #ffff99">             else</a>
+   141) <a name="l141" style="background-color: #ffff99">                cam_in(c)%cflx(i,c_i(1)) = 0._r8</a>
+   142) <a name="l142" style="background-color: #ffff99">             end if</a>
+   143) <a name="l143" style="background-color: #ffff99">             </a>
+   144) <a name="l144" style="background-color: #ffff99">             ! co2 flux from fossil fuel</a>
+   145) <a name="l145" style="background-color: #ffff99">             if (co2_readFlux_fuel) then</a>
+   146) <a name="l146" style="background-color: #ffff99">                cam_in(c)%cflx(i,c_i(2)) = data_flux_fuel%co2flx(i,c)</a>
+   147) <a name="l147" style="background-color: #ffff99">             else</a>
+   148) <a name="l148" style="background-color: #ffff99">                cam_in(c)%cflx(i,c_i(2)) = 0._r8</a>
+   149) <a name="l149" style="background-color: #ffff99">             end if</a>
+   150) <a name="l150" style="background-color: #ffff99">             </a>
+   151) <a name="l151" style="background-color: #ffff99">             ! co2 flux from land (cpl already multiplies flux by land fraction)</a>
+   152) <a name="l152" style="background-color: #ffff99">             if (index_x2a_Fall_fco2_lnd /= 0) then</a>
+   153) <a name="l153" style="background-color: #ffff99">                cam_in(c)%cflx(i,c_i(3)) = cam_in(c)%fco2_lnd(i)</a>
+   154) <a name="l154" style="background-color: #ffff99">             else</a>
+   155) <a name="l155" style="background-color: #ffff99">                cam_in(c)%cflx(i,c_i(3)) = 0._r8</a>
+   156) <a name="l156" style="background-color: #ffff99">             end if</a>
+   157) <a name="l157" style="background-color: #ffff99">             </a>
+   158) <a name="l158" style="background-color: #ffff99">             ! merged co2 flux</a>
+   159) <a name="l159" style="background-color: #ffff99">             cam_in(c)%cflx(i,c_i(4)) = cam_in(c)%cflx(i,c_i(1)) + &amp;</a>
+   160) <a name="l160" style="background-color: #ffff99">                                        cam_in(c)%cflx(i,c_i(2)) + &amp;</a>
+   161) <a name="l161" style="background-color: #ffff99">                                        cam_in(c)%cflx(i,c_i(3))</a>
+   162) <a name="l162" style="background-color: #ffff99">          end do</a>
+   163) <a name="l163" style="background-color: #ffff99">       end do</a>
+   164) <a name="l164" style="background-color: #ffff99">    end if</a>
+   165) <a name="l165" style="background-color: #ffff99">    !</a>
+   166) <a name="l166" style="background-color: #ffff99">    ! if first step, determine longwave up flux from the surface temperature </a>
+   167) <a name="l167" style="background-color: #ffff99">    !</a>
+   168) <a name="l168" style="background-color: #ffffff">    if (first_time) then</a>
+   169) <a name="l169" style="background-color: #ffffff">       if (is_first_step()) then</a>
+   170) <a name="l170" style="background-color: #ffffff">          do c=begchunk, endchunk</a>
+   171) <a name="l171" style="background-color: #ffffff">             ncols = get_ncols_p(c)</a>
+   172) <a name="l172" style="background-color: #ffffff">             do i=1,ncols</a>
+   173) <a name="l173" style="background-color: #ffffff">                cam_in(c)%lwup(i) = shr_const_stebol*(cam_in(c)%ts(i)**4)</a>
+   174) <a name="l174" style="background-color: #ffffff">             end do</a>
+   175) <a name="l175" style="background-color: #ffffff">          end do</a>
+   176) <a name="l176" style="background-color: #ffffff">       end if</a>
+   177) <a name="l177" style="background-color: #ffffff">       first_time = .false.</a>
+   178) <a name="l178" style="background-color: #ffffff">    end if</a>
+   179) <a name="l179" style="background-color: #ffffff"></a>
+   180) <a name="l180" style="background-color: #ffffff">  end subroutine atm_import</a>
+   181) <a name="l181" style="background-color: #ffffff"></a>
+   182) <a name="l182" style="background-color: #ffffff">  !===============================================================================</a>
+   183) <a name="l183" style="background-color: #ffffff"></a>
+   184) <a name="l184" style="background-color: #ffffff">  subroutine atm_export( cam_out, a2x )</a>
+   185) <a name="l185" style="background-color: #ffffff"></a>
+   186) <a name="l186" style="background-color: #ffffff">    !-------------------------------------------------------------------</a>
+   187) <a name="l187" style="background-color: #ffffff">    use camsrfexch, only: cam_out_t</a>
+   188) <a name="l188" style="background-color: #ffffff">    use phys_grid , only: get_ncols_p</a>
+   189) <a name="l189" style="background-color: #ffffff">    use ppgrid    , only: begchunk, endchunk       </a>
+   190) <a name="l190" style="background-color: #ffffff">    use cam_cpl_indices</a>
+   191) <a name="l191" style="background-color: #ffffff">    !</a>
+   192) <a name="l192" style="background-color: #ffffff">    ! Arguments</a>
+   193) <a name="l193" style="background-color: #ffffff">    !</a>
+   194) <a name="l194" style="background-color: #ffffff">    type(cam_out_t), intent(in)    :: cam_out(begchunk:endchunk) </a>
+   195) <a name="l195" style="background-color: #ffffff">    real(r8)       , intent(inout) :: a2x(:,:)</a>
+   196) <a name="l196" style="background-color: #ffffff">    !</a>
+   197) <a name="l197" style="background-color: #ffffff">    ! Local variables</a>
+   198) <a name="l198" style="background-color: #ffffff">    !</a>
+   199) <a name="l199" style="background-color: #ffffff">    integer :: avsize, avnat</a>
+   200) <a name="l200" style="background-color: #ffffff">    integer :: i,m,c,n,ig       ! indices</a>
+   201) <a name="l201" style="background-color: #ffffff">    integer :: ncols            ! Number of columns</a>
+   202) <a name="l202" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   203) <a name="l203" style="background-color: #ffffff"></a>
+   204) <a name="l204" style="background-color: #ffffff">    ! Copy from component arrays into chunk array data structure</a>
+   205) <a name="l205" style="background-color: #ffffff">    ! Rearrange data from chunk structure into lat-lon buffer and subsequently</a>
+   206) <a name="l206" style="background-color: #ffffff">    ! create attribute vector</a>
+   207) <a name="l207" style="background-color: #ffffff"></a>
+   208) <a name="l208" style="background-color: #ffffff">    ig=1</a>
+   209) <a name="l209" style="background-color: #ffffff">    do c=begchunk, endchunk</a>
+   210) <a name="l210" style="background-color: #ffffff">       ncols = get_ncols_p(c)</a>
+   211) <a name="l211" style="background-color: #ffffff">       do i=1,ncols</a>
+   212) <a name="l212" style="background-color: #ffffff">          a2x(index_a2x_Sa_pslv   ,ig) = cam_out(c)%psl(i)</a>
+   213) <a name="l213" style="background-color: #ffffff">          a2x(index_a2x_Sa_z      ,ig) = cam_out(c)%zbot(i)   </a>
+   214) <a name="l214" style="background-color: #ffffff">          a2x(index_a2x_Sa_u      ,ig) = cam_out(c)%ubot(i)   </a>
+   215) <a name="l215" style="background-color: #ffffff">          a2x(index_a2x_Sa_v      ,ig) = cam_out(c)%vbot(i)   </a>
+   216) <a name="l216" style="background-color: #ffffff">          a2x(index_a2x_Sa_tbot   ,ig) = cam_out(c)%tbot(i)   </a>
+   217) <a name="l217" style="background-color: #ffffff">          a2x(index_a2x_Sa_ptem   ,ig) = cam_out(c)%thbot(i)  </a>
+   218) <a name="l218" style="background-color: #ffffff">          a2x(index_a2x_Sa_pbot   ,ig) = cam_out(c)%pbot(i)   </a>
+   219) <a name="l219" style="background-color: #ffffff">          a2x(index_a2x_Sa_shum   ,ig) = cam_out(c)%qbot(i,1) </a>
+   220) <a name="l220" style="background-color: #ffffff">	  a2x(index_a2x_Sa_dens   ,ig) = cam_out(c)%rho(i)</a>
+   221) <a name="l221" style="background-color: #ffffff">          a2x(index_a2x_Faxa_swnet,ig) = cam_out(c)%netsw(i)      </a>
+   222) <a name="l222" style="background-color: #ffffff">          a2x(index_a2x_Faxa_lwdn ,ig) = cam_out(c)%flwds(i)  </a>
+   223) <a name="l223" style="background-color: #ffffff">          a2x(index_a2x_Faxa_rainc,ig) = (cam_out(c)%precc(i)-cam_out(c)%precsc(i))*1000._r8</a>
+   224) <a name="l224" style="background-color: #ffffff">          a2x(index_a2x_Faxa_rainl,ig) = (cam_out(c)%precl(i)-cam_out(c)%precsl(i))*1000._r8</a>
+   225) <a name="l225" style="background-color: #ffffff">          a2x(index_a2x_Faxa_snowc,ig) = cam_out(c)%precsc(i)*1000._r8</a>
+   226) <a name="l226" style="background-color: #ffffff">          a2x(index_a2x_Faxa_snowl,ig) = cam_out(c)%precsl(i)*1000._r8</a>
+   227) <a name="l227" style="background-color: #ffffff">          a2x(index_a2x_Faxa_swndr,ig) = cam_out(c)%soll(i)   </a>
+   228) <a name="l228" style="background-color: #ffffff">          a2x(index_a2x_Faxa_swvdr,ig) = cam_out(c)%sols(i)   </a>
+   229) <a name="l229" style="background-color: #ffffff">          a2x(index_a2x_Faxa_swndf,ig) = cam_out(c)%solld(i)  </a>
+   230) <a name="l230" style="background-color: #ffffff">          a2x(index_a2x_Faxa_swvdf,ig) = cam_out(c)%solsd(i)  </a>
+   231) <a name="l231" style="background-color: #ffffff"></a>
+   232) <a name="l232" style="background-color: #ffffff">          ! aerosol deposition fluxes</a>
+   233) <a name="l233" style="background-color: #ffffff">          a2x(index_a2x_Faxa_bcphidry,ig) = cam_out(c)%bcphidry(i)</a>
+   234) <a name="l234" style="background-color: #ffffff">          a2x(index_a2x_Faxa_bcphodry,ig) = cam_out(c)%bcphodry(i)</a>
+   235) <a name="l235" style="background-color: #ffffff">          a2x(index_a2x_Faxa_bcphiwet,ig) = cam_out(c)%bcphiwet(i)</a>
+   236) <a name="l236" style="background-color: #ffffff">          a2x(index_a2x_Faxa_ocphidry,ig) = cam_out(c)%ocphidry(i)</a>
+   237) <a name="l237" style="background-color: #ffffff">          a2x(index_a2x_Faxa_ocphodry,ig) = cam_out(c)%ocphodry(i)</a>
+   238) <a name="l238" style="background-color: #ffffff">          a2x(index_a2x_Faxa_ocphiwet,ig) = cam_out(c)%ocphiwet(i)</a>
+   239) <a name="l239" style="background-color: #ffffff">          a2x(index_a2x_Faxa_dstwet1,ig)  = cam_out(c)%dstwet1(i)</a>
+   240) <a name="l240" style="background-color: #ffffff">          a2x(index_a2x_Faxa_dstdry1,ig)  = cam_out(c)%dstdry1(i)</a>
+   241) <a name="l241" style="background-color: #ffffff">          a2x(index_a2x_Faxa_dstwet2,ig)  = cam_out(c)%dstwet2(i)</a>
+   242) <a name="l242" style="background-color: #ffffff">          a2x(index_a2x_Faxa_dstdry2,ig)  = cam_out(c)%dstdry2(i)</a>
+   243) <a name="l243" style="background-color: #ffffff">          a2x(index_a2x_Faxa_dstwet3,ig)  = cam_out(c)%dstwet3(i)</a>
+   244) <a name="l244" style="background-color: #ffffff">          a2x(index_a2x_Faxa_dstdry3,ig)  = cam_out(c)%dstdry3(i)</a>
+   245) <a name="l245" style="background-color: #ffffff">          a2x(index_a2x_Faxa_dstwet4,ig)  = cam_out(c)%dstwet4(i)</a>
+   246) <a name="l246" style="background-color: #ffffff">          a2x(index_a2x_Faxa_dstdry4,ig)  = cam_out(c)%dstdry4(i)</a>
+   247) <a name="l247" style="background-color: #ffffff"></a>
+   248) <a name="l248" style="background-color: #ffffff">          if (index_a2x_Sa_co2prog /= 0) then</a>
+   249) <a name="l249" style="background-color: #ffffff">             a2x(index_a2x_Sa_co2prog,ig) = cam_out(c)%co2prog(i) ! atm prognostic co2</a>
+   250) <a name="l250" style="background-color: #ffffff">          end if</a>
+   251) <a name="l251" style="background-color: #ffffff">          if (index_a2x_Sa_co2diag /= 0) then</a>
+   252) <a name="l252" style="background-color: #ffffff">             a2x(index_a2x_Sa_co2diag,ig) = cam_out(c)%co2diag(i) ! atm diagnostic co2</a>
+   253) <a name="l253" style="background-color: #ffffff">          end if</a>
+   254) <a name="l254" style="background-color: #ffffff"></a>
+   255) <a name="l255" style="background-color: #ffffff">          ig=ig+1</a>
+   256) <a name="l256" style="background-color: #ffffff">       end do</a>
+   257) <a name="l257" style="background-color: #ffffff">    end do</a>
+   258) <a name="l258" style="background-color: #ffffff">    </a>
+   259) <a name="l259" style="background-color: #ffffff">  end subroutine atm_export </a>
+   260) <a name="l260" style="background-color: #ffffff"></a>
+   261) <a name="l261" style="background-color: #ffffff">end module atm_import_export</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

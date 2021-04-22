@@ -1,0 +1,1074 @@
+<html>
+<head>
+<title>Listing of shr_spfn_mod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;shr_spfn_mod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 27.27&#160;%func&#160;&#160;&#160;&#160;  6.33&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff"></a>
+     2) <a name="l2" style="background-color: #ffffff">! Define flags for compilers supporting Fortran 2008 intrinsics</a>
+     3) <a name="l3" style="background-color: #ffffff">! HAVE_GAMMA_INTRINSICS: gamma and log_gamma</a>
+     4) <a name="l4" style="background-color: #ffffff">! HAVE_ERF_INTRINSICS: erf, erfc, and erfc_scaled</a>
+     5) <a name="l5" style="background-color: #ffffff">! erfc_scaled(x) = (exp(x**2)*erfc(x))</a>
+     6) <a name="l6" style="background-color: #ffffff"></a>
+     7) <a name="l7" style="background-color: #ffffff">! Use this flag for compilers that don't have real intrinsics, but link in</a>
+     8) <a name="l8" style="background-color: #ffffff">! a library for you.</a>
+     9) <a name="l9" style="background-color: #ffffff">! HAVE_ERF_EXTERNALS: erf and erfc</a>
+    10) <a name="l10" style="background-color: #ffffff"></a>
+    11) <a name="l11" style="background-color: #ffffff">! These compilers have the intrinsics.</a>
+    12) <a name="l12" style="background-color: #ffffff">#if defined CPRIBM || defined CPRINTEL || defined __GFORTRAN__ || defined CPRCRAY</a>
+    13) <a name="l13" style="background-color: #ffffff">#define HAVE_GAMMA_INTRINSICS</a>
+    14) <a name="l14" style="background-color: #ffffff">#define HAVE_ERF_INTRINSICS</a>
+    15) <a name="l15" style="background-color: #ffffff">#endif</a>
+    16) <a name="l16" style="background-color: #ffffff"></a>
+    17) <a name="l17" style="background-color: #ffffff">! PGI has external erf/derf and erfc/derfc, and will link them for you, but</a>
+    18) <a name="l18" style="background-color: #ffffff">! it does not consider them &quot;intrinsics&quot; right now.</a>
+    19) <a name="l19" style="background-color: #ffffff">#if defined CPRPGI</a>
+    20) <a name="l20" style="background-color: #ffffff">#define HAVE_ERF_EXTERNALS</a>
+    21) <a name="l21" style="background-color: #ffffff">#endif</a>
+    22) <a name="l22" style="background-color: #ffffff"></a>
+    23) <a name="l23" style="background-color: #ffffff">! As of 5.3.1, NAG does not have any of these.</a>
+    24) <a name="l24" style="background-color: #ffffff"></a>
+    25) <a name="l25" style="background-color: #ffffff">module shr_spfn_mod</a>
+    26) <a name="l26" style="background-color: #ffffff">! Module for common mathematical functions</a>
+    27) <a name="l27" style="background-color: #ffffff"></a>
+    28) <a name="l28" style="background-color: #ffffff">! This #ifdef is to allow the module to be compiled with no dependencies,</a>
+    29) <a name="l29" style="background-color: #ffffff">! even on shr_kind_mod.</a>
+    30) <a name="l30" style="background-color: #ffffff">#ifndef NO_CSM_SHARE</a>
+    31) <a name="l31" style="background-color: #ffffff">use shr_kind_mod, only: &amp;</a>
+    32) <a name="l32" style="background-color: #ffffff">     r4 =&gt; shr_kind_r4, &amp;</a>
+    33) <a name="l33" style="background-color: #ffffff">     r8 =&gt; shr_kind_r8</a>
+    34) <a name="l34" style="background-color: #ffffff">use shr_const_mod, only: &amp;</a>
+    35) <a name="l35" style="background-color: #ffffff">     pi =&gt; shr_const_pi</a>
+    36) <a name="l36" style="background-color: #ffffff">#endif</a>
+    37) <a name="l37" style="background-color: #ffffff"></a>
+    38) <a name="l38" style="background-color: #ffffff">implicit none</a>
+    39) <a name="l39" style="background-color: #ffffff">private</a>
+    40) <a name="l40" style="background-color: #ffffff">save</a>
+    41) <a name="l41" style="background-color: #ffffff"></a>
+    42) <a name="l42" style="background-color: #ffffff">#ifdef NO_CSM_SHARE</a>
+    43) <a name="l43" style="background-color: #ffffff">integer, parameter :: r4 = selected_real_kind(6)  ! 4 byte real</a>
+    44) <a name="l44" style="background-color: #ffffff">integer, parameter :: r8 = selected_real_kind(12) ! 8 byte real</a>
+    45) <a name="l45" style="background-color: #ffffff">real(r8), parameter :: pi = 3.1415926535897932384626434E0_r8</a>
+    46) <a name="l46" style="background-color: #ffffff">#endif</a>
+    47) <a name="l47" style="background-color: #ffffff"></a>
+    48) <a name="l48" style="background-color: #ffffff">! Error functions</a>
+    49) <a name="l49" style="background-color: #ffffff">public :: shr_spfn_erf</a>
+    50) <a name="l50" style="background-color: #ffffff">public :: shr_spfn_erfc</a>
+    51) <a name="l51" style="background-color: #ffffff">public :: shr_spfn_erfc_scaled</a>
+    52) <a name="l52" style="background-color: #ffffff"></a>
+    53) <a name="l53" style="background-color: #ffffff">interface shr_spfn_erf</a>
+    54) <a name="l54" style="background-color: #ffffff">   module procedure shr_spfn_erf_r4</a>
+    55) <a name="l55" style="background-color: #ffffff">   module procedure shr_spfn_erf_r8</a>
+    56) <a name="l56" style="background-color: #ffffff">end interface</a>
+    57) <a name="l57" style="background-color: #ffffff"></a>
+    58) <a name="l58" style="background-color: #ffffff">interface shr_spfn_erfc</a>
+    59) <a name="l59" style="background-color: #ffffff">   module procedure shr_spfn_erfc_r4</a>
+    60) <a name="l60" style="background-color: #ffffff">   module procedure shr_spfn_erfc_r8</a>
+    61) <a name="l61" style="background-color: #ffffff">end interface</a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">interface shr_spfn_erfc_scaled</a>
+    64) <a name="l64" style="background-color: #ffffff">   module procedure shr_spfn_erfc_scaled_r4</a>
+    65) <a name="l65" style="background-color: #ffffff">   module procedure shr_spfn_erfc_scaled_r8</a>
+    66) <a name="l66" style="background-color: #ffffff">end interface</a>
+    67) <a name="l67" style="background-color: #ffffff"></a>
+    68) <a name="l68" style="background-color: #ffffff">! Gamma functions</a>
+    69) <a name="l69" style="background-color: #ffffff">! Note that we lack an implementation of log_gamma, but we do have an</a>
+    70) <a name="l70" style="background-color: #ffffff">! implementation of the upper incomplete gamma function, which is not in</a>
+    71) <a name="l71" style="background-color: #ffffff">! Fortran 2008.</a>
+    72) <a name="l72" style="background-color: #ffffff"></a>
+    73) <a name="l73" style="background-color: #ffffff">! Note also that this gamma function is only for double precision. We</a>
+    74) <a name="l74" style="background-color: #ffffff">! haven't needed an r4 version yet.</a>
+    75) <a name="l75" style="background-color: #ffffff"></a>
+    76) <a name="l76" style="background-color: #ffffff">public :: shr_spfn_gamma</a>
+    77) <a name="l77" style="background-color: #ffffff">public :: shr_spfn_igamma</a>
+    78) <a name="l78" style="background-color: #ffffff"></a>
+    79) <a name="l79" style="background-color: #ffffff">interface shr_spfn_gamma</a>
+    80) <a name="l80" style="background-color: #ffffff">   module procedure shr_spfn_gamma_r8</a>
+    81) <a name="l81" style="background-color: #ffffff">end interface</a>
+    82) <a name="l82" style="background-color: #ffffff"></a>
+    83) <a name="l83" style="background-color: #ffffff">! Mathematical constants</a>
+    84) <a name="l84" style="background-color: #ffffff">! sqrt(pi)</a>
+    85) <a name="l85" style="background-color: #ffffff">real(r8), parameter :: sqrtpi = 1.77245385090551602729_r8</a>
+    86) <a name="l86" style="background-color: #ffffff"></a>
+    87) <a name="l87" style="background-color: #ffffff">! Define machine-specific constants needed in this module.</a>
+    88) <a name="l88" style="background-color: #ffffff">! These were used by the original gamma and calerf functions to guarantee</a>
+    89) <a name="l89" style="background-color: #ffffff">! safety against overflow, and precision, on many different machines.</a>
+    90) <a name="l90" style="background-color: #ffffff"></a>
+    91) <a name="l91" style="background-color: #ffffff">! By defining the constants in this way, we assume that 1/xmin is</a>
+    92) <a name="l92" style="background-color: #ffffff">! representable (i.e. does not overflow the real type). This assumption was</a>
+    93) <a name="l93" style="background-color: #ffffff">! not in the original code, but is valid for IEEE single and double</a>
+    94) <a name="l94" style="background-color: #ffffff">! precision.</a>
+    95) <a name="l95" style="background-color: #ffffff"></a>
+    96) <a name="l96" style="background-color: #ffffff">! Double precision</a>
+    97) <a name="l97" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+    98) <a name="l98" style="background-color: #ffffff">! Machine epsilon</a>
+    99) <a name="l99" style="background-color: #ffffff">real(r8), parameter :: epsr8 = epsilon(1._r8)</a>
+   100) <a name="l100" style="background-color: #ffffff">! &quot;Huge&quot; value is returned when actual value would be infinite.</a>
+   101) <a name="l101" style="background-color: #ffffff">real(r8), parameter :: xinfr8 = huge(1._r8)</a>
+   102) <a name="l102" style="background-color: #ffffff">! Smallest normal value.</a>
+   103) <a name="l103" style="background-color: #ffffff">real(r8), parameter :: xminr8 = tiny(1._r8)</a>
+   104) <a name="l104" style="background-color: #ffffff">! Largest number that, when added to 1., yields 1.</a>
+   105) <a name="l105" style="background-color: #ffffff">real(r8), parameter :: xsmallr8 = epsr8/2._r8</a>
+   106) <a name="l106" style="background-color: #ffffff">! Largest argument for which erfcx &gt; 0.</a>
+   107) <a name="l107" style="background-color: #ffffff">real(r8), parameter :: xmaxr8 = 1._r8/(sqrtpi*xminr8)</a>
+   108) <a name="l108" style="background-color: #ffffff"></a>
+   109) <a name="l109" style="background-color: #ffffff">! Single precision</a>
+   110) <a name="l110" style="background-color: #ffffff">!---------------------------------------------------------------------</a>
+   111) <a name="l111" style="background-color: #ffffff">! Machine epsilon</a>
+   112) <a name="l112" style="background-color: #ffffff">real(r4), parameter :: epsr4 = epsilon(1._r4)</a>
+   113) <a name="l113" style="background-color: #ffffff">! &quot;Huge&quot; value is returned when actual value would be infinite.</a>
+   114) <a name="l114" style="background-color: #ffffff">real(r4), parameter :: xinfr4 = huge(1._r4)</a>
+   115) <a name="l115" style="background-color: #ffffff">! Smallest normal value.</a>
+   116) <a name="l116" style="background-color: #ffffff">real(r4), parameter :: xminr4 = tiny(1._r4)</a>
+   117) <a name="l117" style="background-color: #ffffff">! Largest number that, when added to 1., yields 1.</a>
+   118) <a name="l118" style="background-color: #ffffff">real(r4), parameter :: xsmallr4 = epsr4/2._r4</a>
+   119) <a name="l119" style="background-color: #ffffff">! Largest argument for which erfcx &gt; 0.</a>
+   120) <a name="l120" style="background-color: #ffffff">real(r4), parameter :: xmaxr4 = 1._r4/(real(sqrtpi,r4)*xminr4)</a>
+   121) <a name="l121" style="background-color: #ffffff"></a>
+   122) <a name="l122" style="background-color: #ffffff"></a>
+   123) <a name="l123" style="background-color: #ffffff">! For gamma/igamma</a>
+   124) <a name="l124" style="background-color: #ffffff">! Approximate value of largest acceptable argument to gamma,</a>
+   125) <a name="l125" style="background-color: #ffffff">! for IEEE double-precision.</a>
+   126) <a name="l126" style="background-color: #ffffff">real(r8), parameter :: xbig_gamma = 171.624_r8</a>
+   127) <a name="l127" style="background-color: #ffffff"></a>
+   128) <a name="l128" style="background-color: #ffffff">contains</a>
+   129) <a name="l129" style="background-color: #ffffff"></a>
+   130) <a name="l130" style="background-color: #ffffff">! Wrapper functions for erf</a>
+   131) <a name="l131" style="background-color: #ffffff">function </a><a style="background-color: #ffcccc">shr_spfn_erf_r4(x) result(res)</a>
+   132) <a name="l132" style="background-color: #ffcccc">  real(r4), intent(in) :: x</a>
+   133) <a name="l133" style="background-color: #ffcccc">  real(r4) :: res</a>
+   134) <a name="l134" style="background-color: #ffcccc"></a>
+   135) <a name="l135" style="background-color: #ffcccc">#ifdef HAVE_ERF_EXTERNALS</a>
+   136) <a name="l136" style="background-color: #ffcccc">  ! If erf is provided as an external, provide</a>
+   137) <a name="l137" style="background-color: #ffcccc">  ! explicit interface here.</a>
+   138) <a name="l138" style="background-color: #ffcccc">  interface</a>
+   139) <a name="l139" style="background-color: #ffcccc">     function erf(x)</a>
+   140) <a name="l140" style="background-color: #ffcccc">       import :: r4</a>
+   141) <a name="l141" style="background-color: #ffcccc">       real(r4) :: x, erf</a>
+   142) <a name="l142" style="background-color: #ffcccc">     end function erf</a>
+   143) <a name="l143" style="background-color: #ffcccc">  end interface</a>
+   144) <a name="l144" style="background-color: #ffcccc">#endif</a>
+   145) <a name="l145" style="background-color: #ffcccc"></a>
+   146) <a name="l146" style="background-color: #ffcccc">#ifdef HAVE_ERF_INTRINSICS</a>
+   147) <a name="l147" style="background-color: #ffcccc"></a>
+   148) <a name="l148" style="background-color: #ffcccc">  ! Call intrinsic erf.</a>
+   149) <a name="l149" style="background-color: #ffcccc">  intrinsic erf</a>
+   150) <a name="l150" style="background-color: #ffcccc">  res = erf(x)</a>
+   151) <a name="l151" style="background-color: #ffcccc">#else</a>
+   152) <a name="l152" style="background-color: #ffcccc"></a>
+   153) <a name="l153" style="background-color: #ffcccc">#ifdef HAVE_ERF_EXTERNALS</a>
+   154) <a name="l154" style="background-color: #ffcccc">  ! Call compiler-provided external erf.</a>
+   155) <a name="l155" style="background-color: #ffcccc">  res = erf(x)</a>
+   156) <a name="l156" style="background-color: #ffcccc">#else</a>
+   157) <a name="l157" style="background-color: #ffcccc">  ! No compiler-provided erf, so call local version.</a>
+   158) <a name="l158" style="background-color: #ffcccc">  call calerf_r4(x, res, 0)</a>
+   159) <a name="l159" style="background-color: #ffcccc">#endif</a>
+   160) <a name="l160" style="background-color: #ffcccc"></a>
+   161) <a name="l161" style="background-color: #ffcccc">#endif</a>
+   162) <a name="l162" style="background-color: #ffcccc"></a>
+   163) <a name="l163" style="background-color: #ffcccc">end function shr_spfn_erf_r4</a>
+   164) <a name="l164" style="background-color: #ffffff"></a>
+   165) <a name="l165" style="background-color: #ffffff">function shr_spfn_erf_r8(x) result(res)</a>
+   166) <a name="l166" style="background-color: #ffffff">  real(r8), intent(in) :: x</a>
+   167) <a name="l167" style="background-color: #ffffff">  real(r8) :: res</a>
+   168) <a name="l168" style="background-color: #ffffff"></a>
+   169) <a name="l169" style="background-color: #ffffff">#ifdef HAVE_ERF_EXTERNALS</a>
+   170) <a name="l170" style="background-color: #ffffff">  ! If erf is provided as an external, provide</a>
+   171) <a name="l171" style="background-color: #ffffff">  ! explicit interface here.</a>
+   172) <a name="l172" style="background-color: #ffffff">  interface</a>
+   173) <a name="l173" style="background-color: #ffffff">     function derf(x)</a>
+   174) <a name="l174" style="background-color: #ffffff">       import :: r8</a>
+   175) <a name="l175" style="background-color: #ffffff">       real(r8) :: x, derf</a>
+   176) <a name="l176" style="background-color: #ffffff">     end function derf</a>
+   177) <a name="l177" style="background-color: #ffffff">  end interface</a>
+   178) <a name="l178" style="background-color: #ffffff">#endif</a>
+   179) <a name="l179" style="background-color: #ffffff"></a>
+   180) <a name="l180" style="background-color: #ffffff">#ifdef HAVE_ERF_INTRINSICS</a>
+   181) <a name="l181" style="background-color: #ffffff">  ! Call intrinsic erf.</a>
+   182) <a name="l182" style="background-color: #ffffff">  intrinsic erf</a>
+   183) <a name="l183" style="background-color: #ffffff">  res = erf(x)</a>
+   184) <a name="l184" style="background-color: #ffffff">#else</a>
+   185) <a name="l185" style="background-color: #ffffff"></a>
+   186) <a name="l186" style="background-color: #ffffff">#ifdef HAVE_ERF_EXTERNALS</a>
+   187) <a name="l187" style="background-color: #ffffff">  ! Call compiler-provided external erf.</a>
+   188) <a name="l188" style="background-color: #ffffff">  res = derf(x)</a>
+   189) <a name="l189" style="background-color: #ffffff">#else</a>
+   190) <a name="l190" style="background-color: #ffffff">  ! No compiler-provided erf, so call local version.</a>
+   191) <a name="l191" style="background-color: #ffffff">  call calerf_r8(x, res, 0)</a>
+   192) <a name="l192" style="background-color: #ffffff">#endif</a>
+   193) <a name="l193" style="background-color: #ffffff"></a>
+   194) <a name="l194" style="background-color: #ffffff">#endif</a>
+   195) <a name="l195" style="background-color: #ffffff"></a>
+   196) <a name="l196" style="background-color: #ffffff">end function shr_spfn_erf_r8</a>
+   197) <a name="l197" style="background-color: #ffffff"></a>
+   198) <a name="l198" style="background-color: #ffffff">! Wrapper functions for erfc</a>
+   199) <a name="l199" style="background-color: #ffffff">function </a><a style="background-color: #ffcccc">shr_spfn_erfc_r4(x) result(res)</a>
+   200) <a name="l200" style="background-color: #ffcccc">  real(r4), intent(in) :: x</a>
+   201) <a name="l201" style="background-color: #ffcccc">  real(r4) :: res</a>
+   202) <a name="l202" style="background-color: #ffcccc"></a>
+   203) <a name="l203" style="background-color: #ffcccc">#ifdef HAVE_ERF_EXTERNALS</a>
+   204) <a name="l204" style="background-color: #ffcccc">  ! If erfc is provided as an external, provide</a>
+   205) <a name="l205" style="background-color: #ffcccc">  ! explicit interface here.</a>
+   206) <a name="l206" style="background-color: #ffcccc">  interface</a>
+   207) <a name="l207" style="background-color: #ffcccc">     function erfc(x)</a>
+   208) <a name="l208" style="background-color: #ffcccc">       import :: r4</a>
+   209) <a name="l209" style="background-color: #ffcccc">       real(r4) :: x, erfc</a>
+   210) <a name="l210" style="background-color: #ffcccc">     end function erfc</a>
+   211) <a name="l211" style="background-color: #ffcccc">  end interface</a>
+   212) <a name="l212" style="background-color: #ffcccc">#endif</a>
+   213) <a name="l213" style="background-color: #ffcccc"></a>
+   214) <a name="l214" style="background-color: #ffcccc">#ifdef HAVE_ERF_INTRINSICS</a>
+   215) <a name="l215" style="background-color: #ffcccc">  ! Call intrinsic erfc.</a>
+   216) <a name="l216" style="background-color: #ffcccc">  intrinsic erfc</a>
+   217) <a name="l217" style="background-color: #ffcccc">  res = erfc(x)</a>
+   218) <a name="l218" style="background-color: #ffcccc">#else</a>
+   219) <a name="l219" style="background-color: #ffcccc"></a>
+   220) <a name="l220" style="background-color: #ffcccc">#ifdef HAVE_ERF_EXTERNALS</a>
+   221) <a name="l221" style="background-color: #ffcccc">  ! Call compiler-provided external erfc.</a>
+   222) <a name="l222" style="background-color: #ffcccc">  res = erfc(x)</a>
+   223) <a name="l223" style="background-color: #ffcccc">#else</a>
+   224) <a name="l224" style="background-color: #ffcccc">  ! No compiler-provided erfc, so call local version.</a>
+   225) <a name="l225" style="background-color: #ffcccc">  call calerf_r4(x, res, 1)</a>
+   226) <a name="l226" style="background-color: #ffcccc">#endif</a>
+   227) <a name="l227" style="background-color: #ffcccc"></a>
+   228) <a name="l228" style="background-color: #ffcccc">#endif</a>
+   229) <a name="l229" style="background-color: #ffcccc"></a>
+   230) <a name="l230" style="background-color: #ffcccc">end function shr_spfn_erfc_r4</a>
+   231) <a name="l231" style="background-color: #ffffff"></a>
+   232) <a name="l232" style="background-color: #ffffff">function shr_spfn_erfc_r8(x) result(res)</a>
+   233) <a name="l233" style="background-color: #ffffff">  real(r8), intent(in) :: x</a>
+   234) <a name="l234" style="background-color: #ffffff">  real(r8) :: res</a>
+   235) <a name="l235" style="background-color: #ffffff"></a>
+   236) <a name="l236" style="background-color: #ffffff">#ifdef HAVE_ERF_EXTERNALS</a>
+   237) <a name="l237" style="background-color: #ffffff">  ! If erfc is provided as an external, provide</a>
+   238) <a name="l238" style="background-color: #ffffff">  ! explicit interface here.</a>
+   239) <a name="l239" style="background-color: #ffffff">  interface</a>
+   240) <a name="l240" style="background-color: #ffffff">     function derfc(x)</a>
+   241) <a name="l241" style="background-color: #ffffff">       import :: r8</a>
+   242) <a name="l242" style="background-color: #ffffff">       real(r8) :: x, derfc</a>
+   243) <a name="l243" style="background-color: #ffffff">     end function derfc</a>
+   244) <a name="l244" style="background-color: #ffffff">  end interface</a>
+   245) <a name="l245" style="background-color: #ffffff">#endif</a>
+   246) <a name="l246" style="background-color: #ffffff"></a>
+   247) <a name="l247" style="background-color: #ffffff">#ifdef HAVE_ERF_INTRINSICS</a>
+   248) <a name="l248" style="background-color: #ffffff">  ! Call intrinsic erfc.</a>
+   249) <a name="l249" style="background-color: #ffffff">  intrinsic erfc</a>
+   250) <a name="l250" style="background-color: #ffffff">  res = erfc(x)</a>
+   251) <a name="l251" style="background-color: #ffffff">#else</a>
+   252) <a name="l252" style="background-color: #ffffff"></a>
+   253) <a name="l253" style="background-color: #ffffff">#ifdef HAVE_ERF_EXTERNALS</a>
+   254) <a name="l254" style="background-color: #ffffff">  ! Call compiler-provided external erfc.</a>
+   255) <a name="l255" style="background-color: #ffffff">  res = derfc(x)</a>
+   256) <a name="l256" style="background-color: #ffffff">#else</a>
+   257) <a name="l257" style="background-color: #ffffff">  ! No compiler-provided erfc, so call local version.</a>
+   258) <a name="l258" style="background-color: #ffffff">  call calerf_r8(x, res, 1)</a>
+   259) <a name="l259" style="background-color: #ffffff">#endif</a>
+   260) <a name="l260" style="background-color: #ffffff"></a>
+   261) <a name="l261" style="background-color: #ffffff">#endif</a>
+   262) <a name="l262" style="background-color: #ffffff"></a>
+   263) <a name="l263" style="background-color: #ffffff">end function shr_spfn_erfc_r8</a>
+   264) <a name="l264" style="background-color: #ffffff"></a>
+   265) <a name="l265" style="background-color: #ffffff">! Wrapper functions for erfc_scaled</a>
+   266) <a name="l266" style="background-color: #ffffff">function </a><a style="background-color: #ffcccc">shr_spfn_erfc_scaled_r4(x) result(res)</a>
+   267) <a name="l267" style="background-color: #ffcccc">  real(r4), intent(in) :: x</a>
+   268) <a name="l268" style="background-color: #ffcccc">  real(r4) :: res</a>
+   269) <a name="l269" style="background-color: #ffcccc"></a>
+   270) <a name="l270" style="background-color: #ffcccc">#if defined HAVE_ERF_INTRINSICS</a>
+   271) <a name="l271" style="background-color: #ffcccc">  ! Call intrinsic erfc_scaled.</a>
+   272) <a name="l272" style="background-color: #ffcccc">  intrinsic erfc_scaled</a>
+   273) <a name="l273" style="background-color: #ffcccc">  res = erfc_scaled(x)</a>
+   274) <a name="l274" style="background-color: #ffcccc">#else</a>
+   275) <a name="l275" style="background-color: #ffcccc">  ! No intrinsic.</a>
+   276) <a name="l276" style="background-color: #ffcccc">  call calerf_r4(x, res, 2)</a>
+   277) <a name="l277" style="background-color: #ffcccc">#endif</a>
+   278) <a name="l278" style="background-color: #ffcccc"></a>
+   279) <a name="l279" style="background-color: #ffcccc">end function shr_spfn_erfc_scaled_r4</a>
+   280) <a name="l280" style="background-color: #ffffff"></a>
+   281) <a name="l281" style="background-color: #ffffff">function </a><a style="background-color: #ffcccc">shr_spfn_erfc_scaled_r8(x) result(res)</a>
+   282) <a name="l282" style="background-color: #ffcccc">  real(r8), intent(in) :: x</a>
+   283) <a name="l283" style="background-color: #ffcccc">  real(r8) :: res</a>
+   284) <a name="l284" style="background-color: #ffcccc"></a>
+   285) <a name="l285" style="background-color: #ffcccc">#if defined HAVE_ERF_INTRINSICS</a>
+   286) <a name="l286" style="background-color: #ffcccc">  ! Call intrinsic erfc_scaled.</a>
+   287) <a name="l287" style="background-color: #ffcccc">  intrinsic erfc_scaled</a>
+   288) <a name="l288" style="background-color: #ffcccc">  res = erfc_scaled(x)</a>
+   289) <a name="l289" style="background-color: #ffcccc">#else</a>
+   290) <a name="l290" style="background-color: #ffcccc">  ! No intrinsic.</a>
+   291) <a name="l291" style="background-color: #ffcccc">  call calerf_r8(x, res, 2)</a>
+   292) <a name="l292" style="background-color: #ffcccc">#endif</a>
+   293) <a name="l293" style="background-color: #ffcccc"></a>
+   294) <a name="l294" style="background-color: #ffcccc">end function shr_spfn_erfc_scaled_r8</a>
+   295) <a name="l295" style="background-color: #ffffff"></a>
+   296) <a name="l296" style="background-color: #ffffff">elemental function shr_spfn_gamma_r8(x) result(res)</a>
+   297) <a name="l297" style="background-color: #ffffff">  real(r8), intent(in) :: x</a>
+   298) <a name="l298" style="background-color: #ffffff">  real(r8) :: res</a>
+   299) <a name="l299" style="background-color: #ffffff"></a>
+   300) <a name="l300" style="background-color: #ffffff">#if defined HAVE_GAMMA_INTRINSICS</a>
+   301) <a name="l301" style="background-color: #ffffff">  ! Call intrinsic gamma.</a>
+   302) <a name="l302" style="background-color: #ffffff">  intrinsic gamma</a>
+   303) <a name="l303" style="background-color: #ffffff">  res = gamma(x)</a>
+   304) <a name="l304" style="background-color: #ffffff">#else</a>
+   305) <a name="l305" style="background-color: #ffffff">  ! No intrinsic</a>
+   306) <a name="l306" style="background-color: #ffffff">  res = shr_spfn_gamma_nonintrinsic_r8(x)</a>
+   307) <a name="l307" style="background-color: #ffffff">#endif</a>
+   308) <a name="l308" style="background-color: #ffffff"></a>
+   309) <a name="l309" style="background-color: #ffffff">end function shr_spfn_gamma_r8</a>
+   310) <a name="l310" style="background-color: #ffffff"></a>
+   311) <a name="l311" style="background-color: #ffffff">!------------------------------------------------------------------</a>
+   312) <a name="l312" style="background-color: #ffffff">!</a>
+   313) <a name="l313" style="background-color: #ffffff">! 6 December 2006 -- B. Eaton</a>
+   314) <a name="l314" style="background-color: #ffffff">! The following comments are from the original version of CALERF.</a>
+   315) <a name="l315" style="background-color: #ffffff">! The only changes in implementing this module are that the function</a>
+   316) <a name="l316" style="background-color: #ffffff">! names previously used for the single precision versions have been</a>
+   317) <a name="l317" style="background-color: #ffffff">! adopted for the new generic interfaces.  To support these interfaces</a>
+   318) <a name="l318" style="background-color: #ffffff">! there is now both a single precision version (calerf_r4) and a</a>
+   319) <a name="l319" style="background-color: #ffffff">! double precision version (calerf_r8) of CALERF below.  These versions</a>
+   320) <a name="l320" style="background-color: #ffffff">! are hardcoded to use IEEE arithmetic.</a>
+   321) <a name="l321" style="background-color: #ffffff">!</a>
+   322) <a name="l322" style="background-color: #ffffff">!------------------------------------------------------------------</a>
+   323) <a name="l323" style="background-color: #ffffff">!</a>
+   324) <a name="l324" style="background-color: #ffffff">! This packet evaluates  erf(x),  erfc(x),  and  exp(x*x)*erfc(x)</a>
+   325) <a name="l325" style="background-color: #ffffff">!   for a real argument  x.  It contains three FUNCTION type</a>
+   326) <a name="l326" style="background-color: #ffffff">!   subprograms: ERF, ERFC, and ERFCX (or ERF_R8, ERFC_R8, and ERFCX_R8),</a>
+   327) <a name="l327" style="background-color: #ffffff">!   and one SUBROUTINE type subprogram, CALERF.  The calling</a>
+   328) <a name="l328" style="background-color: #ffffff">!   statements for the primary entries are:</a>
+   329) <a name="l329" style="background-color: #ffffff">!</a>
+   330) <a name="l330" style="background-color: #ffffff">!                   Y=ERF(X)     (or   Y=ERF_R8(X)),</a>
+   331) <a name="l331" style="background-color: #ffffff">!</a>
+   332) <a name="l332" style="background-color: #ffffff">!                   Y=ERFC(X)    (or   Y=ERFC_R8(X)),</a>
+   333) <a name="l333" style="background-color: #ffffff">!   and</a>
+   334) <a name="l334" style="background-color: #ffffff">!                   Y=ERFCX(X)   (or   Y=ERFCX_R8(X)).</a>
+   335) <a name="l335" style="background-color: #ffffff">!</a>
+   336) <a name="l336" style="background-color: #ffffff">!   The routine  CALERF  is intended for internal packet use only,</a>
+   337) <a name="l337" style="background-color: #ffffff">!   all computations within the packet being concentrated in this</a>
+   338) <a name="l338" style="background-color: #ffffff">!   routine.  The function subprograms invoke  CALERF  with the</a>
+   339) <a name="l339" style="background-color: #ffffff">!   statement</a>
+   340) <a name="l340" style="background-color: #ffffff">!</a>
+   341) <a name="l341" style="background-color: #ffffff">!          CALL CALERF(ARG,RESULT,JINT)</a>
+   342) <a name="l342" style="background-color: #ffffff">!</a>
+   343) <a name="l343" style="background-color: #ffffff">!   where the parameter usage is as follows</a>
+   344) <a name="l344" style="background-color: #ffffff">!</a>
+   345) <a name="l345" style="background-color: #ffffff">!      Function                     Parameters for CALERF</a>
+   346) <a name="l346" style="background-color: #ffffff">!       call              ARG                  Result          JINT</a>
+   347) <a name="l347" style="background-color: #ffffff">!</a>
+   348) <a name="l348" style="background-color: #ffffff">!     ERF(ARG)      ANY REAL ARGUMENT         ERF(ARG)          0</a>
+   349) <a name="l349" style="background-color: #ffffff">!     ERFC(ARG)     ABS(ARG) .LT. XBIG        ERFC(ARG)         1</a>
+   350) <a name="l350" style="background-color: #ffffff">!     ERFCX(ARG)    XNEG .LT. ARG .LT. XMAX   ERFCX(ARG)        2</a>
+   351) <a name="l351" style="background-color: #ffffff">!</a>
+   352) <a name="l352" style="background-color: #ffffff">!   The main computation evaluates near-minimax approximations</a>
+   353) <a name="l353" style="background-color: #ffffff">!   from &quot;Rational Chebyshev approximations for the error function&quot;</a>
+   354) <a name="l354" style="background-color: #ffffff">!   by W. J. Cody, Math. Comp., 1969, PP. 631-638.  This</a>
+   355) <a name="l355" style="background-color: #ffffff">!   transportable program uses rational functions that theoretically</a>
+   356) <a name="l356" style="background-color: #ffffff">!   approximate  erf(x)  and  erfc(x)  to at least 18 significant</a>
+   357) <a name="l357" style="background-color: #ffffff">!   decimal digits.  The accuracy achieved depends on the arithmetic</a>
+   358) <a name="l358" style="background-color: #ffffff">!   system, the compiler, the intrinsic functions, and proper</a>
+   359) <a name="l359" style="background-color: #ffffff">!   selection of the machine-dependent constants.</a>
+   360) <a name="l360" style="background-color: #ffffff">!</a>
+   361) <a name="l361" style="background-color: #ffffff">!*******************************************************************</a>
+   362) <a name="l362" style="background-color: #ffffff">!*******************************************************************</a>
+   363) <a name="l363" style="background-color: #ffffff">!</a>
+   364) <a name="l364" style="background-color: #ffffff">! Explanation of machine-dependent constants</a>
+   365) <a name="l365" style="background-color: #ffffff">!</a>
+   366) <a name="l366" style="background-color: #ffffff">!   XMIN   = the smallest positive floating-point number.</a>
+   367) <a name="l367" style="background-color: #ffffff">!   XINF   = the largest positive finite floating-point number.</a>
+   368) <a name="l368" style="background-color: #ffffff">!   XNEG   = the largest negative argument acceptable to ERFCX;</a>
+   369) <a name="l369" style="background-color: #ffffff">!            the negative of the solution to the equation</a>
+   370) <a name="l370" style="background-color: #ffffff">!            2*exp(x*x) = XINF.</a>
+   371) <a name="l371" style="background-color: #ffffff">!   XSMALL = argument below which erf(x) may be represented by</a>
+   372) <a name="l372" style="background-color: #ffffff">!            2*x/sqrt(pi)  and above which  x*x  will not underflow.</a>
+   373) <a name="l373" style="background-color: #ffffff">!            A conservative value is the largest machine number X</a>
+   374) <a name="l374" style="background-color: #ffffff">!            such that   1.0 + X = 1.0   to machine precision.</a>
+   375) <a name="l375" style="background-color: #ffffff">!   XBIG   = largest argument acceptable to ERFC;  solution to</a>
+   376) <a name="l376" style="background-color: #ffffff">!            the equation:  W(x) * (1-0.5/x**2) = XMIN,  where</a>
+   377) <a name="l377" style="background-color: #ffffff">!            W(x) = exp(-x*x)/[x*sqrt(pi)].</a>
+   378) <a name="l378" style="background-color: #ffffff">!   XHUGE  = argument above which  1.0 - 1/(2*x*x) = 1.0  to</a>
+   379) <a name="l379" style="background-color: #ffffff">!            machine precision.  A conservative value is</a>
+   380) <a name="l380" style="background-color: #ffffff">!            1/[2*sqrt(XSMALL)]</a>
+   381) <a name="l381" style="background-color: #ffffff">!   XMAX   = largest acceptable argument to ERFCX; the minimum</a>
+   382) <a name="l382" style="background-color: #ffffff">!            of XINF and 1/[sqrt(pi)*XMIN].</a>
+   383) <a name="l383" style="background-color: #ffffff">!</a>
+   384) <a name="l384" style="background-color: #ffffff">!   Approximate values for some important machines are:</a>
+   385) <a name="l385" style="background-color: #ffffff">!</a>
+   386) <a name="l386" style="background-color: #ffffff">!                          XMIN       XINF        XNEG     XSMALL</a>
+   387) <a name="l387" style="background-color: #ffffff">!</a>
+   388) <a name="l388" style="background-color: #ffffff">!  CDC 7600      (S.P.)  3.13E-294   1.26E+322   -27.220  7.11E-15</a>
+   389) <a name="l389" style="background-color: #ffffff">!  CRAY-1        (S.P.)  4.58E-2467  5.45E+2465  -75.345  7.11E-15</a>
+   390) <a name="l390" style="background-color: #ffffff">!  IEEE (IBM/XT,</a>
+   391) <a name="l391" style="background-color: #ffffff">!    SUN, etc.)  (S.P.)  1.18E-38    3.40E+38     -9.382  5.96E-8</a>
+   392) <a name="l392" style="background-color: #ffffff">!  IEEE (IBM/XT,</a>
+   393) <a name="l393" style="background-color: #ffffff">!    SUN, etc.)  (D.P.)  2.23D-308   1.79D+308   -26.628  1.11D-16</a>
+   394) <a name="l394" style="background-color: #ffffff">!  IBM 195       (D.P.)  5.40D-79    7.23E+75    -13.190  1.39D-17</a>
+   395) <a name="l395" style="background-color: #ffffff">!  UNIVAC 1108   (D.P.)  2.78D-309   8.98D+307   -26.615  1.73D-18</a>
+   396) <a name="l396" style="background-color: #ffffff">!  VAX D-Format  (D.P.)  2.94D-39    1.70D+38     -9.345  1.39D-17</a>
+   397) <a name="l397" style="background-color: #ffffff">!  VAX G-Format  (D.P.)  5.56D-309   8.98D+307   -26.615  1.11D-16</a>
+   398) <a name="l398" style="background-color: #ffffff">!</a>
+   399) <a name="l399" style="background-color: #ffffff">!</a>
+   400) <a name="l400" style="background-color: #ffffff">!                          XBIG       XHUGE       XMAX</a>
+   401) <a name="l401" style="background-color: #ffffff">!</a>
+   402) <a name="l402" style="background-color: #ffffff">!  CDC 7600      (S.P.)  25.922      8.39E+6     1.80X+293</a>
+   403) <a name="l403" style="background-color: #ffffff">!  CRAY-1        (S.P.)  75.326      8.39E+6     5.45E+2465</a>
+   404) <a name="l404" style="background-color: #ffffff">!  IEEE (IBM/XT,</a>
+   405) <a name="l405" style="background-color: #ffffff">!    SUN, etc.)  (S.P.)   9.194      2.90E+3     4.79E+37</a>
+   406) <a name="l406" style="background-color: #ffffff">!  IEEE (IBM/XT,</a>
+   407) <a name="l407" style="background-color: #ffffff">!    SUN, etc.)  (D.P.)  26.543      6.71D+7     2.53D+307</a>
+   408) <a name="l408" style="background-color: #ffffff">!  IBM 195       (D.P.)  13.306      1.90D+8     7.23E+75</a>
+   409) <a name="l409" style="background-color: #ffffff">!  UNIVAC 1108   (D.P.)  26.582      5.37D+8     8.98D+307</a>
+   410) <a name="l410" style="background-color: #ffffff">!  VAX D-Format  (D.P.)   9.269      1.90D+8     1.70D+38</a>
+   411) <a name="l411" style="background-color: #ffffff">!  VAX G-Format  (D.P.)  26.569      6.71D+7     8.98D+307</a>
+   412) <a name="l412" style="background-color: #ffffff">!</a>
+   413) <a name="l413" style="background-color: #ffffff">!*******************************************************************</a>
+   414) <a name="l414" style="background-color: #ffffff">!*******************************************************************</a>
+   415) <a name="l415" style="background-color: #ffffff">!</a>
+   416) <a name="l416" style="background-color: #ffffff">! Error returns</a>
+   417) <a name="l417" style="background-color: #ffffff">!</a>
+   418) <a name="l418" style="background-color: #ffffff">!  The program returns  ERFC = 0      for  ARG .GE. XBIG;</a>
+   419) <a name="l419" style="background-color: #ffffff">!</a>
+   420) <a name="l420" style="background-color: #ffffff">!                       ERFCX = XINF  for  ARG .LT. XNEG;</a>
+   421) <a name="l421" style="background-color: #ffffff">!      and</a>
+   422) <a name="l422" style="background-color: #ffffff">!                       ERFCX = 0     for  ARG .GE. XMAX.</a>
+   423) <a name="l423" style="background-color: #ffffff">!</a>
+   424) <a name="l424" style="background-color: #ffffff">!</a>
+   425) <a name="l425" style="background-color: #ffffff">! Intrinsic functions required are:</a>
+   426) <a name="l426" style="background-color: #ffffff">!</a>
+   427) <a name="l427" style="background-color: #ffffff">!     ABS, AINT, EXP</a>
+   428) <a name="l428" style="background-color: #ffffff">!</a>
+   429) <a name="l429" style="background-color: #ffffff">!</a>
+   430) <a name="l430" style="background-color: #ffffff">!  Author: W. J. Cody</a>
+   431) <a name="l431" style="background-color: #ffffff">!          Mathematics and Computer Science Division</a>
+   432) <a name="l432" style="background-color: #ffffff">!          Argonne National Laboratory</a>
+   433) <a name="l433" style="background-color: #ffffff">!          Argonne, IL 60439</a>
+   434) <a name="l434" style="background-color: #ffffff">!</a>
+   435) <a name="l435" style="background-color: #ffffff">!  Latest modification: March 19, 1990</a>
+   436) <a name="l436" style="background-color: #ffffff">!</a>
+   437) <a name="l437" style="background-color: #ffffff">!------------------------------------------------------------------</a>
+   438) <a name="l438" style="background-color: #ffffff"></a>
+   439) <a name="l439" style="background-color: #ffffff">SUBROUTINE </a><a style="background-color: #ffcccc">CALERF_r8(ARG, RESULT, JINT)</a>
+   440) <a name="l440" style="background-color: #ffcccc"></a>
+   441) <a name="l441" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   442) <a name="l442" style="background-color: #ffcccc">   !  This version uses 8-byte reals</a>
+   443) <a name="l443" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   444) <a name="l444" style="background-color: #ffcccc">   integer, parameter :: rk = r8</a>
+   445) <a name="l445" style="background-color: #ffcccc"></a>
+   446) <a name="l446" style="background-color: #ffcccc">   ! arguments</a>
+   447) <a name="l447" style="background-color: #ffcccc">   real(rk), intent(in)  :: arg</a>
+   448) <a name="l448" style="background-color: #ffcccc">   integer,  intent(in)  :: jint</a>
+   449) <a name="l449" style="background-color: #ffcccc">   real(rk), intent(out) :: result</a>
+   450) <a name="l450" style="background-color: #ffcccc"></a>
+   451) <a name="l451" style="background-color: #ffcccc">   ! local variables</a>
+   452) <a name="l452" style="background-color: #ffcccc">   INTEGER :: I</a>
+   453) <a name="l453" style="background-color: #ffcccc"></a>
+   454) <a name="l454" style="background-color: #ffcccc">   real(rk) :: X, Y, YSQ, XNUM, XDEN, DEL</a>
+   455) <a name="l455" style="background-color: #ffcccc"></a>
+   456) <a name="l456" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   457) <a name="l457" style="background-color: #ffcccc">   !  Mathematical constants</a>
+   458) <a name="l458" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   459) <a name="l459" style="background-color: #ffcccc">   real(rk), parameter :: ZERO   = 0.0E0_rk</a>
+   460) <a name="l460" style="background-color: #ffcccc">   real(rk), parameter :: FOUR   = 4.0E0_rk</a>
+   461) <a name="l461" style="background-color: #ffcccc">   real(rk), parameter :: ONE    = 1.0E0_rk</a>
+   462) <a name="l462" style="background-color: #ffcccc">   real(rk), parameter :: HALF   = 0.5E0_rk</a>
+   463) <a name="l463" style="background-color: #ffcccc">   real(rk), parameter :: TWO    = 2.0E0_rk</a>
+   464) <a name="l464" style="background-color: #ffcccc">   ! 1/sqrt(pi)</a>
+   465) <a name="l465" style="background-color: #ffcccc">   real(rk), parameter :: SQRPI  = 5.6418958354775628695E-1_rk</a>
+   466) <a name="l466" style="background-color: #ffcccc">   real(rk), parameter :: THRESH = 0.46875E0_rk</a>
+   467) <a name="l467" style="background-color: #ffcccc">   real(rk), parameter :: SIXTEN = 16.0E0_rk</a>
+   468) <a name="l468" style="background-color: #ffcccc"></a>
+   469) <a name="l469" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   470) <a name="l470" style="background-color: #ffcccc">   !  Machine-dependent constants: IEEE double precision values</a>
+   471) <a name="l471" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   472) <a name="l472" style="background-color: #ffcccc">   real(rk), parameter :: XNEG   = -26.628E0_r8</a>
+   473) <a name="l473" style="background-color: #ffcccc">   real(rk), parameter :: XBIG   =  26.543E0_r8</a>
+   474) <a name="l474" style="background-color: #ffcccc">   real(rk), parameter :: XHUGE  =   6.71E7_r8</a>
+   475) <a name="l475" style="background-color: #ffcccc"></a>
+   476) <a name="l476" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   477) <a name="l477" style="background-color: #ffcccc">   !  Coefficients for approximation to  erf  in first interval</a>
+   478) <a name="l478" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   479) <a name="l479" style="background-color: #ffcccc">   real(rk), parameter :: A(5) = (/ 3.16112374387056560E00_rk, 1.13864154151050156E02_rk, &amp;</a>
+   480) <a name="l480" style="background-color: #ffcccc">                                    3.77485237685302021E02_rk, 3.20937758913846947E03_rk, &amp;</a>
+   481) <a name="l481" style="background-color: #ffcccc">                                    1.85777706184603153E-1_rk /)</a>
+   482) <a name="l482" style="background-color: #ffcccc">   real(rk), parameter :: B(4) = (/ 2.36012909523441209E01_rk, 2.44024637934444173E02_rk, &amp;</a>
+   483) <a name="l483" style="background-color: #ffcccc">                                    1.28261652607737228E03_rk, 2.84423683343917062E03_rk /)</a>
+   484) <a name="l484" style="background-color: #ffcccc"></a>
+   485) <a name="l485" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   486) <a name="l486" style="background-color: #ffcccc">   !  Coefficients for approximation to  erfc  in second interval</a>
+   487) <a name="l487" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   488) <a name="l488" style="background-color: #ffcccc">   real(rk), parameter :: C(9) = (/ 5.64188496988670089E-1_rk, 8.88314979438837594E00_rk, &amp;</a>
+   489) <a name="l489" style="background-color: #ffcccc">                                    6.61191906371416295E01_rk, 2.98635138197400131E02_rk, &amp;</a>
+   490) <a name="l490" style="background-color: #ffcccc">                                    8.81952221241769090E02_rk, 1.71204761263407058E03_rk, &amp;</a>
+   491) <a name="l491" style="background-color: #ffcccc">                                    2.05107837782607147E03_rk, 1.23033935479799725E03_rk, &amp;</a>
+   492) <a name="l492" style="background-color: #ffcccc">                                    2.15311535474403846E-8_rk /)</a>
+   493) <a name="l493" style="background-color: #ffcccc">   real(rk), parameter :: D(8) = (/ 1.57449261107098347E01_rk, 1.17693950891312499E02_rk, &amp;</a>
+   494) <a name="l494" style="background-color: #ffcccc">                                    5.37181101862009858E02_rk, 1.62138957456669019E03_rk, &amp;</a>
+   495) <a name="l495" style="background-color: #ffcccc">                                    3.29079923573345963E03_rk, 4.36261909014324716E03_rk, &amp;</a>
+   496) <a name="l496" style="background-color: #ffcccc">                                    3.43936767414372164E03_rk, 1.23033935480374942E03_rk /)</a>
+   497) <a name="l497" style="background-color: #ffcccc"></a>
+   498) <a name="l498" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   499) <a name="l499" style="background-color: #ffcccc">   !  Coefficients for approximation to  erfc  in third interval</a>
+   500) <a name="l500" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   501) <a name="l501" style="background-color: #ffcccc">   real(rk), parameter :: P(6) = (/ 3.05326634961232344E-1_rk, 3.60344899949804439E-1_rk, &amp;</a>
+   502) <a name="l502" style="background-color: #ffcccc">                                    1.25781726111229246E-1_rk, 1.60837851487422766E-2_rk, &amp;</a>
+   503) <a name="l503" style="background-color: #ffcccc">                                    6.58749161529837803E-4_rk, 1.63153871373020978E-2_rk /)</a>
+   504) <a name="l504" style="background-color: #ffcccc">   real(rk), parameter :: Q(5) = (/ 2.56852019228982242E00_rk, 1.87295284992346047E00_rk, &amp;</a>
+   505) <a name="l505" style="background-color: #ffcccc">                                    5.27905102951428412E-1_rk, 6.05183413124413191E-2_rk, &amp;</a>
+   506) <a name="l506" style="background-color: #ffcccc">                                    2.33520497626869185E-3_rk /)</a>
+   507) <a name="l507" style="background-color: #ffcccc"></a>
+   508) <a name="l508" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   509) <a name="l509" style="background-color: #ffcccc">   X = ARG</a>
+   510) <a name="l510" style="background-color: #ffcccc">   Y = ABS(X)</a>
+   511) <a name="l511" style="background-color: #ffcccc">   IF (Y .LE. THRESH) THEN</a>
+   512) <a name="l512" style="background-color: #ffcccc">      !------------------------------------------------------------------</a>
+   513) <a name="l513" style="background-color: #ffcccc">      !  Evaluate  erf  for  |X| &lt;= 0.46875</a>
+   514) <a name="l514" style="background-color: #ffcccc">      !------------------------------------------------------------------</a>
+   515) <a name="l515" style="background-color: #ffcccc">      YSQ = ZERO</a>
+   516) <a name="l516" style="background-color: #ffcccc">      IF (Y .GT. XSMALLR8) YSQ = Y * Y</a>
+   517) <a name="l517" style="background-color: #ffcccc">      XNUM = A(5)*YSQ</a>
+   518) <a name="l518" style="background-color: #ffcccc">      XDEN = YSQ</a>
+   519) <a name="l519" style="background-color: #ffcccc">      DO I = 1, 3</a>
+   520) <a name="l520" style="background-color: #ffcccc">         XNUM = (XNUM + A(I)) * YSQ</a>
+   521) <a name="l521" style="background-color: #ffcccc">         XDEN = (XDEN + B(I)) * YSQ</a>
+   522) <a name="l522" style="background-color: #ffcccc">      end do</a>
+   523) <a name="l523" style="background-color: #ffcccc">      RESULT = X * (XNUM + A(4)) / (XDEN + B(4))</a>
+   524) <a name="l524" style="background-color: #ffcccc">      IF (JINT .NE. 0) RESULT = ONE - RESULT</a>
+   525) <a name="l525" style="background-color: #ffcccc">      IF (JINT .EQ. 2) RESULT = EXP(YSQ) * RESULT</a>
+   526) <a name="l526" style="background-color: #ffcccc">      GO TO 80</a>
+   527) <a name="l527" style="background-color: #ffcccc">   ELSE IF (Y .LE. FOUR) THEN</a>
+   528) <a name="l528" style="background-color: #ffcccc">      !------------------------------------------------------------------</a>
+   529) <a name="l529" style="background-color: #ffcccc">      !  Evaluate  erfc  for 0.46875 &lt;= |X| &lt;= 4.0</a>
+   530) <a name="l530" style="background-color: #ffcccc">      !------------------------------------------------------------------</a>
+   531) <a name="l531" style="background-color: #ffcccc">      XNUM = C(9)*Y</a>
+   532) <a name="l532" style="background-color: #ffcccc">      XDEN = Y</a>
+   533) <a name="l533" style="background-color: #ffcccc">      DO I = 1, 7</a>
+   534) <a name="l534" style="background-color: #ffcccc">         XNUM = (XNUM + C(I)) * Y</a>
+   535) <a name="l535" style="background-color: #ffcccc">         XDEN = (XDEN + D(I)) * Y</a>
+   536) <a name="l536" style="background-color: #ffcccc">      end do</a>
+   537) <a name="l537" style="background-color: #ffcccc">      RESULT = (XNUM + C(8)) / (XDEN + D(8))</a>
+   538) <a name="l538" style="background-color: #ffcccc">      IF (JINT .NE. 2) THEN</a>
+   539) <a name="l539" style="background-color: #ffcccc">         YSQ = AINT(Y*SIXTEN)/SIXTEN</a>
+   540) <a name="l540" style="background-color: #ffcccc">         DEL = (Y-YSQ)*(Y+YSQ)</a>
+   541) <a name="l541" style="background-color: #ffcccc">         RESULT = EXP(-YSQ*YSQ) * EXP(-DEL) * RESULT</a>
+   542) <a name="l542" style="background-color: #ffcccc">      END IF</a>
+   543) <a name="l543" style="background-color: #ffcccc">   ELSE</a>
+   544) <a name="l544" style="background-color: #ffcccc">      !------------------------------------------------------------------</a>
+   545) <a name="l545" style="background-color: #ffcccc">      !  Evaluate  erfc  for |X| &gt; 4.0</a>
+   546) <a name="l546" style="background-color: #ffcccc">      !------------------------------------------------------------------</a>
+   547) <a name="l547" style="background-color: #ffcccc">      RESULT = ZERO</a>
+   548) <a name="l548" style="background-color: #ffcccc">      IF (Y .GE. XBIG) THEN</a>
+   549) <a name="l549" style="background-color: #ffcccc">         IF ((JINT .NE. 2) .OR. (Y .GE. XMAXR8)) GO TO 30</a>
+   550) <a name="l550" style="background-color: #ffcccc">         IF (Y .GE. XHUGE) THEN</a>
+   551) <a name="l551" style="background-color: #ffcccc">            RESULT = SQRPI / Y</a>
+   552) <a name="l552" style="background-color: #ffcccc">            GO TO 30</a>
+   553) <a name="l553" style="background-color: #ffcccc">         END IF</a>
+   554) <a name="l554" style="background-color: #ffcccc">      END IF</a>
+   555) <a name="l555" style="background-color: #ffcccc">      YSQ = ONE / (Y * Y)</a>
+   556) <a name="l556" style="background-color: #ffcccc">      XNUM = P(6)*YSQ</a>
+   557) <a name="l557" style="background-color: #ffcccc">      XDEN = YSQ</a>
+   558) <a name="l558" style="background-color: #ffcccc">      DO I = 1, 4</a>
+   559) <a name="l559" style="background-color: #ffcccc">         XNUM = (XNUM + P(I)) * YSQ</a>
+   560) <a name="l560" style="background-color: #ffcccc">         XDEN = (XDEN + Q(I)) * YSQ</a>
+   561) <a name="l561" style="background-color: #ffcccc">      end do</a>
+   562) <a name="l562" style="background-color: #ffcccc">      RESULT = YSQ *(XNUM + P(5)) / (XDEN + Q(5))</a>
+   563) <a name="l563" style="background-color: #ffcccc">      RESULT = (SQRPI -  RESULT) / Y</a>
+   564) <a name="l564" style="background-color: #ffcccc">      IF (JINT .NE. 2) THEN</a>
+   565) <a name="l565" style="background-color: #ffcccc">         YSQ = AINT(Y*SIXTEN)/SIXTEN</a>
+   566) <a name="l566" style="background-color: #ffcccc">         DEL = (Y-YSQ)*(Y+YSQ)</a>
+   567) <a name="l567" style="background-color: #ffcccc">         RESULT = EXP(-YSQ*YSQ) * EXP(-DEL) * RESULT</a>
+   568) <a name="l568" style="background-color: #ffcccc">      END IF</a>
+   569) <a name="l569" style="background-color: #ffcccc">   END IF</a>
+   570) <a name="l570" style="background-color: #ffcccc">30 continue</a>
+   571) <a name="l571" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   572) <a name="l572" style="background-color: #ffcccc">   !  Fix up for negative argument, erf, etc.</a>
+   573) <a name="l573" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   574) <a name="l574" style="background-color: #ffcccc">   IF (JINT .EQ. 0) THEN</a>
+   575) <a name="l575" style="background-color: #ffcccc">      RESULT = (HALF - RESULT) + HALF</a>
+   576) <a name="l576" style="background-color: #ffcccc">      IF (X .LT. ZERO) RESULT = -RESULT</a>
+   577) <a name="l577" style="background-color: #ffcccc">   ELSE IF (JINT .EQ. 1) THEN</a>
+   578) <a name="l578" style="background-color: #ffcccc">      IF (X .LT. ZERO) RESULT = TWO - RESULT</a>
+   579) <a name="l579" style="background-color: #ffcccc">   ELSE</a>
+   580) <a name="l580" style="background-color: #ffcccc">      IF (X .LT. ZERO) THEN</a>
+   581) <a name="l581" style="background-color: #ffcccc">         IF (X .LT. XNEG) THEN</a>
+   582) <a name="l582" style="background-color: #ffcccc">            RESULT = XINFR8</a>
+   583) <a name="l583" style="background-color: #ffcccc">         ELSE</a>
+   584) <a name="l584" style="background-color: #ffcccc">            YSQ = AINT(X*SIXTEN)/SIXTEN</a>
+   585) <a name="l585" style="background-color: #ffcccc">            DEL = (X-YSQ)*(X+YSQ)</a>
+   586) <a name="l586" style="background-color: #ffcccc">            Y = EXP(YSQ*YSQ) * EXP(DEL)</a>
+   587) <a name="l587" style="background-color: #ffcccc">            RESULT = (Y+Y) - RESULT</a>
+   588) <a name="l588" style="background-color: #ffcccc">         END IF</a>
+   589) <a name="l589" style="background-color: #ffcccc">      END IF</a>
+   590) <a name="l590" style="background-color: #ffcccc">   END IF</a>
+   591) <a name="l591" style="background-color: #ffcccc">80 continue</a>
+   592) <a name="l592" style="background-color: #ffcccc">end SUBROUTINE CALERF_r8</a>
+   593) <a name="l593" style="background-color: #ffffff"></a>
+   594) <a name="l594" style="background-color: #ffffff">!------------------------------------------------------------------------------------------</a>
+   595) <a name="l595" style="background-color: #ffffff"></a>
+   596) <a name="l596" style="background-color: #ffffff">SUBROUTINE </a><a style="background-color: #ffcccc">CALERF_r4(ARG, RESULT, JINT)</a>
+   597) <a name="l597" style="background-color: #ffcccc"></a>
+   598) <a name="l598" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   599) <a name="l599" style="background-color: #ffcccc">   !  This version uses 4-byte reals</a>
+   600) <a name="l600" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   601) <a name="l601" style="background-color: #ffcccc">   integer, parameter :: rk = r4</a>
+   602) <a name="l602" style="background-color: #ffcccc"></a>
+   603) <a name="l603" style="background-color: #ffcccc">   ! arguments</a>
+   604) <a name="l604" style="background-color: #ffcccc">   real(rk), intent(in)  :: arg</a>
+   605) <a name="l605" style="background-color: #ffcccc">   integer,  intent(in)  :: jint</a>
+   606) <a name="l606" style="background-color: #ffcccc">   real(rk), intent(out) :: result</a>
+   607) <a name="l607" style="background-color: #ffcccc"></a>
+   608) <a name="l608" style="background-color: #ffcccc">   ! local variables</a>
+   609) <a name="l609" style="background-color: #ffcccc">   INTEGER :: I</a>
+   610) <a name="l610" style="background-color: #ffcccc"></a>
+   611) <a name="l611" style="background-color: #ffcccc">   real(rk) :: X, Y, YSQ, XNUM, XDEN, DEL</a>
+   612) <a name="l612" style="background-color: #ffcccc"></a>
+   613) <a name="l613" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   614) <a name="l614" style="background-color: #ffcccc">   !  Mathematical constants</a>
+   615) <a name="l615" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   616) <a name="l616" style="background-color: #ffcccc">   real(rk), parameter :: ZERO   = 0.0E0_rk</a>
+   617) <a name="l617" style="background-color: #ffcccc">   real(rk), parameter :: FOUR   = 4.0E0_rk</a>
+   618) <a name="l618" style="background-color: #ffcccc">   real(rk), parameter :: ONE    = 1.0E0_rk</a>
+   619) <a name="l619" style="background-color: #ffcccc">   real(rk), parameter :: HALF   = 0.5E0_rk</a>
+   620) <a name="l620" style="background-color: #ffcccc">   real(rk), parameter :: TWO    = 2.0E0_rk</a>
+   621) <a name="l621" style="background-color: #ffcccc">   ! 1/sqrt(pi)</a>
+   622) <a name="l622" style="background-color: #ffcccc">   real(rk), parameter :: SQRPI  = 5.6418958354775628695E-1_rk</a>
+   623) <a name="l623" style="background-color: #ffcccc">   real(rk), parameter :: THRESH = 0.46875E0_rk</a>
+   624) <a name="l624" style="background-color: #ffcccc">   real(rk), parameter :: SIXTEN = 16.0E0_rk</a>
+   625) <a name="l625" style="background-color: #ffcccc"></a>
+   626) <a name="l626" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   627) <a name="l627" style="background-color: #ffcccc">   !  Machine-dependent constants: IEEE single precision values</a>
+   628) <a name="l628" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   629) <a name="l629" style="background-color: #ffcccc">   real(rk), parameter :: XNEG   = -9.382E0_r4</a>
+   630) <a name="l630" style="background-color: #ffcccc">   real(rk), parameter :: XBIG   =  9.194E0_r4</a>
+   631) <a name="l631" style="background-color: #ffcccc">   real(rk), parameter :: XHUGE  =  2.90E3_r4</a>
+   632) <a name="l632" style="background-color: #ffcccc"></a>
+   633) <a name="l633" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   634) <a name="l634" style="background-color: #ffcccc">   !  Coefficients for approximation to  erf  in first interval</a>
+   635) <a name="l635" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   636) <a name="l636" style="background-color: #ffcccc">   real(rk), parameter :: A(5) = (/ 3.16112374387056560E00_rk, 1.13864154151050156E02_rk, &amp;</a>
+   637) <a name="l637" style="background-color: #ffcccc">                                    3.77485237685302021E02_rk, 3.20937758913846947E03_rk, &amp;</a>
+   638) <a name="l638" style="background-color: #ffcccc">                                    1.85777706184603153E-1_rk /)</a>
+   639) <a name="l639" style="background-color: #ffcccc">   real(rk), parameter :: B(4) = (/ 2.36012909523441209E01_rk, 2.44024637934444173E02_rk, &amp;</a>
+   640) <a name="l640" style="background-color: #ffcccc">                                    1.28261652607737228E03_rk, 2.84423683343917062E03_rk /)</a>
+   641) <a name="l641" style="background-color: #ffcccc"></a>
+   642) <a name="l642" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   643) <a name="l643" style="background-color: #ffcccc">   !  Coefficients for approximation to  erfc  in second interval</a>
+   644) <a name="l644" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   645) <a name="l645" style="background-color: #ffcccc">   real(rk), parameter :: C(9) = (/ 5.64188496988670089E-1_rk, 8.88314979438837594E00_rk, &amp;</a>
+   646) <a name="l646" style="background-color: #ffcccc">                                    6.61191906371416295E01_rk, 2.98635138197400131E02_rk, &amp;</a>
+   647) <a name="l647" style="background-color: #ffcccc">                                    8.81952221241769090E02_rk, 1.71204761263407058E03_rk, &amp;</a>
+   648) <a name="l648" style="background-color: #ffcccc">                                    2.05107837782607147E03_rk, 1.23033935479799725E03_rk, &amp;</a>
+   649) <a name="l649" style="background-color: #ffcccc">                                    2.15311535474403846E-8_rk /)</a>
+   650) <a name="l650" style="background-color: #ffcccc">   real(rk), parameter :: D(8) = (/ 1.57449261107098347E01_rk, 1.17693950891312499E02_rk, &amp;</a>
+   651) <a name="l651" style="background-color: #ffcccc">                                    5.37181101862009858E02_rk, 1.62138957456669019E03_rk, &amp;</a>
+   652) <a name="l652" style="background-color: #ffcccc">                                    3.29079923573345963E03_rk, 4.36261909014324716E03_rk, &amp;</a>
+   653) <a name="l653" style="background-color: #ffcccc">                                    3.43936767414372164E03_rk, 1.23033935480374942E03_rk /)</a>
+   654) <a name="l654" style="background-color: #ffcccc"></a>
+   655) <a name="l655" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   656) <a name="l656" style="background-color: #ffcccc">   !  Coefficients for approximation to  erfc  in third interval</a>
+   657) <a name="l657" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   658) <a name="l658" style="background-color: #ffcccc">   real(rk), parameter :: P(6) = (/ 3.05326634961232344E-1_rk, 3.60344899949804439E-1_rk, &amp;</a>
+   659) <a name="l659" style="background-color: #ffcccc">                                    1.25781726111229246E-1_rk, 1.60837851487422766E-2_rk, &amp;</a>
+   660) <a name="l660" style="background-color: #ffcccc">                                    6.58749161529837803E-4_rk, 1.63153871373020978E-2_rk /)</a>
+   661) <a name="l661" style="background-color: #ffcccc">   real(rk), parameter :: Q(5) = (/ 2.56852019228982242E00_rk, 1.87295284992346047E00_rk, &amp;</a>
+   662) <a name="l662" style="background-color: #ffcccc">                                    5.27905102951428412E-1_rk, 6.05183413124413191E-2_rk, &amp;</a>
+   663) <a name="l663" style="background-color: #ffcccc">                                    2.33520497626869185E-3_rk /)</a>
+   664) <a name="l664" style="background-color: #ffcccc"></a>
+   665) <a name="l665" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   666) <a name="l666" style="background-color: #ffcccc">   X = ARG</a>
+   667) <a name="l667" style="background-color: #ffcccc">   Y = ABS(X)</a>
+   668) <a name="l668" style="background-color: #ffcccc">   IF (Y .LE. THRESH) THEN</a>
+   669) <a name="l669" style="background-color: #ffcccc">      !------------------------------------------------------------------</a>
+   670) <a name="l670" style="background-color: #ffcccc">      !  Evaluate  erf  for  |X| &lt;= 0.46875</a>
+   671) <a name="l671" style="background-color: #ffcccc">      !------------------------------------------------------------------</a>
+   672) <a name="l672" style="background-color: #ffcccc">      YSQ = ZERO</a>
+   673) <a name="l673" style="background-color: #ffcccc">      IF (Y .GT. XSMALLR4) YSQ = Y * Y</a>
+   674) <a name="l674" style="background-color: #ffcccc">      XNUM = A(5)*YSQ</a>
+   675) <a name="l675" style="background-color: #ffcccc">      XDEN = YSQ</a>
+   676) <a name="l676" style="background-color: #ffcccc">      DO I = 1, 3</a>
+   677) <a name="l677" style="background-color: #ffcccc">         XNUM = (XNUM + A(I)) * YSQ</a>
+   678) <a name="l678" style="background-color: #ffcccc">         XDEN = (XDEN + B(I)) * YSQ</a>
+   679) <a name="l679" style="background-color: #ffcccc">      end do</a>
+   680) <a name="l680" style="background-color: #ffcccc">      RESULT = X * (XNUM + A(4)) / (XDEN + B(4))</a>
+   681) <a name="l681" style="background-color: #ffcccc">      IF (JINT .NE. 0) RESULT = ONE - RESULT</a>
+   682) <a name="l682" style="background-color: #ffcccc">      IF (JINT .EQ. 2) RESULT = EXP(YSQ) * RESULT</a>
+   683) <a name="l683" style="background-color: #ffcccc">      GO TO 80</a>
+   684) <a name="l684" style="background-color: #ffcccc">   ELSE IF (Y .LE. FOUR) THEN</a>
+   685) <a name="l685" style="background-color: #ffcccc">      !------------------------------------------------------------------</a>
+   686) <a name="l686" style="background-color: #ffcccc">      !  Evaluate  erfc  for 0.46875 &lt;= |X| &lt;= 4.0</a>
+   687) <a name="l687" style="background-color: #ffcccc">      !------------------------------------------------------------------</a>
+   688) <a name="l688" style="background-color: #ffcccc">      XNUM = C(9)*Y</a>
+   689) <a name="l689" style="background-color: #ffcccc">      XDEN = Y</a>
+   690) <a name="l690" style="background-color: #ffcccc">      DO I = 1, 7</a>
+   691) <a name="l691" style="background-color: #ffcccc">         XNUM = (XNUM + C(I)) * Y</a>
+   692) <a name="l692" style="background-color: #ffcccc">         XDEN = (XDEN + D(I)) * Y</a>
+   693) <a name="l693" style="background-color: #ffcccc">      end do</a>
+   694) <a name="l694" style="background-color: #ffcccc">      RESULT = (XNUM + C(8)) / (XDEN + D(8))</a>
+   695) <a name="l695" style="background-color: #ffcccc">      IF (JINT .NE. 2) THEN</a>
+   696) <a name="l696" style="background-color: #ffcccc">         YSQ = AINT(Y*SIXTEN)/SIXTEN</a>
+   697) <a name="l697" style="background-color: #ffcccc">         DEL = (Y-YSQ)*(Y+YSQ)</a>
+   698) <a name="l698" style="background-color: #ffcccc">         RESULT = EXP(-YSQ*YSQ) * EXP(-DEL) * RESULT</a>
+   699) <a name="l699" style="background-color: #ffcccc">      END IF</a>
+   700) <a name="l700" style="background-color: #ffcccc">   ELSE</a>
+   701) <a name="l701" style="background-color: #ffcccc">      !------------------------------------------------------------------</a>
+   702) <a name="l702" style="background-color: #ffcccc">      !  Evaluate  erfc  for |X| &gt; 4.0</a>
+   703) <a name="l703" style="background-color: #ffcccc">      !------------------------------------------------------------------</a>
+   704) <a name="l704" style="background-color: #ffcccc">      RESULT = ZERO</a>
+   705) <a name="l705" style="background-color: #ffcccc">      IF (Y .GE. XBIG) THEN</a>
+   706) <a name="l706" style="background-color: #ffcccc">         IF ((JINT .NE. 2) .OR. (Y .GE. XMAXR4)) GO TO 30</a>
+   707) <a name="l707" style="background-color: #ffcccc">         IF (Y .GE. XHUGE) THEN</a>
+   708) <a name="l708" style="background-color: #ffcccc">            RESULT = SQRPI / Y</a>
+   709) <a name="l709" style="background-color: #ffcccc">            GO TO 30</a>
+   710) <a name="l710" style="background-color: #ffcccc">         END IF</a>
+   711) <a name="l711" style="background-color: #ffcccc">      END IF</a>
+   712) <a name="l712" style="background-color: #ffcccc">      YSQ = ONE / (Y * Y)</a>
+   713) <a name="l713" style="background-color: #ffcccc">      XNUM = P(6)*YSQ</a>
+   714) <a name="l714" style="background-color: #ffcccc">      XDEN = YSQ</a>
+   715) <a name="l715" style="background-color: #ffcccc">      DO I = 1, 4</a>
+   716) <a name="l716" style="background-color: #ffcccc">         XNUM = (XNUM + P(I)) * YSQ</a>
+   717) <a name="l717" style="background-color: #ffcccc">         XDEN = (XDEN + Q(I)) * YSQ</a>
+   718) <a name="l718" style="background-color: #ffcccc">      end do</a>
+   719) <a name="l719" style="background-color: #ffcccc">      RESULT = YSQ *(XNUM + P(5)) / (XDEN + Q(5))</a>
+   720) <a name="l720" style="background-color: #ffcccc">      RESULT = (SQRPI -  RESULT) / Y</a>
+   721) <a name="l721" style="background-color: #ffcccc">      IF (JINT .NE. 2) THEN</a>
+   722) <a name="l722" style="background-color: #ffcccc">         YSQ = AINT(Y*SIXTEN)/SIXTEN</a>
+   723) <a name="l723" style="background-color: #ffcccc">         DEL = (Y-YSQ)*(Y+YSQ)</a>
+   724) <a name="l724" style="background-color: #ffcccc">         RESULT = EXP(-YSQ*YSQ) * EXP(-DEL) * RESULT</a>
+   725) <a name="l725" style="background-color: #ffcccc">      END IF</a>
+   726) <a name="l726" style="background-color: #ffcccc">   END IF</a>
+   727) <a name="l727" style="background-color: #ffcccc">30 continue</a>
+   728) <a name="l728" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   729) <a name="l729" style="background-color: #ffcccc">   !  Fix up for negative argument, erf, etc.</a>
+   730) <a name="l730" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   731) <a name="l731" style="background-color: #ffcccc">   IF (JINT .EQ. 0) THEN</a>
+   732) <a name="l732" style="background-color: #ffcccc">      RESULT = (HALF - RESULT) + HALF</a>
+   733) <a name="l733" style="background-color: #ffcccc">      IF (X .LT. ZERO) RESULT = -RESULT</a>
+   734) <a name="l734" style="background-color: #ffcccc">   ELSE IF (JINT .EQ. 1) THEN</a>
+   735) <a name="l735" style="background-color: #ffcccc">      IF (X .LT. ZERO) RESULT = TWO - RESULT</a>
+   736) <a name="l736" style="background-color: #ffcccc">   ELSE</a>
+   737) <a name="l737" style="background-color: #ffcccc">      IF (X .LT. ZERO) THEN</a>
+   738) <a name="l738" style="background-color: #ffcccc">         IF (X .LT. XNEG) THEN</a>
+   739) <a name="l739" style="background-color: #ffcccc">            RESULT = XINFR4</a>
+   740) <a name="l740" style="background-color: #ffcccc">         ELSE</a>
+   741) <a name="l741" style="background-color: #ffcccc">            YSQ = AINT(X*SIXTEN)/SIXTEN</a>
+   742) <a name="l742" style="background-color: #ffcccc">            DEL = (X-YSQ)*(X+YSQ)</a>
+   743) <a name="l743" style="background-color: #ffcccc">            Y = EXP(YSQ*YSQ) * EXP(DEL)</a>
+   744) <a name="l744" style="background-color: #ffcccc">            RESULT = (Y+Y) - RESULT</a>
+   745) <a name="l745" style="background-color: #ffcccc">         END IF</a>
+   746) <a name="l746" style="background-color: #ffcccc">      END IF</a>
+   747) <a name="l747" style="background-color: #ffcccc">   END IF</a>
+   748) <a name="l748" style="background-color: #ffcccc">80 continue</a>
+   749) <a name="l749" style="background-color: #ffcccc">end SUBROUTINE CALERF_r4</a>
+   750) <a name="l750" style="background-color: #ffffff"></a>
+   751) <a name="l751" style="background-color: #ffffff">!------------------------------------------------------------------------------------------</a>
+   752) <a name="l752" style="background-color: #ffffff"></a>
+   753) <a name="l753" style="background-color: #ffffff">!cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc</a>
+   754) <a name="l754" style="background-color: #ffffff"></a>
+   755) <a name="l755" style="background-color: #ffffff">pure function </a><a style="background-color: #ffcccc">shr_spfn_gamma_nonintrinsic_r8(X) result(gamma)</a>
+   756) <a name="l756" style="background-color: #ffcccc"></a>
+   757) <a name="l757" style="background-color: #ffcccc">!cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc</a>
+   758) <a name="l758" style="background-color: #ffcccc">!</a>
+   759) <a name="l759" style="background-color: #ffcccc">! 7 Feb 2013 -- S. Santos</a>
+   760) <a name="l760" style="background-color: #ffcccc">! The following comments are from the original version. Changes have</a>
+   761) <a name="l761" style="background-color: #ffcccc">! been made to update syntax and allow inclusion into this module.</a>
+   762) <a name="l762" style="background-color: #ffcccc">!</a>
+   763) <a name="l763" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   764) <a name="l764" style="background-color: #ffcccc">!</a>
+   765) <a name="l765" style="background-color: #ffcccc">! THIS ROUTINE CALCULATES THE GAMMA FUNCTION FOR A REAL ARGUMENT X.</a>
+   766) <a name="l766" style="background-color: #ffcccc">!   COMPUTATION IS BASED ON AN ALGORITHM OUTLINED IN REFERENCE 1.</a>
+   767) <a name="l767" style="background-color: #ffcccc">!   THE PROGRAM USES RATIONAL FUNCTIONS THAT APPROXIMATE THE GAMMA</a>
+   768) <a name="l768" style="background-color: #ffcccc">!   FUNCTION TO AT LEAST 20 SIGNIFICANT DECIMAL DIGITS.  COEFFICIENTS</a>
+   769) <a name="l769" style="background-color: #ffcccc">!   FOR THE APPROXIMATION OVER THE INTERVAL (1,2) ARE UNPUBLISHED.</a>
+   770) <a name="l770" style="background-color: #ffcccc">!   THOSE FOR THE APPROXIMATION FOR X .GE. 12 ARE FROM REFERENCE 2.</a>
+   771) <a name="l771" style="background-color: #ffcccc">!   THE ACCURACY ACHIEVED DEPENDS ON THE ARITHMETIC SYSTEM, THE</a>
+   772) <a name="l772" style="background-color: #ffcccc">!   COMPILER, THE INTRINSIC FUNCTIONS, AND PROPER SELECTION OF THE</a>
+   773) <a name="l773" style="background-color: #ffcccc">!   MACHINE-DEPENDENT CONSTANTS.</a>
+   774) <a name="l774" style="background-color: #ffcccc">!</a>
+   775) <a name="l775" style="background-color: #ffcccc">!</a>
+   776) <a name="l776" style="background-color: #ffcccc">!*******************************************************************</a>
+   777) <a name="l777" style="background-color: #ffcccc">!*******************************************************************</a>
+   778) <a name="l778" style="background-color: #ffcccc">!</a>
+   779) <a name="l779" style="background-color: #ffcccc">! EXPLANATION OF MACHINE-DEPENDENT CONSTANTS</a>
+   780) <a name="l780" style="background-color: #ffcccc">!</a>
+   781) <a name="l781" style="background-color: #ffcccc">! BETA   - RADIX FOR THE FLOATING-POINT REPRESENTATION</a>
+   782) <a name="l782" style="background-color: #ffcccc">! MAXEXP - THE SMALLEST POSITIVE POWER OF BETA THAT OVERFLOWS</a>
+   783) <a name="l783" style="background-color: #ffcccc">! XBIG   - THE LARGEST ARGUMENT FOR WHICH GAMMA(X) IS REPRESENTABLE</a>
+   784) <a name="l784" style="background-color: #ffcccc">!          IN THE MACHINE, I.E., THE SOLUTION TO THE EQUATION</a>
+   785) <a name="l785" style="background-color: #ffcccc">!                  GAMMA(XBIG) = BETA**MAXEXP</a>
+   786) <a name="l786" style="background-color: #ffcccc">! XINF   - THE LARGEST MACHINE REPRESENTABLE FLOATING-POINT NUMBER;</a>
+   787) <a name="l787" style="background-color: #ffcccc">!          APPROXIMATELY BETA**MAXEXP</a>
+   788) <a name="l788" style="background-color: #ffcccc">! EPS    - THE SMALLEST POSITIVE FLOATING-POINT NUMBER SUCH THAT</a>
+   789) <a name="l789" style="background-color: #ffcccc">!          1.0+EPS .GT. 1.0</a>
+   790) <a name="l790" style="background-color: #ffcccc">! XMININ - THE SMALLEST POSITIVE FLOATING-POINT NUMBER SUCH THAT</a>
+   791) <a name="l791" style="background-color: #ffcccc">!          1/XMININ IS MACHINE REPRESENTABLE</a>
+   792) <a name="l792" style="background-color: #ffcccc">!</a>
+   793) <a name="l793" style="background-color: #ffcccc">!     APPROXIMATE VALUES FOR SOME IMPORTANT MACHINES ARE:</a>
+   794) <a name="l794" style="background-color: #ffcccc">!</a>
+   795) <a name="l795" style="background-color: #ffcccc">!                            BETA       MAXEXP        XBIG</a>
+   796) <a name="l796" style="background-color: #ffcccc">!</a>
+   797) <a name="l797" style="background-color: #ffcccc">! CRAY-1         (S.P.)        2         8191        966.961</a>
+   798) <a name="l798" style="background-color: #ffcccc">! CYBER 180/855</a>
+   799) <a name="l799" style="background-color: #ffcccc">!   UNDER NOS    (S.P.)        2         1070        177.803</a>
+   800) <a name="l800" style="background-color: #ffcccc">! IEEE (IBM/XT,</a>
+   801) <a name="l801" style="background-color: #ffcccc">!   SUN, ETC.)   (S.P.)        2          128        35.040</a>
+   802) <a name="l802" style="background-color: #ffcccc">! IEEE (IBM/XT,</a>
+   803) <a name="l803" style="background-color: #ffcccc">!   SUN, ETC.)   (D.P.)        2         1024        171.624</a>
+   804) <a name="l804" style="background-color: #ffcccc">! IBM 3033       (D.P.)       16           63        57.574</a>
+   805) <a name="l805" style="background-color: #ffcccc">! VAX D-FORMAT   (D.P.)        2          127        34.844</a>
+   806) <a name="l806" style="background-color: #ffcccc">! VAX G-FORMAT   (D.P.)        2         1023        171.489</a>
+   807) <a name="l807" style="background-color: #ffcccc">!</a>
+   808) <a name="l808" style="background-color: #ffcccc">!                            XINF         EPS        XMININ</a>
+   809) <a name="l809" style="background-color: #ffcccc">!</a>
+   810) <a name="l810" style="background-color: #ffcccc">! CRAY-1         (S.P.)   5.45E+2465   7.11E-15    1.84E-2466</a>
+   811) <a name="l811" style="background-color: #ffcccc">! CYBER 180/855</a>
+   812) <a name="l812" style="background-color: #ffcccc">!   UNDER NOS    (S.P.)   1.26E+322    3.55E-15    3.14E-294</a>
+   813) <a name="l813" style="background-color: #ffcccc">! IEEE (IBM/XT,</a>
+   814) <a name="l814" style="background-color: #ffcccc">!   SUN, ETC.)   (S.P.)   3.40E+38     1.19E-7     1.18E-38</a>
+   815) <a name="l815" style="background-color: #ffcccc">! IEEE (IBM/XT,</a>
+   816) <a name="l816" style="background-color: #ffcccc">!   SUN, ETC.)   (D.P.)   1.79D+308    2.22D-16    2.23D-308</a>
+   817) <a name="l817" style="background-color: #ffcccc">! IBM 3033       (D.P.)   7.23D+75     2.22D-16    1.39D-76</a>
+   818) <a name="l818" style="background-color: #ffcccc">! VAX D-FORMAT   (D.P.)   1.70D+38     1.39D-17    5.88D-39</a>
+   819) <a name="l819" style="background-color: #ffcccc">! VAX G-FORMAT   (D.P.)   8.98D+307    1.11D-16    1.12D-308</a>
+   820) <a name="l820" style="background-color: #ffcccc">!</a>
+   821) <a name="l821" style="background-color: #ffcccc">!*******************************************************************</a>
+   822) <a name="l822" style="background-color: #ffcccc">!*******************************************************************</a>
+   823) <a name="l823" style="background-color: #ffcccc">!</a>
+   824) <a name="l824" style="background-color: #ffcccc">! ERROR RETURNS</a>
+   825) <a name="l825" style="background-color: #ffcccc">!</a>
+   826) <a name="l826" style="background-color: #ffcccc">!  THE PROGRAM RETURNS THE VALUE XINF FOR SINGULARITIES OR</a>
+   827) <a name="l827" style="background-color: #ffcccc">!     WHEN OVERFLOW WOULD OCCUR.  THE COMPUTATION IS BELIEVED</a>
+   828) <a name="l828" style="background-color: #ffcccc">!     TO BE FREE OF UNDERFLOW AND OVERFLOW.</a>
+   829) <a name="l829" style="background-color: #ffcccc">!</a>
+   830) <a name="l830" style="background-color: #ffcccc">!</a>
+   831) <a name="l831" style="background-color: #ffcccc">!  INTRINSIC FUNCTIONS REQUIRED ARE:</a>
+   832) <a name="l832" style="background-color: #ffcccc">!</a>
+   833) <a name="l833" style="background-color: #ffcccc">!     INT, DBLE, EXP, LOG, REAL, SIN</a>
+   834) <a name="l834" style="background-color: #ffcccc">!</a>
+   835) <a name="l835" style="background-color: #ffcccc">!</a>
+   836) <a name="l836" style="background-color: #ffcccc">! REFERENCES:  AN OVERVIEW OF SOFTWARE DEVELOPMENT FOR SPECIAL</a>
+   837) <a name="l837" style="background-color: #ffcccc">!              FUNCTIONS   W. J. CODY, LECTURE NOTES IN MATHEMATICS,</a>
+   838) <a name="l838" style="background-color: #ffcccc">!              506, NUMERICAL ANALYSIS DUNDEE, 1975, G. A. WATSON</a>
+   839) <a name="l839" style="background-color: #ffcccc">!              (ED.), SPRINGER VERLAG, BERLIN, 1976.</a>
+   840) <a name="l840" style="background-color: #ffcccc">!</a>
+   841) <a name="l841" style="background-color: #ffcccc">!              COMPUTER APPROXIMATIONS, HART, ET. AL., WILEY AND</a>
+   842) <a name="l842" style="background-color: #ffcccc">!              SONS, NEW YORK, 1968.</a>
+   843) <a name="l843" style="background-color: #ffcccc">!</a>
+   844) <a name="l844" style="background-color: #ffcccc">!  LATEST MODIFICATION: OCTOBER 12, 1989</a>
+   845) <a name="l845" style="background-color: #ffcccc">!</a>
+   846) <a name="l846" style="background-color: #ffcccc">!  AUTHORS: W. J. CODY AND L. STOLTZ</a>
+   847) <a name="l847" style="background-color: #ffcccc">!           APPLIED MATHEMATICS DIVISION</a>
+   848) <a name="l848" style="background-color: #ffcccc">!           ARGONNE NATIONAL LABORATORY</a>
+   849) <a name="l849" style="background-color: #ffcccc">!           ARGONNE, IL 60439</a>
+   850) <a name="l850" style="background-color: #ffcccc">!</a>
+   851) <a name="l851" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   852) <a name="l852" style="background-color: #ffcccc"></a>
+   853) <a name="l853" style="background-color: #ffcccc">  real(r8), intent(in) :: x</a>
+   854) <a name="l854" style="background-color: #ffcccc">  real(r8) :: gamma</a>
+   855) <a name="l855" style="background-color: #ffcccc">  real(r8) :: fact, res, sum, xden, xnum, y, y1, ysq, z</a>
+   856) <a name="l856" style="background-color: #ffcccc"></a>
+   857) <a name="l857" style="background-color: #ffcccc">  integer :: i, n</a>
+   858) <a name="l858" style="background-color: #ffcccc">  logical :: negative_odd</a>
+   859) <a name="l859" style="background-color: #ffcccc"></a>
+   860) <a name="l860" style="background-color: #ffcccc">  ! log(2*pi)/2</a>
+   861) <a name="l861" style="background-color: #ffcccc">  real(r8), parameter :: logsqrt2pi = 0.9189385332046727417803297E0_r8</a>
+   862) <a name="l862" style="background-color: #ffcccc"></a>
+   863) <a name="l863" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   864) <a name="l864" style="background-color: #ffcccc">!  NUMERATOR AND DENOMINATOR COEFFICIENTS FOR RATIONAL MINIMAX</a>
+   865) <a name="l865" style="background-color: #ffcccc">!     APPROXIMATION OVER (1,2).</a>
+   866) <a name="l866" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   867) <a name="l867" style="background-color: #ffcccc">  real(r8), parameter :: P(8) = &amp;</a>
+   868) <a name="l868" style="background-color: #ffcccc">       (/-1.71618513886549492533811E+0_r8, 2.47656508055759199108314E+1_r8, &amp;</a>
+   869) <a name="l869" style="background-color: #ffcccc">         -3.79804256470945635097577E+2_r8, 6.29331155312818442661052E+2_r8, &amp;</a>
+   870) <a name="l870" style="background-color: #ffcccc">          8.66966202790413211295064E+2_r8,-3.14512729688483675254357E+4_r8, &amp;</a>
+   871) <a name="l871" style="background-color: #ffcccc">         -3.61444134186911729807069E+4_r8, 6.64561438202405440627855E+4_r8 /)</a>
+   872) <a name="l872" style="background-color: #ffcccc">  real(r8), parameter :: Q(8) = &amp;</a>
+   873) <a name="l873" style="background-color: #ffcccc">       (/-3.08402300119738975254353E+1_r8, 3.15350626979604161529144E+2_r8, &amp;</a>
+   874) <a name="l874" style="background-color: #ffcccc">         -1.01515636749021914166146E+3_r8,-3.10777167157231109440444E+3_r8, &amp;</a>
+   875) <a name="l875" style="background-color: #ffcccc">          2.25381184209801510330112E+4_r8, 4.75584627752788110767815E+3_r8, &amp;</a>
+   876) <a name="l876" style="background-color: #ffcccc">         -1.34659959864969306392456E+5_r8,-1.15132259675553483497211E+5_r8 /)</a>
+   877) <a name="l877" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   878) <a name="l878" style="background-color: #ffcccc">!  COEFFICIENTS FOR MINIMAX APPROXIMATION OVER (12, INF).</a>
+   879) <a name="l879" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   880) <a name="l880" style="background-color: #ffcccc">  real(r8), parameter :: C(7) = &amp;</a>
+   881) <a name="l881" style="background-color: #ffcccc">       (/-1.910444077728E-03_r8,          8.4171387781295E-04_r8, &amp;</a>
+   882) <a name="l882" style="background-color: #ffcccc">         -5.952379913043012E-04_r8,       7.93650793500350248E-04_r8, &amp;</a>
+   883) <a name="l883" style="background-color: #ffcccc">         -2.777777777777681622553E-03_r8, 8.333333333333333331554247E-02_r8, &amp;</a>
+   884) <a name="l884" style="background-color: #ffcccc">          5.7083835261E-03_r8 /)</a>
+   885) <a name="l885" style="background-color: #ffcccc"></a>
+   886) <a name="l886" style="background-color: #ffcccc">  negative_odd = .false.</a>
+   887) <a name="l887" style="background-color: #ffcccc">  fact = 1._r8</a>
+   888) <a name="l888" style="background-color: #ffcccc">  n = 0</a>
+   889) <a name="l889" style="background-color: #ffcccc">  y = x</a>
+   890) <a name="l890" style="background-color: #ffcccc">  if (y &lt;= 0._r8) then</a>
+   891) <a name="l891" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   892) <a name="l892" style="background-color: #ffcccc">!  ARGUMENT IS NEGATIVE</a>
+   893) <a name="l893" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   894) <a name="l894" style="background-color: #ffcccc">     y = -x</a>
+   895) <a name="l895" style="background-color: #ffcccc">     y1 = aint(y)</a>
+   896) <a name="l896" style="background-color: #ffcccc">     res = y - y1</a>
+   897) <a name="l897" style="background-color: #ffcccc">     if (res /= 0._r8) then</a>
+   898) <a name="l898" style="background-color: #ffcccc">        negative_odd = (y1 /= aint(y1*0.5_r8)*2._r8)</a>
+   899) <a name="l899" style="background-color: #ffcccc">        fact = -pi/sin(pi*res)</a>
+   900) <a name="l900" style="background-color: #ffcccc">        y = y + 1._r8</a>
+   901) <a name="l901" style="background-color: #ffcccc">     else</a>
+   902) <a name="l902" style="background-color: #ffcccc">        gamma = xinfr8</a>
+   903) <a name="l903" style="background-color: #ffcccc">        return</a>
+   904) <a name="l904" style="background-color: #ffcccc">     end if</a>
+   905) <a name="l905" style="background-color: #ffcccc">  end if</a>
+   906) <a name="l906" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   907) <a name="l907" style="background-color: #ffcccc">!  ARGUMENT IS POSITIVE</a>
+   908) <a name="l908" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   909) <a name="l909" style="background-color: #ffcccc">  if (y &lt; epsr8) then</a>
+   910) <a name="l910" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   911) <a name="l911" style="background-color: #ffcccc">!  ARGUMENT .LT. EPS</a>
+   912) <a name="l912" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   913) <a name="l913" style="background-color: #ffcccc">     if (y &gt;= xminr8) then</a>
+   914) <a name="l914" style="background-color: #ffcccc">        res = 1._r8/y</a>
+   915) <a name="l915" style="background-color: #ffcccc">     else</a>
+   916) <a name="l916" style="background-color: #ffcccc">        gamma = xinfr8</a>
+   917) <a name="l917" style="background-color: #ffcccc">        return</a>
+   918) <a name="l918" style="background-color: #ffcccc">     end if</a>
+   919) <a name="l919" style="background-color: #ffcccc">  elseif (y &lt; 12._r8) then</a>
+   920) <a name="l920" style="background-color: #ffcccc">     y1 = y</a>
+   921) <a name="l921" style="background-color: #ffcccc">     if (y &lt; 1._r8) then</a>
+   922) <a name="l922" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   923) <a name="l923" style="background-color: #ffcccc">!  0.0 .LT. ARGUMENT .LT. 1.0</a>
+   924) <a name="l924" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   925) <a name="l925" style="background-color: #ffcccc">        z = y</a>
+   926) <a name="l926" style="background-color: #ffcccc">        y = y + 1._r8</a>
+   927) <a name="l927" style="background-color: #ffcccc">     else</a>
+   928) <a name="l928" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   929) <a name="l929" style="background-color: #ffcccc">!  1.0 .LT. ARGUMENT .LT. 12.0, REDUCE ARGUMENT IF NECESSARY</a>
+   930) <a name="l930" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   931) <a name="l931" style="background-color: #ffcccc">        n = int(y) - 1</a>
+   932) <a name="l932" style="background-color: #ffcccc">        y = y - real(n, r8)</a>
+   933) <a name="l933" style="background-color: #ffcccc">        z = y - 1._r8</a>
+   934) <a name="l934" style="background-color: #ffcccc">     end if</a>
+   935) <a name="l935" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   936) <a name="l936" style="background-color: #ffcccc">!  EVALUATE APPROXIMATION FOR 1.0 .LT. ARGUMENT .LT. 2.0</a>
+   937) <a name="l937" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   938) <a name="l938" style="background-color: #ffcccc">     xnum = 0._r8</a>
+   939) <a name="l939" style="background-color: #ffcccc">     xden = 1._r8</a>
+   940) <a name="l940" style="background-color: #ffcccc">     do i=1,8</a>
+   941) <a name="l941" style="background-color: #ffcccc">        xnum = (xnum+P(i))*z</a>
+   942) <a name="l942" style="background-color: #ffcccc">        xden = xden*z + Q(i)</a>
+   943) <a name="l943" style="background-color: #ffcccc">     end do</a>
+   944) <a name="l944" style="background-color: #ffcccc">     res = xnum/xden + 1._r8</a>
+   945) <a name="l945" style="background-color: #ffcccc">     if (y1 &lt; y) then</a>
+   946) <a name="l946" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   947) <a name="l947" style="background-color: #ffcccc">!  ADJUST RESULT FOR CASE  0.0 .LT. ARGUMENT .LT. 1.0</a>
+   948) <a name="l948" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   949) <a name="l949" style="background-color: #ffcccc">        res = res/y1</a>
+   950) <a name="l950" style="background-color: #ffcccc">     elseif (y1 &gt; y) then</a>
+   951) <a name="l951" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   952) <a name="l952" style="background-color: #ffcccc">!  ADJUST RESULT FOR CASE  2.0 .LT. ARGUMENT .LT. 12.0</a>
+   953) <a name="l953" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   954) <a name="l954" style="background-color: #ffcccc">        do i = 1,n</a>
+   955) <a name="l955" style="background-color: #ffcccc">           res = res*y</a>
+   956) <a name="l956" style="background-color: #ffcccc">           y = y + 1._r8</a>
+   957) <a name="l957" style="background-color: #ffcccc">        end do</a>
+   958) <a name="l958" style="background-color: #ffcccc">     end if</a>
+   959) <a name="l959" style="background-color: #ffcccc">  else</a>
+   960) <a name="l960" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   961) <a name="l961" style="background-color: #ffcccc">!  EVALUATE FOR ARGUMENT .GE. 12.0,</a>
+   962) <a name="l962" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   963) <a name="l963" style="background-color: #ffcccc">     if (y &lt;= xbig_gamma) then</a>
+   964) <a name="l964" style="background-color: #ffcccc">        ysq = y*y</a>
+   965) <a name="l965" style="background-color: #ffcccc">        sum = C(7)</a>
+   966) <a name="l966" style="background-color: #ffcccc">        do i=1,6</a>
+   967) <a name="l967" style="background-color: #ffcccc">           sum = sum/ysq + C(i)</a>
+   968) <a name="l968" style="background-color: #ffcccc">        end do</a>
+   969) <a name="l969" style="background-color: #ffcccc">        sum = sum/y - y + logsqrt2pi</a>
+   970) <a name="l970" style="background-color: #ffcccc">        sum = sum + (y-0.5_r8)*log(y)</a>
+   971) <a name="l971" style="background-color: #ffcccc">        res = exp(sum)</a>
+   972) <a name="l972" style="background-color: #ffcccc">     else</a>
+   973) <a name="l973" style="background-color: #ffcccc">        gamma = xinfr8</a>
+   974) <a name="l974" style="background-color: #ffcccc">        return</a>
+   975) <a name="l975" style="background-color: #ffcccc">     end if</a>
+   976) <a name="l976" style="background-color: #ffcccc">  end if</a>
+   977) <a name="l977" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   978) <a name="l978" style="background-color: #ffcccc">!  FINAL ADJUSTMENTS AND RETURN</a>
+   979) <a name="l979" style="background-color: #ffcccc">!----------------------------------------------------------------------</a>
+   980) <a name="l980" style="background-color: #ffcccc">  if (negative_odd)  res = -res</a>
+   981) <a name="l981" style="background-color: #ffcccc">  if (fact /= 1._r8) res = fact/res</a>
+   982) <a name="l982" style="background-color: #ffcccc">  gamma = res</a>
+   983) <a name="l983" style="background-color: #ffcccc">! ---------- LAST LINE OF GAMMA ----------</a>
+   984) <a name="l984" style="background-color: #ffcccc">end function shr_spfn_gamma_nonintrinsic_r8</a>
+   985) <a name="l985" style="background-color: #ffffff"></a>
+   986) <a name="l986" style="background-color: #ffffff">!! Incomplete Gamma function</a>
+   987) <a name="l987" style="background-color: #ffffff">!!</a>
+   988) <a name="l988" style="background-color: #ffffff">!! @author  Tianyi Fan</a>
+   989) <a name="l989" style="background-color: #ffffff">!! @version August-2010</a>
+   990) <a name="l990" style="background-color: #ffffff">real(r8) elemental function </a><a style="background-color: #ffcccc">shr_spfn_igamma(a, x)</a>
+   991) <a name="l991" style="background-color: #ffcccc">  ! Upper incomplete gamma function.</a>
+   992) <a name="l992" style="background-color: #ffcccc">  ! Modified for inclusion in this module and made</a>
+   993) <a name="l993" style="background-color: #ffcccc">  ! pure elemental, September 2012</a>
+   994) <a name="l994" style="background-color: #ffcccc"></a>
+   995) <a name="l995" style="background-color: #ffcccc">  real(r8), intent(in) ::      a</a>
+   996) <a name="l996" style="background-color: #ffcccc">  real(r8), intent(in) ::      x</a>
+   997) <a name="l997" style="background-color: #ffcccc"></a>
+   998) <a name="l998" style="background-color: #ffcccc">  ! local variable</a>
+   999) <a name="l999" style="background-color: #ffcccc">  real(r8) :: xam, gin, s, r, t0</a>
+  1000) <a name="l1000" style="background-color: #ffcccc">  integer  :: k</a>
+  1001) <a name="l1001" style="background-color: #ffcccc"></a>
+  1002) <a name="l1002" style="background-color: #ffcccc"></a>
+  1003) <a name="l1003" style="background-color: #ffcccc">  if (x == 0.0_r8) then</a>
+  1004) <a name="l1004" style="background-color: #ffcccc">     shr_spfn_igamma = shr_spfn_gamma(a)</a>
+  1005) <a name="l1005" style="background-color: #ffcccc">     return</a>
+  1006) <a name="l1006" style="background-color: #ffcccc">  end if</a>
+  1007) <a name="l1007" style="background-color: #ffcccc"></a>
+  1008) <a name="l1008" style="background-color: #ffcccc">  xam = -x + a * log(x)</a>
+  1009) <a name="l1009" style="background-color: #ffcccc">  </a>
+  1010) <a name="l1010" style="background-color: #ffcccc">  if ((xam &gt; 700.0_r8) .or. (a &gt; xbig_gamma)) then</a>
+  1011) <a name="l1011" style="background-color: #ffcccc">     ! Out of bounds</a>
+  1012) <a name="l1012" style="background-color: #ffcccc">     ! Return &quot;huge&quot; value.</a>
+  1013) <a name="l1013" style="background-color: #ffcccc">     shr_spfn_igamma = xinfr8</a>
+  1014) <a name="l1014" style="background-color: #ffcccc">     return</a>
+  1015) <a name="l1015" style="background-color: #ffcccc"></a>
+  1016) <a name="l1016" style="background-color: #ffcccc">  else if (x &lt;= (1.0_r8 + a)) then</a>
+  1017) <a name="l1017" style="background-color: #ffcccc">     s = 1.0_r8 / a</a>
+  1018) <a name="l1018" style="background-color: #ffcccc">     r = s</a>
+  1019) <a name="l1019" style="background-color: #ffcccc"></a>
+  1020) <a name="l1020" style="background-color: #ffcccc">     do  k = 1,60</a>
+  1021) <a name="l1021" style="background-color: #ffcccc">        r = r * x / (a+k)</a>
+  1022) <a name="l1022" style="background-color: #ffcccc">        s = s + r</a>
+  1023) <a name="l1023" style="background-color: #ffcccc"></a>
+  1024) <a name="l1024" style="background-color: #ffcccc">        if (abs(r/s) &lt; 1.0e-15_r8) exit</a>
+  1025) <a name="l1025" style="background-color: #ffcccc">     end do</a>
+  1026) <a name="l1026" style="background-color: #ffcccc">        </a>
+  1027) <a name="l1027" style="background-color: #ffcccc">     gin = exp(xam) * s           </a>
+  1028) <a name="l1028" style="background-color: #ffcccc">     shr_spfn_igamma = shr_spfn_gamma(a) - gin</a>
+  1029) <a name="l1029" style="background-color: #ffcccc">        </a>
+  1030) <a name="l1030" style="background-color: #ffcccc">  else</a>
+  1031) <a name="l1031" style="background-color: #ffcccc">     t0 = 0.0_r8</a>
+  1032) <a name="l1032" style="background-color: #ffcccc"></a>
+  1033) <a name="l1033" style="background-color: #ffcccc">     do k = 60,1,-1</a>
+  1034) <a name="l1034" style="background-color: #ffcccc">        t0 = (k - a) / (1.0_r8 + k / (x + t0))</a>
+  1035) <a name="l1035" style="background-color: #ffcccc">     end do</a>
+  1036) <a name="l1036" style="background-color: #ffcccc"></a>
+  1037) <a name="l1037" style="background-color: #ffcccc">     shr_spfn_igamma = exp(xam) / (x + t0)</a>
+  1038) <a name="l1038" style="background-color: #ffcccc">  endif</a>
+  1039) <a name="l1039" style="background-color: #ffcccc"></a>
+  1040) <a name="l1040" style="background-color: #ffcccc">end function shr_spfn_igamma</a>
+  1041) <a name="l1041" style="background-color: #ffffff"></a>
+  1042) <a name="l1042" style="background-color: #ffffff"></a>
+  1043) <a name="l1043" style="background-color: #ffffff">end module shr_spfn_mod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

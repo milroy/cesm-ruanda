@@ -1,0 +1,317 @@
+<html>
+<head>
+<title>Listing of subgridRestMod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;subgridRestMod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module subgridRestMod</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">contains</a>
+     4) <a name="l4" style="background-color: #ffffff"></a>
+     5) <a name="l5" style="background-color: #ffffff">!------------------------------------------------------------------------</a>
+     6) <a name="l6" style="background-color: #ffffff">!BOP</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !IROUTINE: subgridRest</a>
+     9) <a name="l9" style="background-color: #ffffff">!</a>
+    10) <a name="l10" style="background-color: #ffffff">! !INTERFACE:</a>
+    11) <a name="l11" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">subgridRest( ncid, flag )</a>
+    12) <a name="l12" style="background-color: #ffcccc"></a>
+    13) <a name="l13" style="background-color: #ffcccc">    use shr_kind_mod , only : r8 =&gt; shr_kind_r8</a>
+    14) <a name="l14" style="background-color: #ffcccc">    use clmtype</a>
+    15) <a name="l15" style="background-color: #ffcccc">    use ncdio_pio        , only : file_desc_t, ncd_io, ncd_defvar, ncd_int, ncd_double</a>
+    16) <a name="l16" style="background-color: #ffcccc">    use decompMod        , only : get_proc_bounds, ldecomp</a>
+    17) <a name="l17" style="background-color: #ffcccc">    use domainMod        , only : ldomain</a>
+    18) <a name="l18" style="background-color: #ffcccc">    use clm_time_manager , only : get_curr_date</a>
+    19) <a name="l19" style="background-color: #ffcccc">    use abortutils       , only : endrun</a>
+    20) <a name="l20" style="background-color: #ffcccc">!</a>
+    21) <a name="l21" style="background-color: #ffcccc">! !ARGUMENTS:</a>
+    22) <a name="l22" style="background-color: #ffcccc">    implicit none</a>
+    23) <a name="l23" style="background-color: #ffcccc">    type(file_desc_t), intent(inout) :: ncid  ! netCDF dataset id</a>
+    24) <a name="l24" style="background-color: #ffcccc">    character(len=*) , intent(in)    :: flag  ! flag to determine if define, write or read data</a>
+    25) <a name="l25" style="background-color: #ffcccc">!</a>
+    26) <a name="l26" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+    27) <a name="l27" style="background-color: #ffcccc">!</a>
+    28) <a name="l28" style="background-color: #ffcccc">!</a>
+    29) <a name="l29" style="background-color: #ffcccc">! !LOCAL VARIABLES:</a>
+    30) <a name="l30" style="background-color: #ffcccc">!EOP</a>
+    31) <a name="l31" style="background-color: #ffcccc">    integer :: g,l,c,p,j,i         ! indices</a>
+    32) <a name="l32" style="background-color: #ffcccc">    integer :: yr                  ! current year (0 -&gt; ...)</a>
+    33) <a name="l33" style="background-color: #ffcccc">    integer :: mon                 ! current month (1 -&gt; 12)</a>
+    34) <a name="l34" style="background-color: #ffcccc">    integer :: day                 ! current day (1 -&gt; 31)</a>
+    35) <a name="l35" style="background-color: #ffcccc">    integer :: mcsec               ! seconds of current date</a>
+    36) <a name="l36" style="background-color: #ffcccc">    integer :: mcdate              ! current date</a>
+    37) <a name="l37" style="background-color: #ffcccc">    integer :: begp, endp          ! per-proc beg/end pft indices</a>
+    38) <a name="l38" style="background-color: #ffcccc">    integer :: begc, endc          ! per-proc beg/end column indices</a>
+    39) <a name="l39" style="background-color: #ffcccc">    integer :: begl, endl          ! per-proc beg/end landunit indices</a>
+    40) <a name="l40" style="background-color: #ffcccc">    integer :: begg, endg          ! per-proc beg/end gridcell indices</a>
+    41) <a name="l41" style="background-color: #ffcccc">    integer :: ier                 ! error status</a>
+    42) <a name="l42" style="background-color: #ffcccc">    real(r8),pointer :: rgarr(:)   ! temporary</a>
+    43) <a name="l43" style="background-color: #ffcccc">    real(r8),pointer :: rlarr(:)   ! temporary</a>
+    44) <a name="l44" style="background-color: #ffcccc">    real(r8),pointer :: rcarr(:)   ! temporary</a>
+    45) <a name="l45" style="background-color: #ffcccc">    real(r8),pointer :: rparr(:)   ! temporary</a>
+    46) <a name="l46" style="background-color: #ffcccc">    integer ,pointer :: igarr(:)   ! temporary</a>
+    47) <a name="l47" style="background-color: #ffcccc">    integer ,pointer :: ilarr(:)   ! temporary</a>
+    48) <a name="l48" style="background-color: #ffcccc">    integer ,pointer :: icarr(:)   ! temporary</a>
+    49) <a name="l49" style="background-color: #ffcccc">    integer ,pointer :: iparr(:)   ! temporary</a>
+    50) <a name="l50" style="background-color: #ffcccc">    type(gridcell_type), pointer :: gptr  ! pointer to gridcell derived subtype</a>
+    51) <a name="l51" style="background-color: #ffcccc">    type(landunit_type), pointer :: lptr  ! pointer to landunit derived subtype</a>
+    52) <a name="l52" style="background-color: #ffcccc">    type(column_type)  , pointer :: cptr  ! pointer to column derived subtype</a>
+    53) <a name="l53" style="background-color: #ffcccc">    type(pft_type)     , pointer :: pptr  ! pointer to pft derived subtype</a>
+    54) <a name="l54" style="background-color: #ffcccc">    character(len=32) :: subname='SubgridRest' ! subroutine name</a>
+    55) <a name="l55" style="background-color: #ffcccc">!------------------------------------------------------------------------</a>
+    56) <a name="l56" style="background-color: #ffcccc"></a>
+    57) <a name="l57" style="background-color: #ffcccc">    ! Set pointers into derived type</a>
+    58) <a name="l58" style="background-color: #ffcccc"></a>
+    59) <a name="l59" style="background-color: #ffcccc">    gptr =&gt; grc</a>
+    60) <a name="l60" style="background-color: #ffcccc">    lptr =&gt; lun</a>
+    61) <a name="l61" style="background-color: #ffcccc">    cptr =&gt; col</a>
+    62) <a name="l62" style="background-color: #ffcccc">    pptr =&gt; pft</a>
+    63) <a name="l63" style="background-color: #ffcccc"></a>
+    64) <a name="l64" style="background-color: #ffcccc">    ! Get relevant sizes</a>
+    65) <a name="l65" style="background-color: #ffcccc"></a>
+    66) <a name="l66" style="background-color: #ffcccc">    call get_proc_bounds(begg, endg, begl, endl, begc, endc, begp, endp)</a>
+    67) <a name="l67" style="background-color: #ffcccc"></a>
+    68) <a name="l68" style="background-color: #ffcccc">    ! Allocate dynamic memory</a>
+    69) <a name="l69" style="background-color: #ffcccc"></a>
+    70) <a name="l70" style="background-color: #ffcccc">    if (flag == 'write') then</a>
+    71) <a name="l71" style="background-color: #ffcccc">       allocate(rgarr(begg:endg),rlarr(begl:endl),rcarr(begc:endc),rparr(begp:endp),stat=ier)</a>
+    72) <a name="l72" style="background-color: #ffcccc">       if (ier /= 0) call endrun('allocation error from inicfile_fields rarrs')</a>
+    73) <a name="l73" style="background-color: #ffcccc">       allocate(igarr(begg:endg),ilarr(begl:endl),icarr(begc:endc),iparr(begp:endp),stat=ier)</a>
+    74) <a name="l74" style="background-color: #ffcccc">       if (ier /= 0) call endrun('allocation error from inicfile_fields iarrs')</a>
+    75) <a name="l75" style="background-color: #ffcccc">    end if</a>
+    76) <a name="l76" style="background-color: #ffcccc"></a>
+    77) <a name="l77" style="background-color: #ffcccc">    ! Write output data (first write current date and seconds of current date)</a>
+    78) <a name="l78" style="background-color: #ffcccc"></a>
+    79) <a name="l79" style="background-color: #ffcccc">    if (flag == 'define') then</a>
+    80) <a name="l80" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='mcdate', xtype=ncd_int, &amp;</a>
+    81) <a name="l81" style="background-color: #ffcccc">            long_name='current date as 8 digit integer (YYYYMMDD)')</a>
+    82) <a name="l82" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='mcsec', xtype=ncd_int,  &amp;</a>
+    83) <a name="l83" style="background-color: #ffcccc">            long_name='current seconds of current date', units='s')</a>
+    84) <a name="l84" style="background-color: #ffcccc">    else if (flag == 'write') then</a>
+    85) <a name="l85" style="background-color: #ffcccc">       call get_curr_date (yr, mon, day, mcsec)</a>
+    86) <a name="l86" style="background-color: #ffcccc">       mcdate = yr*10000 + mon*100 + day</a>
+    87) <a name="l87" style="background-color: #ffcccc">       !TODO - add this to the file - get this to work</a>
+    88) <a name="l88" style="background-color: #ffcccc">!DEBUG  call ncd_io(varname='mcdate', data=mcdate, ncid=ncid, flag=flag)</a>
+    89) <a name="l89" style="background-color: #ffcccc">!DEBUG  call ncd_io(varname='mcsec' , data=mcsec , ncid=ncid, flag=flag)</a>
+    90) <a name="l90" style="background-color: #ffcccc">    end if</a>
+    91) <a name="l91" style="background-color: #ffcccc"></a>
+    92) <a name="l92" style="background-color: #ffcccc">    ! Write gridcell info</a>
+    93) <a name="l93" style="background-color: #ffcccc"></a>
+    94) <a name="l94" style="background-color: #ffcccc">    if (flag == 'define') then</a>
+    95) <a name="l95" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='grid1d_lon', xtype=ncd_double,  &amp;</a>
+    96) <a name="l96" style="background-color: #ffcccc">            dim1name='gridcell', long_name='gridcell longitude', units='degrees_east')</a>
+    97) <a name="l97" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='grid1d_lat', xtype=ncd_double,  &amp;</a>
+    98) <a name="l98" style="background-color: #ffcccc">            dim1name='gridcell', long_name='gridcell latitude', units='degrees_north')</a>
+    99) <a name="l99" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='grid1d_ixy', xtype=ncd_int,  &amp;</a>
+   100) <a name="l100" style="background-color: #ffcccc">            dim1name='gridcell', long_name='2d longitude index of corresponding gridcell')</a>
+   101) <a name="l101" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='grid1d_jxy', xtype=ncd_int,  &amp;</a>
+   102) <a name="l102" style="background-color: #ffcccc">            dim1name='gridcell', long_name='2d latitude index of corresponding gridcell')</a>
+   103) <a name="l103" style="background-color: #ffcccc">    else if (flag == 'write') then</a>
+   104) <a name="l104" style="background-color: #ffcccc">       do g=begg,endg</a>
+   105) <a name="l105" style="background-color: #ffcccc">          igarr(g)= mod(ldecomp%gdc2glo(g)-1,ldomain%ni) + 1</a>
+   106) <a name="l106" style="background-color: #ffcccc">       enddo</a>
+   107) <a name="l107" style="background-color: #ffcccc">       call ncd_io(varname='grid1d_ixy', data=igarr      , dim1name=nameg, ncid=ncid, flag=flag)</a>
+   108) <a name="l108" style="background-color: #ffcccc">       do g=begg,endg</a>
+   109) <a name="l109" style="background-color: #ffcccc">          igarr(g)= (ldecomp%gdc2glo(g) - 1)/ldomain%ni + 1</a>
+   110) <a name="l110" style="background-color: #ffcccc">       enddo</a>
+   111) <a name="l111" style="background-color: #ffcccc">       call ncd_io(varname='grid1d_jxy', data=igarr      , dim1name=nameg, ncid=ncid, flag=flag)</a>
+   112) <a name="l112" style="background-color: #ffcccc">       call ncd_io(varname='grid1d_lon', data=gptr%londeg, dim1name=nameg, ncid=ncid, flag=flag)</a>
+   113) <a name="l113" style="background-color: #ffcccc">       call ncd_io(varname='grid1d_lat', data=gptr%latdeg, dim1name=nameg, ncid=ncid, flag=flag)</a>
+   114) <a name="l114" style="background-color: #ffcccc">    end if</a>
+   115) <a name="l115" style="background-color: #ffcccc"></a>
+   116) <a name="l116" style="background-color: #ffcccc">    ! Write landunit info</a>
+   117) <a name="l117" style="background-color: #ffcccc"></a>
+   118) <a name="l118" style="background-color: #ffcccc">    if (flag == 'define') then</a>
+   119) <a name="l119" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='land1d_lon', xtype=ncd_double,  &amp;</a>
+   120) <a name="l120" style="background-color: #ffcccc">            dim1name='landunit', long_name='landunit longitude', units='degrees_east')</a>
+   121) <a name="l121" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='land1d_lat', xtype=ncd_double,  &amp;</a>
+   122) <a name="l122" style="background-color: #ffcccc">            dim1name='landunit', long_name='landunit latitude', units='degrees_north')</a>
+   123) <a name="l123" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='land1d_ixy', xtype=ncd_int,  &amp;</a>
+   124) <a name="l124" style="background-color: #ffcccc">            dim1name='landunit', long_name='2d longitude index of corresponding landunit')</a>
+   125) <a name="l125" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='land1d_jxy', xtype=ncd_int,  &amp;</a>
+   126) <a name="l126" style="background-color: #ffcccc">            dim1name='landunit', long_name='2d latitude index of corresponding landunit')</a>
+   127) <a name="l127" style="background-color: #ffcccc">       ! --- EBK Do NOT write out indices that are incorrect 4/1/2011 --- Bug 1310</a>
+   128) <a name="l128" style="background-color: #ffcccc">       !call ncd_defvar(ncid=ncid, varname='land1d_gi', xtype=ncd_int,  &amp;</a>
+   129) <a name="l129" style="background-color: #ffcccc">       !     dim1name='landunit', long_name='1d grid index of corresponding landunit')</a>
+   130) <a name="l130" style="background-color: #ffcccc">       ! ----------------------------------------------------------------</a>
+   131) <a name="l131" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='land1d_wtxy', xtype=ncd_double,  &amp;</a>
+   132) <a name="l132" style="background-color: #ffcccc">            dim1name='landunit', long_name='landunit weight relative to corresponding gridcell')</a>
+   133) <a name="l133" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='land1d_ityplun', xtype=ncd_int,  &amp;</a>
+   134) <a name="l134" style="background-color: #ffcccc">            dim1name='landunit', long_name='landunit type (vegetated,urban,lake,wetland or glacier)')</a>
+   135) <a name="l135" style="background-color: #ffcccc">    else if (flag == 'write') then</a>
+   136) <a name="l136" style="background-color: #ffcccc">       do l=begl,endl</a>
+   137) <a name="l137" style="background-color: #ffcccc">          rlarr(l) = gptr%londeg(lptr%gridcell(l))</a>
+   138) <a name="l138" style="background-color: #ffcccc">       enddo</a>
+   139) <a name="l139" style="background-color: #ffcccc">       call ncd_io(varname='land1d_lon'    , data=rlarr        , dim1name=namel, ncid=ncid, flag=flag)</a>
+   140) <a name="l140" style="background-color: #ffcccc">       do l=begl,endl</a>
+   141) <a name="l141" style="background-color: #ffcccc">          rlarr(l) = gptr%latdeg(lptr%gridcell(l))</a>
+   142) <a name="l142" style="background-color: #ffcccc">       enddo</a>
+   143) <a name="l143" style="background-color: #ffcccc">       call ncd_io(varname='land1d_lat'    , data=rlarr        , dim1name=namel, ncid=ncid, flag=flag)</a>
+   144) <a name="l144" style="background-color: #ffcccc">       do l=begl,endl</a>
+   145) <a name="l145" style="background-color: #ffcccc">          ilarr(l) = mod(ldecomp%gdc2glo(lptr%gridcell(l))-1,ldomain%ni) + 1</a>
+   146) <a name="l146" style="background-color: #ffcccc">       enddo</a>
+   147) <a name="l147" style="background-color: #ffcccc">       call ncd_io(varname='land1d_ixy'    , data=ilarr        , dim1name=namel, ncid=ncid, flag=flag)</a>
+   148) <a name="l148" style="background-color: #ffcccc">       do l=begl,endl</a>
+   149) <a name="l149" style="background-color: #ffcccc">          ilarr(l) = (ldecomp%gdc2glo(lptr%gridcell(l))-1)/ldomain%ni + 1</a>
+   150) <a name="l150" style="background-color: #ffcccc">       enddo</a>
+   151) <a name="l151" style="background-color: #ffcccc">       call ncd_io(varname='land1d_jxy'    , data=ilarr        , dim1name=namel, ncid=ncid, flag=flag)</a>
+   152) <a name="l152" style="background-color: #ffcccc">       call ncd_io(varname='land1d_wtxy'   , data=lptr%wtgcell , dim1name=namel, ncid=ncid, flag=flag)</a>
+   153) <a name="l153" style="background-color: #ffcccc">       call ncd_io(varname='land1d_ityplun', data=lptr%itype   , dim1name=namel, ncid=ncid, flag=flag)</a>
+   154) <a name="l154" style="background-color: #ffcccc">       ! --- EBK Do NOT write out indices that are incorrect 4/1/2011 --- Bug 1310</a>
+   155) <a name="l155" style="background-color: #ffcccc">       !call ncd_io(varname='land1d_gi'     , data=lptr%gridcell, dim1name=namel, ncid=ncid, flag=flag)</a>
+   156) <a name="l156" style="background-color: #ffcccc">       ! ----------------------------------------------------------------</a>
+   157) <a name="l157" style="background-color: #ffcccc">    end if</a>
+   158) <a name="l158" style="background-color: #ffcccc"></a>
+   159) <a name="l159" style="background-color: #ffcccc">    ! Write column info</a>
+   160) <a name="l160" style="background-color: #ffcccc"></a>
+   161) <a name="l161" style="background-color: #ffcccc">    if (flag == 'define') then</a>
+   162) <a name="l162" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='cols1d_lon', xtype=ncd_double,  &amp;</a>
+   163) <a name="l163" style="background-color: #ffcccc">            dim1name='column', long_name='column longitude', units='degrees_east')</a>
+   164) <a name="l164" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='cols1d_lat', xtype=ncd_double,  &amp;</a>
+   165) <a name="l165" style="background-color: #ffcccc">            dim1name='column', long_name='column latitude', units='degrees_north')</a>
+   166) <a name="l166" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='cols1d_ixy', xtype=ncd_int,   &amp;</a>
+   167) <a name="l167" style="background-color: #ffcccc">            dim1name='column', long_name='2d longitude index of corresponding column')</a>
+   168) <a name="l168" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='cols1d_jxy', xtype=ncd_int,   &amp;</a>
+   169) <a name="l169" style="background-color: #ffcccc">            dim1name='column', long_name='2d latitude index of corresponding column')</a>
+   170) <a name="l170" style="background-color: #ffcccc">       ! --- EBK Do NOT write out indices that are incorrect 4/1/2011 --- Bug 1310</a>
+   171) <a name="l171" style="background-color: #ffcccc">       !call ncd_defvar(ncid=ncid, varname='cols1d_gi', xtype=ncd_int,   &amp;</a>
+   172) <a name="l172" style="background-color: #ffcccc">       !     dim1name='column', long_name='1d grid index of corresponding column')</a>
+   173) <a name="l173" style="background-color: #ffcccc">       !call ncd_defvar(ncid=ncid, varname='cols1d_li', xtype=ncd_int,   &amp;</a>
+   174) <a name="l174" style="background-color: #ffcccc">       !     dim1name='column', long_name='1d landunit index of corresponding column')</a>
+   175) <a name="l175" style="background-color: #ffcccc">       ! ----------------------------------------------------------------</a>
+   176) <a name="l176" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='cols1d_wtxy', xtype=ncd_double,   &amp;</a>
+   177) <a name="l177" style="background-color: #ffcccc">            dim1name='column', long_name='column weight relative to corresponding gridcell')</a>
+   178) <a name="l178" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='cols1d_wtlnd', xtype=ncd_double,   &amp;</a>
+   179) <a name="l179" style="background-color: #ffcccc">            dim1name='column', long_name='column weight relative to corresponding landunit')</a>
+   180) <a name="l180" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='cols1d_ityplun', xtype=ncd_int,   &amp;</a>
+   181) <a name="l181" style="background-color: #ffcccc">            dim1name='column', long_name='column landunit type (vegetated,urban,lake,wetland or glacier)')</a>
+   182) <a name="l182" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='cols1d_ityp', xtype=ncd_int,   &amp;</a>
+   183) <a name="l183" style="background-color: #ffcccc">            dim1name='column', long_name=&amp;</a>
+   184) <a name="l184" style="background-color: #ffcccc">           'column type (61-roof,62-sunwall,63-shadewall,64-impervious road,65-pervious road,1-all other columns)')</a>
+   185) <a name="l185" style="background-color: #ffcccc">    else if (flag == 'write') then</a>
+   186) <a name="l186" style="background-color: #ffcccc">       do c=begc,endc</a>
+   187) <a name="l187" style="background-color: #ffcccc">          rcarr(c) = gptr%londeg(cptr%gridcell(c))</a>
+   188) <a name="l188" style="background-color: #ffcccc">       enddo</a>
+   189) <a name="l189" style="background-color: #ffcccc">       call ncd_io(varname='cols1d_lon'  , data=rcarr        , dim1name=namec, ncid=ncid, flag=flag)</a>
+   190) <a name="l190" style="background-color: #ffcccc">       do c=begc,endc</a>
+   191) <a name="l191" style="background-color: #ffcccc">          rcarr(c) = gptr%latdeg(cptr%gridcell(c))</a>
+   192) <a name="l192" style="background-color: #ffcccc">       enddo</a>
+   193) <a name="l193" style="background-color: #ffcccc">       call ncd_io(varname='cols1d_lat'  , data=rcarr        , dim1name=namec, ncid=ncid, flag=flag)</a>
+   194) <a name="l194" style="background-color: #ffcccc">       do c=begc,endc</a>
+   195) <a name="l195" style="background-color: #ffcccc">          icarr(c) = mod(ldecomp%gdc2glo(cptr%gridcell(c))-1,ldomain%ni) + 1</a>
+   196) <a name="l196" style="background-color: #ffcccc">       enddo</a>
+   197) <a name="l197" style="background-color: #ffcccc">       call ncd_io(varname='cols1d_ixy'  , data=icarr        , dim1name=namec, ncid=ncid, flag=flag)</a>
+   198) <a name="l198" style="background-color: #ffcccc">       do c=begc,endc</a>
+   199) <a name="l199" style="background-color: #ffcccc">          icarr(c) = (ldecomp%gdc2glo(cptr%gridcell(c))-1)/ldomain%ni + 1</a>
+   200) <a name="l200" style="background-color: #ffcccc">       enddo</a>
+   201) <a name="l201" style="background-color: #ffcccc">       call ncd_io(varname='cols1d_jxy'  , data=icarr        , dim1name=namec, ncid=ncid, flag=flag)</a>
+   202) <a name="l202" style="background-color: #ffcccc">       call ncd_io(varname='cols1d_wtxy' , data=cptr%wtgcell , dim1name=namec, ncid=ncid, flag=flag)</a>
+   203) <a name="l203" style="background-color: #ffcccc">       call ncd_io(varname='cols1d_wtlnd', data=cptr%wtlunit , dim1name=namec, ncid=ncid, flag=flag)</a>
+   204) <a name="l204" style="background-color: #ffcccc">       ! --- EBK Do NOT write out indices that are incorrect 4/1/2011 --- Bug 1310</a>
+   205) <a name="l205" style="background-color: #ffcccc">       !call ncd_io(varname='cols1d_gi'   , data=cptr%gridcell, dim1name=namec, ncid=ncid, flag=flag)</a>
+   206) <a name="l206" style="background-color: #ffcccc">       !call ncd_io(varname='cols1d_li'   , data=cptr%landunit, dim1name=namec, ncid=ncid, flag=flag)</a>
+   207) <a name="l207" style="background-color: #ffcccc">       ! ----------------------------------------------------------------</a>
+   208) <a name="l208" style="background-color: #ffcccc">       do c=begc,endc</a>
+   209) <a name="l209" style="background-color: #ffcccc">          icarr(c) = lptr%itype(cptr%landunit(c))</a>
+   210) <a name="l210" style="background-color: #ffcccc">       enddo</a>
+   211) <a name="l211" style="background-color: #ffcccc">       call ncd_io(varname='cols1d_ityplun', data=icarr      , dim1name=namec, ncid=ncid, flag=flag)</a>
+   212) <a name="l212" style="background-color: #ffcccc">       do c=begc,endc</a>
+   213) <a name="l213" style="background-color: #ffcccc">          icarr(c) = cptr%itype((c))</a>
+   214) <a name="l214" style="background-color: #ffcccc">       enddo</a>
+   215) <a name="l215" style="background-color: #ffcccc">       call ncd_io(varname='cols1d_ityp', data=icarr      , dim1name=namec, ncid=ncid, flag=flag)</a>
+   216) <a name="l216" style="background-color: #ffcccc">    end if</a>
+   217) <a name="l217" style="background-color: #ffcccc"></a>
+   218) <a name="l218" style="background-color: #ffcccc">    ! Write pft info</a>
+   219) <a name="l219" style="background-color: #ffcccc"></a>
+   220) <a name="l220" style="background-color: #ffcccc">    if (flag == 'define') then</a>
+   221) <a name="l221" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='pfts1d_lon', xtype=ncd_double,  &amp;</a>
+   222) <a name="l222" style="background-color: #ffcccc">            dim1name='pft', long_name='pft longitude', units='degrees_east')</a>
+   223) <a name="l223" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='pfts1d_lat', xtype=ncd_double,  &amp;</a>
+   224) <a name="l224" style="background-color: #ffcccc">            dim1name='pft', long_name='pft latitude', units='degrees_north')</a>
+   225) <a name="l225" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='pfts1d_ixy', xtype=ncd_int,  &amp;</a>
+   226) <a name="l226" style="background-color: #ffcccc">            dim1name='pft', long_name='2d longitude index of corresponding pft')</a>
+   227) <a name="l227" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='pfts1d_jxy', xtype=ncd_int,  &amp;</a>
+   228) <a name="l228" style="background-color: #ffcccc">            dim1name='pft', long_name='2d latitude index of corresponding pft')</a>
+   229) <a name="l229" style="background-color: #ffcccc">       ! --- EBK Do NOT write out indices that are incorrect 4/1/2011 --- Bug 1310</a>
+   230) <a name="l230" style="background-color: #ffcccc">       !call ncd_defvar(ncid=ncid, varname='pfts1d_gi', xtype=ncd_int,  &amp;</a>
+   231) <a name="l231" style="background-color: #ffcccc">       !     dim1name='pft', long_name='1d grid index of corresponding pft')</a>
+   232) <a name="l232" style="background-color: #ffcccc">       !call ncd_defvar(ncid=ncid, varname='pfts1d_li', xtype=ncd_int,  &amp;</a>
+   233) <a name="l233" style="background-color: #ffcccc">       !     dim1name='pft', long_name='1d landunit index of corresponding pft')</a>
+   234) <a name="l234" style="background-color: #ffcccc">       ! ----------------------------------------------------------------</a>
+   235) <a name="l235" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='pfts1d_ci', xtype=ncd_int,  &amp;</a>
+   236) <a name="l236" style="background-color: #ffcccc">            dim1name='pft', long_name='1d column index of corresponding pft')</a>
+   237) <a name="l237" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='pfts1d_wtxy', xtype=ncd_double,  &amp;</a>
+   238) <a name="l238" style="background-color: #ffcccc">            dim1name='pft', long_name='pft weight relative to corresponding gridcell')</a>
+   239) <a name="l239" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='pfts1d_wtlnd', xtype=ncd_double,  &amp;</a>
+   240) <a name="l240" style="background-color: #ffcccc">            dim1name='pft', long_name='pft weight relative to corresponding landunit')</a>
+   241) <a name="l241" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='pfts1d_wtcol', xtype=ncd_double,  &amp;</a>
+   242) <a name="l242" style="background-color: #ffcccc">            dim1name='pft', long_name='pft weight relative to corresponding column')</a>
+   243) <a name="l243" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='pfts1d_itypveg', xtype=ncd_int,  &amp;</a>
+   244) <a name="l244" style="background-color: #ffcccc">            dim1name='pft', long_name='pft vegetation type')</a>
+   245) <a name="l245" style="background-color: #ffcccc">       call ncd_defvar(ncid=ncid, varname='pfts1d_ityplun', xtype=ncd_int,  &amp;</a>
+   246) <a name="l246" style="background-color: #ffcccc">            dim1name='pft', long_name='pft landunit type (vegetated,urban,lake,wetland or glacier)')</a>
+   247) <a name="l247" style="background-color: #ffcccc">    else if (flag == 'write') then</a>
+   248) <a name="l248" style="background-color: #ffcccc">       do p=begp,endp</a>
+   249) <a name="l249" style="background-color: #ffcccc">          rparr(p) = gptr%londeg(pptr%gridcell(p))</a>
+   250) <a name="l250" style="background-color: #ffcccc">       enddo</a>
+   251) <a name="l251" style="background-color: #ffcccc">       call ncd_io(varname='pfts1d_lon'    , data=rparr        , dim1name=namep, ncid=ncid, flag=flag)</a>
+   252) <a name="l252" style="background-color: #ffcccc">       do p=begp,endp</a>
+   253) <a name="l253" style="background-color: #ffcccc">          rparr(p) = gptr%latdeg(pptr%gridcell(p))</a>
+   254) <a name="l254" style="background-color: #ffcccc">       enddo</a>
+   255) <a name="l255" style="background-color: #ffcccc">       call ncd_io(varname='pfts1d_lat'    , data=rparr        , dim1name=namep, ncid=ncid, flag=flag)</a>
+   256) <a name="l256" style="background-color: #ffcccc">       do p=begp,endp</a>
+   257) <a name="l257" style="background-color: #ffcccc">          iparr(p) = mod(ldecomp%gdc2glo(pptr%gridcell(p))-1,ldomain%ni) + 1</a>
+   258) <a name="l258" style="background-color: #ffcccc">       enddo</a>
+   259) <a name="l259" style="background-color: #ffcccc">       call ncd_io(varname='pfts1d_ixy'    , data=iparr        , dim1name=namep, ncid=ncid, flag=flag)</a>
+   260) <a name="l260" style="background-color: #ffcccc">       do p=begp,endp</a>
+   261) <a name="l261" style="background-color: #ffcccc">          iparr(p) = (ldecomp%gdc2glo(pptr%gridcell(p))-1)/ldomain%ni + 1</a>
+   262) <a name="l262" style="background-color: #ffcccc">       enddo</a>
+   263) <a name="l263" style="background-color: #ffcccc">       call ncd_io(varname='pfts1d_jxy'    , data=iparr        , dim1name=namep, ncid=ncid, flag=flag)</a>
+   264) <a name="l264" style="background-color: #ffcccc">       call ncd_io(varname='pfts1d_wtxy'   , data=pptr%wtgcell , dim1name=namep, ncid=ncid, flag=flag)</a>
+   265) <a name="l265" style="background-color: #ffcccc">       call ncd_io(varname='pfts1d_wtlnd'  , data=pptr%wtlunit , dim1name=namep, ncid=ncid, flag=flag)</a>
+   266) <a name="l266" style="background-color: #ffcccc">       call ncd_io(varname='pfts1d_wtcol'  , data=pptr%wtcol   , dim1name=namep, ncid=ncid, flag=flag)</a>
+   267) <a name="l267" style="background-color: #ffcccc">       call ncd_io(varname='pfts1d_itypveg', data=pptr%itype   , dim1name=namep, ncid=ncid, flag=flag)</a>
+   268) <a name="l268" style="background-color: #ffcccc">       ! --- EBK Do NOT write out indices that are incorrect 4/1/2011 --- Bug 1310</a>
+   269) <a name="l269" style="background-color: #ffcccc">       !call ncd_io(varname='pfts1d_gi'     , data=pptr%gridcell, dim1name=namep, ncid=ncid, flag=flag)</a>
+   270) <a name="l270" style="background-color: #ffcccc">       !call ncd_io(varname='pfts1d_li'     , data=pptr%landunit, dim1name=namep, ncid=ncid, flag=flag)</a>
+   271) <a name="l271" style="background-color: #ffcccc">       !call ncd_io(varname='pfts1d_ci'     , data=pptr%column  , dim1name=namep, ncid=ncid, flag=flag)</a>
+   272) <a name="l272" style="background-color: #ffcccc">       ! ----------------------------------------------------------------</a>
+   273) <a name="l273" style="background-color: #ffcccc">       do p=begp,endp</a>
+   274) <a name="l274" style="background-color: #ffcccc">          iparr(p) = lptr%itype(pptr%landunit(p))</a>
+   275) <a name="l275" style="background-color: #ffcccc">       enddo</a>
+   276) <a name="l276" style="background-color: #ffcccc">       call ncd_io(varname='pfts1d_ityplun', data=iparr      , dim1name=namep, ncid=ncid, flag=flag)</a>
+   277) <a name="l277" style="background-color: #ffcccc">    end if</a>
+   278) <a name="l278" style="background-color: #ffcccc"></a>
+   279) <a name="l279" style="background-color: #ffcccc">    if (flag == 'write') then</a>
+   280) <a name="l280" style="background-color: #ffcccc">       deallocate(rgarr,rlarr,rcarr,rparr)</a>
+   281) <a name="l281" style="background-color: #ffcccc">       deallocate(igarr,ilarr,icarr,iparr)</a>
+   282) <a name="l282" style="background-color: #ffcccc">    end if</a>
+   283) <a name="l283" style="background-color: #ffcccc"></a>
+   284) <a name="l284" style="background-color: #ffcccc">  end subroutine subgridRest</a>
+   285) <a name="l285" style="background-color: #ffffff"></a>
+   286) <a name="l286" style="background-color: #ffffff">end module subgridRestMod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

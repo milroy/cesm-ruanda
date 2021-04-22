@@ -1,0 +1,426 @@
+<html>
+<head>
+<title>Listing of mo_lightning.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;mo_lightning.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160;  6.05&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module mo_lightning</a>
+     2) <a name="l2" style="background-color: #ffffff">  !----------------------------------------------------------------------</a>
+     3) <a name="l3" style="background-color: #ffffff">  ! ... the lightning module</a>
+     4) <a name="l4" style="background-color: #ffffff">  !----------------------------------------------------------------------</a>
+     5) <a name="l5" style="background-color: #ffffff"></a>
+     6) <a name="l6" style="background-color: #ffffff">  use shr_kind_mod,  only : r8 =&gt; shr_kind_r8</a>
+     7) <a name="l7" style="background-color: #ffffff">  use ppgrid,        only : begchunk, endchunk, pcols, pver</a>
+     8) <a name="l8" style="background-color: #ffffff">  use phys_grid,     only : ngcols_p</a>
+     9) <a name="l9" style="background-color: #ffffff">  use abortutils,    only : endrun</a>
+    10) <a name="l10" style="background-color: #ffffff">  use cam_logfile,   only : iulog</a>
+    11) <a name="l11" style="background-color: #ffffff">  use spmd_utils,    only : masterproc, mpicom</a>
+    12) <a name="l12" style="background-color: #ffffff"></a>
+    13) <a name="l13" style="background-color: #ffffff">  implicit none</a>
+    14) <a name="l14" style="background-color: #ffffff"></a>
+    15) <a name="l15" style="background-color: #ffffff">  private</a>
+    16) <a name="l16" style="background-color: #ffffff">  public  :: lightning_inti</a>
+    17) <a name="l17" style="background-color: #ffffff">  public  :: lightning_no_prod</a>
+    18) <a name="l18" style="background-color: #ffffff">  public  :: prod_no</a>
+    19) <a name="l19" style="background-color: #ffffff"></a>
+    20) <a name="l20" style="background-color: #ffffff">  save</a>
+    21) <a name="l21" style="background-color: #ffffff"></a>
+    22) <a name="l22" style="background-color: #ffffff">  real(r8) :: csrf</a>
+    23) <a name="l23" style="background-color: #ffffff">  real(r8) :: factor = 0.1_r8              ! user-controlled scaling factor to achieve arbitrary no prod.</a>
+    24) <a name="l24" style="background-color: #ffffff">  real(r8) :: geo_factor                   ! grid cell area factor</a>
+    25) <a name="l25" style="background-color: #ffffff">  real(r8) :: vdist(16,3)                  ! vertical distribution of lightning</a>
+    26) <a name="l26" style="background-color: #ffffff">  real(r8), allocatable :: prod_no(:,:,:)</a>
+    27) <a name="l27" style="background-color: #ffffff">  real(r8), allocatable :: glob_prod_no_col(:,:)</a>
+    28) <a name="l28" style="background-color: #ffffff">  real(r8), allocatable :: flash_freq(:,:)</a>
+    29) <a name="l29" style="background-color: #ffffff">  integer :: no_ndx,xno_ndx</a>
+    30) <a name="l30" style="background-color: #ffffff">  logical :: has_no_lightning_prod = .false.</a>
+    31) <a name="l31" style="background-color: #ffffff"></a>
+    32) <a name="l32" style="background-color: #ffffff">contains</a>
+    33) <a name="l33" style="background-color: #ffffff"></a>
+    34) <a name="l34" style="background-color: #ffffff">  subroutine lightning_inti( lght_no_prd_factor )</a>
+    35) <a name="l35" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+    36) <a name="l36" style="background-color: #ffffff">    !       ... initialize the lightning module</a>
+    37) <a name="l37" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+    38) <a name="l38" style="background-color: #ffffff">    use mo_constants,  only : pi</a>
+    39) <a name="l39" style="background-color: #ffffff">    use ioFileMod,     only : getfil</a>
+    40) <a name="l40" style="background-color: #ffffff">    use mo_chem_utls,  only : get_spc_ndx</a>
+    41) <a name="l41" style="background-color: #ffffff"></a>
+    42) <a name="l42" style="background-color: #ffffff">    use cam_history,   only : addfld, phys_decomp</a>
+    43) <a name="l43" style="background-color: #ffffff">    use dyn_grid,      only : get_dyn_grid_parm</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">    implicit none</a>
+    46) <a name="l46" style="background-color: #ffffff"></a>
+    47) <a name="l47" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+    48) <a name="l48" style="background-color: #ffffff">    !	... dummy args</a>
+    49) <a name="l49" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+    50) <a name="l50" style="background-color: #ffffff">    real(r8), intent(in) :: lght_no_prd_factor        ! lightning no production factor</a>
+    51) <a name="l51" style="background-color: #ffffff"></a>
+    52) <a name="l52" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+    53) <a name="l53" style="background-color: #ffffff">    !	... local variables</a>
+    54) <a name="l54" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+    55) <a name="l55" style="background-color: #ffffff">    integer  :: astat</a>
+    56) <a name="l56" style="background-color: #ffffff">    integer  :: ncid</a>
+    57) <a name="l57" style="background-color: #ffffff">    integer  :: dimid</a>
+    58) <a name="l58" style="background-color: #ffffff">    integer  :: vid</a>
+    59) <a name="l59" style="background-color: #ffffff">    integer  :: gndx</a>
+    60) <a name="l60" style="background-color: #ffffff">    integer  :: jl, ju</a>
+    61) <a name="l61" style="background-color: #ffffff">    integer  :: nlat, nlon</a>
+    62) <a name="l62" style="background-color: #ffffff">    integer  :: plon, plat</a>
+    63) <a name="l63" style="background-color: #ffffff">    real(r8), allocatable :: lats(:)</a>
+    64) <a name="l64" style="background-color: #ffffff">    real(r8), allocatable :: lons(:)</a>
+    65) <a name="l65" style="background-color: #ffffff">    real(r8), allocatable :: landmask(:,:)</a>
+    66) <a name="l66" style="background-color: #ffffff">    character(len=256) :: locfn</a>
+    67) <a name="l67" style="background-color: #ffffff"></a>
+    68) <a name="l68" style="background-color: #ffffff">    no_ndx = get_spc_ndx('NO')</a>
+    69) <a name="l69" style="background-color: #ffffff">    xno_ndx = get_spc_ndx('XNO')</a>
+    70) <a name="l70" style="background-color: #ffffff"></a>
+    71) <a name="l71" style="background-color: #ffffff">    has_no_lightning_prod = no_ndx</a><a style="background-color: #fafad2">&gt;0 .or. xno_ndx&gt;0</a>
+    72) <a name="l72" style="background-color: #fafad2">    if (.not.has_no_lightning_prod) return</a>
+    73) <a name="l73" style="background-color: #fafad2"></a>
+    74) <a name="l74" style="background-color: #fafad2">    </a>
+    75) <a name="l75" style="background-color: #ffff99">    if( lght_no_prd_factor /= 1._r8 ) then</a>
+    76) <a name="l76" style="background-color: #ffff99">       factor = factor*lght_no_prd_factor</a>
+    77) <a name="l77" style="background-color: #ffff99">    end if</a>
+    78) <a name="l78" style="background-color: #ffff99"></a>
+    79) <a name="l79" style="background-color: #ffff99"></a>
+    80) <a name="l80" style="background-color: #ffff99">    if (masterproc) write(iulog,*) 'lght_inti: lightning no production scaling factor = ',factor</a>
+    81) <a name="l81" style="background-color: #ffff99"></a>
+    82) <a name="l82" style="background-color: #ffff99">    !----------------------------------------------------------------------</a>
+    83) <a name="l83" style="background-color: #ffff99">    !       ... vdist(kk,itype) = % of lightning nox between (kk-1) and (kk)</a>
+    84) <a name="l84" style="background-color: #ffff99">    !           km for profile itype</a>
+    85) <a name="l85" style="background-color: #ffff99">    !----------------------------------------------------------------------</a>
+    86) <a name="l86" style="background-color: #ffff99">    vdist(:,1) = (/  3.0_r8, 3.0_r8, 3.0_r8, 3.0_r8, 3.4_r8, 3.5_r8, 3.6_r8, 4.0_r8, &amp;       ! midlat cont</a>
+    87) <a name="l87" style="background-color: #ffff99">                     5.0_r8, 7.0_r8, 9.0_r8, 14.0_r8, 16.0_r8, 14.0_r8, 8.0_r8, 0.5_r8 /)</a>
+    88) <a name="l88" style="background-color: #ffff99">    vdist(:,2) = (/  2.5_r8, 2.5_r8, 2.5_r8, 2.5_r8, 2.5_r8, 2.5_r8, 2.5_r8, 6.1_r8, &amp;       ! trop marine</a>
+    89) <a name="l89" style="background-color: #ffff99">                     17.0_r8, 15.4_r8, 14.5_r8, 13.0_r8, 12.5_r8, 2.8_r8, 0.9_r8, 0.3_r8 /)</a>
+    90) <a name="l90" style="background-color: #ffff99">    vdist(:,3) = (/  2.0_r8, 2.0_r8, 2.0_r8, 1.5_r8, 1.5_r8, 1.5_r8, 3.0_r8, 5.8_r8, &amp;       ! trop cont</a>
+    91) <a name="l91" style="background-color: #ffff99">                     7.6_r8, 9.6_r8, 11.0_r8, 14.0_r8, 14.0_r8, 14.0_r8, 8.2_r8, 2.3_r8 /)</a>
+    92) <a name="l92" style="background-color: #ffff99"></a>
+    93) <a name="l93" style="background-color: #ffff99">    allocate( prod_no(pcols,pver,begchunk:endchunk),stat=astat )</a>
+    94) <a name="l94" style="background-color: #ffff99">    if( astat /= 0 ) then</a>
+    95) <a name="l95" style="background-color: #ffff99">       write(iulog,*) 'lght_inti: failed to allocate prod_no; error = ',astat</a>
+    96) <a name="l96" style="background-color: #ffff99">       call endrun</a>
+    97) <a name="l97" style="background-color: #ffff99">    end if</a>
+    98) <a name="l98" style="background-color: #ffff99">    allocate( flash_freq(pcols,begchunk:endchunk),stat=astat )</a>
+    99) <a name="l99" style="background-color: #ffff99">    if( astat /= 0 ) then</a>
+   100) <a name="l100" style="background-color: #ffff99">       write(iulog,*) 'lght_inti: failed to allocate flash_freq; error = ',astat</a>
+   101) <a name="l101" style="background-color: #ffff99">       call endrun</a>
+   102) <a name="l102" style="background-color: #ffff99">    end if</a>
+   103) <a name="l103" style="background-color: #ffff99">    allocate( glob_prod_no_col(pcols,begchunk:endchunk),stat=astat )</a>
+   104) <a name="l104" style="background-color: #ffff99">    if( astat /= 0 ) then</a>
+   105) <a name="l105" style="background-color: #ffff99">       write(iulog,*) 'lght_inti: failed to allocate glob_prod_no_col; error = ',astat</a>
+   106) <a name="l106" style="background-color: #ffff99">       call endrun</a>
+   107) <a name="l107" style="background-color: #ffff99">    end if</a>
+   108) <a name="l108" style="background-color: #ffff99">    prod_no(:,:,:)   = 0._r8</a>
+   109) <a name="l109" style="background-color: #ffff99">    flash_freq(:,:)  = 0._r8</a>
+   110) <a name="l110" style="background-color: #ffff99">    geo_factor = ngcols_p/(4._r8*pi)</a>
+   111) <a name="l111" style="background-color: #ffff99"></a>
+   112) <a name="l112" style="background-color: #ffff99"></a>
+   113) <a name="l113" style="background-color: #ffff99">    call addfld( 'LNO_COL_PROD','TG N/YR', 1,    'I', 'lighting column NO source', phys_decomp )</a>
+   114) <a name="l114" style="background-color: #ffff99">    call addfld( 'LNO_PROD',    '/cm3/s',  pver, 'I', 'lighting insitu NO source', phys_decomp )</a>
+   115) <a name="l115" style="background-color: #ffff99">    call addfld( 'FLASHFRQ',    '1/MIN',   1,    'I', 'lighting flash rate', phys_decomp )        ! flash frequency in grid box per minute (PPP)</a>
+   116) <a name="l116" style="background-color: #ffff99">    call addfld( 'FLASHENGY',   '   ',     1,    'I', 'lighting flash rate', phys_decomp )        ! flash frequency in grid box per minute (PPP)</a>
+   117) <a name="l117" style="background-color: #ffff99">    call addfld( 'CLDHGT',      'KM',      1,    'I', 'cloud top height', phys_decomp )           ! cloud top height</a>
+   118) <a name="l118" style="background-color: #ffff99">    call addfld( 'DCHGZONE',    'KM',      1,    'I', 'depth of discharge zone', phys_decomp )           ! depth of discharge zone</a>
+   119) <a name="l119" style="background-color: #ffff99">    call addfld( 'CGIC',        'RATIO',   1,    'I', 'ratio of cloud-ground/intracloud discharges', phys_decomp )        ! ratio of cloud-ground/intracloud discharges</a>
+   120) <a name="l120" style="background-color: #ffff99"></a>
+   121) <a name="l121" style="background-color: #fafad2">  end subroutine lightning_inti</a>
+   122) <a name="l122" style="background-color: #ffffff"></a>
+   123) <a name="l123" style="background-color: #ffffff">  subroutine lightning_no_prod( state, pbuf2d,  cam_in )</a>
+   124) <a name="l124" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   125) <a name="l125" style="background-color: #ffffff">    !	... set no production from lightning</a>
+   126) <a name="l126" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   127) <a name="l127" style="background-color: #ffffff">    use physics_types,    only : physics_state</a>
+   128) <a name="l128" style="background-color: #ffffff">    </a>
+   129) <a name="l129" style="background-color: #ffffff">    use physics_buffer,   only : pbuf_get_index, physics_buffer_desc, pbuf_get_field, pbuf_get_chunk</a>
+   130) <a name="l130" style="background-color: #ffffff">    use physconst,        only : rga</a>
+   131) <a name="l131" style="background-color: #ffffff">    use phys_grid,        only : get_rlat_all_p, get_lat_all_p, get_lon_all_p, get_wght_all_p</a>
+   132) <a name="l132" style="background-color: #ffffff">    use cam_history,      only : outfld</a>
+   133) <a name="l133" style="background-color: #ffffff">    use camsrfexch,       only : cam_in_t</a>
+   134) <a name="l134" style="background-color: #ffffff">    use shr_reprosum_mod, only : shr_reprosum_calc</a>
+   135) <a name="l135" style="background-color: #ffffff">    use mo_constants,  only : rearth, d2r</a>
+   136) <a name="l136" style="background-color: #ffffff">    implicit none</a>
+   137) <a name="l137" style="background-color: #ffffff"></a>
+   138) <a name="l138" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   139) <a name="l139" style="background-color: #ffffff">    !	... dummy args</a>
+   140) <a name="l140" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   141) <a name="l141" style="background-color: #ffffff">    type(physics_state), intent(in) :: state(begchunk:endchunk) ! physics state</a>
+   142) <a name="l142" style="background-color: #ffffff">    </a>
+   143) <a name="l143" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+   144) <a name="l144" style="background-color: #ffffff">    type(cam_in_t), intent(in) :: cam_in(begchunk:endchunk) ! physics state</a>
+   145) <a name="l145" style="background-color: #ffffff"></a>
+   146) <a name="l146" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   147) <a name="l147" style="background-color: #ffffff">    !	... local variables</a>
+   148) <a name="l148" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   149) <a name="l149" style="background-color: #ffffff">    real(r8), parameter    :: land   = 1._r8</a>
+   150) <a name="l150" style="background-color: #ffffff">    real(r8), parameter    :: secpyr = 365._r8 * 8.64e4_r8</a>
+   151) <a name="l151" style="background-color: #ffffff"></a>
+   152) <a name="l152" style="background-color: #ffffff">    integer :: i, c</a>
+   153) <a name="l153" style="background-color: #ffffff">    integer :: cldtind             ! level index for cloud top</a>
+   154) <a name="l154" style="background-color: #ffffff">    integer :: cldbind             ! level index for cloud base &gt; 273k</a>
+   155) <a name="l155" style="background-color: #ffffff">    integer :: surf_type</a>
+   156) <a name="l156" style="background-color: #ffffff">    integer :: file                ! file index</a>
+   157) <a name="l157" style="background-color: #ffffff">    integer :: k, kk, zlow_ind, zhigh_ind, itype</a>
+   158) <a name="l158" style="background-color: #ffffff">    real(r8) :: glob_flashfreq     ! global flash frequency [s-1]</a>
+   159) <a name="l159" style="background-color: #ffffff">    real(r8) :: glob_noprod        ! global rate of no production [as tgn/yr]</a>
+   160) <a name="l160" style="background-color: #ffffff">    real(r8) :: frac_sum           ! work variable</a>
+   161) <a name="l161" style="background-color: #ffffff">    real(r8) :: zlow</a>
+   162) <a name="l162" style="background-color: #ffffff">    real(r8) :: zhigh</a>
+   163) <a name="l163" style="background-color: #ffffff">    real(r8) :: zlow_scal</a>
+   164) <a name="l164" style="background-color: #ffffff">    real(r8) :: zhigh_scal</a>
+   165) <a name="l165" style="background-color: #ffffff">    real(r8) :: fraction</a>
+   166) <a name="l166" style="background-color: #ffffff">    real(r8) :: dchgz</a>
+   167) <a name="l167" style="background-color: #ffffff">    real(r8) :: dchgzone(pcols,begchunk:endchunk)           ! depth of discharge zone [km]</a>
+   168) <a name="l168" style="background-color: #ffffff">    real(r8) :: cldhgt(pcols,begchunk:endchunk)             ! cloud top height [km]</a>
+   169) <a name="l169" style="background-color: #ffffff">    real(r8) :: cgic(pcols,begchunk:endchunk)               ! cloud-ground/intracloud discharge ratio</a>
+   170) <a name="l170" style="background-color: #ffffff">    real(r8) :: flash_energy(pcols,begchunk:endchunk)       ! energy of flashes per second</a>
+   171) <a name="l171" style="background-color: #ffffff">    real(r8) :: prod_no_col(pcols,begchunk:endchunk)        ! global no production rate for diagnostics</a>
+   172) <a name="l172" style="background-color: #ffffff">    real(r8) :: wrk, wrk1, wrk2(1)</a>
+   173) <a name="l173" style="background-color: #ffffff">    integer  :: ncol                                    ! columns per chunk</a>
+   174) <a name="l174" style="background-color: #ffffff">    integer  :: lchnk                                   ! columns per chunk</a>
+   175) <a name="l175" style="background-color: #ffffff">    real(r8),pointer :: cldtop(:)                       ! cloud top level index</a>
+   176) <a name="l176" style="background-color: #ffffff">    real(r8),pointer :: cldbot(:)                       ! cloud bottom level index</a>
+   177) <a name="l177" style="background-color: #ffffff">    real(r8) :: zmid(pcols,pver)                        ! geopot height above surface at midpoints (m)</a>
+   178) <a name="l178" style="background-color: #ffffff">    real(r8) :: zint(pcols,pver+1,begchunk:endchunk)    ! geopot height above surface at interfaces (m)</a>
+   179) <a name="l179" style="background-color: #ffffff">    real(r8) :: zsurf(pcols)                            ! geopot height above surface at interfaces (m)</a>
+   180) <a name="l180" style="background-color: #ffffff">    real(r8) :: rlats(pcols,begchunk:endchunk)          ! column latitudes in chunks</a>
+   181) <a name="l181" style="background-color: #ffffff">    real(r8) :: wght(pcols)</a>
+   182) <a name="l182" style="background-color: #ffffff"></a>
+   183) <a name="l183" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   184) <a name="l184" style="background-color: #ffffff">    ! 	... parameters to determine cg/ic ratio [price and rind, 1993]</a>
+   185) <a name="l185" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   186) <a name="l186" style="background-color: #ffffff">    real(r8), parameter  :: ca = .021_r8</a>
+   187) <a name="l187" style="background-color: #ffffff">    real(r8), parameter  :: cb = -.648_r8</a>
+   188) <a name="l188" style="background-color: #ffffff">    real(r8), parameter  :: cc = 7.49_r8</a>
+   189) <a name="l189" style="background-color: #ffffff">    real(r8), parameter  :: cd = -36.54_r8</a>
+   190) <a name="l190" style="background-color: #ffffff">    real(r8), parameter  :: ce = 64.09_r8</a>
+   191) <a name="l191" style="background-color: #ffffff">    real(r8), parameter  :: t0 = 273._r8</a>
+   192) <a name="l192" style="background-color: #ffffff">    real(r8), parameter  :: m2km  = 1.e-3_r8</a>
+   193) <a name="l193" style="background-color: #ffffff">    real(r8), parameter  :: km2cm = 1.e5_r8</a>
+   194) <a name="l194" style="background-color: #ffffff">    real(r8), parameter  :: lat25 = 25._r8*d2r      ! 25 degrees latitude in radians</a>
+   195) <a name="l195" style="background-color: #ffffff">    integer  :: cldtop_ndx, cldbot_ndx</a>
+   196) <a name="l196" style="background-color: #ffffff">    integer  :: istat</a>
+   197) <a name="l197" style="background-color: #ffffff">    real(r8) :: flash_freq_land, flash_freq_ocn</a>
+   198) <a name="l198" style="background-color: #ffffff"></a>
+   199) <a name="l199" style="background-color: #ffffff">    if (.not.has_no_lightning_prod) return</a>
+   200) <a name="l200" style="background-color: #ffffff"></a>
+   201) <a name="l201" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   202) <a name="l202" style="background-color: #ffffff">    !	... initialization</a>
+   203) <a name="l203" style="background-color: #ffffff">    !----------------------------------------------------------------------</a>
+   204) <a name="l204" style="background-color: #ffffff"></a>
+   205) <a name="l205" style="background-color: #ffff99">    flash_freq(:,:)       = 0._r8</a>
+   206) <a name="l206" style="background-color: #ffff99">    prod_no(:,:,:)        = 0._r8</a>
+   207) <a name="l207" style="background-color: #ffff99">    prod_no_col(:,:)      = 0._r8</a>
+   208) <a name="l208" style="background-color: #ffff99">    cldhgt(:,:)           = 0._r8</a>
+   209) <a name="l209" style="background-color: #ffff99">    dchgzone(:,:)         = 0._r8</a>
+   210) <a name="l210" style="background-color: #ffff99">    cgic(:,:)             = 0._r8</a>
+   211) <a name="l211" style="background-color: #ffff99">    flash_energy(:,:)     = 0._r8</a>
+   212) <a name="l212" style="background-color: #ffff99">    glob_prod_no_col(:,:) = 0._r8</a>
+   213) <a name="l213" style="background-color: #ffff99"></a>
+   214) <a name="l214" style="background-color: #ffff99">    cldtop_ndx = pbuf_get_index('CLDTOP')</a>
+   215) <a name="l215" style="background-color: #ffff99">    cldbot_ndx = pbuf_get_index('CLDBOT')</a>
+   216) <a name="l216" style="background-color: #ffff99"></a>
+   217) <a name="l217" style="background-color: #ffff99">    !--------------------------------------------------------------------------------</a>
+   218) <a name="l218" style="background-color: #ffff99">    !	... estimate flash frequency and resulting no emissions</a>
+   219) <a name="l219" style="background-color: #ffff99">    !           [price, penner, prather, 1997 (jgr)]</a>
+   220) <a name="l220" style="background-color: #ffff99">    !    lightning only occurs in convective clouds with a discharge zone, i.e.</a>
+   221) <a name="l221" style="background-color: #ffff99">    !    an altitude range where liquid water, ice crystals, and graupel coexist.</a>
+   222) <a name="l222" style="background-color: #ffff99">    !    we test this by examining the temperature at the cloud base.</a>
+   223) <a name="l223" style="background-color: #ffff99">    !    it is assumed that only one thunderstorm occurs per grid box, and its</a>
+   224) <a name="l224" style="background-color: #ffff99">    !    flash frequency is determined by the maximum cloud top height (not the</a>
+   225) <a name="l225" style="background-color: #ffff99">    !    depth of the discharge zone). this is somewhat speculative but yields</a>
+   226) <a name="l226" style="background-color: #ffff99">    !    reasonable results.</a>
+   227) <a name="l227" style="background-color: #ffff99">    !</a>
+   228) <a name="l228" style="background-color: #ffff99">    !       the cg/ic ratio is determined by an empirical formula from price and</a>
+   229) <a name="l229" style="background-color: #ffff99">    !    rind [1993]. the average energy of a cg flash is estimated as 6.7e9 j,</a>
+   230) <a name="l230" style="background-color: #ffff99">    !    and the average energy of a ic flash is assumed to be 1/10 of that value.</a>
+   231) <a name="l231" style="background-color: #ffff99">    !       the no production rate is assumed proportional to the discharge energy</a>
+   232) <a name="l232" style="background-color: #ffff99">    !    with 1e17 n atoms per j. the total number of n atoms is then distributed</a>
+   233) <a name="l233" style="background-color: #ffff99">    !    over the complete column of grid boxes.</a>
+   234) <a name="l234" style="background-color: #ffff99">    !--------------------------------------------------------------------------------</a>
+   235) <a name="l235" style="background-color: #ffff99">    Chunk_loop : do c = begchunk,endchunk</a>
+   236) <a name="l236" style="background-color: #ffff99">       ncol  = state(c)%ncol</a>
+   237) <a name="l237" style="background-color: #ffff99">       lchnk = state(c)%lchnk</a>
+   238) <a name="l238" style="background-color: #ffff99">       call pbuf_get_field(pbuf_get_chunk(pbuf2d,lchnk), cldtop_ndx, cldtop )</a>
+   239) <a name="l239" style="background-color: #ffff99">       call pbuf_get_field(pbuf_get_chunk(pbuf2d,lchnk), cldbot_ndx, cldbot )</a>
+   240) <a name="l240" style="background-color: #ffff99">       zsurf(:ncol) = state(c)%phis(:ncol)*rga</a>
+   241) <a name="l241" style="background-color: #ffff99">       call get_rlat_all_p( c, ncol, rlats(1,c) )</a>
+   242) <a name="l242" style="background-color: #ffff99">       call get_wght_all_p(c, ncol, wght)</a>
+   243) <a name="l243" style="background-color: #ffff99"></a>
+   244) <a name="l244" style="background-color: #ffff99">       do k = 1,pver</a>
+   245) <a name="l245" style="background-color: #ffff99">          zmid(:ncol,k)   = state(c)%zm(:ncol,k) + zsurf(:ncol)</a>
+   246) <a name="l246" style="background-color: #ffff99">          zint(:ncol,k,c) = state(c)%zi(:ncol,k) + zsurf(:ncol)</a>
+   247) <a name="l247" style="background-color: #ffff99">       end do</a>
+   248) <a name="l248" style="background-color: #ffff99">       zint(:ncol,pver+1,c) = state(c)%zi(:ncol,pver+1) + zsurf(:ncol)</a>
+   249) <a name="l249" style="background-color: #ffff99"></a>
+   250) <a name="l250" style="background-color: #ffff99">       col_loop : do i = 1,ncol</a>
+   251) <a name="l251" style="background-color: #ffff99">          !--------------------------------------------------------------------------------</a>
+   252) <a name="l252" style="background-color: #ffff99">          ! 	... find cloud top and bottom level above 273k</a>
+   253) <a name="l253" style="background-color: #ffff99">          !--------------------------------------------------------------------------------</a>
+   254) <a name="l254" style="background-color: #ffff99">          cldtind = nint( cldtop(i) )</a>
+   255) <a name="l255" style="background-color: #ffff99">          cldbind = nint( cldbot(i) )</a>
+   256) <a name="l256" style="background-color: #ffff99">          do</a>
+   257) <a name="l257" style="background-color: #ffff99">             if( cldbind &lt;= cldtind .or. state(c)%t(i,cldbind) &lt; t0 ) then</a>
+   258) <a name="l258" style="background-color: #ffff99">                exit</a>
+   259) <a name="l259" style="background-color: #ffff99">             end if</a>
+   260) <a name="l260" style="background-color: #ffff99">             cldbind = cldbind - 1</a>
+   261) <a name="l261" style="background-color: #ffff99">          end do</a>
+   262) <a name="l262" style="background-color: #ffff99">          cloud_layer : if( cldtind &lt; pver .and. cldtind &gt; 0 .and. cldtind &lt; cldbind ) then</a>
+   263) <a name="l263" style="background-color: #ffff99">             !--------------------------------------------------------------------------------</a>
+   264) <a name="l264" style="background-color: #ffff99">             !       ... compute cloud top height and depth of charging zone</a>
+   265) <a name="l265" style="background-color: #ffff99">             !--------------------------------------------------------------------------------</a>
+   266) <a name="l266" style="background-color: #ffff99">             cldhgt(i,c)   = m2km*max( 0._r8,zint(i,cldtind,c) )</a>
+   267) <a name="l267" style="background-color: #ffff99">             dchgz = cldhgt(i,c) - m2km*zmid(i,cldbind)</a>
+   268) <a name="l268" style="background-color: #ffff99">             dchgzone(i,c) = dchgz</a>
+   269) <a name="l269" style="background-color: #ffff99">             !--------------------------------------------------------------------------------</a>
+   270) <a name="l270" style="background-color: #ffff99">             !       ... compute flash frequency for given cloud top height</a>
+   271) <a name="l271" style="background-color: #ffff99">             !           (flashes storm^-1 min^-1)</a>
+   272) <a name="l272" style="background-color: #ffff99">             !--------------------------------------------------------------------------------</a>
+   273) <a name="l273" style="background-color: #ffff99">             flash_freq_land = 3.44e-5_r8 * cldhgt(i,c)**4.9_r8 </a>
+   274) <a name="l274" style="background-color: #ffff99">             flash_freq_ocn  = 6.40e-4_r8 * cldhgt(i,c)**1.7_r8</a>
+   275) <a name="l275" style="background-color: #ffff99">             flash_freq(i,c) = cam_in(c)%landfrac(i)*flash_freq_land + &amp;</a>
+   276) <a name="l276" style="background-color: #ffff99">                               cam_in(c)%ocnfrac(i) *flash_freq_ocn</a>
+   277) <a name="l277" style="background-color: #ffff99"></a>
+   278) <a name="l278" style="background-color: #ffff99">             !--------------------------------------------------------------------------------</a>
+   279) <a name="l279" style="background-color: #ffff99">             !       ... compute cg/ic ratio</a>
+   280) <a name="l280" style="background-color: #ffff99">             !           cgic = proportion of cg flashes (=pg from ppp paper)</a>
+   281) <a name="l281" style="background-color: #ffff99">             !--------------------------------------------------------------------------------</a>
+   282) <a name="l282" style="background-color: #ffff99">             cgic(i,c) = 1._r8/((((ca*dchgz + cb)*dchgz + cc) *dchgz + cd)*dchgz + ce)</a>
+   283) <a name="l283" style="background-color: #ffff99">             if( dchgz &lt; 5.5_r8 ) then</a>
+   284) <a name="l284" style="background-color: #ffff99">                cgic(i,c) = 0._r8</a>
+   285) <a name="l285" style="background-color: #ffff99">             else if( dchgz &gt; 14._r8 ) then</a>
+   286) <a name="l286" style="background-color: #ffff99">                cgic(i,c) = .02_r8</a>
+   287) <a name="l287" style="background-color: #ffff99">             end if</a>
+   288) <a name="l288" style="background-color: #ffff99">             !--------------------------------------------------------------------------------</a>
+   289) <a name="l289" style="background-color: #ffff99">             !       ... compute flash energy (cg*6.7e9 + ic*6.7e8)</a>
+   290) <a name="l290" style="background-color: #ffff99">             !           and convert to total energy per second</a>
+   291) <a name="l291" style="background-color: #ffff99">             !           set ic = cg</a>
+   292) <a name="l292" style="background-color: #ffff99">             !--------------------------------------------------------------------------------</a>
+   293) <a name="l293" style="background-color: #ffff99">             flash_energy(i,c) = 6.7e9_r8 * flash_freq(i,c)/60._r8</a>
+   294) <a name="l294" style="background-color: #ffff99">             !--------------------------------------------------------------------------------</a>
+   295) <a name="l295" style="background-color: #ffff99">             !       ... LKE Aug 23, 2005: scale production to account for different grid</a>
+   296) <a name="l296" style="background-color: #ffff99">             !           box sizes. This requires a reduction in the overall fudge factor </a>
+   297) <a name="l297" style="background-color: #ffff99">             !           (e.g., from 1.2 to 0.5) </a>
+   298) <a name="l298" style="background-color: #ffff99">             !--------------------------------------------------------------------------------</a>
+   299) <a name="l299" style="background-color: #ffff99">             flash_energy(i,c) =  flash_energy(i,c) * wght(i) * geo_factor</a>
+   300) <a name="l300" style="background-color: #ffff99">             !--------------------------------------------------------------------------------</a>
+   301) <a name="l301" style="background-color: #ffff99">             ! 	... compute number of n atoms produced per second</a>
+   302) <a name="l302" style="background-color: #ffff99">             !           and convert to n atoms per second per cm2 and apply fudge factor</a>
+   303) <a name="l303" style="background-color: #ffff99">             !--------------------------------------------------------------------------------</a>
+   304) <a name="l304" style="background-color: #ffff99">             prod_no_col(i,c) = 1.e17_r8*flash_energy(i,c)/(1.e4_r8*rearth*rearth*wght(i)) * factor</a>
+   305) <a name="l305" style="background-color: #ffff99"></a>
+   306) <a name="l306" style="background-color: #ffff99">             !--------------------------------------------------------------------------------</a>
+   307) <a name="l307" style="background-color: #ffff99">             ! 	... compute global no production rate in tgn/yr:</a>
+   308) <a name="l308" style="background-color: #ffff99">             !           tgn per second: * 14.00674 * 1.65979e-24 * 1.e-12</a>
+   309) <a name="l309" style="background-color: #ffff99">             !             nb: 1.65979e-24 = 1/avo</a>
+   310) <a name="l310" style="background-color: #ffff99">             !           tgn per year: * secpyr</a>
+   311) <a name="l311" style="background-color: #ffff99">             !--------------------------------------------------------------------------------</a>
+   312) <a name="l312" style="background-color: #ffff99">             glob_prod_no_col(i,c) = 1.e17_r8*flash_energy(i,c) &amp;</a>
+   313) <a name="l313" style="background-color: #ffff99">                  * 14.00674_r8 * 1.65979e-24_r8 * 1.e-12_r8 * secpyr * factor</a>
+   314) <a name="l314" style="background-color: #ffff99"></a>
+   315) <a name="l315" style="background-color: #ffff99">          end if cloud_layer</a>
+   316) <a name="l316" style="background-color: #ffff99">       end do Col_loop</a>
+   317) <a name="l317" style="background-color: #ffff99">    end do Chunk_loop</a>
+   318) <a name="l318" style="background-color: #ffff99">    !--------------------------------------------------------------------------------</a>
+   319) <a name="l319" style="background-color: #ffff99">    ! 	... Accumulate global total, convert to flashes per second</a>
+   320) <a name="l320" style="background-color: #ffff99">    ! 	... Accumulate global NO production rate</a>
+   321) <a name="l321" style="background-color: #ffff99">    !--------------------------------------------------------------------------------</a>
+   322) <a name="l322" style="background-color: #ffff99">    kk = pcols*(endchunk-begchunk+1)</a>
+   323) <a name="l323" style="background-color: #ffff99">    call shr_reprosum_calc( flash_freq, wrk2,kk,kk,1, commid=mpicom)</a>
+   324) <a name="l324" style="background-color: #ffff99">    glob_flashfreq=wrk2(1)/60._r8</a>
+   325) <a name="l325" style="background-color: #ffff99">    call shr_reprosum_calc( glob_prod_no_col, wrk2,kk,kk,1, commid=mpicom)</a>
+   326) <a name="l326" style="background-color: #ffff99">    glob_noprod = wrk2(1)</a>
+   327) <a name="l327" style="background-color: #ffff99">    if( masterproc ) then</a>
+   328) <a name="l328" style="background-color: #ffff99">       write(iulog,*) ' '</a>
+   329) <a name="l329" style="background-color: #ffff99">       write(iulog,'(''Global flash freq (/s), lightning NOx (TgN/y) = '',2f10.4)') &amp;</a>
+   330) <a name="l330" style="background-color: #ffff99">            glob_flashfreq, glob_noprod</a>
+   331) <a name="l331" style="background-color: #ffff99">    end if</a>
+   332) <a name="l332" style="background-color: #ffff99"></a>
+   333) <a name="l333" style="background-color: #ffff99">    if( glob_noprod &gt; 0._r8 ) then</a>
+   334) <a name="l334" style="background-color: #ffff99">       !--------------------------------------------------------------------------------</a>
+   335) <a name="l335" style="background-color: #ffff99">       !	... Distribute production up to cloud top [Pickering et al., 1998 (JGR)]</a>
+   336) <a name="l336" style="background-color: #ffff99">       !--------------------------------------------------------------------------------</a>
+   337) <a name="l337" style="background-color: #ffff99">       do c = begchunk,endchunk</a>
+   338) <a name="l338" style="background-color: #ffff99">          ncol  = state(c)%ncol</a>
+   339) <a name="l339" style="background-color: #ffff99">          lchnk = state(c)%lchnk</a>
+   340) <a name="l340" style="background-color: #ffff99">          call pbuf_get_field(pbuf_get_chunk(pbuf2d,lchnk), cldtop_ndx, cldtop )</a>
+   341) <a name="l341" style="background-color: #ffff99">          do i = 1,ncol</a>
+   342) <a name="l342" style="background-color: #ffff99">             cldtind = nint( cldtop(i) )</a>
+   343) <a name="l343" style="background-color: #ffff99">             if( prod_no_col(i,c) &gt; 0._r8 ) then</a>
+   344) <a name="l344" style="background-color: #ffff99">                if( cldhgt(i,c) &gt; 0._r8 ) then</a>
+   345) <a name="l345" style="background-color: #ffff99">                   if( abs( rlats(i,c) ) &gt; lat25 ) then</a>
+   346) <a name="l346" style="background-color: #ffff99">                      itype = 1                                                    ! midlatitude continental</a>
+   347) <a name="l347" style="background-color: #ffff99">                   else if( nint( cam_in(c)%landfrac(i) ) == land ) then</a>
+   348) <a name="l348" style="background-color: #ffff99">                      itype = 3                                                    ! tropical continental</a>
+   349) <a name="l349" style="background-color: #ffff99">                   else</a>
+   350) <a name="l350" style="background-color: #ffff99">                      itype = 2                                                    ! topical marine</a>
+   351) <a name="l351" style="background-color: #ffff99">                   end if</a>
+   352) <a name="l352" style="background-color: #ffff99">                   frac_sum = 0._r8</a>
+   353) <a name="l353" style="background-color: #ffff99">                   do k = cldtind,pver</a>
+   354) <a name="l354" style="background-color: #ffff99">                      zlow       = zint(i,k+1,c) * m2km                            ! lower interface height (km)</a>
+   355) <a name="l355" style="background-color: #ffff99">                      zlow_scal  = zlow * 16._r8/cldhgt(i,c)                       ! scale to 16 km convection height</a>
+   356) <a name="l356" style="background-color: #ffff99">                      zlow_ind   = max( 1,INT(zlow_scal)+1 )                       ! lowest vdist index to include in layer</a>
+   357) <a name="l357" style="background-color: #ffff99">                      zhigh      = zint(i,k,c) * m2km                              ! upper interface height (km)</a>
+   358) <a name="l358" style="background-color: #ffff99">                      zhigh_scal = zhigh * 16._r8/cldhgt(i,c)                      ! height (km) scaled to 16km convection height</a>
+   359) <a name="l359" style="background-color: #ffff99">                      zhigh_ind  = max( 1,MIN( 16,INT(zhigh_scal)+1 ) )            ! highest vdist index to include in layer</a>
+   360) <a name="l360" style="background-color: #ffff99">                      do kk = zlow_ind,zhigh_ind</a>
+   361) <a name="l361" style="background-color: #ffff99">                         wrk  = kk</a>
+   362) <a name="l362" style="background-color: #ffff99">                         wrk1 = kk - 1</a>
+   363) <a name="l363" style="background-color: #ffff99">                         fraction = min( zhigh_scal,wrk ) &amp;                         ! fraction of vdist in this model layer</a>
+   364) <a name="l364" style="background-color: #ffff99">                              - max( zlow_scal,wrk1 )</a>
+   365) <a name="l365" style="background-color: #ffff99">                         fraction = max( 0._r8, min( 1._r8,fraction ) )</a>
+   366) <a name="l366" style="background-color: #ffff99">                         frac_sum = frac_sum + fraction*vdist(kk,itype)</a>
+   367) <a name="l367" style="background-color: #ffff99">                         prod_no(i,k,c) = prod_no(i,k,c) &amp;                         ! sum the fraction of column NOx in layer k</a>
+   368) <a name="l368" style="background-color: #ffff99">                              + fraction*vdist(kk,itype)*.01_r8</a>
+   369) <a name="l369" style="background-color: #ffff99">                      end do</a>
+   370) <a name="l370" style="background-color: #ffff99">                      prod_no(i,k,c) = prod_no_col(i,c) * prod_no(i,k,c) &amp;         ! multiply fraction by column amount</a>
+   371) <a name="l371" style="background-color: #ffff99">                           / (km2cm*(zhigh - zlow))                    ! and convert to atom N cm^-3 s^-1</a>
+   372) <a name="l372" style="background-color: #ffff99">                   end do</a>
+   373) <a name="l373" style="background-color: #ffff99">                end if</a>
+   374) <a name="l374" style="background-color: #ffff99">             end if</a>
+   375) <a name="l375" style="background-color: #ffff99">          end do</a>
+   376) <a name="l376" style="background-color: #ffff99">       end do</a>
+   377) <a name="l377" style="background-color: #ffff99">    end if</a>
+   378) <a name="l378" style="background-color: #ffff99"></a>
+   379) <a name="l379" style="background-color: #ffff99">    !--------------------------------------------------------------------------------</a>
+   380) <a name="l380" style="background-color: #ffff99">    !       ... output lightning no production to history file</a>
+   381) <a name="l381" style="background-color: #ffff99">    !--------------------------------------------------------------------------------</a>
+   382) <a name="l382" style="background-color: #ffff99">    do c = begchunk,endchunk</a>
+   383) <a name="l383" style="background-color: #ffff99">       lchnk = state(c)%lchnk</a>
+   384) <a name="l384" style="background-color: #ffff99">       call outfld( 'LNO_PROD',     prod_no(:,:,c),        pcols, lchnk )</a>
+   385) <a name="l385" style="background-color: #ffff99">       call outfld( 'LNO_COL_PROD', glob_prod_no_col(:,c), pcols, lchnk )</a>
+   386) <a name="l386" style="background-color: #ffff99">       call outfld( 'FLASHFRQ',     flash_freq(:,c),       pcols, lchnk )</a>
+   387) <a name="l387" style="background-color: #ffff99">       call outfld( 'FLASHENGY',    flash_energy(:,c),     pcols, lchnk )</a>
+   388) <a name="l388" style="background-color: #ffff99">       call outfld( 'CLDHGT',       cldhgt(:,c),           pcols, lchnk )</a>
+   389) <a name="l389" style="background-color: #ffff99">       call outfld( 'DCHGZONE',     dchgzone(:,c),         pcols, lchnk )</a>
+   390) <a name="l390" style="background-color: #ffff99">       call outfld( 'CGIC',         cgic(:,c),             pcols, lchnk )</a>
+   391) <a name="l391" style="background-color: #ffff99">    enddo</a>
+   392) <a name="l392" style="background-color: #ffff99"></a>
+   393) <a name="l393" style="background-color: #ffff99">  end subroutine lightning_no_prod</a>
+   394) <a name="l394" style="background-color: #ffffff"></a>
+   395) <a name="l395" style="background-color: #ffffff">end module mo_lightning</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

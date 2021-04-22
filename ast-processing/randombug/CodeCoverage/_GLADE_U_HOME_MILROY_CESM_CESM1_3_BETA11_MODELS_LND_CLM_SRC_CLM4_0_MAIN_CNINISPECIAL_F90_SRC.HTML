@@ -1,0 +1,254 @@
+<html>
+<head>
+<title>Listing of CNiniSpecial.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;CNiniSpecial.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     2) <a name="l2" style="background-color: #ffffff">!BOP</a>
+     3) <a name="l3" style="background-color: #ffffff">!</a>
+     4) <a name="l4" style="background-color: #ffffff">! !IROUTINE: CNiniSpecial</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !INTERFACE:</a>
+     7) <a name="l7" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">CNiniSpecial ()</a>
+     8) <a name="l8" style="background-color: #ffcccc">!</a>
+     9) <a name="l9" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+    10) <a name="l10" style="background-color: #ffcccc">! One-time initialization of CN variables for special landunits</a>
+    11) <a name="l11" style="background-color: #ffcccc">!</a>
+    12) <a name="l12" style="background-color: #ffcccc">! !USES:</a>
+    13) <a name="l13" style="background-color: #ffcccc">   use shr_kind_mod, only: r8 =&gt; shr_kind_r8</a>
+    14) <a name="l14" style="background-color: #ffcccc">   use pftvarcon   , only: noveg</a>
+    15) <a name="l15" style="background-color: #ffcccc">   use decompMod   , only: get_proc_bounds</a>
+    16) <a name="l16" style="background-color: #ffcccc">   use clm_varcon  , only: spval</a>
+    17) <a name="l17" style="background-color: #ffcccc">   use clm_varctl  , only: iulog, use_c13, use_cn</a>
+    18) <a name="l18" style="background-color: #ffcccc">   use clmtype</a>
+    19) <a name="l19" style="background-color: #ffcccc">   use CNSetValueMod</a>
+    20) <a name="l20" style="background-color: #ffcccc">!</a>
+    21) <a name="l21" style="background-color: #ffcccc">! !ARGUMENTS:</a>
+    22) <a name="l22" style="background-color: #ffcccc">   implicit none</a>
+    23) <a name="l23" style="background-color: #ffcccc">!</a>
+    24) <a name="l24" style="background-color: #ffcccc">! !CALLED FROM:</a>
+    25) <a name="l25" style="background-color: #ffcccc">! subroutine iniTimeConst in file iniTimeConst.F90</a>
+    26) <a name="l26" style="background-color: #ffcccc">!</a>
+    27) <a name="l27" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+    28) <a name="l28" style="background-color: #ffcccc">! 11/13/03: Created by Peter Thornton</a>
+    29) <a name="l29" style="background-color: #ffcccc">!</a>
+    30) <a name="l30" style="background-color: #ffcccc">!</a>
+    31) <a name="l31" style="background-color: #ffcccc">! local pointers to implicit in arguments</a>
+    32) <a name="l32" style="background-color: #ffcccc">!</a>
+    33) <a name="l33" style="background-color: #ffcccc">  integer , pointer :: clandunit(:)    ! landunit index of corresponding column</a>
+    34) <a name="l34" style="background-color: #ffcccc">  integer , pointer :: plandunit(:)    ! landunit index of corresponding pft</a>
+    35) <a name="l35" style="background-color: #ffcccc">  logical , pointer :: ifspecial(:)    ! BOOL: true=&gt;landunit is wetland,ice,lake, or urban</a>
+    36) <a name="l36" style="background-color: #ffcccc">!</a>
+    37) <a name="l37" style="background-color: #ffcccc">! local pointers to implicit out arguments</a>
+    38) <a name="l38" style="background-color: #ffcccc">!</a>
+    39) <a name="l39" style="background-color: #ffcccc">! !LOCAL VARIABLES:</a>
+    40) <a name="l40" style="background-color: #ffcccc">!EOP</a>
+    41) <a name="l41" style="background-color: #ffcccc">   integer :: fc,fp,l,c,p  ! indices</a>
+    42) <a name="l42" style="background-color: #ffcccc">   integer :: begp, endp   ! per-clump/proc beginning and ending pft indices</a>
+    43) <a name="l43" style="background-color: #ffcccc">   integer :: begc, endc   ! per-clump/proc beginning and ending column indices</a>
+    44) <a name="l44" style="background-color: #ffcccc">   integer :: begl, endl   ! per-clump/proc beginning and ending landunit indices</a>
+    45) <a name="l45" style="background-color: #ffcccc">   integer :: begg, endg   ! per-clump/proc gridcell ending gridcell indices</a>
+    46) <a name="l46" style="background-color: #ffcccc">   integer :: num_specialc ! number of good values in specialc filter</a>
+    47) <a name="l47" style="background-color: #ffcccc">   integer :: num_specialp ! number of good values in specialp filter</a>
+    48) <a name="l48" style="background-color: #ffcccc">   integer, allocatable :: specialc(:) ! special landunit filter - columns</a>
+    49) <a name="l49" style="background-color: #ffcccc">   integer, allocatable :: specialp(:) ! special landunit filter - pfts</a>
+    50) <a name="l50" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+    51) <a name="l51" style="background-color: #ffcccc">   ! assign local pointers at the landunit level</a>
+    52) <a name="l52" style="background-color: #ffcccc">   ifspecial =&gt; lun%ifspecial</a>
+    53) <a name="l53" style="background-color: #ffcccc"></a>
+    54) <a name="l54" style="background-color: #ffcccc">   ! assign local pointers at the column level</a>
+    55) <a name="l55" style="background-color: #ffcccc">   clandunit =&gt; col%landunit</a>
+    56) <a name="l56" style="background-color: #ffcccc"></a>
+    57) <a name="l57" style="background-color: #ffcccc">   ! assign local pointers at the pft level</a>
+    58) <a name="l58" style="background-color: #ffcccc">   plandunit =&gt; pft%landunit</a>
+    59) <a name="l59" style="background-color: #ffcccc"></a>
+    60) <a name="l60" style="background-color: #ffcccc">   ! Determine subgrid bounds on this processor</a>
+    61) <a name="l61" style="background-color: #ffcccc">   call get_proc_bounds(begg, endg, begl, endl, begc, endc, begp, endp)</a>
+    62) <a name="l62" style="background-color: #ffcccc"></a>
+    63) <a name="l63" style="background-color: #ffcccc">   ! allocate special landunit filters</a>
+    64) <a name="l64" style="background-color: #ffcccc">   allocate(specialc(endc-begc+1))</a>
+    65) <a name="l65" style="background-color: #ffcccc">   allocate(specialp(endp-begp+1))</a>
+    66) <a name="l66" style="background-color: #ffcccc"></a>
+    67) <a name="l67" style="background-color: #ffcccc">   ! fill special landunit filters</a>
+    68) <a name="l68" style="background-color: #ffcccc">   num_specialc = 0</a>
+    69) <a name="l69" style="background-color: #ffcccc">   do c = begc, endc</a>
+    70) <a name="l70" style="background-color: #ffcccc">      l = clandunit(c)</a>
+    71) <a name="l71" style="background-color: #ffcccc">      if (ifspecial(l)) then</a>
+    72) <a name="l72" style="background-color: #ffcccc">         num_specialc = num_specialc + 1</a>
+    73) <a name="l73" style="background-color: #ffcccc">         specialc(num_specialc) = c</a>
+    74) <a name="l74" style="background-color: #ffcccc">      end if</a>
+    75) <a name="l75" style="background-color: #ffcccc">   end do</a>
+    76) <a name="l76" style="background-color: #ffcccc"></a>
+    77) <a name="l77" style="background-color: #ffcccc">   num_specialp = 0</a>
+    78) <a name="l78" style="background-color: #ffcccc">   do p = begp, endp</a>
+    79) <a name="l79" style="background-color: #ffcccc">      l = plandunit(p)</a>
+    80) <a name="l80" style="background-color: #ffcccc">      if (ifspecial(l)) then</a>
+    81) <a name="l81" style="background-color: #ffcccc">         num_specialp = num_specialp + 1</a>
+    82) <a name="l82" style="background-color: #ffcccc">         specialp(num_specialp) = p</a>
+    83) <a name="l83" style="background-color: #ffcccc">      end if</a>
+    84) <a name="l84" style="background-color: #ffcccc">   end do</a>
+    85) <a name="l85" style="background-color: #ffcccc"></a>
+    86) <a name="l86" style="background-color: #ffcccc">   ! initialize column-level fields</a>
+    87) <a name="l87" style="background-color: #ffcccc">   call CNSetCps(num_specialc, specialc, spval, cps)</a>
+    88) <a name="l88" style="background-color: #ffcccc">   call CNSetCcs(num_specialc, specialc, 0._r8, ccs)</a>
+    89) <a name="l89" style="background-color: #ffcccc">   call CNSetCns(num_specialc, specialc, 0._r8, cns)</a>
+    90) <a name="l90" style="background-color: #ffcccc">   call CNSetCcf(num_specialc, specialc, 0._r8, ccf)</a>
+    91) <a name="l91" style="background-color: #ffcccc">   call CNSetCnf(num_specialc, specialc, 0._r8, cnf)</a>
+    92) <a name="l92" style="background-color: #ffcccc">   if (use_c13) then</a>
+    93) <a name="l93" style="background-color: #ffcccc">      ! 4/14/05: PET</a>
+    94) <a name="l94" style="background-color: #ffcccc">      ! adding isotope code</a>
+    95) <a name="l95" style="background-color: #ffcccc">      call CNSetCcs(num_specialc, specialc, 0._r8, cc13s)</a>
+    96) <a name="l96" style="background-color: #ffcccc">      call CNSetCcf(num_specialc, specialc, 0._r8, cc13f)</a>
+    97) <a name="l97" style="background-color: #ffcccc">   endif</a>
+    98) <a name="l98" style="background-color: #ffcccc"></a>
+    99) <a name="l99" style="background-color: #ffcccc">   ! initialize column-average pft fields</a>
+   100) <a name="l100" style="background-color: #ffcccc">   call CNSetPps(num_specialc, specialc, spval, pps_a)</a>
+   101) <a name="l101" style="background-color: #ffcccc">   call CNSetPcs(num_specialc, specialc, 0._r8, pcs_a)</a>
+   102) <a name="l102" style="background-color: #ffcccc">   call CNSetPns(num_specialc, specialc, 0._r8, pns_a)</a>
+   103) <a name="l103" style="background-color: #ffcccc">   call CNSetPcf(num_specialc, specialc, 0._r8, pcf_a)</a>
+   104) <a name="l104" style="background-color: #ffcccc">   call CNSetPnf(num_specialc, specialc, 0._r8, pnf_a)</a>
+   105) <a name="l105" style="background-color: #ffcccc"></a>
+   106) <a name="l106" style="background-color: #ffcccc">   ! initialize pft-level fields</a>
+   107) <a name="l107" style="background-color: #ffcccc">   call CNSetPepv(num_specialp, specialp, spval, pepv)</a>
+   108) <a name="l108" style="background-color: #ffcccc">   call CNSetPps(num_specialp, specialp, spval, pps)</a>
+   109) <a name="l109" style="background-color: #ffcccc">   call CNSetPcs(num_specialp, specialp, 0._r8, pcs)</a>
+   110) <a name="l110" style="background-color: #ffcccc">   call CNSetPns(num_specialp, specialp, 0._r8, pns)</a>
+   111) <a name="l111" style="background-color: #ffcccc">   call CNSetPcf(num_specialp, specialp, 0._r8, pcf)</a>
+   112) <a name="l112" style="background-color: #ffcccc">   call CNSetPnf(num_specialp, specialp, 0._r8, pnf)</a>
+   113) <a name="l113" style="background-color: #ffcccc">   if (use_c13) then</a>
+   114) <a name="l114" style="background-color: #ffcccc">      ! 4/14/05: PET</a>
+   115) <a name="l115" style="background-color: #ffcccc">      ! adding isotope code</a>
+   116) <a name="l116" style="background-color: #ffcccc">      call CNSetPcs(num_specialp, specialp, 0._r8, pc13s)</a>
+   117) <a name="l117" style="background-color: #ffcccc">      call CNSetPcf(num_specialp, specialp, 0._r8, pc13f)</a>
+   118) <a name="l118" style="background-color: #ffcccc">   endif</a>
+   119) <a name="l119" style="background-color: #ffcccc"></a>
+   120) <a name="l120" style="background-color: #ffcccc">   ! now loop through special filters and explicitly set the variables that</a>
+   121) <a name="l121" style="background-color: #ffcccc">   ! have to be in place for SurfaceAlbedo and biogeophysics</a>
+   122) <a name="l122" style="background-color: #ffcccc">   ! also set pcf%psnsun and pcf%psnsha to 0 (not included in CNSetPcf())</a>
+   123) <a name="l123" style="background-color: #ffcccc"></a>
+   124) <a name="l124" style="background-color: #ffcccc">   do fp = 1,num_specialp</a>
+   125) <a name="l125" style="background-color: #ffcccc">      p = specialp(fp)</a>
+   126) <a name="l126" style="background-color: #ffcccc">      pps%tlai(p) = 0._r8</a>
+   127) <a name="l127" style="background-color: #ffcccc">      pps%tsai(p) = 0._r8</a>
+   128) <a name="l128" style="background-color: #ffcccc">      pps%elai(p) = 0._r8</a>
+   129) <a name="l129" style="background-color: #ffcccc">      pps%esai(p) = 0._r8</a>
+   130) <a name="l130" style="background-color: #ffcccc">      pps%htop(p) = 0._r8</a>
+   131) <a name="l131" style="background-color: #ffcccc">      pps%hbot(p) = 0._r8</a>
+   132) <a name="l132" style="background-color: #ffcccc">      pps%fwet(p) = 0._r8</a>
+   133) <a name="l133" style="background-color: #ffcccc">      pps%fdry(p) = 0._r8</a>
+   134) <a name="l134" style="background-color: #ffcccc">      pps%frac_veg_nosno_alb(p) = 0._r8</a>
+   135) <a name="l135" style="background-color: #ffcccc">      pps%frac_veg_nosno(p) = 0._r8</a>
+   136) <a name="l136" style="background-color: #ffcccc">      pcf%psnsun(p) = 0._r8</a>
+   137) <a name="l137" style="background-color: #ffcccc">      pcf%psnsha(p) = 0._r8</a>
+   138) <a name="l138" style="background-color: #ffcccc">      if (use_c13) then</a>
+   139) <a name="l139" style="background-color: #ffcccc">         ! 4/14/05: PET</a>
+   140) <a name="l140" style="background-color: #ffcccc">         ! Adding isotope code</a>
+   141) <a name="l141" style="background-color: #ffcccc">         pc13f%psnsun(p) = 0._r8</a>
+   142) <a name="l142" style="background-color: #ffcccc">         pc13f%psnsha(p) = 0._r8</a>
+   143) <a name="l143" style="background-color: #ffcccc">      endif</a>
+   144) <a name="l144" style="background-color: #ffcccc">      </a>
+   145) <a name="l145" style="background-color: #ffcccc">   end do</a>
+   146) <a name="l146" style="background-color: #ffcccc"></a>
+   147) <a name="l147" style="background-color: #ffcccc">   do fc = 1,num_specialc</a>
+   148) <a name="l148" style="background-color: #ffcccc">      c = specialc(fc)</a>
+   149) <a name="l149" style="background-color: #ffcccc">      pcf_a%psnsun(c) = 0._r8</a>
+   150) <a name="l150" style="background-color: #ffcccc">      pcf_a%psnsha(c) = 0._r8</a>
+   151) <a name="l151" style="background-color: #ffcccc">      if (use_c13) then</a>
+   152) <a name="l152" style="background-color: #ffcccc">         ! 8/17/05: PET</a>
+   153) <a name="l153" style="background-color: #ffcccc">         ! Adding isotope code</a>
+   154) <a name="l154" style="background-color: #ffcccc">         pcf_a%psnsun(c) = 0._r8</a>
+   155) <a name="l155" style="background-color: #ffcccc">         pcf_a%psnsha(c) = 0._r8</a>
+   156) <a name="l156" style="background-color: #ffcccc">      endif</a>
+   157) <a name="l157" style="background-color: #ffcccc">      </a>
+   158) <a name="l158" style="background-color: #ffcccc">	  ! adding dynpft code</a>
+   159) <a name="l159" style="background-color: #ffcccc">	  ccs%seedc(c) = 0._r8</a>
+   160) <a name="l160" style="background-color: #ffcccc">	  ccs%prod10c(c) = 0._r8	  </a>
+   161) <a name="l161" style="background-color: #ffcccc">	  ccs%prod100c(c) = 0._r8	  </a>
+   162) <a name="l162" style="background-color: #ffcccc">	  ccs%totprodc(c) = 0._r8	  </a>
+   163) <a name="l163" style="background-color: #ffcccc">          if (use_c13) then</a>
+   164) <a name="l164" style="background-color: #ffcccc">             cc13s%seedc(c) = 0._r8</a>
+   165) <a name="l165" style="background-color: #ffcccc">             cc13s%prod10c(c) = 0._r8	  </a>
+   166) <a name="l166" style="background-color: #ffcccc">             cc13s%prod100c(c) = 0._r8	  </a>
+   167) <a name="l167" style="background-color: #ffcccc">             cc13s%totprodc(c) = 0._r8	  </a>
+   168) <a name="l168" style="background-color: #ffcccc">          endif</a>
+   169) <a name="l169" style="background-color: #ffcccc">	  cns%seedn(c) = 0._r8</a>
+   170) <a name="l170" style="background-color: #ffcccc">	  cns%prod10n(c) = 0._r8	  </a>
+   171) <a name="l171" style="background-color: #ffcccc">	  cns%prod100n(c) = 0._r8	  </a>
+   172) <a name="l172" style="background-color: #ffcccc">	  cns%totprodn(c) = 0._r8	  </a>
+   173) <a name="l173" style="background-color: #ffcccc">	  ccf%dwt_seedc_to_leaf(c) = 0._r8</a>
+   174) <a name="l174" style="background-color: #ffcccc">	  ccf%dwt_seedc_to_deadstem(c) = 0._r8</a>
+   175) <a name="l175" style="background-color: #ffcccc">	  ccf%dwt_conv_cflux(c) = 0._r8</a>
+   176) <a name="l176" style="background-color: #ffcccc">	  ccf%dwt_prod10c_gain(c) = 0._r8</a>
+   177) <a name="l177" style="background-color: #ffcccc">	  ccf%prod10c_loss(c) = 0._r8</a>
+   178) <a name="l178" style="background-color: #ffcccc">	  ccf%dwt_prod100c_gain(c) = 0._r8</a>
+   179) <a name="l179" style="background-color: #ffcccc">	  ccf%prod100c_loss(c) = 0._r8</a>
+   180) <a name="l180" style="background-color: #ffcccc">	  ccf%dwt_frootc_to_litr1c(c) = 0._r8</a>
+   181) <a name="l181" style="background-color: #ffcccc">	  ccf%dwt_frootc_to_litr2c(c) = 0._r8</a>
+   182) <a name="l182" style="background-color: #ffcccc">	  ccf%dwt_frootc_to_litr3c(c) = 0._r8</a>
+   183) <a name="l183" style="background-color: #ffcccc">	  ccf%dwt_livecrootc_to_cwdc(c) = 0._r8</a>
+   184) <a name="l184" style="background-color: #ffcccc">	  ccf%dwt_deadcrootc_to_cwdc(c) = 0._r8</a>
+   185) <a name="l185" style="background-color: #ffcccc">	  ccf%dwt_closs(c) = 0._r8</a>
+   186) <a name="l186" style="background-color: #ffcccc">	  ccf%landuseflux(c) = 0._r8</a>
+   187) <a name="l187" style="background-color: #ffcccc">	  ccf%landuptake(c) = 0._r8</a>
+   188) <a name="l188" style="background-color: #ffcccc">          if (use_c13) then</a>
+   189) <a name="l189" style="background-color: #ffcccc">             cc13f%dwt_seedc_to_leaf(c) = 0._r8</a>
+   190) <a name="l190" style="background-color: #ffcccc">             cc13f%dwt_seedc_to_deadstem(c) = 0._r8</a>
+   191) <a name="l191" style="background-color: #ffcccc">             cc13f%dwt_conv_cflux(c) = 0._r8</a>
+   192) <a name="l192" style="background-color: #ffcccc">             cc13f%dwt_prod10c_gain(c) = 0._r8</a>
+   193) <a name="l193" style="background-color: #ffcccc">             cc13f%prod10c_loss(c) = 0._r8</a>
+   194) <a name="l194" style="background-color: #ffcccc">             cc13f%dwt_prod100c_gain(c) = 0._r8</a>
+   195) <a name="l195" style="background-color: #ffcccc">             cc13f%prod100c_loss(c) = 0._r8</a>
+   196) <a name="l196" style="background-color: #ffcccc">             cc13f%dwt_frootc_to_litr1c(c) = 0._r8</a>
+   197) <a name="l197" style="background-color: #ffcccc">             cc13f%dwt_frootc_to_litr2c(c) = 0._r8</a>
+   198) <a name="l198" style="background-color: #ffcccc">             cc13f%dwt_frootc_to_litr3c(c) = 0._r8</a>
+   199) <a name="l199" style="background-color: #ffcccc">             cc13f%dwt_livecrootc_to_cwdc(c) = 0._r8</a>
+   200) <a name="l200" style="background-color: #ffcccc">             cc13f%dwt_deadcrootc_to_cwdc(c) = 0._r8</a>
+   201) <a name="l201" style="background-color: #ffcccc">             cc13f%dwt_closs(c) = 0._r8</a>
+   202) <a name="l202" style="background-color: #ffcccc">          endif</a>
+   203) <a name="l203" style="background-color: #ffcccc">	  cnf%dwt_seedn_to_leaf(c) = 0._r8</a>
+   204) <a name="l204" style="background-color: #ffcccc">	  cnf%dwt_seedn_to_deadstem(c) = 0._r8</a>
+   205) <a name="l205" style="background-color: #ffcccc">	  cnf%dwt_conv_nflux(c) = 0._r8</a>
+   206) <a name="l206" style="background-color: #ffcccc">	  cnf%dwt_prod10n_gain(c) = 0._r8</a>
+   207) <a name="l207" style="background-color: #ffcccc">	  cnf%prod10n_loss(c) = 0._r8</a>
+   208) <a name="l208" style="background-color: #ffcccc">	  cnf%dwt_prod100n_gain(c) = 0._r8</a>
+   209) <a name="l209" style="background-color: #ffcccc">	  cnf%prod100n_loss(c) = 0._r8</a>
+   210) <a name="l210" style="background-color: #ffcccc">	  cnf%dwt_frootn_to_litr1n(c) = 0._r8</a>
+   211) <a name="l211" style="background-color: #ffcccc">	  cnf%dwt_frootn_to_litr2n(c) = 0._r8</a>
+   212) <a name="l212" style="background-color: #ffcccc">	  cnf%dwt_frootn_to_litr3n(c) = 0._r8</a>
+   213) <a name="l213" style="background-color: #ffcccc">	  cnf%dwt_livecrootn_to_cwdn(c) = 0._r8</a>
+   214) <a name="l214" style="background-color: #ffcccc">	  cnf%dwt_deadcrootn_to_cwdn(c) = 0._r8</a>
+   215) <a name="l215" style="background-color: #ffcccc">	  cnf%dwt_nloss(c) = 0._r8</a>
+   216) <a name="l216" style="background-color: #ffcccc">      </a>
+   217) <a name="l217" style="background-color: #ffcccc">   end do</a>
+   218) <a name="l218" style="background-color: #ffcccc"></a>
+   219) <a name="l219" style="background-color: #ffcccc">   ! deallocate special landunit filters</a>
+   220) <a name="l220" style="background-color: #ffcccc">   deallocate(specialc)</a>
+   221) <a name="l221" style="background-color: #ffcccc">   deallocate(specialp)</a>
+   222) <a name="l222" style="background-color: #ffcccc"></a>
+   223) <a name="l223" style="background-color: #ffcccc">end subroutine CNiniSpecial</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

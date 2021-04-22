@@ -1,0 +1,568 @@
+<html>
+<head>
+<title>Listing of CNNStateUpdate1Mod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;CNNStateUpdate1Mod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module CNNStateUpdate1Mod</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">!BOP</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !MODULE: NStateUpdate1Mod</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     9) <a name="l9" style="background-color: #ffffff">! Module for nitrogen state variable updates, non-mortality fluxes.</a>
+    10) <a name="l10" style="background-color: #ffffff">!</a>
+    11) <a name="l11" style="background-color: #ffffff">! !USES:</a>
+    12) <a name="l12" style="background-color: #ffffff">    use shr_kind_mod, only: r8 =&gt; shr_kind_r8</a>
+    13) <a name="l13" style="background-color: #ffffff">    implicit none</a>
+    14) <a name="l14" style="background-color: #ffffff">    save</a>
+    15) <a name="l15" style="background-color: #ffffff">    private</a>
+    16) <a name="l16" style="background-color: #ffffff">! !PUBLIC MEMBER FUNCTIONS:</a>
+    17) <a name="l17" style="background-color: #ffffff">    public:: NStateUpdate1</a>
+    18) <a name="l18" style="background-color: #ffffff">!</a>
+    19) <a name="l19" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    20) <a name="l20" style="background-color: #ffffff">! 4/23/2004: Created by Peter Thornton</a>
+    21) <a name="l21" style="background-color: #ffffff">!</a>
+    22) <a name="l22" style="background-color: #ffffff">!EOP</a>
+    23) <a name="l23" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    24) <a name="l24" style="background-color: #ffffff"></a>
+    25) <a name="l25" style="background-color: #ffffff">contains</a>
+    26) <a name="l26" style="background-color: #ffffff"></a>
+    27) <a name="l27" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    28) <a name="l28" style="background-color: #ffffff">!BOP</a>
+    29) <a name="l29" style="background-color: #ffffff">!</a>
+    30) <a name="l30" style="background-color: #ffffff">! !IROUTINE: NStateUpdate1</a>
+    31) <a name="l31" style="background-color: #ffffff">!</a>
+    32) <a name="l32" style="background-color: #ffffff">! !INTERFACE:</a>
+    33) <a name="l33" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">NStateUpdate1(num_soilc, filter_soilc, num_soilp, filter_soilp)</a>
+    34) <a name="l34" style="background-color: #ffcccc">!</a>
+    35) <a name="l35" style="background-color: #ffcccc">! !DESCRIPTION:</a>
+    36) <a name="l36" style="background-color: #ffcccc">! On the radiation time step, update all the prognostic nitrogen state</a>
+    37) <a name="l37" style="background-color: #ffcccc">! variables (except for gap-phase mortality and fire fluxes)</a>
+    38) <a name="l38" style="background-color: #ffcccc">!</a>
+    39) <a name="l39" style="background-color: #ffcccc">! !USES:</a>
+    40) <a name="l40" style="background-color: #ffcccc">   use clmtype</a>
+    41) <a name="l41" style="background-color: #ffcccc">   use clm_time_manager, only: get_step_size</a>
+    42) <a name="l42" style="background-color: #ffcccc">   use pftvarcon       , only: npcropmin, nc3crop</a>
+    43) <a name="l43" style="background-color: #ffcccc">   use surfrdMod       , only: crop_prog</a>
+    44) <a name="l44" style="background-color: #ffcccc">!</a>
+    45) <a name="l45" style="background-color: #ffcccc">! !ARGUMENTS:</a>
+    46) <a name="l46" style="background-color: #ffcccc">   implicit none</a>
+    47) <a name="l47" style="background-color: #ffcccc">   integer, intent(in) :: num_soilc       ! number of soil columns in filter</a>
+    48) <a name="l48" style="background-color: #ffcccc">   integer, intent(in) :: filter_soilc(:) ! filter for soil columns</a>
+    49) <a name="l49" style="background-color: #ffcccc">   integer, intent(in) :: num_soilp       ! number of soil pfts in filter</a>
+    50) <a name="l50" style="background-color: #ffcccc">   integer, intent(in) :: filter_soilp(:) ! filter for soil pfts</a>
+    51) <a name="l51" style="background-color: #ffcccc">!</a>
+    52) <a name="l52" style="background-color: #ffcccc">! !CALLED FROM:</a>
+    53) <a name="l53" style="background-color: #ffcccc">! subroutine CNEcosystemDyn</a>
+    54) <a name="l54" style="background-color: #ffcccc">!</a>
+    55) <a name="l55" style="background-color: #ffcccc">! !REVISION HISTORY:</a>
+    56) <a name="l56" style="background-color: #ffcccc">! 8/1/03: Created by Peter Thornton</a>
+    57) <a name="l57" style="background-color: #ffcccc">!</a>
+    58) <a name="l58" style="background-color: #ffcccc">! !LOCAL VARIABLES:</a>
+    59) <a name="l59" style="background-color: #ffcccc">! local pointers to implicit in scalars</a>
+    60) <a name="l60" style="background-color: #ffcccc">!</a>
+    61) <a name="l61" style="background-color: #ffcccc">   integer , pointer :: ivt(:)                  ! pft vegetation type</a>
+    62) <a name="l62" style="background-color: #ffcccc">   real(r8), pointer :: woody(:)                ! binary flag for woody lifeform (1=woody, 0=not woody)</a>
+    63) <a name="l63" style="background-color: #ffcccc">   real(r8), pointer :: cwdn_to_litr2n(:)       ! decomp. of coarse woody debris N to litter 2 N (gN/m2/s)</a>
+    64) <a name="l64" style="background-color: #ffcccc">   real(r8), pointer :: cwdn_to_litr3n(:)       ! decomp. of coarse woody debris N to litter 3 N (gN/m2/s)</a>
+    65) <a name="l65" style="background-color: #ffcccc">   real(r8), pointer :: grainn_to_litr1n(:)     ! grain N litterfall to litter 1 N (gN/m2/s)</a>
+    66) <a name="l66" style="background-color: #ffcccc">   real(r8), pointer :: grainn_to_litr2n(:)     ! grain N litterfall to litter 2 N (gN/m2/s)</a>
+    67) <a name="l67" style="background-color: #ffcccc">   real(r8), pointer :: grainn_to_litr3n(:)     ! grain N litterfall to litter 3 N (gN/m2/s)</a>
+    68) <a name="l68" style="background-color: #ffcccc">   real(r8), pointer :: livestemn_to_litr1n(:)  ! livestem N litterfall to litter 1 N (gN/m2/s)</a>
+    69) <a name="l69" style="background-color: #ffcccc">   real(r8), pointer :: livestemn_to_litr2n(:)  ! livestem N litterfall to litter 2 N (gN/m2/s)</a>
+    70) <a name="l70" style="background-color: #ffcccc">   real(r8), pointer :: livestemn_to_litr3n(:)  ! livestem N litterfall to litter 3 N (gN/m2/s)</a>
+    71) <a name="l71" style="background-color: #ffcccc">   real(r8), pointer :: frootn_to_litr1n(:)     ! fine root N litterfall to litter 1 N (gN/m2/s)</a>
+    72) <a name="l72" style="background-color: #ffcccc">   real(r8), pointer :: frootn_to_litr2n(:)     ! fine root N litterfall to litter 2 N (gN/m2/s)</a>
+    73) <a name="l73" style="background-color: #ffcccc">   real(r8), pointer :: frootn_to_litr3n(:)     ! fine root N litterfall to litter 3 N (gN/m2/s)</a>
+    74) <a name="l74" style="background-color: #ffcccc">   real(r8), pointer :: leafn_to_litr1n(:)      ! leaf N litterfall to litter 1 N (gN/m2/s)</a>
+    75) <a name="l75" style="background-color: #ffcccc">   real(r8), pointer :: leafn_to_litr2n(:)      ! leaf N litterfall to litter 2 N (gN/m2/s)</a>
+    76) <a name="l76" style="background-color: #ffcccc">   real(r8), pointer :: leafn_to_litr3n(:)      ! leaf N litterfall to litter 3 N (gN/m2/s)</a>
+    77) <a name="l77" style="background-color: #ffcccc">   real(r8), pointer :: litr1n_to_soil1n(:)</a>
+    78) <a name="l78" style="background-color: #ffcccc">   real(r8), pointer :: litr2n_to_soil2n(:)</a>
+    79) <a name="l79" style="background-color: #ffcccc">   real(r8), pointer :: litr3n_to_soil3n(:)</a>
+    80) <a name="l80" style="background-color: #ffcccc">   real(r8), pointer :: ndep_to_sminn(:)</a>
+    81) <a name="l81" style="background-color: #ffcccc">   real(r8), pointer :: nfix_to_sminn(:)        ! symbiotic/asymbiotic N fixation to soil mineral N (gN/m2/s) </a>
+    82) <a name="l82" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_denit_excess(:)</a>
+    83) <a name="l83" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_denit_l1s1(:)</a>
+    84) <a name="l84" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_denit_l2s2(:)</a>
+    85) <a name="l85" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_denit_l3s3(:)</a>
+    86) <a name="l86" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_denit_s1s2(:)</a>
+    87) <a name="l87" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_denit_s2s3(:)</a>
+    88) <a name="l88" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_denit_s3s4(:)</a>
+    89) <a name="l89" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_denit_s4(:)</a>
+    90) <a name="l90" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_plant(:)</a>
+    91) <a name="l91" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_soil1n_l1(:)</a>
+    92) <a name="l92" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_soil2n_l2(:)</a>
+    93) <a name="l93" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_soil2n_s1(:)</a>
+    94) <a name="l94" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_soil3n_l3(:)</a>
+    95) <a name="l95" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_soil3n_s2(:)</a>
+    96) <a name="l96" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_soil4n_s3(:)</a>
+    97) <a name="l97" style="background-color: #ffcccc">   real(r8), pointer :: soil1n_to_soil2n(:)</a>
+    98) <a name="l98" style="background-color: #ffcccc">   real(r8), pointer :: soil2n_to_soil3n(:)</a>
+    99) <a name="l99" style="background-color: #ffcccc">   real(r8), pointer :: soil3n_to_soil4n(:)</a>
+   100) <a name="l100" style="background-color: #ffcccc">   real(r8), pointer :: soil4n_to_sminn(:)</a>
+   101) <a name="l101" style="background-color: #ffcccc">   real(r8), pointer :: supplement_to_sminn(:)</a>
+   102) <a name="l102" style="background-color: #ffcccc">   real(r8), pointer :: deadcrootn_storage_to_xfer(:)</a>
+   103) <a name="l103" style="background-color: #ffcccc">   real(r8), pointer :: deadcrootn_xfer_to_deadcrootn(:)</a>
+   104) <a name="l104" style="background-color: #ffcccc">   real(r8), pointer :: deadstemn_storage_to_xfer(:)</a>
+   105) <a name="l105" style="background-color: #ffcccc">   real(r8), pointer :: deadstemn_xfer_to_deadstemn(:)</a>
+   106) <a name="l106" style="background-color: #ffcccc">   real(r8), pointer :: frootn_storage_to_xfer(:)</a>
+   107) <a name="l107" style="background-color: #ffcccc">   real(r8), pointer :: frootn_to_litter(:)</a>
+   108) <a name="l108" style="background-color: #ffcccc">   real(r8), pointer :: frootn_xfer_to_frootn(:)</a>
+   109) <a name="l109" style="background-color: #ffcccc">   real(r8), pointer :: leafn_storage_to_xfer(:)</a>
+   110) <a name="l110" style="background-color: #ffcccc">   real(r8), pointer :: leafn_to_litter(:)</a>
+   111) <a name="l111" style="background-color: #ffcccc">   real(r8), pointer :: leafn_to_retransn(:)</a>
+   112) <a name="l112" style="background-color: #ffcccc">   real(r8), pointer :: leafn_xfer_to_leafn(:)</a>
+   113) <a name="l113" style="background-color: #ffcccc">   real(r8), pointer :: livecrootn_storage_to_xfer(:)</a>
+   114) <a name="l114" style="background-color: #ffcccc">   real(r8), pointer :: livecrootn_to_deadcrootn(:)</a>
+   115) <a name="l115" style="background-color: #ffcccc">   real(r8), pointer :: livecrootn_to_retransn(:)</a>
+   116) <a name="l116" style="background-color: #ffcccc">   real(r8), pointer :: livecrootn_xfer_to_livecrootn(:)</a>
+   117) <a name="l117" style="background-color: #ffcccc">   real(r8), pointer :: livestemn_storage_to_xfer(:)</a>
+   118) <a name="l118" style="background-color: #ffcccc">   real(r8), pointer :: livestemn_to_deadstemn(:)</a>
+   119) <a name="l119" style="background-color: #ffcccc">   real(r8), pointer :: livestemn_to_retransn(:)</a>
+   120) <a name="l120" style="background-color: #ffcccc">   real(r8), pointer :: livestemn_xfer_to_livestemn(:)</a>
+   121) <a name="l121" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_deadcrootn(:)</a>
+   122) <a name="l122" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_deadcrootn_storage(:)</a>
+   123) <a name="l123" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_deadstemn(:)</a>
+   124) <a name="l124" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_deadstemn_storage(:)</a>
+   125) <a name="l125" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_frootn(:)</a>
+   126) <a name="l126" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_frootn_storage(:)</a>
+   127) <a name="l127" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_leafn(:)</a>
+   128) <a name="l128" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_leafn_storage(:)</a>
+   129) <a name="l129" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_livecrootn(:)</a>
+   130) <a name="l130" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_livecrootn_storage(:)</a>
+   131) <a name="l131" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_livestemn(:)           ! allocation to live stem N (gN/m2/s)</a>
+   132) <a name="l132" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_livestemn_storage(:)   ! allocation to live stem N storage (gN/m2/s)</a>
+   133) <a name="l133" style="background-color: #ffcccc">   real(r8), pointer :: retransn_to_npool(:)            ! deployment of retranslocated N (gN/m2/s)</a>
+   134) <a name="l134" style="background-color: #ffcccc">   real(r8), pointer :: sminn_to_npool(:)               ! deployment of soil mineral N uptake (gN/m2/s)</a>
+   135) <a name="l135" style="background-color: #ffcccc">   real(r8), pointer :: grainn_storage_to_xfer(:)       ! grain N shift storage to transfer (gN/m2/s)</a>
+   136) <a name="l136" style="background-color: #ffcccc">   real(r8), pointer :: grainn_to_food(:)               ! grain N to food (gN/m2/s)</a>
+   137) <a name="l137" style="background-color: #ffcccc">   real(r8), pointer :: grainn_xfer_to_grainn(:)        ! grain N growth from storage (gN/m2/s)</a>
+   138) <a name="l138" style="background-color: #ffcccc">   real(r8), pointer :: livestemn_to_litter(:)          ! livestem N to litter (gN/m2/s)</a>
+   139) <a name="l139" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_grainn(:)              ! allocation to grain N (gN/m2/s)</a>
+   140) <a name="l140" style="background-color: #ffcccc">   real(r8), pointer :: npool_to_grainn_storage(:)      ! allocation to grain N storage (gN/m2/s)</a>
+   141) <a name="l141" style="background-color: #ffcccc">!</a>
+   142) <a name="l142" style="background-color: #ffcccc">! local pointers to implicit in/out scalars</a>
+   143) <a name="l143" style="background-color: #ffcccc">   real(r8), pointer :: grainn(:)             ! (gN/m2) grain N</a>
+   144) <a name="l144" style="background-color: #ffcccc">   real(r8), pointer :: grainn_storage(:)     ! (gN/m2) grain N storage</a>
+   145) <a name="l145" style="background-color: #ffcccc">   real(r8), pointer :: grainn_xfer(:)        ! (gN/m2) grain N transfer</a>
+   146) <a name="l146" style="background-color: #ffcccc">   real(r8), pointer :: litr1n(:)             ! (gN/m2) litter labile N</a>
+   147) <a name="l147" style="background-color: #ffcccc">   real(r8), pointer :: litr2n(:)             ! (gN/m2) litter cellulose N</a>
+   148) <a name="l148" style="background-color: #ffcccc">   real(r8), pointer :: litr3n(:)             ! (gN/m2) litter lignin N</a>
+   149) <a name="l149" style="background-color: #ffcccc">   real(r8), pointer :: sminn(:)              ! (gN/m2) soil mineral N</a>
+   150) <a name="l150" style="background-color: #ffcccc">   real(r8), pointer :: soil1n(:)             ! (gN/m2) soil organic matter N (fast pool)</a>
+   151) <a name="l151" style="background-color: #ffcccc">   real(r8), pointer :: soil2n(:)             ! (gN/m2) soil organic matter N (medium pool)</a>
+   152) <a name="l152" style="background-color: #ffcccc">   real(r8), pointer :: soil3n(:)             ! (gN/m2) soil orgainc matter N (slow pool)</a>
+   153) <a name="l153" style="background-color: #ffcccc">   real(r8), pointer :: soil4n(:)             ! (gN/m2) soil orgainc matter N (slowest pool)</a>
+   154) <a name="l154" style="background-color: #ffcccc">   real(r8), pointer :: cwdn(:)               ! (gN/m2) coarse woody debris N</a>
+   155) <a name="l155" style="background-color: #ffcccc">   real(r8), pointer :: frootn(:)             ! (gN/m2) fine root N</a>
+   156) <a name="l156" style="background-color: #ffcccc">   real(r8), pointer :: frootn_storage(:)     ! (gN/m2) fine root N storage</a>
+   157) <a name="l157" style="background-color: #ffcccc">   real(r8), pointer :: frootn_xfer(:)        ! (gN/m2) fine root N transfer</a>
+   158) <a name="l158" style="background-color: #ffcccc">   real(r8), pointer :: leafn(:)              ! (gN/m2) leaf N</a>
+   159) <a name="l159" style="background-color: #ffcccc">   real(r8), pointer :: leafn_storage(:)      ! (gN/m2) leaf N storage</a>
+   160) <a name="l160" style="background-color: #ffcccc">   real(r8), pointer :: leafn_xfer(:)         ! (gN/m2) leaf N transfer</a>
+   161) <a name="l161" style="background-color: #ffcccc">   real(r8), pointer :: livecrootn(:)         ! (gN/m2) live coarse root N</a>
+   162) <a name="l162" style="background-color: #ffcccc">   real(r8), pointer :: livecrootn_storage(:) ! (gN/m2) live coarse root N storage</a>
+   163) <a name="l163" style="background-color: #ffcccc">   real(r8), pointer :: livecrootn_xfer(:)    ! (gN/m2) live coarse root N transfer</a>
+   164) <a name="l164" style="background-color: #ffcccc">   real(r8), pointer :: livestemn(:)          ! (gN/m2) live stem N</a>
+   165) <a name="l165" style="background-color: #ffcccc">   real(r8), pointer :: livestemn_storage(:)  ! (gN/m2) live stem N storage</a>
+   166) <a name="l166" style="background-color: #ffcccc">   real(r8), pointer :: livestemn_xfer(:)     ! (gN/m2) live stem N transfer</a>
+   167) <a name="l167" style="background-color: #ffcccc">   real(r8), pointer :: deadcrootn(:)         ! (gN/m2) dead coarse root N</a>
+   168) <a name="l168" style="background-color: #ffcccc">   real(r8), pointer :: deadcrootn_storage(:) ! (gN/m2) dead coarse root N storage</a>
+   169) <a name="l169" style="background-color: #ffcccc">   real(r8), pointer :: deadcrootn_xfer(:)    ! (gN/m2) dead coarse root N transfer</a>
+   170) <a name="l170" style="background-color: #ffcccc">   real(r8), pointer :: deadstemn(:)          ! (gN/m2) dead stem N</a>
+   171) <a name="l171" style="background-color: #ffcccc">   real(r8), pointer :: deadstemn_storage(:)  ! (gN/m2) dead stem N storage</a>
+   172) <a name="l172" style="background-color: #ffcccc">   real(r8), pointer :: deadstemn_xfer(:)     ! (gN/m2) dead stem N transfer</a>
+   173) <a name="l173" style="background-color: #ffcccc">   real(r8), pointer :: retransn(:)           ! (gN/m2) plant pool of retranslocated N</a>
+   174) <a name="l174" style="background-color: #ffcccc">   real(r8), pointer :: npool(:)              ! (gN/m2) temporary plant N pool</a>
+   175) <a name="l175" style="background-color: #ffcccc"></a>
+   176) <a name="l176" style="background-color: #ffcccc">! local pointers for dynamic landcover fluxes and states</a>
+   177) <a name="l177" style="background-color: #ffcccc">   real(r8), pointer :: dwt_seedn_to_leaf(:)</a>
+   178) <a name="l178" style="background-color: #ffcccc">   real(r8), pointer :: dwt_seedn_to_deadstem(:)</a>
+   179) <a name="l179" style="background-color: #ffcccc">   real(r8), pointer :: dwt_frootn_to_litr1n(:)</a>
+   180) <a name="l180" style="background-color: #ffcccc">   real(r8), pointer :: dwt_frootn_to_litr2n(:)</a>
+   181) <a name="l181" style="background-color: #ffcccc">   real(r8), pointer :: dwt_frootn_to_litr3n(:)</a>
+   182) <a name="l182" style="background-color: #ffcccc">   real(r8), pointer :: dwt_livecrootn_to_cwdn(:)</a>
+   183) <a name="l183" style="background-color: #ffcccc">   real(r8), pointer :: dwt_deadcrootn_to_cwdn(:)</a>
+   184) <a name="l184" style="background-color: #ffcccc">   real(r8), pointer :: seedn(:)</a>
+   185) <a name="l185" style="background-color: #ffcccc">!</a>
+   186) <a name="l186" style="background-color: #ffcccc">! local pointers to implicit out scalars</a>
+   187) <a name="l187" style="background-color: #ffcccc">   real(r8), pointer :: col_begnb(:)   ! nitrogen mass, beginning of time step (gN/m**2)</a>
+   188) <a name="l188" style="background-color: #ffcccc">   real(r8), pointer :: pft_begnb(:)   ! nitrogen mass, beginning of time step (gN/m**2)</a>
+   189) <a name="l189" style="background-color: #ffcccc">!</a>
+   190) <a name="l190" style="background-color: #ffcccc">! !OTHER LOCAL VARIABLES:</a>
+   191) <a name="l191" style="background-color: #ffcccc">   integer :: c,p      ! indices</a>
+   192) <a name="l192" style="background-color: #ffcccc">   integer :: fp,fc    ! lake filter indices</a>
+   193) <a name="l193" style="background-color: #ffcccc">   real(r8):: dt       ! radiation time step (seconds)</a>
+   194) <a name="l194" style="background-color: #ffcccc"></a>
+   195) <a name="l195" style="background-color: #ffcccc">!EOP</a>
+   196) <a name="l196" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   197) <a name="l197" style="background-color: #ffcccc">   ! assign local pointers</a>
+   198) <a name="l198" style="background-color: #ffcccc">   woody                          =&gt; pftcon%woody</a>
+   199) <a name="l199" style="background-color: #ffcccc"></a>
+   200) <a name="l200" style="background-color: #ffcccc">   ! assign local pointers at the column level</a>
+   201) <a name="l201" style="background-color: #ffcccc">   cwdn_to_litr2n                 =&gt; cnf%cwdn_to_litr2n</a>
+   202) <a name="l202" style="background-color: #ffcccc">   cwdn_to_litr3n                 =&gt; cnf%cwdn_to_litr3n</a>
+   203) <a name="l203" style="background-color: #ffcccc">   livestemn_to_litr1n            =&gt; cnf%livestemn_to_litr1n</a>
+   204) <a name="l204" style="background-color: #ffcccc">   livestemn_to_litr2n            =&gt; cnf%livestemn_to_litr2n</a>
+   205) <a name="l205" style="background-color: #ffcccc">   livestemn_to_litr3n            =&gt; cnf%livestemn_to_litr3n</a>
+   206) <a name="l206" style="background-color: #ffcccc">   grainn_to_litr1n               =&gt; cnf%grainn_to_litr1n</a>
+   207) <a name="l207" style="background-color: #ffcccc">   grainn_to_litr2n               =&gt; cnf%grainn_to_litr2n</a>
+   208) <a name="l208" style="background-color: #ffcccc">   grainn_to_litr3n               =&gt; cnf%grainn_to_litr3n</a>
+   209) <a name="l209" style="background-color: #ffcccc">   frootn_to_litr1n               =&gt; cnf%frootn_to_litr1n</a>
+   210) <a name="l210" style="background-color: #ffcccc">   frootn_to_litr2n               =&gt; cnf%frootn_to_litr2n</a>
+   211) <a name="l211" style="background-color: #ffcccc">   frootn_to_litr3n               =&gt; cnf%frootn_to_litr3n</a>
+   212) <a name="l212" style="background-color: #ffcccc">   leafn_to_litr1n                =&gt; cnf%leafn_to_litr1n</a>
+   213) <a name="l213" style="background-color: #ffcccc">   leafn_to_litr2n                =&gt; cnf%leafn_to_litr2n</a>
+   214) <a name="l214" style="background-color: #ffcccc">   leafn_to_litr3n                =&gt; cnf%leafn_to_litr3n</a>
+   215) <a name="l215" style="background-color: #ffcccc">   litr1n_to_soil1n               =&gt; cnf%litr1n_to_soil1n</a>
+   216) <a name="l216" style="background-color: #ffcccc">   litr2n_to_soil2n               =&gt; cnf%litr2n_to_soil2n</a>
+   217) <a name="l217" style="background-color: #ffcccc">   litr3n_to_soil3n               =&gt; cnf%litr3n_to_soil3n</a>
+   218) <a name="l218" style="background-color: #ffcccc">   ndep_to_sminn                  =&gt; cnf%ndep_to_sminn</a>
+   219) <a name="l219" style="background-color: #ffcccc">   nfix_to_sminn                  =&gt; cnf%nfix_to_sminn</a>
+   220) <a name="l220" style="background-color: #ffcccc">   sminn_to_denit_excess          =&gt; cnf%sminn_to_denit_excess</a>
+   221) <a name="l221" style="background-color: #ffcccc">   sminn_to_denit_l1s1            =&gt; cnf%sminn_to_denit_l1s1</a>
+   222) <a name="l222" style="background-color: #ffcccc">   sminn_to_denit_l2s2            =&gt; cnf%sminn_to_denit_l2s2</a>
+   223) <a name="l223" style="background-color: #ffcccc">   sminn_to_denit_l3s3            =&gt; cnf%sminn_to_denit_l3s3</a>
+   224) <a name="l224" style="background-color: #ffcccc">   sminn_to_denit_s1s2            =&gt; cnf%sminn_to_denit_s1s2</a>
+   225) <a name="l225" style="background-color: #ffcccc">   sminn_to_denit_s2s3            =&gt; cnf%sminn_to_denit_s2s3</a>
+   226) <a name="l226" style="background-color: #ffcccc">   sminn_to_denit_s3s4            =&gt; cnf%sminn_to_denit_s3s4</a>
+   227) <a name="l227" style="background-color: #ffcccc">   sminn_to_denit_s4              =&gt; cnf%sminn_to_denit_s4</a>
+   228) <a name="l228" style="background-color: #ffcccc">   sminn_to_plant                 =&gt; cnf%sminn_to_plant</a>
+   229) <a name="l229" style="background-color: #ffcccc">   sminn_to_soil1n_l1             =&gt; cnf%sminn_to_soil1n_l1</a>
+   230) <a name="l230" style="background-color: #ffcccc">   sminn_to_soil2n_l2             =&gt; cnf%sminn_to_soil2n_l2</a>
+   231) <a name="l231" style="background-color: #ffcccc">   sminn_to_soil2n_s1             =&gt; cnf%sminn_to_soil2n_s1</a>
+   232) <a name="l232" style="background-color: #ffcccc">   sminn_to_soil3n_l3             =&gt; cnf%sminn_to_soil3n_l3</a>
+   233) <a name="l233" style="background-color: #ffcccc">   sminn_to_soil3n_s2             =&gt; cnf%sminn_to_soil3n_s2</a>
+   234) <a name="l234" style="background-color: #ffcccc">   sminn_to_soil4n_s3             =&gt; cnf%sminn_to_soil4n_s3</a>
+   235) <a name="l235" style="background-color: #ffcccc">   soil1n_to_soil2n               =&gt; cnf%soil1n_to_soil2n</a>
+   236) <a name="l236" style="background-color: #ffcccc">   soil2n_to_soil3n               =&gt; cnf%soil2n_to_soil3n</a>
+   237) <a name="l237" style="background-color: #ffcccc">   soil3n_to_soil4n               =&gt; cnf%soil3n_to_soil4n</a>
+   238) <a name="l238" style="background-color: #ffcccc">   soil4n_to_sminn                =&gt; cnf%soil4n_to_sminn</a>
+   239) <a name="l239" style="background-color: #ffcccc">   supplement_to_sminn            =&gt; cnf%supplement_to_sminn</a>
+   240) <a name="l240" style="background-color: #ffcccc">   cwdn                           =&gt; cns%cwdn</a>
+   241) <a name="l241" style="background-color: #ffcccc">   litr1n                         =&gt; cns%litr1n</a>
+   242) <a name="l242" style="background-color: #ffcccc">   litr2n                         =&gt; cns%litr2n</a>
+   243) <a name="l243" style="background-color: #ffcccc">   litr3n                         =&gt; cns%litr3n</a>
+   244) <a name="l244" style="background-color: #ffcccc">   sminn                          =&gt; cns%sminn</a>
+   245) <a name="l245" style="background-color: #ffcccc">   soil1n                         =&gt; cns%soil1n</a>
+   246) <a name="l246" style="background-color: #ffcccc">   soil2n                         =&gt; cns%soil2n</a>
+   247) <a name="l247" style="background-color: #ffcccc">   soil3n                         =&gt; cns%soil3n</a>
+   248) <a name="l248" style="background-color: #ffcccc">   soil4n                         =&gt; cns%soil4n</a>
+   249) <a name="l249" style="background-color: #ffcccc">   ! new pointers for dynamic landcover</a>
+   250) <a name="l250" style="background-color: #ffcccc">   dwt_seedn_to_leaf              =&gt; cnf%dwt_seedn_to_leaf</a>
+   251) <a name="l251" style="background-color: #ffcccc">   dwt_seedn_to_deadstem          =&gt; cnf%dwt_seedn_to_deadstem</a>
+   252) <a name="l252" style="background-color: #ffcccc">   dwt_frootn_to_litr1n           =&gt; cnf%dwt_frootn_to_litr1n</a>
+   253) <a name="l253" style="background-color: #ffcccc">   dwt_frootn_to_litr2n           =&gt; cnf%dwt_frootn_to_litr2n</a>
+   254) <a name="l254" style="background-color: #ffcccc">   dwt_frootn_to_litr3n           =&gt; cnf%dwt_frootn_to_litr3n</a>
+   255) <a name="l255" style="background-color: #ffcccc">   dwt_livecrootn_to_cwdn         =&gt; cnf%dwt_livecrootn_to_cwdn</a>
+   256) <a name="l256" style="background-color: #ffcccc">   dwt_deadcrootn_to_cwdn         =&gt; cnf%dwt_deadcrootn_to_cwdn</a>
+   257) <a name="l257" style="background-color: #ffcccc">   seedn                          =&gt; cns%seedn</a>
+   258) <a name="l258" style="background-color: #ffcccc"></a>
+   259) <a name="l259" style="background-color: #ffcccc">   ! assign local pointers at the pft level</a>
+   260) <a name="l260" style="background-color: #ffcccc">   ivt                            =&gt; pft%itype</a>
+   261) <a name="l261" style="background-color: #ffcccc">   deadcrootn_storage_to_xfer     =&gt; pnf%deadcrootn_storage_to_xfer</a>
+   262) <a name="l262" style="background-color: #ffcccc">   deadcrootn_xfer_to_deadcrootn  =&gt; pnf%deadcrootn_xfer_to_deadcrootn</a>
+   263) <a name="l263" style="background-color: #ffcccc">   deadstemn_storage_to_xfer      =&gt; pnf%deadstemn_storage_to_xfer</a>
+   264) <a name="l264" style="background-color: #ffcccc">   deadstemn_xfer_to_deadstemn    =&gt; pnf%deadstemn_xfer_to_deadstemn</a>
+   265) <a name="l265" style="background-color: #ffcccc">   frootn_storage_to_xfer         =&gt; pnf%frootn_storage_to_xfer</a>
+   266) <a name="l266" style="background-color: #ffcccc">   frootn_to_litter               =&gt; pnf%frootn_to_litter</a>
+   267) <a name="l267" style="background-color: #ffcccc">   frootn_xfer_to_frootn          =&gt; pnf%frootn_xfer_to_frootn</a>
+   268) <a name="l268" style="background-color: #ffcccc">   leafn_storage_to_xfer          =&gt; pnf%leafn_storage_to_xfer</a>
+   269) <a name="l269" style="background-color: #ffcccc">   leafn_to_litter                =&gt; pnf%leafn_to_litter</a>
+   270) <a name="l270" style="background-color: #ffcccc">   leafn_to_retransn              =&gt; pnf%leafn_to_retransn</a>
+   271) <a name="l271" style="background-color: #ffcccc">   leafn_xfer_to_leafn            =&gt; pnf%leafn_xfer_to_leafn</a>
+   272) <a name="l272" style="background-color: #ffcccc">   livecrootn_storage_to_xfer     =&gt; pnf%livecrootn_storage_to_xfer</a>
+   273) <a name="l273" style="background-color: #ffcccc">   livecrootn_to_deadcrootn       =&gt; pnf%livecrootn_to_deadcrootn</a>
+   274) <a name="l274" style="background-color: #ffcccc">   livecrootn_to_retransn         =&gt; pnf%livecrootn_to_retransn</a>
+   275) <a name="l275" style="background-color: #ffcccc">   livecrootn_xfer_to_livecrootn  =&gt; pnf%livecrootn_xfer_to_livecrootn</a>
+   276) <a name="l276" style="background-color: #ffcccc">   livestemn_storage_to_xfer      =&gt; pnf%livestemn_storage_to_xfer</a>
+   277) <a name="l277" style="background-color: #ffcccc">   livestemn_to_deadstemn         =&gt; pnf%livestemn_to_deadstemn</a>
+   278) <a name="l278" style="background-color: #ffcccc">   livestemn_to_retransn          =&gt; pnf%livestemn_to_retransn</a>
+   279) <a name="l279" style="background-color: #ffcccc">   livestemn_xfer_to_livestemn    =&gt; pnf%livestemn_xfer_to_livestemn</a>
+   280) <a name="l280" style="background-color: #ffcccc">   npool_to_deadcrootn            =&gt; pnf%npool_to_deadcrootn</a>
+   281) <a name="l281" style="background-color: #ffcccc">   npool_to_deadcrootn_storage    =&gt; pnf%npool_to_deadcrootn_storage</a>
+   282) <a name="l282" style="background-color: #ffcccc">   npool_to_deadstemn             =&gt; pnf%npool_to_deadstemn</a>
+   283) <a name="l283" style="background-color: #ffcccc">   npool_to_deadstemn_storage     =&gt; pnf%npool_to_deadstemn_storage</a>
+   284) <a name="l284" style="background-color: #ffcccc">   npool_to_frootn                =&gt; pnf%npool_to_frootn</a>
+   285) <a name="l285" style="background-color: #ffcccc">   npool_to_frootn_storage        =&gt; pnf%npool_to_frootn_storage</a>
+   286) <a name="l286" style="background-color: #ffcccc">   npool_to_leafn                 =&gt; pnf%npool_to_leafn</a>
+   287) <a name="l287" style="background-color: #ffcccc">   npool_to_leafn_storage         =&gt; pnf%npool_to_leafn_storage</a>
+   288) <a name="l288" style="background-color: #ffcccc">   npool_to_livecrootn            =&gt; pnf%npool_to_livecrootn</a>
+   289) <a name="l289" style="background-color: #ffcccc">   npool_to_livecrootn_storage    =&gt; pnf%npool_to_livecrootn_storage</a>
+   290) <a name="l290" style="background-color: #ffcccc">   npool_to_livestemn             =&gt; pnf%npool_to_livestemn</a>
+   291) <a name="l291" style="background-color: #ffcccc">   npool_to_livestemn_storage     =&gt; pnf%npool_to_livestemn_storage</a>
+   292) <a name="l292" style="background-color: #ffcccc">   retransn_to_npool              =&gt; pnf%retransn_to_npool</a>
+   293) <a name="l293" style="background-color: #ffcccc">   sminn_to_npool                 =&gt; pnf%sminn_to_npool</a>
+   294) <a name="l294" style="background-color: #ffcccc">   grainn_storage_to_xfer         =&gt; pnf%grainn_storage_to_xfer</a>
+   295) <a name="l295" style="background-color: #ffcccc">   grainn_to_food                 =&gt; pnf%grainn_to_food</a>
+   296) <a name="l296" style="background-color: #ffcccc">   grainn_xfer_to_grainn          =&gt; pnf%grainn_xfer_to_grainn</a>
+   297) <a name="l297" style="background-color: #ffcccc">   livestemn_to_litter            =&gt; pnf%livestemn_to_litter</a>
+   298) <a name="l298" style="background-color: #ffcccc">   npool_to_grainn                =&gt; pnf%npool_to_grainn</a>
+   299) <a name="l299" style="background-color: #ffcccc">   npool_to_grainn_storage        =&gt; pnf%npool_to_grainn_storage</a>
+   300) <a name="l300" style="background-color: #ffcccc">   grainn                         =&gt; pns%grainn</a>
+   301) <a name="l301" style="background-color: #ffcccc">   grainn_storage                 =&gt; pns%grainn_storage</a>
+   302) <a name="l302" style="background-color: #ffcccc">   grainn_xfer                    =&gt; pns%grainn_xfer</a>
+   303) <a name="l303" style="background-color: #ffcccc">   deadcrootn                     =&gt; pns%deadcrootn</a>
+   304) <a name="l304" style="background-color: #ffcccc">   deadcrootn_storage             =&gt; pns%deadcrootn_storage</a>
+   305) <a name="l305" style="background-color: #ffcccc">   deadcrootn_xfer                =&gt; pns%deadcrootn_xfer</a>
+   306) <a name="l306" style="background-color: #ffcccc">   deadstemn                      =&gt; pns%deadstemn</a>
+   307) <a name="l307" style="background-color: #ffcccc">   deadstemn_storage              =&gt; pns%deadstemn_storage</a>
+   308) <a name="l308" style="background-color: #ffcccc">   deadstemn_xfer                 =&gt; pns%deadstemn_xfer</a>
+   309) <a name="l309" style="background-color: #ffcccc">   frootn                         =&gt; pns%frootn</a>
+   310) <a name="l310" style="background-color: #ffcccc">   frootn_storage                 =&gt; pns%frootn_storage</a>
+   311) <a name="l311" style="background-color: #ffcccc">   frootn_xfer                    =&gt; pns%frootn_xfer</a>
+   312) <a name="l312" style="background-color: #ffcccc">   leafn                          =&gt; pns%leafn</a>
+   313) <a name="l313" style="background-color: #ffcccc">   leafn_storage                  =&gt; pns%leafn_storage</a>
+   314) <a name="l314" style="background-color: #ffcccc">   leafn_xfer                     =&gt; pns%leafn_xfer</a>
+   315) <a name="l315" style="background-color: #ffcccc">   livecrootn                     =&gt; pns%livecrootn</a>
+   316) <a name="l316" style="background-color: #ffcccc">   livecrootn_storage             =&gt; pns%livecrootn_storage</a>
+   317) <a name="l317" style="background-color: #ffcccc">   livecrootn_xfer                =&gt; pns%livecrootn_xfer</a>
+   318) <a name="l318" style="background-color: #ffcccc">   livestemn                      =&gt; pns%livestemn</a>
+   319) <a name="l319" style="background-color: #ffcccc">   livestemn_storage              =&gt; pns%livestemn_storage</a>
+   320) <a name="l320" style="background-color: #ffcccc">   livestemn_xfer                 =&gt; pns%livestemn_xfer</a>
+   321) <a name="l321" style="background-color: #ffcccc">   npool                          =&gt; pns%npool</a>
+   322) <a name="l322" style="background-color: #ffcccc">   retransn                       =&gt; pns%retransn</a>
+   323) <a name="l323" style="background-color: #ffcccc"></a>
+   324) <a name="l324" style="background-color: #ffcccc">   ! set time steps</a>
+   325) <a name="l325" style="background-color: #ffcccc">   dt = real( get_step_size(), r8 )</a>
+   326) <a name="l326" style="background-color: #ffcccc"></a>
+   327) <a name="l327" style="background-color: #ffcccc">   ! column loop</a>
+   328) <a name="l328" style="background-color: #ffcccc">   do fc = 1,num_soilc</a>
+   329) <a name="l329" style="background-color: #ffcccc">      c = filter_soilc(fc)</a>
+   330) <a name="l330" style="background-color: #ffcccc"></a>
+   331) <a name="l331" style="background-color: #ffcccc">      ! column-level fluxes</a>
+   332) <a name="l332" style="background-color: #ffcccc"></a>
+   333) <a name="l333" style="background-color: #ffcccc">      ! N deposition and fixation</a>
+   334) <a name="l334" style="background-color: #ffcccc">      sminn(c) = sminn(c) + ndep_to_sminn(c)*dt</a>
+   335) <a name="l335" style="background-color: #ffcccc">      sminn(c) = sminn(c) + nfix_to_sminn(c)*dt</a>
+   336) <a name="l336" style="background-color: #ffcccc"></a>
+   337) <a name="l337" style="background-color: #ffcccc">      ! plant to litter fluxes</a>
+   338) <a name="l338" style="background-color: #ffcccc">      ! leaf litter</a>
+   339) <a name="l339" style="background-color: #ffcccc">      litr1n(c) = litr1n(c) + leafn_to_litr1n(c)*dt</a>
+   340) <a name="l340" style="background-color: #ffcccc">      litr2n(c) = litr2n(c) + leafn_to_litr2n(c)*dt</a>
+   341) <a name="l341" style="background-color: #ffcccc">      litr3n(c) = litr3n(c) + leafn_to_litr3n(c)*dt</a>
+   342) <a name="l342" style="background-color: #ffcccc">      ! fine root litter</a>
+   343) <a name="l343" style="background-color: #ffcccc">      litr1n(c) = litr1n(c) + frootn_to_litr1n(c)*dt</a>
+   344) <a name="l344" style="background-color: #ffcccc">      litr2n(c) = litr2n(c) + frootn_to_litr2n(c)*dt</a>
+   345) <a name="l345" style="background-color: #ffcccc">      litr3n(c) = litr3n(c) + frootn_to_litr3n(c)*dt</a>
+   346) <a name="l346" style="background-color: #ffcccc">      if ( crop_prog )then</a>
+   347) <a name="l347" style="background-color: #ffcccc">         ! livestem litter</a>
+   348) <a name="l348" style="background-color: #ffcccc">         litr1n(c) = litr1n(c) + livestemn_to_litr1n(c)*dt</a>
+   349) <a name="l349" style="background-color: #ffcccc">         litr2n(c) = litr2n(c) + livestemn_to_litr2n(c)*dt</a>
+   350) <a name="l350" style="background-color: #ffcccc">         litr3n(c) = litr3n(c) + livestemn_to_litr3n(c)*dt</a>
+   351) <a name="l351" style="background-color: #ffcccc">         ! grain litter</a>
+   352) <a name="l352" style="background-color: #ffcccc">         litr1n(c) = litr1n(c) + grainn_to_litr1n(c)*dt</a>
+   353) <a name="l353" style="background-color: #ffcccc">         litr2n(c) = litr2n(c) + grainn_to_litr2n(c)*dt</a>
+   354) <a name="l354" style="background-color: #ffcccc">         litr3n(c) = litr3n(c) + grainn_to_litr3n(c)*dt</a>
+   355) <a name="l355" style="background-color: #ffcccc">      end if</a>
+   356) <a name="l356" style="background-color: #ffcccc"></a>
+   357) <a name="l357" style="background-color: #ffcccc">      ! seeding fluxes, from dynamic landcover</a>
+   358) <a name="l358" style="background-color: #ffcccc">      seedn(c) = seedn(c) - dwt_seedn_to_leaf(c) * dt</a>
+   359) <a name="l359" style="background-color: #ffcccc">      seedn(c) = seedn(c) - dwt_seedn_to_deadstem(c) * dt</a>
+   360) <a name="l360" style="background-color: #ffcccc">   </a>
+   361) <a name="l361" style="background-color: #ffcccc">      ! fluxes into litter and CWD, from dynamic landcover</a>
+   362) <a name="l362" style="background-color: #ffcccc">      litr1n(c) = litr1n(c) + dwt_frootn_to_litr1n(c)*dt</a>
+   363) <a name="l363" style="background-color: #ffcccc">      litr2n(c) = litr2n(c) + dwt_frootn_to_litr2n(c)*dt</a>
+   364) <a name="l364" style="background-color: #ffcccc">      litr3n(c) = litr3n(c) + dwt_frootn_to_litr3n(c)*dt</a>
+   365) <a name="l365" style="background-color: #ffcccc">      cwdn(c)   = cwdn(c)   + dwt_livecrootn_to_cwdn(c)*dt</a>
+   366) <a name="l366" style="background-color: #ffcccc">      cwdn(c)   = cwdn(c)   + dwt_deadcrootn_to_cwdn(c)*dt</a>
+   367) <a name="l367" style="background-color: #ffcccc">      </a>
+   368) <a name="l368" style="background-color: #ffcccc">      ! CWD to litter fluxes</a>
+   369) <a name="l369" style="background-color: #ffcccc">      cwdn(c)   = cwdn(c)   - cwdn_to_litr2n(c)*dt</a>
+   370) <a name="l370" style="background-color: #ffcccc">      litr2n(c) = litr2n(c) + cwdn_to_litr2n(c)*dt</a>
+   371) <a name="l371" style="background-color: #ffcccc">      cwdn(c)   = cwdn(c)   - cwdn_to_litr3n(c)*dt</a>
+   372) <a name="l372" style="background-color: #ffcccc">      litr3n(c) = litr3n(c) + cwdn_to_litr3n(c)*dt</a>
+   373) <a name="l373" style="background-color: #ffcccc"></a>
+   374) <a name="l374" style="background-color: #ffcccc">      ! update litter states</a>
+   375) <a name="l375" style="background-color: #ffcccc">      litr1n(c) = litr1n(c) - litr1n_to_soil1n(c)*dt</a>
+   376) <a name="l376" style="background-color: #ffcccc">      litr2n(c) = litr2n(c) - litr2n_to_soil2n(c)*dt</a>
+   377) <a name="l377" style="background-color: #ffcccc">      litr3n(c) = litr3n(c) - litr3n_to_soil3n(c)*dt</a>
+   378) <a name="l378" style="background-color: #ffcccc"></a>
+   379) <a name="l379" style="background-color: #ffcccc">      ! update SOM states</a>
+   380) <a name="l380" style="background-color: #ffcccc">      soil1n(c) = soil1n(c) + &amp;</a>
+   381) <a name="l381" style="background-color: #ffcccc">         (litr1n_to_soil1n(c) + sminn_to_soil1n_l1(c) - soil1n_to_soil2n(c))*dt</a>
+   382) <a name="l382" style="background-color: #ffcccc">      soil2n(c) = soil2n(c) + &amp;</a>
+   383) <a name="l383" style="background-color: #ffcccc">         (litr2n_to_soil2n(c) + sminn_to_soil2n_l2(c) + &amp;</a>
+   384) <a name="l384" style="background-color: #ffcccc">          soil1n_to_soil2n(c) + sminn_to_soil2n_s1(c) - soil2n_to_soil3n(c))*dt</a>
+   385) <a name="l385" style="background-color: #ffcccc">      soil3n(c) = soil3n(c) + &amp;</a>
+   386) <a name="l386" style="background-color: #ffcccc">         (litr3n_to_soil3n(c) + sminn_to_soil3n_l3(c) + &amp;</a>
+   387) <a name="l387" style="background-color: #ffcccc">          soil2n_to_soil3n(c) + sminn_to_soil3n_s2(c) - soil3n_to_soil4n(c))*dt</a>
+   388) <a name="l388" style="background-color: #ffcccc">      soil4n(c) = soil4n(c) + &amp;</a>
+   389) <a name="l389" style="background-color: #ffcccc">         (soil3n_to_soil4n(c) + sminn_to_soil4n_s3(c) - soil4n_to_sminn(c))*dt</a>
+   390) <a name="l390" style="background-color: #ffcccc"></a>
+   391) <a name="l391" style="background-color: #ffcccc">      ! immobilization/mineralization in litter-to-SOM and SOM-to-SOM fluxes</a>
+   392) <a name="l392" style="background-color: #ffcccc">      sminn(c)  = sminn(c)  - &amp;</a>
+   393) <a name="l393" style="background-color: #ffcccc">         (sminn_to_soil1n_l1(c) + sminn_to_soil2n_l2(c) + &amp;</a>
+   394) <a name="l394" style="background-color: #ffcccc">          sminn_to_soil3n_l3(c) + sminn_to_soil2n_s1(c) + &amp;</a>
+   395) <a name="l395" style="background-color: #ffcccc">          sminn_to_soil3n_s2(c) + sminn_to_soil4n_s3(c) - &amp;</a>
+   396) <a name="l396" style="background-color: #ffcccc">          soil4n_to_sminn(c))*dt</a>
+   397) <a name="l397" style="background-color: #ffcccc"></a>
+   398) <a name="l398" style="background-color: #ffcccc">      ! denitrification fluxes</a>
+   399) <a name="l399" style="background-color: #ffcccc">      sminn(c) = sminn(c) - &amp;</a>
+   400) <a name="l400" style="background-color: #ffcccc">         (sminn_to_denit_l1s1(c) + sminn_to_denit_l2s2(c) + &amp;</a>
+   401) <a name="l401" style="background-color: #ffcccc">          sminn_to_denit_l3s3(c) + sminn_to_denit_s1s2(c) + &amp;</a>
+   402) <a name="l402" style="background-color: #ffcccc">          sminn_to_denit_s2s3(c) + sminn_to_denit_s3s4(c) + &amp;</a>
+   403) <a name="l403" style="background-color: #ffcccc">          sminn_to_denit_s4(c)   + sminn_to_denit_excess(c))*dt</a>
+   404) <a name="l404" style="background-color: #ffcccc"></a>
+   405) <a name="l405" style="background-color: #ffcccc">      ! total plant uptake from mineral N</a>
+   406) <a name="l406" style="background-color: #ffcccc">      sminn(c) = sminn(c) - sminn_to_plant(c)*dt</a>
+   407) <a name="l407" style="background-color: #ffcccc"></a>
+   408) <a name="l408" style="background-color: #ffcccc">      ! flux that prevents N limitation (when Carbon_only is set)</a>
+   409) <a name="l409" style="background-color: #ffcccc">      sminn(c) = sminn(c) + supplement_to_sminn(c)*dt</a>
+   410) <a name="l410" style="background-color: #ffcccc"></a>
+   411) <a name="l411" style="background-color: #ffcccc">   end do ! end of column loop</a>
+   412) <a name="l412" style="background-color: #ffcccc"></a>
+   413) <a name="l413" style="background-color: #ffcccc">   ! pft loop</a>
+   414) <a name="l414" style="background-color: #ffcccc">   do fp = 1,num_soilp</a>
+   415) <a name="l415" style="background-color: #ffcccc">      p = filter_soilp(fp)</a>
+   416) <a name="l416" style="background-color: #ffcccc"></a>
+   417) <a name="l417" style="background-color: #ffcccc">      ! phenology: transfer growth fluxes</a>
+   418) <a name="l418" style="background-color: #ffcccc">      leafn(p)       = leafn(p)       + leafn_xfer_to_leafn(p)*dt</a>
+   419) <a name="l419" style="background-color: #ffcccc">      leafn_xfer(p)  = leafn_xfer(p)  - leafn_xfer_to_leafn(p)*dt</a>
+   420) <a name="l420" style="background-color: #ffcccc">      frootn(p)      = frootn(p)      + frootn_xfer_to_frootn(p)*dt</a>
+   421) <a name="l421" style="background-color: #ffcccc">      frootn_xfer(p) = frootn_xfer(p) - frootn_xfer_to_frootn(p)*dt</a>
+   422) <a name="l422" style="background-color: #ffcccc">      if (woody(ivt(p)) == 1.0_r8) then</a>
+   423) <a name="l423" style="background-color: #ffcccc">          livestemn(p)       = livestemn(p)       + livestemn_xfer_to_livestemn(p)*dt</a>
+   424) <a name="l424" style="background-color: #ffcccc">          livestemn_xfer(p)  = livestemn_xfer(p)  - livestemn_xfer_to_livestemn(p)*dt</a>
+   425) <a name="l425" style="background-color: #ffcccc">          deadstemn(p)       = deadstemn(p)       + deadstemn_xfer_to_deadstemn(p)*dt</a>
+   426) <a name="l426" style="background-color: #ffcccc">          deadstemn_xfer(p)  = deadstemn_xfer(p)  - deadstemn_xfer_to_deadstemn(p)*dt</a>
+   427) <a name="l427" style="background-color: #ffcccc">          livecrootn(p)      = livecrootn(p)      + livecrootn_xfer_to_livecrootn(p)*dt</a>
+   428) <a name="l428" style="background-color: #ffcccc">          livecrootn_xfer(p) = livecrootn_xfer(p) - livecrootn_xfer_to_livecrootn(p)*dt</a>
+   429) <a name="l429" style="background-color: #ffcccc">          deadcrootn(p)      = deadcrootn(p)      + deadcrootn_xfer_to_deadcrootn(p)*dt</a>
+   430) <a name="l430" style="background-color: #ffcccc">          deadcrootn_xfer(p) = deadcrootn_xfer(p) - deadcrootn_xfer_to_deadcrootn(p)*dt</a>
+   431) <a name="l431" style="background-color: #ffcccc">      end if</a>
+   432) <a name="l432" style="background-color: #ffcccc">      if (ivt(p) &gt;= npcropmin) then ! skip 2 generic crops</a>
+   433) <a name="l433" style="background-color: #ffcccc">          ! lines here for consistency; the transfer terms are zero</a>
+   434) <a name="l434" style="background-color: #ffcccc">          livestemn(p)       = livestemn(p)      + livestemn_xfer_to_livestemn(p)*dt</a>
+   435) <a name="l435" style="background-color: #ffcccc">          livestemn_xfer(p)  = livestemn_xfer(p) - livestemn_xfer_to_livestemn(p)*dt</a>
+   436) <a name="l436" style="background-color: #ffcccc">          grainn(p)          = grainn(p)         + grainn_xfer_to_grainn(p)*dt</a>
+   437) <a name="l437" style="background-color: #ffcccc">          grainn_xfer(p)     = grainn_xfer(p)    - grainn_xfer_to_grainn(p)*dt</a>
+   438) <a name="l438" style="background-color: #ffcccc">      end if</a>
+   439) <a name="l439" style="background-color: #ffcccc"></a>
+   440) <a name="l440" style="background-color: #ffcccc">      ! phenology: litterfall and retranslocation fluxes</a>
+   441) <a name="l441" style="background-color: #ffcccc">      leafn(p)    = leafn(p)    - leafn_to_litter(p)*dt</a>
+   442) <a name="l442" style="background-color: #ffcccc">      frootn(p)   = frootn(p)   - frootn_to_litter(p)*dt</a>
+   443) <a name="l443" style="background-color: #ffcccc">      leafn(p)    = leafn(p)    - leafn_to_retransn(p)*dt</a>
+   444) <a name="l444" style="background-color: #ffcccc">      retransn(p) = retransn(p) + leafn_to_retransn(p)*dt</a>
+   445) <a name="l445" style="background-color: #ffcccc"></a>
+   446) <a name="l446" style="background-color: #ffcccc">      ! live wood turnover and retranslocation fluxes</a>
+   447) <a name="l447" style="background-color: #ffcccc">      if (woody(ivt(p)) == 1._r8) then</a>
+   448) <a name="l448" style="background-color: #ffcccc">          livestemn(p)  = livestemn(p)  - livestemn_to_deadstemn(p)*dt</a>
+   449) <a name="l449" style="background-color: #ffcccc">          deadstemn(p)  = deadstemn(p)  + livestemn_to_deadstemn(p)*dt</a>
+   450) <a name="l450" style="background-color: #ffcccc">          livestemn(p)  = livestemn(p)  - livestemn_to_retransn(p)*dt</a>
+   451) <a name="l451" style="background-color: #ffcccc">          retransn(p)   = retransn(p)   + livestemn_to_retransn(p)*dt</a>
+   452) <a name="l452" style="background-color: #ffcccc">          livecrootn(p) = livecrootn(p) - livecrootn_to_deadcrootn(p)*dt</a>
+   453) <a name="l453" style="background-color: #ffcccc">          deadcrootn(p) = deadcrootn(p) + livecrootn_to_deadcrootn(p)*dt</a>
+   454) <a name="l454" style="background-color: #ffcccc">          livecrootn(p) = livecrootn(p) - livecrootn_to_retransn(p)*dt</a>
+   455) <a name="l455" style="background-color: #ffcccc">          retransn(p)   = retransn(p)   + livecrootn_to_retransn(p)*dt</a>
+   456) <a name="l456" style="background-color: #ffcccc">      end if</a>
+   457) <a name="l457" style="background-color: #ffcccc">      if (ivt(p) &gt;= npcropmin) then ! skip 2 generic crops</a>
+   458) <a name="l458" style="background-color: #ffcccc">          livestemn(p)  = livestemn(p)  - livestemn_to_litter(p)*dt</a>
+   459) <a name="l459" style="background-color: #ffcccc">          livestemn(p)  = livestemn(p)  - livestemn_to_retransn(p)*dt</a>
+   460) <a name="l460" style="background-color: #ffcccc">          retransn(p)   = retransn(p)   + livestemn_to_retransn(p)*dt</a>
+   461) <a name="l461" style="background-color: #ffcccc">          grainn(p)     = grainn(p)     - grainn_to_food(p)*dt</a>
+   462) <a name="l462" style="background-color: #ffcccc">      end if</a>
+   463) <a name="l463" style="background-color: #ffcccc"></a>
+   464) <a name="l464" style="background-color: #ffcccc">      ! uptake from soil mineral N pool</a>
+   465) <a name="l465" style="background-color: #ffcccc">      npool(p) = npool(p) + sminn_to_npool(p)*dt</a>
+   466) <a name="l466" style="background-color: #ffcccc"></a>
+   467) <a name="l467" style="background-color: #ffcccc">      ! deployment from retranslocation pool</a>
+   468) <a name="l468" style="background-color: #ffcccc">      npool(p)    = npool(p)    + retransn_to_npool(p)*dt</a>
+   469) <a name="l469" style="background-color: #ffcccc">      retransn(p) = retransn(p) - retransn_to_npool(p)*dt</a>
+   470) <a name="l470" style="background-color: #ffcccc"></a>
+   471) <a name="l471" style="background-color: #ffcccc">      ! allocation fluxes</a>
+   472) <a name="l472" style="background-color: #ffcccc">      npool(p)           = npool(p)          - npool_to_leafn(p)*dt</a>
+   473) <a name="l473" style="background-color: #ffcccc">      leafn(p)           = leafn(p)          + npool_to_leafn(p)*dt</a>
+   474) <a name="l474" style="background-color: #ffcccc">      npool(p)           = npool(p)          - npool_to_leafn_storage(p)*dt</a>
+   475) <a name="l475" style="background-color: #ffcccc">      leafn_storage(p)   = leafn_storage(p)  + npool_to_leafn_storage(p)*dt</a>
+   476) <a name="l476" style="background-color: #ffcccc">      npool(p)           = npool(p)          - npool_to_frootn(p)*dt</a>
+   477) <a name="l477" style="background-color: #ffcccc">      frootn(p)          = frootn(p)         + npool_to_frootn(p)*dt</a>
+   478) <a name="l478" style="background-color: #ffcccc">      npool(p)           = npool(p)          - npool_to_frootn_storage(p)*dt</a>
+   479) <a name="l479" style="background-color: #ffcccc">      frootn_storage(p)  = frootn_storage(p) + npool_to_frootn_storage(p)*dt</a>
+   480) <a name="l480" style="background-color: #ffcccc">      if (woody(ivt(p)) == 1._r8) then</a>
+   481) <a name="l481" style="background-color: #ffcccc">          npool(p)              = npool(p)              - npool_to_livestemn(p)*dt</a>
+   482) <a name="l482" style="background-color: #ffcccc">          livestemn(p)          = livestemn(p)          + npool_to_livestemn(p)*dt</a>
+   483) <a name="l483" style="background-color: #ffcccc">          npool(p)              = npool(p)              - npool_to_livestemn_storage(p)*dt</a>
+   484) <a name="l484" style="background-color: #ffcccc">          livestemn_storage(p)  = livestemn_storage(p)  + npool_to_livestemn_storage(p)*dt</a>
+   485) <a name="l485" style="background-color: #ffcccc">          npool(p)              = npool(p)              - npool_to_deadstemn(p)*dt</a>
+   486) <a name="l486" style="background-color: #ffcccc">          deadstemn(p)          = deadstemn(p)          + npool_to_deadstemn(p)*dt</a>
+   487) <a name="l487" style="background-color: #ffcccc">          npool(p)              = npool(p)              - npool_to_deadstemn_storage(p)*dt</a>
+   488) <a name="l488" style="background-color: #ffcccc">          deadstemn_storage(p)  = deadstemn_storage(p)  + npool_to_deadstemn_storage(p)*dt</a>
+   489) <a name="l489" style="background-color: #ffcccc">          npool(p)              = npool(p)              - npool_to_livecrootn(p)*dt</a>
+   490) <a name="l490" style="background-color: #ffcccc">          livecrootn(p)         = livecrootn(p)         + npool_to_livecrootn(p)*dt</a>
+   491) <a name="l491" style="background-color: #ffcccc">          npool(p)              = npool(p)              - npool_to_livecrootn_storage(p)*dt</a>
+   492) <a name="l492" style="background-color: #ffcccc">          livecrootn_storage(p) = livecrootn_storage(p) + npool_to_livecrootn_storage(p)*dt</a>
+   493) <a name="l493" style="background-color: #ffcccc">          npool(p)              = npool(p)              - npool_to_deadcrootn(p)*dt</a>
+   494) <a name="l494" style="background-color: #ffcccc">          deadcrootn(p)         = deadcrootn(p)         + npool_to_deadcrootn(p)*dt</a>
+   495) <a name="l495" style="background-color: #ffcccc">          npool(p)              = npool(p)              - npool_to_deadcrootn_storage(p)*dt</a>
+   496) <a name="l496" style="background-color: #ffcccc">          deadcrootn_storage(p) = deadcrootn_storage(p) + npool_to_deadcrootn_storage(p)*dt</a>
+   497) <a name="l497" style="background-color: #ffcccc">      end if</a>
+   498) <a name="l498" style="background-color: #ffcccc">      if (ivt(p) &gt;= npcropmin) then ! skip 2 generic crops</a>
+   499) <a name="l499" style="background-color: #ffcccc">          npool(p)              = npool(p)              - npool_to_livestemn(p)*dt</a>
+   500) <a name="l500" style="background-color: #ffcccc">          livestemn(p)          = livestemn(p)          + npool_to_livestemn(p)*dt</a>
+   501) <a name="l501" style="background-color: #ffcccc">          npool(p)              = npool(p)              - npool_to_livestemn_storage(p)*dt</a>
+   502) <a name="l502" style="background-color: #ffcccc">          livestemn_storage(p)  = livestemn_storage(p)  + npool_to_livestemn_storage(p)*dt</a>
+   503) <a name="l503" style="background-color: #ffcccc">          npool(p)              = npool(p)              - npool_to_grainn(p)*dt</a>
+   504) <a name="l504" style="background-color: #ffcccc">          grainn(p)             = grainn(p)             + npool_to_grainn(p)*dt</a>
+   505) <a name="l505" style="background-color: #ffcccc">          npool(p)              = npool(p)              - npool_to_grainn_storage(p)*dt</a>
+   506) <a name="l506" style="background-color: #ffcccc">          grainn_storage(p)     = grainn_storage(p)     + npool_to_grainn_storage(p)*dt</a>
+   507) <a name="l507" style="background-color: #ffcccc">      end if</a>
+   508) <a name="l508" style="background-color: #ffcccc"></a>
+   509) <a name="l509" style="background-color: #ffcccc">      ! move storage pools into transfer pools</a>
+   510) <a name="l510" style="background-color: #ffcccc">      leafn_storage(p)  = leafn_storage(p)  - leafn_storage_to_xfer(p)*dt</a>
+   511) <a name="l511" style="background-color: #ffcccc">      leafn_xfer(p)     = leafn_xfer(p)     + leafn_storage_to_xfer(p)*dt</a>
+   512) <a name="l512" style="background-color: #ffcccc">      frootn_storage(p) = frootn_storage(p) - frootn_storage_to_xfer(p)*dt</a>
+   513) <a name="l513" style="background-color: #ffcccc">      frootn_xfer(p)    = frootn_xfer(p)    + frootn_storage_to_xfer(p)*dt</a>
+   514) <a name="l514" style="background-color: #ffcccc">      if (woody(ivt(p)) == 1._r8) then</a>
+   515) <a name="l515" style="background-color: #ffcccc">          livestemn_storage(p)  = livestemn_storage(p)  - livestemn_storage_to_xfer(p)*dt</a>
+   516) <a name="l516" style="background-color: #ffcccc">          livestemn_xfer(p)     = livestemn_xfer(p)     + livestemn_storage_to_xfer(p)*dt</a>
+   517) <a name="l517" style="background-color: #ffcccc">          deadstemn_storage(p)  = deadstemn_storage(p)  - deadstemn_storage_to_xfer(p)*dt</a>
+   518) <a name="l518" style="background-color: #ffcccc">          deadstemn_xfer(p)     = deadstemn_xfer(p)     + deadstemn_storage_to_xfer(p)*dt</a>
+   519) <a name="l519" style="background-color: #ffcccc">          livecrootn_storage(p) = livecrootn_storage(p) - livecrootn_storage_to_xfer(p)*dt</a>
+   520) <a name="l520" style="background-color: #ffcccc">          livecrootn_xfer(p)    = livecrootn_xfer(p)    + livecrootn_storage_to_xfer(p)*dt</a>
+   521) <a name="l521" style="background-color: #ffcccc">          deadcrootn_storage(p) = deadcrootn_storage(p) - deadcrootn_storage_to_xfer(p)*dt</a>
+   522) <a name="l522" style="background-color: #ffcccc">          deadcrootn_xfer(p)    = deadcrootn_xfer(p)    + deadcrootn_storage_to_xfer(p)*dt</a>
+   523) <a name="l523" style="background-color: #ffcccc">      end if</a>
+   524) <a name="l524" style="background-color: #ffcccc">      if (ivt(p) &gt;= npcropmin) then ! skip 2 generic crops</a>
+   525) <a name="l525" style="background-color: #ffcccc">          ! lines here for consistency; the transfer terms are zero</a>
+   526) <a name="l526" style="background-color: #ffcccc">          livestemn_storage(p)  = livestemn_storage(p) - livestemn_storage_to_xfer(p)*dt</a>
+   527) <a name="l527" style="background-color: #ffcccc">          livestemn_xfer(p)     = livestemn_xfer(p)    + livestemn_storage_to_xfer(p)*dt</a>
+   528) <a name="l528" style="background-color: #ffcccc">          grainn_storage(p)     = grainn_storage(p)    - grainn_storage_to_xfer(p)*dt</a>
+   529) <a name="l529" style="background-color: #ffcccc">          grainn_xfer(p)        = grainn_xfer(p)       + grainn_storage_to_xfer(p)*dt</a>
+   530) <a name="l530" style="background-color: #ffcccc">      end if</a>
+   531) <a name="l531" style="background-color: #ffcccc"></a>
+   532) <a name="l532" style="background-color: #ffcccc">   end do</a>
+   533) <a name="l533" style="background-color: #ffcccc"></a>
+   534) <a name="l534" style="background-color: #ffcccc">end subroutine NStateUpdate1</a>
+   535) <a name="l535" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   536) <a name="l536" style="background-color: #ffffff"></a>
+   537) <a name="l537" style="background-color: #ffffff">end module CNNStateUpdate1Mod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

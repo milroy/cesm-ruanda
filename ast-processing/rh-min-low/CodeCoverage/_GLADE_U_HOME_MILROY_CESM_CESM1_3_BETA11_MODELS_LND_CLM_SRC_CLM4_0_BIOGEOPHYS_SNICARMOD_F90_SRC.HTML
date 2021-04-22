@@ -1,0 +1,1525 @@
+<html>
+<head>
+<title>Listing of SNICARMod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;SNICARMod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 75.00&#160;%func&#160;&#160;&#160;&#160; 36.01&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module SNICARMod</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">!BOP</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !MODULE: SNICARMod</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     9) <a name="l9" style="background-color: #ffffff">! Calculate albedo of snow containing impurities </a>
+    10) <a name="l10" style="background-color: #ffffff">! and the evolution of snow effective radius</a>
+    11) <a name="l11" style="background-color: #ffffff">!</a>
+    12) <a name="l12" style="background-color: #ffffff">! !USES:</a>
+    13) <a name="l13" style="background-color: #ffffff">  use shr_kind_mod  , only : r8 =&gt; shr_kind_r8</a>
+    14) <a name="l14" style="background-color: #ffffff">  use shr_sys_mod   , only : shr_sys_flush</a>
+    15) <a name="l15" style="background-color: #ffffff">  use clm_varctl    , only : iulog</a>
+    16) <a name="l16" style="background-color: #ffffff">  use shr_const_mod , only : SHR_CONST_RHOICE</a>
+    17) <a name="l17" style="background-color: #ffffff">  use abortutils    , only : endrun</a>
+    18) <a name="l18" style="background-color: #ffffff"></a>
+    19) <a name="l19" style="background-color: #ffffff">  implicit none</a>
+    20) <a name="l20" style="background-color: #ffffff">  save</a>
+    21) <a name="l21" style="background-color: #ffffff">!</a>
+    22) <a name="l22" style="background-color: #ffffff">! !PUBLIC MEMBER FUNCTIONS:</a>
+    23) <a name="l23" style="background-color: #ffffff">  public :: SNICAR_RT        ! Snow albedo and vertically-resolved solar absorption</a>
+    24) <a name="l24" style="background-color: #ffffff">  public :: SnowAge_grain    ! Snow effective grain size evolution</a>
+    25) <a name="l25" style="background-color: #ffffff">  public :: SnowAge_init     ! Initial read in of snow-aging file</a>
+    26) <a name="l26" style="background-color: #ffffff">  public :: SnowOptics_init  ! Initial read in of snow-optics file</a>
+    27) <a name="l27" style="background-color: #ffffff">!</a>
+    28) <a name="l28" style="background-color: #ffffff">! !PUBLIC DATA MEMBERS:</a>
+    29) <a name="l29" style="background-color: #ffffff"></a>
+    30) <a name="l30" style="background-color: #ffffff">  real(r8), public, parameter :: snw_rds_min = 54.526_r8  ! minimum allowed snow effective radius</a>
+    31) <a name="l31" style="background-color: #ffffff">                                                          ! (also &quot;fresh snow&quot; value) [microns]</a>
+    32) <a name="l32" style="background-color: #ffffff">  integer,  public, parameter :: sno_nbr_aer =   8        ! number of aerosol species in snowpack</a>
+    33) <a name="l33" style="background-color: #ffffff">                                                          ! (indices described above) [nbr]</a>
+    34) <a name="l34" style="background-color: #ffffff">  logical,  public, parameter :: DO_SNO_OC =    .false.   ! parameter to include organic carbon (OC)</a>
+    35) <a name="l35" style="background-color: #ffffff">                                                          ! in snowpack radiative calculations</a>
+    36) <a name="l36" style="background-color: #ffffff">  logical,  public, parameter :: DO_SNO_AER =   .true.    ! parameter to include aerosols in snowpack radiative calculations</a>
+    37) <a name="l37" style="background-color: #ffffff"></a>
+    38) <a name="l38" style="background-color: #ffffff">  real(r8), public, parameter :: scvng_fct_mlt_bcphi = 0.20_r8   ! scavenging factor for hydrophillic BC inclusion in meltwater</a>
+    39) <a name="l39" style="background-color: #ffffff">                                                                 ! [frc]</a>
+    40) <a name="l40" style="background-color: #ffffff">  real(r8), public, parameter :: scvng_fct_mlt_bcpho = 0.03_r8   ! scavenging factor for hydrophobic BC inclusion in meltwater</a>
+    41) <a name="l41" style="background-color: #ffffff">                                                                 ! [frc]</a>
+    42) <a name="l42" style="background-color: #ffffff">  real(r8), public, parameter :: scvng_fct_mlt_ocphi = 0.20_r8   ! scavenging factor for hydrophillic OC inclusion in meltwater</a>
+    43) <a name="l43" style="background-color: #ffffff">                                                                 ! [frc]</a>
+    44) <a name="l44" style="background-color: #ffffff">  real(r8), public, parameter :: scvng_fct_mlt_ocpho = 0.03_r8   ! scavenging factor for hydrophobic OC inclusion in meltwater</a>
+    45) <a name="l45" style="background-color: #ffffff">                                                                 ! [frc]</a>
+    46) <a name="l46" style="background-color: #ffffff">  real(r8), public, parameter :: scvng_fct_mlt_dst1  = 0.02_r8   ! scavenging factor for dust species 1 inclusion in meltwater</a>
+    47) <a name="l47" style="background-color: #ffffff">                                                                 ! [frc]</a>
+    48) <a name="l48" style="background-color: #ffffff">  real(r8), public, parameter :: scvng_fct_mlt_dst2  = 0.02_r8   ! scavenging factor for dust species 2 inclusion in meltwater</a>
+    49) <a name="l49" style="background-color: #ffffff">                                                                 ! [frc]</a>
+    50) <a name="l50" style="background-color: #ffffff">  real(r8), public, parameter :: scvng_fct_mlt_dst3  = 0.01_r8   ! scavenging factor for dust species 3 inclusion in meltwater</a>
+    51) <a name="l51" style="background-color: #ffffff">                                                                 ! [frc]</a>
+    52) <a name="l52" style="background-color: #ffffff">  real(r8), public, parameter :: scvng_fct_mlt_dst4  = 0.01_r8   ! scavenging factor for dust species 4 inclusion in meltwater</a>
+    53) <a name="l53" style="background-color: #ffffff">                                                                 ! [frc]</a>
+    54) <a name="l54" style="background-color: #ffffff"></a>
+    55) <a name="l55" style="background-color: #ffffff">! !PRIVATE MEMBER FUNCTIONS:</a>
+    56) <a name="l56" style="background-color: #ffffff"></a>
+    57) <a name="l57" style="background-color: #ffffff">!</a>
+    58) <a name="l58" style="background-color: #ffffff">! !PRIVATE DATA MEMBERS:</a>
+    59) <a name="l59" style="background-color: #ffffff">  ! Aerosol species indices:</a>
+    60) <a name="l60" style="background-color: #ffffff">  !  1= hydrophillic black carbon </a>
+    61) <a name="l61" style="background-color: #ffffff">  !  2= hydrophobic black carbon</a>
+    62) <a name="l62" style="background-color: #ffffff">  !  3= hydrophilic organic carbon</a>
+    63) <a name="l63" style="background-color: #ffffff">  !  4= hydrophobic organic carbon</a>
+    64) <a name="l64" style="background-color: #ffffff">  !  5= dust species 1</a>
+    65) <a name="l65" style="background-color: #ffffff">  !  6= dust species 2</a>
+    66) <a name="l66" style="background-color: #ffffff">  !  7= dust species 3</a>
+    67) <a name="l67" style="background-color: #ffffff">  !  8= dust species 4</a>
+    68) <a name="l68" style="background-color: #ffffff">  integer,  parameter :: numrad_snw  =   5               ! number of spectral bands used in snow model [nbr]</a>
+    69) <a name="l69" style="background-color: #ffffff">  integer,  parameter :: nir_bnd_bgn =   2               ! first band index in near-IR spectrum [idx]</a>
+    70) <a name="l70" style="background-color: #ffffff">  integer,  parameter :: nir_bnd_end =   5               ! ending near-IR band index [idx]</a>
+    71) <a name="l71" style="background-color: #ffffff"></a>
+    72) <a name="l72" style="background-color: #ffffff">  integer,  parameter :: idx_Mie_snw_mx = 1471           ! number of effective radius indices used in Mie lookup table [idx]</a>
+    73) <a name="l73" style="background-color: #ffffff">  integer,  parameter :: idx_T_max      = 11             ! maxiumum temperature index used in aging lookup table [idx]</a>
+    74) <a name="l74" style="background-color: #ffffff">  integer,  parameter :: idx_T_min      = 1              ! minimum temperature index used in aging lookup table [idx]</a>
+    75) <a name="l75" style="background-color: #ffffff">  integer,  parameter :: idx_Tgrd_max   = 31             ! maxiumum temperature gradient index used in aging lookup table [idx]</a>
+    76) <a name="l76" style="background-color: #ffffff">  integer,  parameter :: idx_Tgrd_min   = 1              ! minimum temperature gradient index used in aging lookup table [idx]</a>
+    77) <a name="l77" style="background-color: #ffffff">  integer,  parameter :: idx_rhos_max   = 8              ! maxiumum snow density index used in aging lookup table [idx]</a>
+    78) <a name="l78" style="background-color: #ffffff">  integer,  parameter :: idx_rhos_min   = 1              ! minimum snow density index used in aging lookup table [idx]</a>
+    79) <a name="l79" style="background-color: #ffffff"></a>
+    80) <a name="l80" style="background-color: #ffffff">  integer,  parameter :: snw_rds_max_tbl = 1500          ! maximum effective radius defined in Mie lookup table [microns]</a>
+    81) <a name="l81" style="background-color: #ffffff">  integer,  parameter :: snw_rds_min_tbl = 30            ! minimium effective radius defined in Mie lookup table [microns]</a>
+    82) <a name="l82" style="background-color: #ffffff">  real(r8), parameter :: snw_rds_max     = 1500._r8      ! maximum allowed snow effective radius [microns]</a>
+    83) <a name="l83" style="background-color: #ffffff">  real(r8), parameter :: snw_rds_refrz   = 1000._r8      ! effective radius of re-frozen snow [microns]</a>
+    84) <a name="l84" style="background-color: #ffffff"></a>
+    85) <a name="l85" style="background-color: #ffffff">  real(r8), parameter :: min_snw = 1.0E-30_r8            ! minimum snow mass required for SNICAR RT calculation [kg m-2]</a>
+    86) <a name="l86" style="background-color: #ffffff"></a>
+    87) <a name="l87" style="background-color: #ffffff">  !real(r8), parameter :: C1_liq_Brun89 = 1.28E-17_r8    ! constant for liquid water grain growth [m3 s-1],</a>
+    88) <a name="l88" style="background-color: #ffffff">                                                         ! from Brun89</a>
+    89) <a name="l89" style="background-color: #ffffff">  real(r8), parameter :: C1_liq_Brun89 = 0._r8           ! constant for liquid water grain growth [m3 s-1],</a>
+    90) <a name="l90" style="background-color: #ffffff">                                                         ! from Brun89: zeroed to accomodate dry snow aging</a>
+    91) <a name="l91" style="background-color: #ffffff">  real(r8), parameter :: C2_liq_Brun89 = 4.22E-13_r8     ! constant for liquid water grain growth [m3 s-1],</a>
+    92) <a name="l92" style="background-color: #ffffff">                                                         ! from Brun89: corrected for LWC in units of percent</a>
+    93) <a name="l93" style="background-color: #ffffff"></a>
+    94) <a name="l94" style="background-color: #ffffff">  real(r8), parameter :: tim_cns_bc_rmv  = 2.2E-8_r8     ! time constant for removal of BC in snow on sea-ice</a>
+    95) <a name="l95" style="background-color: #ffffff">                                                         ! [s-1] (50% mass removal/year)</a>
+    96) <a name="l96" style="background-color: #ffffff">  real(r8), parameter :: tim_cns_oc_rmv  = 2.2E-8_r8     ! time constant for removal of OC in snow on sea-ice</a>
+    97) <a name="l97" style="background-color: #ffffff">                                                         ! [s-1] (50% mass removal/year)</a>
+    98) <a name="l98" style="background-color: #ffffff">  real(r8), parameter :: tim_cns_dst_rmv = 2.2E-8_r8     ! time constant for removal of dust in snow on sea-ice</a>
+    99) <a name="l99" style="background-color: #ffffff">                                                         ! [s-1] (50% mass removal/year)</a>
+   100) <a name="l100" style="background-color: #ffffff"></a>
+   101) <a name="l101" style="background-color: #ffffff">  ! scaling of the snow aging rate (tuning option):</a>
+   102) <a name="l102" style="background-color: #ffffff">  logical :: flg_snoage_scl    = .false.                 ! flag for scaling the snow aging rate by some arbitrary factor</a>
+   103) <a name="l103" style="background-color: #ffffff">  real(r8), parameter :: xdrdt = 1.0_r8                  ! arbitrary factor applied to snow aging rate</a>
+   104) <a name="l104" style="background-color: #ffffff"></a>
+   105) <a name="l105" style="background-color: #ffffff">  ! snow and aerosol Mie parameters:</a>
+   106) <a name="l106" style="background-color: #ffffff">  ! (arrays declared here, but are set in iniTimeConst)</a>
+   107) <a name="l107" style="background-color: #ffffff">  ! (idx_Mie_snw_mx is number of snow radii with defined parameters (i.e. from 30um to 1500um))</a>
+   108) <a name="l108" style="background-color: #ffffff">  </a>
+   109) <a name="l109" style="background-color: #ffffff">  ! direct-beam weighted ice optical properties</a>
+   110) <a name="l110" style="background-color: #ffffff">  real(r8) :: ss_alb_snw_drc(idx_Mie_snw_mx,numrad_snw)</a>
+   111) <a name="l111" style="background-color: #ffffff">  real(r8) :: asm_prm_snw_drc(idx_Mie_snw_mx,numrad_snw)</a>
+   112) <a name="l112" style="background-color: #ffffff">  real(r8) :: ext_cff_mss_snw_drc(idx_Mie_snw_mx,numrad_snw)</a>
+   113) <a name="l113" style="background-color: #ffffff"></a>
+   114) <a name="l114" style="background-color: #ffffff">  ! diffuse radiation weighted ice optical properties</a>
+   115) <a name="l115" style="background-color: #ffffff">  real(r8) :: ss_alb_snw_dfs(idx_Mie_snw_mx,numrad_snw)</a>
+   116) <a name="l116" style="background-color: #ffffff">  real(r8) :: asm_prm_snw_dfs(idx_Mie_snw_mx,numrad_snw)</a>
+   117) <a name="l117" style="background-color: #ffffff">  real(r8) :: ext_cff_mss_snw_dfs(idx_Mie_snw_mx,numrad_snw)</a>
+   118) <a name="l118" style="background-color: #ffffff"></a>
+   119) <a name="l119" style="background-color: #ffffff">  ! hydrophiliic BC</a>
+   120) <a name="l120" style="background-color: #ffffff">  real(r8) :: ss_alb_bc1(numrad_snw)</a>
+   121) <a name="l121" style="background-color: #ffffff">  real(r8) :: asm_prm_bc1(numrad_snw)</a>
+   122) <a name="l122" style="background-color: #ffffff">  real(r8) :: ext_cff_mss_bc1(numrad_snw)</a>
+   123) <a name="l123" style="background-color: #ffffff"></a>
+   124) <a name="l124" style="background-color: #ffffff">  ! hydrophobic BC</a>
+   125) <a name="l125" style="background-color: #ffffff">  real(r8) :: ss_alb_bc2(numrad_snw)</a>
+   126) <a name="l126" style="background-color: #ffffff">  real(r8) :: asm_prm_bc2(numrad_snw)</a>
+   127) <a name="l127" style="background-color: #ffffff">  real(r8) :: ext_cff_mss_bc2(numrad_snw)</a>
+   128) <a name="l128" style="background-color: #ffffff"></a>
+   129) <a name="l129" style="background-color: #ffffff">  ! hydrophobic OC</a>
+   130) <a name="l130" style="background-color: #ffffff">  real(r8) :: ss_alb_oc1(numrad_snw)</a>
+   131) <a name="l131" style="background-color: #ffffff">  real(r8) :: asm_prm_oc1(numrad_snw)</a>
+   132) <a name="l132" style="background-color: #ffffff">  real(r8) :: ext_cff_mss_oc1(numrad_snw)</a>
+   133) <a name="l133" style="background-color: #ffffff"></a>
+   134) <a name="l134" style="background-color: #ffffff">  ! hydrophilic OC</a>
+   135) <a name="l135" style="background-color: #ffffff">  real(r8) :: ss_alb_oc2(numrad_snw)</a>
+   136) <a name="l136" style="background-color: #ffffff">  real(r8) :: asm_prm_oc2(numrad_snw)</a>
+   137) <a name="l137" style="background-color: #ffffff">  real(r8) :: ext_cff_mss_oc2(numrad_snw)</a>
+   138) <a name="l138" style="background-color: #ffffff"></a>
+   139) <a name="l139" style="background-color: #ffffff">  ! dust species 1:</a>
+   140) <a name="l140" style="background-color: #ffffff">  real(r8) :: ss_alb_dst1(numrad_snw)</a>
+   141) <a name="l141" style="background-color: #ffffff">  real(r8) :: asm_prm_dst1(numrad_snw)</a>
+   142) <a name="l142" style="background-color: #ffffff">  real(r8) :: ext_cff_mss_dst1(numrad_snw)</a>
+   143) <a name="l143" style="background-color: #ffffff"></a>
+   144) <a name="l144" style="background-color: #ffffff">  ! dust species 2:</a>
+   145) <a name="l145" style="background-color: #ffffff">  real(r8) :: ss_alb_dst2(numrad_snw)</a>
+   146) <a name="l146" style="background-color: #ffffff">  real(r8) :: asm_prm_dst2(numrad_snw)</a>
+   147) <a name="l147" style="background-color: #ffffff">  real(r8) :: ext_cff_mss_dst2(numrad_snw)</a>
+   148) <a name="l148" style="background-color: #ffffff"></a>
+   149) <a name="l149" style="background-color: #ffffff">  ! dust species 3:</a>
+   150) <a name="l150" style="background-color: #ffffff">  real(r8) :: ss_alb_dst3(numrad_snw)</a>
+   151) <a name="l151" style="background-color: #ffffff">  real(r8) :: asm_prm_dst3(numrad_snw)</a>
+   152) <a name="l152" style="background-color: #ffffff">  real(r8) :: ext_cff_mss_dst3(numrad_snw)</a>
+   153) <a name="l153" style="background-color: #ffffff"></a>
+   154) <a name="l154" style="background-color: #ffffff">  ! dust species 4:</a>
+   155) <a name="l155" style="background-color: #ffffff">  real(r8) :: ss_alb_dst4(numrad_snw)</a>
+   156) <a name="l156" style="background-color: #ffffff">  real(r8) :: asm_prm_dst4(numrad_snw)</a>
+   157) <a name="l157" style="background-color: #ffffff">  real(r8) :: ext_cff_mss_dst4(numrad_snw)</a>
+   158) <a name="l158" style="background-color: #ffffff"></a>
+   159) <a name="l159" style="background-color: #ffffff">  ! best-fit parameters for snow aging defined over:</a>
+   160) <a name="l160" style="background-color: #ffffff">  !  11 temperatures from 225 to 273 K</a>
+   161) <a name="l161" style="background-color: #ffffff">  !  31 temperature gradients from 0 to 300 K/m</a>
+   162) <a name="l162" style="background-color: #ffffff">  !   8 snow densities from 0 to 350 kg/m3</a>
+   163) <a name="l163" style="background-color: #ffffff">  ! (arrays declared here, but are set in iniTimeConst)</a>
+   164) <a name="l164" style="background-color: #ffffff">  real(r8), pointer :: snowage_tau(:,:,:) ! (idx_rhos_max,idx_Tgrd_max,idx_T_max)</a>
+   165) <a name="l165" style="background-color: #ffffff">  real(r8), pointer :: snowage_kappa(:,:,:) ! (idx_rhos_max,idx_Tgrd_max,idx_T_max)</a>
+   166) <a name="l166" style="background-color: #ffffff">  real(r8), pointer :: snowage_drdt0(:,:,:) ! idx_rhos_max,idx_Tgrd_max,idx_T_max)</a>
+   167) <a name="l167" style="background-color: #ffffff"> </a>
+   168) <a name="l168" style="background-color: #ffffff">!</a>
+   169) <a name="l169" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   170) <a name="l170" style="background-color: #ffffff">! Created by Mark Flanner</a>
+   171) <a name="l171" style="background-color: #ffffff">!</a>
+   172) <a name="l172" style="background-color: #ffffff">!EOP</a>
+   173) <a name="l173" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   174) <a name="l174" style="background-color: #ffffff"></a>
+   175) <a name="l175" style="background-color: #ffffff">contains</a>
+   176) <a name="l176" style="background-color: #ffffff"></a>
+   177) <a name="l177" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   178) <a name="l178" style="background-color: #ffffff">!BOP</a>
+   179) <a name="l179" style="background-color: #ffffff">!</a>
+   180) <a name="l180" style="background-color: #ffffff">! !IROUTINE: SNICAR_RT</a>
+   181) <a name="l181" style="background-color: #ffffff">!</a>
+   182) <a name="l182" style="background-color: #ffffff">!</a>
+   183) <a name="l183" style="background-color: #ffffff">! !CALLED FROM:</a>
+   184) <a name="l184" style="background-color: #ffffff">! subroutine SurfaceAlbedo in module SurfaceAlbedoMod (CLM)</a>
+   185) <a name="l185" style="background-color: #ffffff">! subroutine albice (CSIM)</a>
+   186) <a name="l186" style="background-color: #ffffff">!</a>
+   187) <a name="l187" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   188) <a name="l188" style="background-color: #ffffff">! Author: Mark Flanner</a>
+   189) <a name="l189" style="background-color: #ffffff">!</a>
+   190) <a name="l190" style="background-color: #ffffff">! !INTERFACE:</a>
+   191) <a name="l191" style="background-color: #ffffff">  </a>
+   192) <a name="l192" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">SNICAR_RT (flg_snw_ice, lbc, ubc, num_nourbanc, filter_nourbanc,  &amp;</a>
+   193) <a name="l193" style="background-color: #ffcccc">                        coszen, flg_slr_in, h2osno_liq, h2osno_ice, snw_rds,   &amp;</a>
+   194) <a name="l194" style="background-color: #ffcccc">                        mss_cnc_aer_in, albsfc, albout, flx_abs)</a>
+   195) <a name="l195" style="background-color: #ffcccc"></a>
+   196) <a name="l196" style="background-color: #ffcccc">    !</a>
+   197) <a name="l197" style="background-color: #ffcccc">    ! !DESCRIPTION:</a>
+   198) <a name="l198" style="background-color: #ffcccc">    ! Determine reflectance of, and vertically-resolved solar absorption in, </a>
+   199) <a name="l199" style="background-color: #ffcccc">    ! snow with impurities.</a>
+   200) <a name="l200" style="background-color: #ffcccc">    !</a>
+   201) <a name="l201" style="background-color: #ffcccc">    ! Original references on physical models of snow reflectance include: </a>
+   202) <a name="l202" style="background-color: #ffcccc">    ! Wiscombe and Warren [1980] and Warren and Wiscombe [1980],</a>
+   203) <a name="l203" style="background-color: #ffcccc">    ! Journal of Atmospheric Sciences, 37,</a>
+   204) <a name="l204" style="background-color: #ffcccc">    !</a>
+   205) <a name="l205" style="background-color: #ffcccc">    ! The multi-layer solution for multiple-scattering used here is from:</a>
+   206) <a name="l206" style="background-color: #ffcccc">    ! Toon et al. [1989], Rapid calculation of radiative heating rates </a>
+   207) <a name="l207" style="background-color: #ffcccc">    ! and photodissociation rates in inhomogeneous multiple scattering atmospheres, </a>
+   208) <a name="l208" style="background-color: #ffcccc">    ! J. Geophys. Res., 94, D13, 16287-16301</a>
+   209) <a name="l209" style="background-color: #ffcccc">    !</a>
+   210) <a name="l210" style="background-color: #ffcccc">    ! The implementation of the SNICAR model in CLM/CSIM is described in:</a>
+   211) <a name="l211" style="background-color: #ffcccc">    ! Flanner, M., C. Zender, J. Randerson, and P. Rasch [2007], </a>
+   212) <a name="l212" style="background-color: #ffcccc">    ! Present-day climate forcing and response from black carbon in snow,</a>
+   213) <a name="l213" style="background-color: #ffcccc">    ! J. Geophys. Res., 112, D11202, doi: 10.1029/2006JD008003</a>
+   214) <a name="l214" style="background-color: #ffcccc"></a>
+   215) <a name="l215" style="background-color: #ffcccc">    </a>
+   216) <a name="l216" style="background-color: #ffcccc">    ! !USES:</a>
+   217) <a name="l217" style="background-color: #ffcccc">    use clmtype</a>
+   218) <a name="l218" style="background-color: #ffcccc">    use clm_varpar       , only : nlevsno, numrad</a>
+   219) <a name="l219" style="background-color: #ffcccc">    use clm_time_manager , only : get_nstep</a>
+   220) <a name="l220" style="background-color: #ffcccc">    use shr_const_mod    , only : SHR_CONST_PI</a>
+   221) <a name="l221" style="background-color: #ffcccc"></a>
+   222) <a name="l222" style="background-color: #ffcccc"></a>
+   223) <a name="l223" style="background-color: #ffcccc">    !</a>
+   224) <a name="l224" style="background-color: #ffcccc">    ! !ARGUMENTS:</a>
+   225) <a name="l225" style="background-color: #ffcccc">    implicit none</a>
+   226) <a name="l226" style="background-color: #ffcccc">    integer , intent(in)  :: flg_snw_ice                          ! flag: =1 when called from CLM, =2 when called from CSIM</a>
+   227) <a name="l227" style="background-color: #ffcccc">    integer , intent(in)  :: lbc, ubc                             ! column index bounds [unitless]</a>
+   228) <a name="l228" style="background-color: #ffcccc">    integer , intent(in)  :: num_nourbanc                         ! number of columns in non-urban filter</a>
+   229) <a name="l229" style="background-color: #ffcccc">    integer , intent(in)  :: filter_nourbanc(ubc-lbc+1)           ! column filter for non-urban points</a>
+   230) <a name="l230" style="background-color: #ffcccc">    real(r8), intent(in)  :: coszen(lbc:ubc)                      ! cosine of solar zenith angle for next time step</a>
+   231) <a name="l231" style="background-color: #ffcccc">                                                                  ! (col) [unitless]</a>
+   232) <a name="l232" style="background-color: #ffcccc">    integer , intent(in)  :: flg_slr_in                           ! flag: =1 for direct-beam incident flux,</a>
+   233) <a name="l233" style="background-color: #ffcccc">                                                                  ! =2 for diffuse incident flux</a>
+   234) <a name="l234" style="background-color: #ffcccc">    real(r8), intent(in)  :: h2osno_liq(lbc:ubc,-nlevsno+1:0)     ! liquid water content (col,lyr) [kg/m2]</a>
+   235) <a name="l235" style="background-color: #ffcccc">    real(r8), intent(in)  :: h2osno_ice(lbc:ubc,-nlevsno+1:0)     ! ice content (col,lyr) [kg/m2]</a>
+   236) <a name="l236" style="background-color: #ffcccc">    integer,  intent(in)  :: snw_rds(lbc:ubc,-nlevsno+1:0)        ! snow effective radius (col,lyr) [microns, m^-6]</a>
+   237) <a name="l237" style="background-color: #ffcccc">    real(r8), intent(in)  :: mss_cnc_aer_in(lbc:ubc,-nlevsno+1:0,sno_nbr_aer)  ! mass concentration of all aerosol species</a>
+   238) <a name="l238" style="background-color: #ffcccc">                                                                               ! (col,lyr,aer) [kg/kg]</a>
+   239) <a name="l239" style="background-color: #ffcccc">    real(r8), intent(in)  :: albsfc(lbc:ubc,numrad)               ! albedo of surface underlying snow</a>
+   240) <a name="l240" style="background-color: #ffcccc">                                                                  ! (col,bnd) [frc]</a>
+   241) <a name="l241" style="background-color: #ffcccc">    real(r8), intent(out) :: albout(lbc:ubc,numrad)               ! snow albedo, averaged into 2 bands</a>
+   242) <a name="l242" style="background-color: #ffcccc">                                                                  ! (=0 if no sun or no snow) (col,bnd) [frc]</a>
+   243) <a name="l243" style="background-color: #ffcccc">    real(r8), intent(out) :: flx_abs(lbc:ubc,-nlevsno+1:1,numrad) ! absorbed flux in each layer per unit flux incident</a>
+   244) <a name="l244" style="background-color: #ffcccc">                                                                  ! on top of snowpack (col,lyr,bnd) [frc]</a>
+   245) <a name="l245" style="background-color: #ffcccc"></a>
+   246) <a name="l246" style="background-color: #ffcccc">    !</a>
+   247) <a name="l247" style="background-color: #ffcccc">    ! !LOCAL VARIABLES:</a>
+   248) <a name="l248" style="background-color: #ffcccc">    !</a>
+   249) <a name="l249" style="background-color: #ffcccc">    ! local pointers to implicit in arguments</a>
+   250) <a name="l250" style="background-color: #ffcccc">    !</a>
+   251) <a name="l251" style="background-color: #ffcccc">    integer,  pointer :: snl(:)              ! negative number of snow layers (col) [nbr]</a>
+   252) <a name="l252" style="background-color: #ffcccc">    real(r8), pointer :: h2osno(:)           ! snow liquid water equivalent (col) [kg/m2]   </a>
+   253) <a name="l253" style="background-color: #ffcccc">    integer,  pointer :: clandunit(:)        ! corresponding landunit of column (col) [idx] (debugging only)</a>
+   254) <a name="l254" style="background-color: #ffcccc">    integer,  pointer :: cgridcell(:)        ! columns's gridcell index (col) [idx] (debugging only)</a>
+   255) <a name="l255" style="background-color: #ffcccc">    integer,  pointer :: ltype(:)            ! landunit type (lnd) (debugging only)</a>
+   256) <a name="l256" style="background-color: #ffcccc">    real(r8), pointer :: londeg(:)           ! longitude (degrees) (debugging only)</a>
+   257) <a name="l257" style="background-color: #ffcccc">    real(r8), pointer :: latdeg(:)           ! latitude (degrees) (debugging only)</a>
+   258) <a name="l258" style="background-color: #ffcccc">!</a>
+   259) <a name="l259" style="background-color: #ffcccc">! !OTHER LOCAL VARIABLES:</a>
+   260) <a name="l260" style="background-color: #ffcccc">!EOP</a>
+   261) <a name="l261" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   262) <a name="l262" style="background-color: #ffcccc">    !</a>
+   263) <a name="l263" style="background-color: #ffcccc">    ! variables for snow radiative transfer calculations</a>
+   264) <a name="l264" style="background-color: #ffcccc"></a>
+   265) <a name="l265" style="background-color: #ffcccc">    ! Local variables representing single-column values of arrays:</a>
+   266) <a name="l266" style="background-color: #ffcccc">    integer :: snl_lcl                            ! negative number of snow layers [nbr]</a>
+   267) <a name="l267" style="background-color: #ffcccc">    integer :: snw_rds_lcl(-nlevsno+1:0)          ! snow effective radius [m^-6]</a>
+   268) <a name="l268" style="background-color: #ffcccc">    real(r8):: flx_slrd_lcl(1:numrad_snw)         ! direct beam incident irradiance [W/m2] (set to 1)</a>
+   269) <a name="l269" style="background-color: #ffcccc">    real(r8):: flx_slri_lcl(1:numrad_snw)         ! diffuse incident irradiance [W/m2] (set to 1)</a>
+   270) <a name="l270" style="background-color: #ffcccc">    real(r8):: mss_cnc_aer_lcl(-nlevsno+1:0,1:sno_nbr_aer) ! aerosol mass concentration (lyr,aer_nbr) [kg/kg]</a>
+   271) <a name="l271" style="background-color: #ffcccc">    real(r8):: h2osno_lcl                         ! total column snow mass [kg/m2]</a>
+   272) <a name="l272" style="background-color: #ffcccc">    real(r8):: h2osno_liq_lcl(-nlevsno+1:0)       ! liquid water mass [kg/m2]</a>
+   273) <a name="l273" style="background-color: #ffcccc">    real(r8):: h2osno_ice_lcl(-nlevsno+1:0)       ! ice mass [kg/m2]</a>
+   274) <a name="l274" style="background-color: #ffcccc">    real(r8):: albsfc_lcl(1:numrad_snw)           ! albedo of underlying surface [frc]</a>
+   275) <a name="l275" style="background-color: #ffcccc">    real(r8):: ss_alb_snw_lcl(-nlevsno+1:0)       ! single-scatter albedo of ice grains (lyr) [frc]</a>
+   276) <a name="l276" style="background-color: #ffcccc">    real(r8):: asm_prm_snw_lcl(-nlevsno+1:0)      ! asymmetry parameter of ice grains (lyr) [frc]</a>
+   277) <a name="l277" style="background-color: #ffcccc">    real(r8):: ext_cff_mss_snw_lcl(-nlevsno+1:0)  ! mass extinction coefficient of ice grains (lyr) [m2/kg]</a>
+   278) <a name="l278" style="background-color: #ffcccc">    real(r8):: ss_alb_aer_lcl(sno_nbr_aer)        ! single-scatter albedo of aerosol species (aer_nbr) [frc] </a>
+   279) <a name="l279" style="background-color: #ffcccc">    real(r8):: asm_prm_aer_lcl(sno_nbr_aer)       ! asymmetry parameter of aerosol species (aer_nbr) [frc]</a>
+   280) <a name="l280" style="background-color: #ffcccc">    real(r8):: ext_cff_mss_aer_lcl(sno_nbr_aer)   ! mass extinction coefficient of aerosol species (aer_nbr) [m2/kg]</a>
+   281) <a name="l281" style="background-color: #ffcccc"></a>
+   282) <a name="l282" style="background-color: #ffcccc"></a>
+   283) <a name="l283" style="background-color: #ffcccc">    ! Other local variables</a>
+   284) <a name="l284" style="background-color: #ffcccc">    integer :: APRX_TYP                           ! two-stream approximation type</a>
+   285) <a name="l285" style="background-color: #ffcccc">                                                  ! (1=Eddington, 2=Quadrature, 3=Hemispheric Mean) [nbr]</a>
+   286) <a name="l286" style="background-color: #ffcccc">    integer :: DELTA                              ! flag to use Delta approximation (Joseph, 1976)</a>
+   287) <a name="l287" style="background-color: #ffcccc">                                                  ! (1= use, 0= don't use)</a>
+   288) <a name="l288" style="background-color: #ffcccc">    real(r8):: flx_wgt(1:numrad_snw)              ! weights applied to spectral bands,</a>
+   289) <a name="l289" style="background-color: #ffcccc">                                                  ! specific to direct and diffuse cases (bnd) [frc]</a>
+   290) <a name="l290" style="background-color: #ffcccc">   </a>
+   291) <a name="l291" style="background-color: #ffcccc">    integer :: flg_nosnl                          ! flag: =1 if there is snow, but zero snow layers,</a>
+   292) <a name="l292" style="background-color: #ffcccc">                                                  ! =0 if at least 1 snow layer [flg]   </a>
+   293) <a name="l293" style="background-color: #ffcccc">    integer :: trip                               ! flag: =1 to redo RT calculation if result is unrealistic</a>
+   294) <a name="l294" style="background-color: #ffcccc">    integer :: flg_dover                          ! defines conditions for RT redo (explained below)</a>
+   295) <a name="l295" style="background-color: #ffcccc"></a>
+   296) <a name="l296" style="background-color: #ffcccc">    real(r8):: albedo                             ! temporary snow albedo [frc]</a>
+   297) <a name="l297" style="background-color: #ffcccc">    real(r8):: flx_sum                            ! temporary summation variable for NIR weighting</a>
+   298) <a name="l298" style="background-color: #ffcccc">    real(r8):: albout_lcl(numrad_snw)             ! snow albedo by band [frc]</a>
+   299) <a name="l299" style="background-color: #ffcccc">    real(r8):: flx_abs_lcl(-nlevsno+1:1,numrad_snw)! absorbed flux per unit incident flux at top of snowpack (lyr,bnd) [frc]</a>
+   300) <a name="l300" style="background-color: #ffcccc"> </a>
+   301) <a name="l301" style="background-color: #ffcccc">    real(r8):: L_snw(-nlevsno+1:0)                ! h2o mass (liquid+solid) in snow layer (lyr) [kg/m2]</a>
+   302) <a name="l302" style="background-color: #ffcccc">    real(r8):: tau_snw(-nlevsno+1:0)              ! snow optical depth (lyr) [unitless]</a>
+   303) <a name="l303" style="background-color: #ffcccc">    real(r8):: L_aer(-nlevsno+1:0,sno_nbr_aer)    ! aerosol mass in snow layer (lyr,nbr_aer) [kg/m2] </a>
+   304) <a name="l304" style="background-color: #ffcccc">    real(r8):: tau_aer(-nlevsno+1:0,sno_nbr_aer)  ! aerosol optical depth (lyr,nbr_aer) [unitless]</a>
+   305) <a name="l305" style="background-color: #ffcccc">    real(r8):: tau_sum                            ! cumulative (snow+aerosol) optical depth [unitless]</a>
+   306) <a name="l306" style="background-color: #ffcccc">    real(r8):: tau_clm(-nlevsno+1:0)              ! column optical depth from layer bottom to snowpack top (lyr) [unitless] </a>
+   307) <a name="l307" style="background-color: #ffcccc">    real(r8):: omega_sum                          ! temporary summation of single-scatter albedo of all aerosols [frc]</a>
+   308) <a name="l308" style="background-color: #ffcccc">    real(r8):: g_sum                              ! temporary summation of asymmetry parameter of all aerosols [frc]</a>
+   309) <a name="l309" style="background-color: #ffcccc"></a>
+   310) <a name="l310" style="background-color: #ffcccc">    real(r8):: tau(-nlevsno+1:0)                  ! weighted optical depth of snow+aerosol layer (lyr) [unitless]</a>
+   311) <a name="l311" style="background-color: #ffcccc">    real(r8):: omega(-nlevsno+1:0)                ! weighted single-scatter albedo of snow+aerosol layer (lyr) [frc]</a>
+   312) <a name="l312" style="background-color: #ffcccc">    real(r8):: g(-nlevsno+1:0)                    ! weighted asymmetry parameter of snow+aerosol layer (lyr) [frc]</a>
+   313) <a name="l313" style="background-color: #ffcccc">    real(r8):: tau_star(-nlevsno+1:0)             ! transformed (i.e. Delta-Eddington) optical depth of snow+aerosol layer</a>
+   314) <a name="l314" style="background-color: #ffcccc">                                                  ! (lyr) [unitless]</a>
+   315) <a name="l315" style="background-color: #ffcccc">    real(r8):: omega_star(-nlevsno+1:0)           ! transformed (i.e. Delta-Eddington) SSA of snow+aerosol layer (lyr) [frc]</a>
+   316) <a name="l316" style="background-color: #ffcccc">    real(r8):: g_star(-nlevsno+1:0)               ! transformed (i.e. Delta-Eddington) asymmetry paramater of snow+aerosol layer</a>
+   317) <a name="l317" style="background-color: #ffcccc">                                                  ! (lyr) [frc]</a>
+   318) <a name="l318" style="background-color: #ffcccc">   </a>
+   319) <a name="l319" style="background-color: #ffcccc">    integer :: nstep                              ! current timestep [nbr] (debugging only)</a>
+   320) <a name="l320" style="background-color: #ffcccc">    integer :: g_idx, c_idx, l_idx                ! gridcell, column, and landunit indices [idx]</a>
+   321) <a name="l321" style="background-color: #ffcccc">    integer :: bnd_idx                            ! spectral band index (1 &lt;= bnd_idx &lt;= numrad_snw) [idx]</a>
+   322) <a name="l322" style="background-color: #ffcccc">    integer :: rds_idx                            ! snow effective radius index for retrieving</a>
+   323) <a name="l323" style="background-color: #ffcccc">                                                  ! Mie parameters from lookup table [idx]</a>
+   324) <a name="l324" style="background-color: #ffcccc">    integer :: snl_btm                            ! index of bottom snow layer (0) [idx]</a>
+   325) <a name="l325" style="background-color: #ffcccc">    integer :: snl_top                            ! index of top snow layer (-4 to 0) [idx]</a>
+   326) <a name="l326" style="background-color: #ffcccc">    integer :: fc                                 ! column filter index</a>
+   327) <a name="l327" style="background-color: #ffcccc">    integer :: i                                  ! layer index [idx]</a>
+   328) <a name="l328" style="background-color: #ffcccc">    integer :: j                                  ! aerosol number index [idx]</a>
+   329) <a name="l329" style="background-color: #ffcccc">    integer :: n                                  ! tridiagonal matrix index [idx]</a>
+   330) <a name="l330" style="background-color: #ffcccc">    integer :: m                                  ! secondary layer index [idx]</a>
+   331) <a name="l331" style="background-color: #ffcccc">   </a>
+   332) <a name="l332" style="background-color: #ffcccc">    real(r8):: F_direct(-nlevsno+1:0)             ! direct-beam radiation at bottom of layer interface (lyr) [W/m^2]</a>
+   333) <a name="l333" style="background-color: #ffcccc">    real(r8):: F_net(-nlevsno+1:0)                ! net radiative flux at bottom of layer interface (lyr) [W/m^2]</a>
+   334) <a name="l334" style="background-color: #ffcccc">    real(r8):: F_abs(-nlevsno+1:0)                ! net absorbed radiative energy (lyr) [W/m^2]</a>
+   335) <a name="l335" style="background-color: #ffcccc">    real(r8):: F_abs_sum                          ! total absorbed energy in column [W/m^2]</a>
+   336) <a name="l336" style="background-color: #ffcccc">    real(r8):: F_sfc_pls                          ! upward radiative flux at snowpack top [W/m^2]</a>
+   337) <a name="l337" style="background-color: #ffcccc">    real(r8):: F_btm_net                          ! net flux at bottom of snowpack [W/m^2]                    </a>
+   338) <a name="l338" style="background-color: #ffcccc">    real(r8):: F_sfc_net                          ! net flux at top of snowpack [W/m^2]</a>
+   339) <a name="l339" style="background-color: #ffcccc">    real(r8):: energy_sum                         ! sum of all energy terms; should be 0.0 [W/m^2]</a>
+   340) <a name="l340" style="background-color: #ffcccc">    real(r8):: F_direct_btm                       ! direct-beam radiation at bottom of snowpack [W/m^2]</a>
+   341) <a name="l341" style="background-color: #ffcccc">    real(r8):: mu_not                             ! cosine of solar zenith angle (used locally) [frc]</a>
+   342) <a name="l342" style="background-color: #ffcccc"></a>
+   343) <a name="l343" style="background-color: #ffcccc">    integer :: err_idx                            ! counter for number of times through error loop [nbr]</a>
+   344) <a name="l344" style="background-color: #ffcccc">    real(r8):: lat_coord                          ! gridcell latitude (debugging only)</a>
+   345) <a name="l345" style="background-color: #ffcccc">    real(r8):: lon_coord                          ! gridcell longitude (debugging only)</a>
+   346) <a name="l346" style="background-color: #ffcccc">    integer :: sfctype                            ! underlying surface type (debugging only)</a>
+   347) <a name="l347" style="background-color: #ffcccc">    real(r8):: pi                                 ! 3.1415...</a>
+   348) <a name="l348" style="background-color: #ffcccc"></a>
+   349) <a name="l349" style="background-color: #ffcccc"></a>
+   350) <a name="l350" style="background-color: #ffcccc">    ! intermediate variables for radiative transfer approximation:</a>
+   351) <a name="l351" style="background-color: #ffcccc">    real(r8):: gamma1(-nlevsno+1:0)               ! two-stream coefficient from Toon et al. (lyr) [unitless]</a>
+   352) <a name="l352" style="background-color: #ffcccc">    real(r8):: gamma2(-nlevsno+1:0)               ! two-stream coefficient from Toon et al. (lyr) [unitless]</a>
+   353) <a name="l353" style="background-color: #ffcccc">    real(r8):: gamma3(-nlevsno+1:0)               ! two-stream coefficient from Toon et al. (lyr) [unitless]</a>
+   354) <a name="l354" style="background-color: #ffcccc">    real(r8):: gamma4(-nlevsno+1:0)               ! two-stream coefficient from Toon et al. (lyr) [unitless]</a>
+   355) <a name="l355" style="background-color: #ffcccc">    real(r8):: lambda(-nlevsno+1:0)               ! two-stream coefficient from Toon et al. (lyr) [unitless]</a>
+   356) <a name="l356" style="background-color: #ffcccc">    real(r8):: GAMMA(-nlevsno+1:0)                ! two-stream coefficient from Toon et al. (lyr) [unitless]</a>
+   357) <a name="l357" style="background-color: #ffcccc">    real(r8):: mu_one                             ! two-stream coefficient from Toon et al. (lyr) [unitless]</a>
+   358) <a name="l358" style="background-color: #ffcccc">    real(r8):: e1(-nlevsno+1:0)                   ! tri-diag intermediate variable from Toon et al. (lyr) </a>
+   359) <a name="l359" style="background-color: #ffcccc">    real(r8):: e2(-nlevsno+1:0)                   ! tri-diag intermediate variable from Toon et al. (lyr) </a>
+   360) <a name="l360" style="background-color: #ffcccc">    real(r8):: e3(-nlevsno+1:0)                   ! tri-diag intermediate variable from Toon et al. (lyr) </a>
+   361) <a name="l361" style="background-color: #ffcccc">    real(r8):: e4(-nlevsno+1:0)                   ! tri-diag intermediate variable from Toon et al. (lyr) </a>
+   362) <a name="l362" style="background-color: #ffcccc">    real(r8):: C_pls_btm(-nlevsno+1:0)            ! intermediate variable: upward flux at bottom interface (lyr) [W/m2]</a>
+   363) <a name="l363" style="background-color: #ffcccc">    real(r8):: C_mns_btm(-nlevsno+1:0)            ! intermediate variable: downward flux at bottom interface (lyr) [W/m2]</a>
+   364) <a name="l364" style="background-color: #ffcccc">    real(r8):: C_pls_top(-nlevsno+1:0)            ! intermediate variable: upward flux at top interface (lyr) [W/m2]</a>
+   365) <a name="l365" style="background-color: #ffcccc">    real(r8):: C_mns_top(-nlevsno+1:0)            ! intermediate variable: downward flux at top interface (lyr) [W/m2]</a>
+   366) <a name="l366" style="background-color: #ffcccc">    real(r8):: A(-2*nlevsno+1:0)                  ! tri-diag intermediate variable from Toon et al. (2*lyr)</a>
+   367) <a name="l367" style="background-color: #ffcccc">    real(r8):: B(-2*nlevsno+1:0)                  ! tri-diag intermediate variable from Toon et al. (2*lyr)</a>
+   368) <a name="l368" style="background-color: #ffcccc">    real(r8):: D(-2*nlevsno+1:0)                  ! tri-diag intermediate variable from Toon et al. (2*lyr)</a>
+   369) <a name="l369" style="background-color: #ffcccc">    real(r8):: E(-2*nlevsno+1:0)                  ! tri-diag intermediate variable from Toon et al. (2*lyr)</a>
+   370) <a name="l370" style="background-color: #ffcccc">    real(r8):: AS(-2*nlevsno+1:0)                 ! tri-diag intermediate variable from Toon et al. (2*lyr)</a>
+   371) <a name="l371" style="background-color: #ffcccc">    real(r8):: DS(-2*nlevsno+1:0)                 ! tri-diag intermediate variable from Toon et al. (2*lyr)</a>
+   372) <a name="l372" style="background-color: #ffcccc">    real(r8):: X(-2*nlevsno+1:0)                  ! tri-diag intermediate variable from Toon et al. (2*lyr)</a>
+   373) <a name="l373" style="background-color: #ffcccc">    real(r8):: Y(-2*nlevsno+1:0)                  ! tri-diag intermediate variable from Toon et al. (2*lyr)</a>
+   374) <a name="l374" style="background-color: #ffcccc"></a>
+   375) <a name="l375" style="background-color: #ffcccc"></a>
+   376) <a name="l376" style="background-color: #ffcccc">    ! Assign local pointers to derived subtypes components (column-level)</a>
+   377) <a name="l377" style="background-color: #ffcccc">    ! (CLM-specific)</a>
+   378) <a name="l378" style="background-color: #ffcccc">    if (flg_snw_ice == 1) then</a>
+   379) <a name="l379" style="background-color: #ffcccc">       snl            =&gt; cps%snl</a>
+   380) <a name="l380" style="background-color: #ffcccc">       h2osno         =&gt; cws%h2osno</a>
+   381) <a name="l381" style="background-color: #ffcccc">       clandunit      =&gt; col%landunit  ! (debug only)</a>
+   382) <a name="l382" style="background-color: #ffcccc">       cgridcell      =&gt; col%gridcell  ! (debug only)</a>
+   383) <a name="l383" style="background-color: #ffcccc">       ltype          =&gt; lun%itype       ! (debug only)</a>
+   384) <a name="l384" style="background-color: #ffcccc">       londeg         =&gt; grc%londeg        ! (debug only)</a>
+   385) <a name="l385" style="background-color: #ffcccc">       latdeg         =&gt; grc%latdeg        ! (debug only)</a>
+   386) <a name="l386" style="background-color: #ffcccc">    endif</a>
+   387) <a name="l387" style="background-color: #ffcccc"></a>
+   388) <a name="l388" style="background-color: #ffcccc"></a>
+   389) <a name="l389" style="background-color: #ffcccc">    ! Define constants</a>
+   390) <a name="l390" style="background-color: #ffcccc">    pi = SHR_CONST_PI</a>
+   391) <a name="l391" style="background-color: #ffcccc"></a>
+   392) <a name="l392" style="background-color: #ffcccc">    ! always use Delta approximation for snow</a>
+   393) <a name="l393" style="background-color: #ffcccc">    DELTA = 1</a>
+   394) <a name="l394" style="background-color: #ffcccc"></a>
+   395) <a name="l395" style="background-color: #ffcccc">    ! Get current timestep</a>
+   396) <a name="l396" style="background-color: #ffcccc">    nstep = get_nstep()</a>
+   397) <a name="l397" style="background-color: #ffcccc"></a>
+   398) <a name="l398" style="background-color: #ffcccc">    ! Loop over all non-urban columns</a>
+   399) <a name="l399" style="background-color: #ffcccc">    ! (when called from CSIM, there is only one column)</a>
+   400) <a name="l400" style="background-color: #ffcccc">    do fc = 1,num_nourbanc</a>
+   401) <a name="l401" style="background-color: #ffcccc">       c_idx = filter_nourbanc(fc)</a>
+   402) <a name="l402" style="background-color: #ffcccc"></a>
+   403) <a name="l403" style="background-color: #ffcccc"></a>
+   404) <a name="l404" style="background-color: #ffcccc">       ! Zero absorbed radiative fluxes:</a>
+   405) <a name="l405" style="background-color: #ffcccc">       do i=-nlevsno+1,1,1</a>
+   406) <a name="l406" style="background-color: #ffcccc">          flx_abs_lcl(:,:)   = 0._r8</a>
+   407) <a name="l407" style="background-color: #ffcccc">          flx_abs(c_idx,i,:) = 0._r8</a>
+   408) <a name="l408" style="background-color: #ffcccc">       enddo</a>
+   409) <a name="l409" style="background-color: #ffcccc">       </a>
+   410) <a name="l410" style="background-color: #ffcccc">       ! set snow/ice mass to be used for RT:</a>
+   411) <a name="l411" style="background-color: #ffcccc">       if (flg_snw_ice == 1) then</a>
+   412) <a name="l412" style="background-color: #ffcccc">          h2osno_lcl = h2osno(c_idx)</a>
+   413) <a name="l413" style="background-color: #ffcccc">       else</a>
+   414) <a name="l414" style="background-color: #ffcccc">          h2osno_lcl = h2osno_ice(c_idx,0)</a>
+   415) <a name="l415" style="background-color: #ffcccc">       endif</a>
+   416) <a name="l416" style="background-color: #ffcccc"></a>
+   417) <a name="l417" style="background-color: #ffcccc"></a>
+   418) <a name="l418" style="background-color: #ffcccc">       ! Qualifier for computing snow RT: </a>
+   419) <a name="l419" style="background-color: #ffcccc">       !  1) sunlight from atmosphere model </a>
+   420) <a name="l420" style="background-color: #ffcccc">       !  2) minimum amount of snow on ground. </a>
+   421) <a name="l421" style="background-color: #ffcccc">       !     Otherwise, set snow albedo to zero</a>
+   422) <a name="l422" style="background-color: #ffcccc">       if ((coszen(c_idx) &gt; 0._r8) .and. (h2osno_lcl &gt; min_snw)) then     </a>
+   423) <a name="l423" style="background-color: #ffcccc"></a>
+   424) <a name="l424" style="background-color: #ffcccc">          ! Set variables specific to CLM</a>
+   425) <a name="l425" style="background-color: #ffcccc">          if (flg_snw_ice == 1) then</a>
+   426) <a name="l426" style="background-color: #ffcccc">             ! Assign local (single-column) variables to global values</a>
+   427) <a name="l427" style="background-color: #ffcccc">             ! If there is snow, but zero snow layers, we must create a layer locally.</a>
+   428) <a name="l428" style="background-color: #ffcccc">             ! This layer is presumed to have the fresh snow effective radius.</a>
+   429) <a name="l429" style="background-color: #ffcccc">             if (snl(c_idx) &gt; -1) then</a>
+   430) <a name="l430" style="background-color: #ffcccc">                flg_nosnl         =  1</a>
+   431) <a name="l431" style="background-color: #ffcccc">                snl_lcl           =  -1</a>
+   432) <a name="l432" style="background-color: #ffcccc">                h2osno_ice_lcl(0) =  h2osno_lcl</a>
+   433) <a name="l433" style="background-color: #ffcccc">                h2osno_liq_lcl(0) =  0._r8</a>
+   434) <a name="l434" style="background-color: #ffcccc">                snw_rds_lcl(0)    =  nint(snw_rds_min)</a>
+   435) <a name="l435" style="background-color: #ffcccc">             else</a>
+   436) <a name="l436" style="background-color: #ffcccc">                flg_nosnl         =  0</a>
+   437) <a name="l437" style="background-color: #ffcccc">                snl_lcl           =  snl(c_idx)</a>
+   438) <a name="l438" style="background-color: #ffcccc">                h2osno_liq_lcl(:) =  h2osno_liq(c_idx,:)</a>
+   439) <a name="l439" style="background-color: #ffcccc">                h2osno_ice_lcl(:) =  h2osno_ice(c_idx,:)</a>
+   440) <a name="l440" style="background-color: #ffcccc">                snw_rds_lcl(:)    =  snw_rds(c_idx,:)</a>
+   441) <a name="l441" style="background-color: #ffcccc">             endif</a>
+   442) <a name="l442" style="background-color: #ffcccc">            </a>
+   443) <a name="l443" style="background-color: #ffcccc">             snl_btm   = 0</a>
+   444) <a name="l444" style="background-color: #ffcccc">             snl_top   = snl_lcl+1</a>
+   445) <a name="l445" style="background-color: #ffcccc"></a>
+   446) <a name="l446" style="background-color: #ffcccc">             ! for debugging only</a>
+   447) <a name="l447" style="background-color: #ffcccc">             l_idx     = clandunit(c_idx)</a>
+   448) <a name="l448" style="background-color: #ffcccc">             g_idx     = cgridcell(c_idx)</a>
+   449) <a name="l449" style="background-color: #ffcccc">             sfctype   = ltype(l_idx)</a>
+   450) <a name="l450" style="background-color: #ffcccc">             lat_coord = latdeg(g_idx)</a>
+   451) <a name="l451" style="background-color: #ffcccc">             lon_coord = londeg(g_idx)</a>
+   452) <a name="l452" style="background-color: #ffcccc"></a>
+   453) <a name="l453" style="background-color: #ffcccc"></a>
+   454) <a name="l454" style="background-color: #ffcccc">          ! Set variables specific to CSIM</a>
+   455) <a name="l455" style="background-color: #ffcccc">          else</a>
+   456) <a name="l456" style="background-color: #ffcccc">             flg_nosnl         = 0</a>
+   457) <a name="l457" style="background-color: #ffcccc">             snl_lcl           = -1</a>
+   458) <a name="l458" style="background-color: #ffcccc">             h2osno_liq_lcl(:) = h2osno_liq(c_idx,:)</a>
+   459) <a name="l459" style="background-color: #ffcccc">             h2osno_ice_lcl(:) = h2osno_ice(c_idx,:)</a>
+   460) <a name="l460" style="background-color: #ffcccc">             snw_rds_lcl(:)    = snw_rds(c_idx,:)</a>
+   461) <a name="l461" style="background-color: #ffcccc">             snl_btm           = 0</a>
+   462) <a name="l462" style="background-color: #ffcccc">             snl_top           = 0</a>
+   463) <a name="l463" style="background-color: #ffcccc">             sfctype           = -1</a>
+   464) <a name="l464" style="background-color: #ffcccc">             lat_coord         = -90</a>
+   465) <a name="l465" style="background-color: #ffcccc">             lon_coord         = 0</a>
+   466) <a name="l466" style="background-color: #ffcccc">          endif</a>
+   467) <a name="l467" style="background-color: #ffcccc"></a>
+   468) <a name="l468" style="background-color: #ffcccc">          ! Set local aerosol array</a>
+   469) <a name="l469" style="background-color: #ffcccc">          do j=1,sno_nbr_aer</a>
+   470) <a name="l470" style="background-color: #ffcccc">             mss_cnc_aer_lcl(:,j) = mss_cnc_aer_in(c_idx,:,j)</a>
+   471) <a name="l471" style="background-color: #ffcccc">          enddo</a>
+   472) <a name="l472" style="background-color: #ffcccc"></a>
+   473) <a name="l473" style="background-color: #ffcccc"></a>
+   474) <a name="l474" style="background-color: #ffcccc">          ! Set spectral underlying surface albedos to their corresponding VIS or NIR albedos</a>
+   475) <a name="l475" style="background-color: #ffcccc">          albsfc_lcl(1)                       = albsfc(c_idx,1)</a>
+   476) <a name="l476" style="background-color: #ffcccc">          albsfc_lcl(nir_bnd_bgn:nir_bnd_end) = albsfc(c_idx,2)</a>
+   477) <a name="l477" style="background-color: #ffcccc"></a>
+   478) <a name="l478" style="background-color: #ffcccc"></a>
+   479) <a name="l479" style="background-color: #ffcccc">          ! Error check for snow grain size:</a>
+   480) <a name="l480" style="background-color: #ffcccc">          do i=snl_top,snl_btm,1</a>
+   481) <a name="l481" style="background-color: #ffcccc">             if ((snw_rds_lcl(i) &lt; snw_rds_min_tbl) .or. (snw_rds_lcl(i) &gt; snw_rds_max_tbl)) then</a>
+   482) <a name="l482" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR ERROR: snow grain radius of &quot;, snw_rds_lcl(i), &quot; out of bounds.&quot;</a>
+   483) <a name="l483" style="background-color: #ffcccc">                write (iulog,*) &quot;NSTEP= &quot;, nstep</a>
+   484) <a name="l484" style="background-color: #ffcccc">                write (iulog,*) &quot;flg_snw_ice= &quot;, flg_snw_ice</a>
+   485) <a name="l485" style="background-color: #ffcccc">                write (iulog,*) &quot;column: &quot;, c_idx, &quot; level: &quot;, i, &quot; snl(c)= &quot;, snl_lcl</a>
+   486) <a name="l486" style="background-color: #ffcccc">                write (iulog,*) &quot;lat= &quot;, lat_coord, &quot; lon= &quot;, lon_coord</a>
+   487) <a name="l487" style="background-color: #ffcccc">                write (iulog,*) &quot;h2osno(c)= &quot;, h2osno_lcl</a>
+   488) <a name="l488" style="background-color: #ffcccc">                call endrun()</a>
+   489) <a name="l489" style="background-color: #ffcccc">             endif</a>
+   490) <a name="l490" style="background-color: #ffcccc">          enddo</a>
+   491) <a name="l491" style="background-color: #ffcccc"></a>
+   492) <a name="l492" style="background-color: #ffcccc">          ! Incident flux weighting parameters</a>
+   493) <a name="l493" style="background-color: #ffcccc">          !  - sum of all VIS bands must equal 1</a>
+   494) <a name="l494" style="background-color: #ffcccc">          !  - sum of all NIR bands must equal 1</a>
+   495) <a name="l495" style="background-color: #ffcccc">          !</a>
+   496) <a name="l496" style="background-color: #ffcccc">          ! Spectral bands (5-band case)</a>
+   497) <a name="l497" style="background-color: #ffcccc">          !  Band 1: 0.3-0.7um (VIS)</a>
+   498) <a name="l498" style="background-color: #ffcccc">          !  Band 2: 0.7-1.0um (NIR)</a>
+   499) <a name="l499" style="background-color: #ffcccc">          !  Band 3: 1.0-1.2um (NIR)</a>
+   500) <a name="l500" style="background-color: #ffcccc">          !  Band 4: 1.2-1.5um (NIR)</a>
+   501) <a name="l501" style="background-color: #ffcccc">          !  Band 5: 1.5-5.0um (NIR)</a>
+   502) <a name="l502" style="background-color: #ffcccc">          !</a>
+   503) <a name="l503" style="background-color: #ffcccc">          ! The following weights are appropriate for surface-incident flux in a mid-latitude winter atmosphere</a>
+   504) <a name="l504" style="background-color: #ffcccc">          !</a>
+   505) <a name="l505" style="background-color: #ffcccc">          ! 3-band weights</a>
+   506) <a name="l506" style="background-color: #ffcccc">          if (numrad_snw==3) then</a>
+   507) <a name="l507" style="background-color: #ffcccc">             ! Direct:</a>
+   508) <a name="l508" style="background-color: #ffcccc">             if (flg_slr_in == 1) then</a>
+   509) <a name="l509" style="background-color: #ffcccc">                flx_wgt(1) = 1._r8</a>
+   510) <a name="l510" style="background-color: #ffcccc">                flx_wgt(2) = 0.66628670195247_r8</a>
+   511) <a name="l511" style="background-color: #ffcccc">                flx_wgt(3) = 0.33371329804753_r8</a>
+   512) <a name="l512" style="background-color: #ffcccc">             ! Diffuse:</a>
+   513) <a name="l513" style="background-color: #ffcccc">             elseif (flg_slr_in == 2) then</a>
+   514) <a name="l514" style="background-color: #ffcccc">                flx_wgt(1) = 1._r8</a>
+   515) <a name="l515" style="background-color: #ffcccc">                flx_wgt(2) = 0.77887652162877_r8</a>
+   516) <a name="l516" style="background-color: #ffcccc">                flx_wgt(3) = 0.22112347837123_r8</a>
+   517) <a name="l517" style="background-color: #ffcccc">             endif</a>
+   518) <a name="l518" style="background-color: #ffcccc"></a>
+   519) <a name="l519" style="background-color: #ffcccc">          ! 5-band weights</a>
+   520) <a name="l520" style="background-color: #ffcccc">          elseif(numrad_snw==5) then</a>
+   521) <a name="l521" style="background-color: #ffcccc">             ! Direct:</a>
+   522) <a name="l522" style="background-color: #ffcccc">             if (flg_slr_in == 1) then</a>
+   523) <a name="l523" style="background-color: #ffcccc">                flx_wgt(1) = 1._r8</a>
+   524) <a name="l524" style="background-color: #ffcccc">                flx_wgt(2) = 0.49352158521175_r8</a>
+   525) <a name="l525" style="background-color: #ffcccc">                flx_wgt(3) = 0.18099494230665_r8</a>
+   526) <a name="l526" style="background-color: #ffcccc">                flx_wgt(4) = 0.12094898498813_r8</a>
+   527) <a name="l527" style="background-color: #ffcccc">                flx_wgt(5) = 0.20453448749347_r8</a>
+   528) <a name="l528" style="background-color: #ffcccc">             ! Diffuse:</a>
+   529) <a name="l529" style="background-color: #ffcccc">             elseif (flg_slr_in == 2) then</a>
+   530) <a name="l530" style="background-color: #ffcccc">                flx_wgt(1) = 1._r8</a>
+   531) <a name="l531" style="background-color: #ffcccc">                flx_wgt(2) = 0.58581507618433_r8</a>
+   532) <a name="l532" style="background-color: #ffcccc">                flx_wgt(3) = 0.20156903770812_r8</a>
+   533) <a name="l533" style="background-color: #ffcccc">                flx_wgt(4) = 0.10917889346386_r8</a>
+   534) <a name="l534" style="background-color: #ffcccc">                flx_wgt(5) = 0.10343699264369_r8</a>
+   535) <a name="l535" style="background-color: #ffcccc">             endif</a>
+   536) <a name="l536" style="background-color: #ffcccc">          endif</a>
+   537) <a name="l537" style="background-color: #ffcccc"></a>
+   538) <a name="l538" style="background-color: #ffcccc">          ! Loop over snow spectral bands</a>
+   539) <a name="l539" style="background-color: #ffcccc">          do bnd_idx = 1,numrad_snw</a>
+   540) <a name="l540" style="background-color: #ffcccc"></a>
+   541) <a name="l541" style="background-color: #ffcccc">             mu_not    = coszen(c_idx)  ! must set here, because of error handling</a>
+   542) <a name="l542" style="background-color: #ffcccc">             flg_dover = 1              ! default is to redo</a>
+   543) <a name="l543" style="background-color: #ffcccc">             err_idx   = 0              ! number of times through loop</a>
+   544) <a name="l544" style="background-color: #ffcccc"></a>
+   545) <a name="l545" style="background-color: #ffcccc">             do while (flg_dover &gt; 0)</a>
+   546) <a name="l546" style="background-color: #ffcccc"></a>
+   547) <a name="l547" style="background-color: #ffcccc">                ! DEFAULT APPROXIMATIONS:</a>
+   548) <a name="l548" style="background-color: #ffcccc">                !  VIS:       Delta-Eddington</a>
+   549) <a name="l549" style="background-color: #ffcccc">                !  NIR (all): Delta-Hemispheric Mean</a>
+   550) <a name="l550" style="background-color: #ffcccc">                !  WARNING:   DO NOT USE DELTA-EDDINGTON FOR NIR DIFFUSE - this sometimes results in negative albedo</a>
+   551) <a name="l551" style="background-color: #ffcccc">                !  </a>
+   552) <a name="l552" style="background-color: #ffcccc">                ! ERROR CONDITIONS:</a>
+   553) <a name="l553" style="background-color: #ffcccc">                !  Conditions which cause &quot;trip&quot;, resulting in redo of RT approximation:</a>
+   554) <a name="l554" style="background-color: #ffcccc">                !   1. negative absorbed flux</a>
+   555) <a name="l555" style="background-color: #ffcccc">                !   2. total absorbed flux greater than incident flux</a>
+   556) <a name="l556" style="background-color: #ffcccc">                !   3. negative albedo</a>
+   557) <a name="l557" style="background-color: #ffcccc">                !   NOTE: These errors have only been encountered in spectral bands 4 and 5</a>
+   558) <a name="l558" style="background-color: #ffcccc">                !</a>
+   559) <a name="l559" style="background-color: #ffcccc">                ! ERROR HANDLING</a>
+   560) <a name="l560" style="background-color: #ffcccc">                !  1st error (flg_dover=2): switch approximation (Edd-&gt;HM or HM-&gt;Edd)</a>
+   561) <a name="l561" style="background-color: #ffcccc">                !  2nd error (flg_dover=3): change zenith angle by 0.02 (this happens about 1 in 10^6 cases)</a>
+   562) <a name="l562" style="background-color: #ffcccc">                !  3rd error (flg_dover=4): switch approximation with new zenith</a>
+   563) <a name="l563" style="background-color: #ffcccc">                !  Subsequent errors: repeatedly change zenith and approximations...</a>
+   564) <a name="l564" style="background-color: #ffcccc">              </a>
+   565) <a name="l565" style="background-color: #ffcccc">                if (bnd_idx == 1) then</a>
+   566) <a name="l566" style="background-color: #ffcccc">                   if (flg_dover == 2) then</a>
+   567) <a name="l567" style="background-color: #ffcccc">                      APRX_TYP = 3</a>
+   568) <a name="l568" style="background-color: #ffcccc">                   elseif (flg_dover == 3) then</a>
+   569) <a name="l569" style="background-color: #ffcccc">                      APRX_TYP = 1</a>
+   570) <a name="l570" style="background-color: #ffcccc">                      if (coszen(c_idx) &gt; 0.5_r8) then</a>
+   571) <a name="l571" style="background-color: #ffcccc">                         mu_not = mu_not - 0.02_r8</a>
+   572) <a name="l572" style="background-color: #ffcccc">                      else</a>
+   573) <a name="l573" style="background-color: #ffcccc">                         mu_not = mu_not + 0.02_r8</a>
+   574) <a name="l574" style="background-color: #ffcccc">                      endif</a>
+   575) <a name="l575" style="background-color: #ffcccc">                   elseif (flg_dover == 4) then</a>
+   576) <a name="l576" style="background-color: #ffcccc">                      APRX_TYP = 3</a>
+   577) <a name="l577" style="background-color: #ffcccc">                   else</a>
+   578) <a name="l578" style="background-color: #ffcccc">                      APRX_TYP = 1</a>
+   579) <a name="l579" style="background-color: #ffcccc">                   endif</a>
+   580) <a name="l580" style="background-color: #ffcccc">                   </a>
+   581) <a name="l581" style="background-color: #ffcccc">                else</a>
+   582) <a name="l582" style="background-color: #ffcccc">                   if (flg_dover == 2) then</a>
+   583) <a name="l583" style="background-color: #ffcccc">                      APRX_TYP = 1</a>
+   584) <a name="l584" style="background-color: #ffcccc">                   elseif (flg_dover == 3) then</a>
+   585) <a name="l585" style="background-color: #ffcccc">                      APRX_TYP = 3</a>
+   586) <a name="l586" style="background-color: #ffcccc">                      if (coszen(c_idx) &gt; 0.5_r8) then</a>
+   587) <a name="l587" style="background-color: #ffcccc">                         mu_not = mu_not - 0.02_r8</a>
+   588) <a name="l588" style="background-color: #ffcccc">                      else</a>
+   589) <a name="l589" style="background-color: #ffcccc">                         mu_not = mu_not + 0.02_r8</a>
+   590) <a name="l590" style="background-color: #ffcccc">                      endif</a>
+   591) <a name="l591" style="background-color: #ffcccc">                   elseif (flg_dover == 4) then</a>
+   592) <a name="l592" style="background-color: #ffcccc">                      APRX_TYP = 1</a>
+   593) <a name="l593" style="background-color: #ffcccc">                   else</a>
+   594) <a name="l594" style="background-color: #ffcccc">                      APRX_TYP = 3</a>
+   595) <a name="l595" style="background-color: #ffcccc">                   endif</a>
+   596) <a name="l596" style="background-color: #ffcccc"></a>
+   597) <a name="l597" style="background-color: #ffcccc">                endif</a>
+   598) <a name="l598" style="background-color: #ffcccc"></a>
+   599) <a name="l599" style="background-color: #ffcccc">                ! Set direct or diffuse incident irradiance to 1</a>
+   600) <a name="l600" style="background-color: #ffcccc">                ! (This has to be within the bnd loop because mu_not is adjusted in rare cases)</a>
+   601) <a name="l601" style="background-color: #ffcccc">                if (flg_slr_in == 1) then</a>
+   602) <a name="l602" style="background-color: #ffcccc">                   flx_slrd_lcl(bnd_idx) = 1._r8/(mu_not*pi) ! this corresponds to incident irradiance of 1.0</a>
+   603) <a name="l603" style="background-color: #ffcccc">                   flx_slri_lcl(bnd_idx) = 0._r8</a>
+   604) <a name="l604" style="background-color: #ffcccc">                else</a>
+   605) <a name="l605" style="background-color: #ffcccc">                   flx_slrd_lcl(bnd_idx) = 0._r8</a>
+   606) <a name="l606" style="background-color: #ffcccc">                   flx_slri_lcl(bnd_idx) = 1._r8</a>
+   607) <a name="l607" style="background-color: #ffcccc">                endif</a>
+   608) <a name="l608" style="background-color: #ffcccc"></a>
+   609) <a name="l609" style="background-color: #ffcccc">                ! Pre-emptive error handling: aerosols can reap havoc on these absorptive bands.</a>
+   610) <a name="l610" style="background-color: #ffcccc">                ! Since extremely high soot concentrations have a negligible effect on these bands, zero them.</a>
+   611) <a name="l611" style="background-color: #ffcccc">                if ( (numrad_snw == 5).and.((bnd_idx == 5).or.(bnd_idx == 4)) ) then</a>
+   612) <a name="l612" style="background-color: #ffcccc">                   mss_cnc_aer_lcl(:,:) = 0._r8</a>
+   613) <a name="l613" style="background-color: #ffcccc">                endif</a>
+   614) <a name="l614" style="background-color: #ffcccc"></a>
+   615) <a name="l615" style="background-color: #ffcccc">                if ( (numrad_snw == 3).and.(bnd_idx == 3) ) then</a>
+   616) <a name="l616" style="background-color: #ffcccc">                   mss_cnc_aer_lcl(:,:) = 0._r8</a>
+   617) <a name="l617" style="background-color: #ffcccc">                endif</a>
+   618) <a name="l618" style="background-color: #ffcccc"></a>
+   619) <a name="l619" style="background-color: #ffcccc">                ! Define local Mie parameters based on snow grain size and aerosol species,</a>
+   620) <a name="l620" style="background-color: #ffcccc">                !  retrieved from a lookup table.</a>
+   621) <a name="l621" style="background-color: #ffcccc">                if (flg_slr_in == 1) then</a>
+   622) <a name="l622" style="background-color: #ffcccc">                   do i=snl_top,snl_btm,1</a>
+   623) <a name="l623" style="background-color: #ffcccc">                      rds_idx = snw_rds_lcl(i) - snw_rds_min_tbl + 1</a>
+   624) <a name="l624" style="background-color: #ffcccc">                      ! snow optical properties (direct radiation)</a>
+   625) <a name="l625" style="background-color: #ffcccc">                      ss_alb_snw_lcl(i)      = ss_alb_snw_drc(rds_idx,bnd_idx)</a>
+   626) <a name="l626" style="background-color: #ffcccc">                      asm_prm_snw_lcl(i)     = asm_prm_snw_drc(rds_idx,bnd_idx)</a>
+   627) <a name="l627" style="background-color: #ffcccc">                      ext_cff_mss_snw_lcl(i) = ext_cff_mss_snw_drc(rds_idx,bnd_idx)</a>
+   628) <a name="l628" style="background-color: #ffcccc">                   enddo</a>
+   629) <a name="l629" style="background-color: #ffcccc">                elseif (flg_slr_in == 2) then</a>
+   630) <a name="l630" style="background-color: #ffcccc">                   do i=snl_top,snl_btm,1</a>
+   631) <a name="l631" style="background-color: #ffcccc">                      rds_idx = snw_rds_lcl(i) - snw_rds_min_tbl + 1</a>
+   632) <a name="l632" style="background-color: #ffcccc">                      ! snow optical properties (diffuse radiation)</a>
+   633) <a name="l633" style="background-color: #ffcccc">                      ss_alb_snw_lcl(i)      = ss_alb_snw_dfs(rds_idx,bnd_idx)</a>
+   634) <a name="l634" style="background-color: #ffcccc">                      asm_prm_snw_lcl(i)     = asm_prm_snw_dfs(rds_idx,bnd_idx)</a>
+   635) <a name="l635" style="background-color: #ffcccc">                      ext_cff_mss_snw_lcl(i) = ext_cff_mss_snw_dfs(rds_idx,bnd_idx)</a>
+   636) <a name="l636" style="background-color: #ffcccc">                   enddo</a>
+   637) <a name="l637" style="background-color: #ffcccc">                endif</a>
+   638) <a name="l638" style="background-color: #ffcccc">                   </a>
+   639) <a name="l639" style="background-color: #ffcccc">                ! aerosol species 1 optical properties</a>
+   640) <a name="l640" style="background-color: #ffcccc">                ss_alb_aer_lcl(1)        = ss_alb_bc1(bnd_idx)      </a>
+   641) <a name="l641" style="background-color: #ffcccc">                asm_prm_aer_lcl(1)       = asm_prm_bc1(bnd_idx)</a>
+   642) <a name="l642" style="background-color: #ffcccc">                ext_cff_mss_aer_lcl(1)   = ext_cff_mss_bc1(bnd_idx)</a>
+   643) <a name="l643" style="background-color: #ffcccc">                </a>
+   644) <a name="l644" style="background-color: #ffcccc">                ! aerosol species 2 optical properties</a>
+   645) <a name="l645" style="background-color: #ffcccc">                ss_alb_aer_lcl(2)        = ss_alb_bc2(bnd_idx)      </a>
+   646) <a name="l646" style="background-color: #ffcccc">                asm_prm_aer_lcl(2)       = asm_prm_bc2(bnd_idx)</a>
+   647) <a name="l647" style="background-color: #ffcccc">                ext_cff_mss_aer_lcl(2)   = ext_cff_mss_bc2(bnd_idx)</a>
+   648) <a name="l648" style="background-color: #ffcccc">                </a>
+   649) <a name="l649" style="background-color: #ffcccc">                ! aerosol species 3 optical properties</a>
+   650) <a name="l650" style="background-color: #ffcccc">                ss_alb_aer_lcl(3)        = ss_alb_oc1(bnd_idx)      </a>
+   651) <a name="l651" style="background-color: #ffcccc">                asm_prm_aer_lcl(3)       = asm_prm_oc1(bnd_idx)</a>
+   652) <a name="l652" style="background-color: #ffcccc">                ext_cff_mss_aer_lcl(3)   = ext_cff_mss_oc1(bnd_idx)</a>
+   653) <a name="l653" style="background-color: #ffcccc">                </a>
+   654) <a name="l654" style="background-color: #ffcccc">                ! aerosol species 4 optical properties</a>
+   655) <a name="l655" style="background-color: #ffcccc">                ss_alb_aer_lcl(4)        = ss_alb_oc2(bnd_idx)      </a>
+   656) <a name="l656" style="background-color: #ffcccc">                asm_prm_aer_lcl(4)       = asm_prm_oc2(bnd_idx)</a>
+   657) <a name="l657" style="background-color: #ffcccc">                ext_cff_mss_aer_lcl(4)   = ext_cff_mss_oc2(bnd_idx)</a>
+   658) <a name="l658" style="background-color: #ffcccc"></a>
+   659) <a name="l659" style="background-color: #ffcccc">                ! aerosol species 5 optical properties</a>
+   660) <a name="l660" style="background-color: #ffcccc">                ss_alb_aer_lcl(5)        = ss_alb_dst1(bnd_idx)      </a>
+   661) <a name="l661" style="background-color: #ffcccc">                asm_prm_aer_lcl(5)       = asm_prm_dst1(bnd_idx)</a>
+   662) <a name="l662" style="background-color: #ffcccc">                ext_cff_mss_aer_lcl(5)   = ext_cff_mss_dst1(bnd_idx)</a>
+   663) <a name="l663" style="background-color: #ffcccc">                </a>
+   664) <a name="l664" style="background-color: #ffcccc">                ! aerosol species 6 optical properties</a>
+   665) <a name="l665" style="background-color: #ffcccc">                ss_alb_aer_lcl(6)        = ss_alb_dst2(bnd_idx)      </a>
+   666) <a name="l666" style="background-color: #ffcccc">                asm_prm_aer_lcl(6)       = asm_prm_dst2(bnd_idx)</a>
+   667) <a name="l667" style="background-color: #ffcccc">                ext_cff_mss_aer_lcl(6)   = ext_cff_mss_dst2(bnd_idx)</a>
+   668) <a name="l668" style="background-color: #ffcccc">                </a>
+   669) <a name="l669" style="background-color: #ffcccc">                ! aerosol species 7 optical properties</a>
+   670) <a name="l670" style="background-color: #ffcccc">                ss_alb_aer_lcl(7)        = ss_alb_dst3(bnd_idx)      </a>
+   671) <a name="l671" style="background-color: #ffcccc">                asm_prm_aer_lcl(7)       = asm_prm_dst3(bnd_idx)</a>
+   672) <a name="l672" style="background-color: #ffcccc">                ext_cff_mss_aer_lcl(7)   = ext_cff_mss_dst3(bnd_idx)</a>
+   673) <a name="l673" style="background-color: #ffcccc">                </a>
+   674) <a name="l674" style="background-color: #ffcccc">                ! aerosol species 8 optical properties</a>
+   675) <a name="l675" style="background-color: #ffcccc">                ss_alb_aer_lcl(8)        = ss_alb_dst4(bnd_idx)      </a>
+   676) <a name="l676" style="background-color: #ffcccc">                asm_prm_aer_lcl(8)       = asm_prm_dst4(bnd_idx)</a>
+   677) <a name="l677" style="background-color: #ffcccc">                ext_cff_mss_aer_lcl(8)   = ext_cff_mss_dst4(bnd_idx)</a>
+   678) <a name="l678" style="background-color: #ffcccc">                </a>
+   679) <a name="l679" style="background-color: #ffcccc"></a>
+   680) <a name="l680" style="background-color: #ffcccc">                ! 1. snow and aerosol layer column mass (L_snw, L_aer [kg/m^2])</a>
+   681) <a name="l681" style="background-color: #ffcccc">                ! 2. optical Depths (tau_snw, tau_aer)</a>
+   682) <a name="l682" style="background-color: #ffcccc">                ! 3. weighted Mie properties (tau, omega, g)</a>
+   683) <a name="l683" style="background-color: #ffcccc"></a>
+   684) <a name="l684" style="background-color: #ffcccc">                ! Weighted Mie parameters of each layer</a>
+   685) <a name="l685" style="background-color: #ffcccc">                do i=snl_top,snl_btm,1</a>
+   686) <a name="l686" style="background-color: #ffcccc">                   L_snw(i)   = h2osno_ice_lcl(i)+h2osno_liq_lcl(i)</a>
+   687) <a name="l687" style="background-color: #ffcccc">                   tau_snw(i) = L_snw(i)*ext_cff_mss_snw_lcl(i)</a>
+   688) <a name="l688" style="background-color: #ffcccc"></a>
+   689) <a name="l689" style="background-color: #ffcccc">                   do j=1,sno_nbr_aer</a>
+   690) <a name="l690" style="background-color: #ffcccc">                      L_aer(i,j)   = L_snw(i)*mss_cnc_aer_lcl(i,j)</a>
+   691) <a name="l691" style="background-color: #ffcccc">                      tau_aer(i,j) = L_aer(i,j)*ext_cff_mss_aer_lcl(j)</a>
+   692) <a name="l692" style="background-color: #ffcccc">                   enddo</a>
+   693) <a name="l693" style="background-color: #ffcccc"></a>
+   694) <a name="l694" style="background-color: #ffcccc">                   tau_sum   = 0._r8</a>
+   695) <a name="l695" style="background-color: #ffcccc">                   omega_sum = 0._r8</a>
+   696) <a name="l696" style="background-color: #ffcccc">                   g_sum     = 0._r8</a>
+   697) <a name="l697" style="background-color: #ffcccc">  </a>
+   698) <a name="l698" style="background-color: #ffcccc">                   do j=1,sno_nbr_aer</a>
+   699) <a name="l699" style="background-color: #ffcccc">                      tau_sum    = tau_sum + tau_aer(i,j) </a>
+   700) <a name="l700" style="background-color: #ffcccc">                      omega_sum  = omega_sum + (tau_aer(i,j)*ss_alb_aer_lcl(j))</a>
+   701) <a name="l701" style="background-color: #ffcccc">                      g_sum      = g_sum + (tau_aer(i,j)*ss_alb_aer_lcl(j)*asm_prm_aer_lcl(j))</a>
+   702) <a name="l702" style="background-color: #ffcccc">                   enddo</a>
+   703) <a name="l703" style="background-color: #ffcccc"></a>
+   704) <a name="l704" style="background-color: #ffcccc">                   tau(i)    = tau_sum + tau_snw(i)</a>
+   705) <a name="l705" style="background-color: #ffcccc">                   omega(i)  = (1/tau(i))*(omega_sum+(ss_alb_snw_lcl(i)*tau_snw(i)))</a>
+   706) <a name="l706" style="background-color: #ffcccc">                   g(i)      = (1/(tau(i)*omega(i)))*(g_sum+ (asm_prm_snw_lcl(i)*ss_alb_snw_lcl(i)*tau_snw(i)))</a>
+   707) <a name="l707" style="background-color: #ffcccc">                enddo</a>
+   708) <a name="l708" style="background-color: #ffcccc"></a>
+   709) <a name="l709" style="background-color: #ffcccc">                ! DELTA transformations, if requested</a>
+   710) <a name="l710" style="background-color: #ffcccc">                if (DELTA == 1) then</a>
+   711) <a name="l711" style="background-color: #ffcccc">                   do i=snl_top,snl_btm,1</a>
+   712) <a name="l712" style="background-color: #ffcccc">                      g_star(i)     = g(i)/(1+g(i))</a>
+   713) <a name="l713" style="background-color: #ffcccc">                      omega_star(i) = ((1-(g(i)**2))*omega(i)) / (1-(omega(i)*(g(i)**2)))</a>
+   714) <a name="l714" style="background-color: #ffcccc">                      tau_star(i)   = (1-(omega(i)*(g(i)**2)))*tau(i)</a>
+   715) <a name="l715" style="background-color: #ffcccc">                   enddo</a>
+   716) <a name="l716" style="background-color: #ffcccc">                else</a>
+   717) <a name="l717" style="background-color: #ffcccc">                   do i=snl_top,snl_btm,1</a>
+   718) <a name="l718" style="background-color: #ffcccc">                      g_star(i)     = g(i)</a>
+   719) <a name="l719" style="background-color: #ffcccc">                      omega_star(i) = omega(i)</a>
+   720) <a name="l720" style="background-color: #ffcccc">                      tau_star(i)   = tau(i)</a>
+   721) <a name="l721" style="background-color: #ffcccc">                   enddo</a>
+   722) <a name="l722" style="background-color: #ffcccc">                endif</a>
+   723) <a name="l723" style="background-color: #ffcccc"></a>
+   724) <a name="l724" style="background-color: #ffcccc">                ! Total column optical depth:</a>
+   725) <a name="l725" style="background-color: #ffcccc">                ! tau_clm(i) = total optical depth above the bottom of layer i</a>
+   726) <a name="l726" style="background-color: #ffcccc">                tau_clm(snl_top) = 0._r8</a>
+   727) <a name="l727" style="background-color: #ffcccc">                do i=snl_top+1,snl_btm,1</a>
+   728) <a name="l728" style="background-color: #ffcccc">                   tau_clm(i) = tau_clm(i-1)+tau_star(i-1)</a>
+   729) <a name="l729" style="background-color: #ffcccc">                enddo</a>
+   730) <a name="l730" style="background-color: #ffcccc"></a>
+   731) <a name="l731" style="background-color: #ffcccc">                ! Direct radiation at bottom of snowpack:</a>
+   732) <a name="l732" style="background-color: #ffcccc">                F_direct_btm = albsfc_lcl(bnd_idx)*mu_not*exp(-(tau_clm(snl_btm)+tau_star(snl_btm))/mu_not)*pi*flx_slrd_lcl(bnd_idx)</a>
+   733) <a name="l733" style="background-color: #ffcccc"></a>
+   734) <a name="l734" style="background-color: #ffcccc">                ! Intermediates</a>
+   735) <a name="l735" style="background-color: #ffcccc">                ! Gamma values are approximation-specific.</a>
+   736) <a name="l736" style="background-color: #ffcccc"></a>
+   737) <a name="l737" style="background-color: #ffcccc">                ! Eddington</a>
+   738) <a name="l738" style="background-color: #ffcccc">                if (APRX_TYP==1) then</a>
+   739) <a name="l739" style="background-color: #ffcccc">                   do i=snl_top,snl_btm,1</a>
+   740) <a name="l740" style="background-color: #ffcccc">                      gamma1(i) = (7-(omega_star(i)*(4+(3*g_star(i)))))/4</a>
+   741) <a name="l741" style="background-color: #ffcccc">                      gamma2(i) = -(1-(omega_star(i)*(4-(3*g_star(i)))))/4</a>
+   742) <a name="l742" style="background-color: #ffcccc">                      gamma3(i) = (2-(3*g_star(i)*mu_not))/4</a>
+   743) <a name="l743" style="background-color: #ffcccc">                      gamma4(i) = 1-gamma3(i)</a>
+   744) <a name="l744" style="background-color: #ffcccc">                      mu_one    = 0.5</a>
+   745) <a name="l745" style="background-color: #ffcccc">                   enddo</a>
+   746) <a name="l746" style="background-color: #ffcccc">                   </a>
+   747) <a name="l747" style="background-color: #ffcccc">                ! Quadrature</a>
+   748) <a name="l748" style="background-color: #ffcccc">                elseif (APRX_TYP==2) then</a>
+   749) <a name="l749" style="background-color: #ffcccc">                   do i=snl_top,snl_btm,1</a>
+   750) <a name="l750" style="background-color: #ffcccc">                      gamma1(i) = (3**0.5)*(2-(omega_star(i)*(1+g_star(i))))/2</a>
+   751) <a name="l751" style="background-color: #ffcccc">                      gamma2(i) = omega_star(i)*(3**0.5)*(1-g_star(i))/2</a>
+   752) <a name="l752" style="background-color: #ffcccc">                      gamma3(i) = (1-((3**0.5)*g_star(i)*mu_not))/2</a>
+   753) <a name="l753" style="background-color: #ffcccc">                      gamma4(i) = 1-gamma3(i)</a>
+   754) <a name="l754" style="background-color: #ffcccc">                      mu_one    = 1/(3**0.5)</a>
+   755) <a name="l755" style="background-color: #ffcccc">                   enddo</a>
+   756) <a name="l756" style="background-color: #ffcccc"></a>
+   757) <a name="l757" style="background-color: #ffcccc">                ! Hemispheric Mean</a>
+   758) <a name="l758" style="background-color: #ffcccc">                elseif (APRX_TYP==3) then</a>
+   759) <a name="l759" style="background-color: #ffcccc">                   do i=snl_top,snl_btm,1</a>
+   760) <a name="l760" style="background-color: #ffcccc">                      gamma1(i) = 2 - (omega_star(i)*(1+g_star(i)))</a>
+   761) <a name="l761" style="background-color: #ffcccc">                      gamma2(i) = omega_star(i)*(1-g_star(i))</a>
+   762) <a name="l762" style="background-color: #ffcccc">                      gamma3(i) = (1-((3**0.5)*g_star(i)*mu_not))/2</a>
+   763) <a name="l763" style="background-color: #ffcccc">                      gamma4(i) = 1-gamma3(i)</a>
+   764) <a name="l764" style="background-color: #ffcccc">                      mu_one    = 0.5</a>
+   765) <a name="l765" style="background-color: #ffcccc">                   enddo</a>
+   766) <a name="l766" style="background-color: #ffcccc">                endif</a>
+   767) <a name="l767" style="background-color: #ffcccc"></a>
+   768) <a name="l768" style="background-color: #ffcccc">                ! Intermediates for tri-diagonal solution</a>
+   769) <a name="l769" style="background-color: #ffcccc">                do i=snl_top,snl_btm,1</a>
+   770) <a name="l770" style="background-color: #ffcccc">                   lambda(i) = sqrt(abs((gamma1(i)**2) - (gamma2(i)**2)))</a>
+   771) <a name="l771" style="background-color: #ffcccc">                   GAMMA(i)  = gamma2(i)/(gamma1(i)+lambda(i))</a>
+   772) <a name="l772" style="background-color: #ffcccc"></a>
+   773) <a name="l773" style="background-color: #ffcccc">                   e1(i)     = 1+(GAMMA(i)*exp(-lambda(i)*tau_star(i)))</a>
+   774) <a name="l774" style="background-color: #ffcccc">                   e2(i)     = 1-(GAMMA(i)*exp(-lambda(i)*tau_star(i)))</a>
+   775) <a name="l775" style="background-color: #ffcccc">                   e3(i)     = GAMMA(i) + exp(-lambda(i)*tau_star(i))</a>
+   776) <a name="l776" style="background-color: #ffcccc">                   e4(i)     = GAMMA(i) - exp(-lambda(i)*tau_star(i))</a>
+   777) <a name="l777" style="background-color: #ffcccc">                enddo !enddo over snow layers</a>
+   778) <a name="l778" style="background-color: #ffcccc"></a>
+   779) <a name="l779" style="background-color: #ffcccc"></a>
+   780) <a name="l780" style="background-color: #ffcccc">                ! Intermediates for tri-diagonal solution</a>
+   781) <a name="l781" style="background-color: #ffcccc">                do i=snl_top,snl_btm,1</a>
+   782) <a name="l782" style="background-color: #ffcccc">                   if (flg_slr_in == 1) then</a>
+   783) <a name="l783" style="background-color: #ffcccc"></a>
+   784) <a name="l784" style="background-color: #ffcccc">                      C_pls_btm(i) = (omega_star(i)*pi*flx_slrd_lcl(bnd_idx)* &amp;</a>
+   785) <a name="l785" style="background-color: #ffcccc">                                     exp(-(tau_clm(i)+tau_star(i))/mu_not)*   &amp;</a>
+   786) <a name="l786" style="background-color: #ffcccc">                                     (((gamma1(i)-(1/mu_not))*gamma3(i))+     &amp;</a>
+   787) <a name="l787" style="background-color: #ffcccc">                                     (gamma4(i)*gamma2(i))))/((lambda(i)**2)-(1/(mu_not**2)))</a>
+   788) <a name="l788" style="background-color: #ffcccc"></a>
+   789) <a name="l789" style="background-color: #ffcccc">                      C_mns_btm(i) = (omega_star(i)*pi*flx_slrd_lcl(bnd_idx)* &amp;</a>
+   790) <a name="l790" style="background-color: #ffcccc">                                     exp(-(tau_clm(i)+tau_star(i))/mu_not)*   &amp;</a>
+   791) <a name="l791" style="background-color: #ffcccc">                                     (((gamma1(i)+(1/mu_not))*gamma4(i))+     &amp;</a>
+   792) <a name="l792" style="background-color: #ffcccc">                                     (gamma2(i)*gamma3(i))))/((lambda(i)**2)-(1/(mu_not**2)))</a>
+   793) <a name="l793" style="background-color: #ffcccc"></a>
+   794) <a name="l794" style="background-color: #ffcccc">                      C_pls_top(i) = (omega_star(i)*pi*flx_slrd_lcl(bnd_idx)* &amp;</a>
+   795) <a name="l795" style="background-color: #ffcccc">                                     exp(-tau_clm(i)/mu_not)*(((gamma1(i)-(1/mu_not))* &amp;</a>
+   796) <a name="l796" style="background-color: #ffcccc">                                     gamma3(i))+(gamma4(i)*gamma2(i))))/((lambda(i)**2)-(1/(mu_not**2)))</a>
+   797) <a name="l797" style="background-color: #ffcccc"></a>
+   798) <a name="l798" style="background-color: #ffcccc">                      C_mns_top(i) = (omega_star(i)*pi*flx_slrd_lcl(bnd_idx)* &amp;</a>
+   799) <a name="l799" style="background-color: #ffcccc">                                     exp(-tau_clm(i)/mu_not)*(((gamma1(i)+(1/mu_not))* &amp;</a>
+   800) <a name="l800" style="background-color: #ffcccc">                                     gamma4(i))+(gamma2(i)*gamma3(i))))/((lambda(i)**2)-(1/(mu_not**2)))</a>
+   801) <a name="l801" style="background-color: #ffcccc"></a>
+   802) <a name="l802" style="background-color: #ffcccc">                   else</a>
+   803) <a name="l803" style="background-color: #ffcccc">                      C_pls_btm(i) = 0._r8</a>
+   804) <a name="l804" style="background-color: #ffcccc">                      C_mns_btm(i) = 0._r8</a>
+   805) <a name="l805" style="background-color: #ffcccc">                      C_pls_top(i) = 0._r8</a>
+   806) <a name="l806" style="background-color: #ffcccc">                      C_mns_top(i) = 0._r8</a>
+   807) <a name="l807" style="background-color: #ffcccc">                   endif</a>
+   808) <a name="l808" style="background-color: #ffcccc">                enddo</a>
+   809) <a name="l809" style="background-color: #ffcccc"></a>
+   810) <a name="l810" style="background-color: #ffcccc">                ! Coefficients for tridiaganol matrix solution</a>
+   811) <a name="l811" style="background-color: #ffcccc">                do i=2*snl_lcl+1,0,1</a>
+   812) <a name="l812" style="background-color: #ffcccc"></a>
+   813) <a name="l813" style="background-color: #ffcccc">                   !Boundary values for i=1 and i=2*snl_lcl, specifics for i=odd and i=even    </a>
+   814) <a name="l814" style="background-color: #ffcccc">                   if (i==(2*snl_lcl+1)) then</a>
+   815) <a name="l815" style="background-color: #ffcccc">                      A(i) = 0</a>
+   816) <a name="l816" style="background-color: #ffcccc">                      B(i) = e1(snl_top)</a>
+   817) <a name="l817" style="background-color: #ffcccc">                      D(i) = -e2(snl_top)</a>
+   818) <a name="l818" style="background-color: #ffcccc">                      E(i) = flx_slri_lcl(bnd_idx)-C_mns_top(snl_top)</a>
+   819) <a name="l819" style="background-color: #ffcccc"></a>
+   820) <a name="l820" style="background-color: #ffcccc">                   elseif(i==0) then</a>
+   821) <a name="l821" style="background-color: #ffcccc">                      A(i) = e1(snl_btm)-(albsfc_lcl(bnd_idx)*e3(snl_btm))</a>
+   822) <a name="l822" style="background-color: #ffcccc">                      B(i) = e2(snl_btm)-(albsfc_lcl(bnd_idx)*e4(snl_btm))</a>
+   823) <a name="l823" style="background-color: #ffcccc">                      D(i) = 0</a>
+   824) <a name="l824" style="background-color: #ffcccc">                      E(i) = F_direct_btm-C_pls_btm(snl_btm)+(albsfc_lcl(bnd_idx)*C_mns_btm(snl_btm))</a>
+   825) <a name="l825" style="background-color: #ffcccc"></a>
+   826) <a name="l826" style="background-color: #ffcccc">                   elseif(mod(i,2)==-1) then   ! If odd and i&gt;=3 (n=1 for i=3)</a>
+   827) <a name="l827" style="background-color: #ffcccc">                      n=floor(i/2.0)</a>
+   828) <a name="l828" style="background-color: #ffcccc">                      A(i) = (e2(n)*e3(n))-(e4(n)*e1(n))</a>
+   829) <a name="l829" style="background-color: #ffcccc">                      B(i) = (e1(n)*e1(n+1))-(e3(n)*e3(n+1))</a>
+   830) <a name="l830" style="background-color: #ffcccc">                      D(i) = (e3(n)*e4(n+1))-(e1(n)*e2(n+1))</a>
+   831) <a name="l831" style="background-color: #ffcccc">                      E(i) = (e3(n)*(C_pls_top(n+1)-C_pls_btm(n)))+(e1(n)*(C_mns_btm(n)-C_mns_top(n+1)))</a>
+   832) <a name="l832" style="background-color: #ffcccc"></a>
+   833) <a name="l833" style="background-color: #ffcccc">                   elseif(mod(i,2)==0) then    ! If even and i&lt;=2*snl_lcl</a>
+   834) <a name="l834" style="background-color: #ffcccc">                      n=(i/2)</a>
+   835) <a name="l835" style="background-color: #ffcccc">                      A(i) = (e2(n+1)*e1(n))-(e3(n)*e4(n+1))</a>
+   836) <a name="l836" style="background-color: #ffcccc">                      B(i) = (e2(n)*e2(n+1))-(e4(n)*e4(n+1))</a>
+   837) <a name="l837" style="background-color: #ffcccc">                      D(i) = (e1(n+1)*e4(n+1))-(e2(n+1)*e3(n+1))</a>
+   838) <a name="l838" style="background-color: #ffcccc">                      E(i) = (e2(n+1)*(C_pls_top(n+1)-C_pls_btm(n)))+(e4(n+1)*(C_mns_top(n+1)-C_mns_btm(n))) </a>
+   839) <a name="l839" style="background-color: #ffcccc">                   endif</a>
+   840) <a name="l840" style="background-color: #ffcccc">                enddo</a>
+   841) <a name="l841" style="background-color: #ffcccc"></a>
+   842) <a name="l842" style="background-color: #ffcccc">                AS(0) = A(0)/B(0)</a>
+   843) <a name="l843" style="background-color: #ffcccc">                DS(0) = E(0)/B(0)</a>
+   844) <a name="l844" style="background-color: #ffcccc"></a>
+   845) <a name="l845" style="background-color: #ffcccc">                do i=-1,(2*snl_lcl+1),-1</a>
+   846) <a name="l846" style="background-color: #ffcccc">                   X(i)  = 1/(B(i)-(D(i)*AS(i+1)))</a>
+   847) <a name="l847" style="background-color: #ffcccc">                   AS(i) = A(i)*X(i)</a>
+   848) <a name="l848" style="background-color: #ffcccc">                   DS(i) = (E(i)-(D(i)*DS(i+1)))*X(i)</a>
+   849) <a name="l849" style="background-color: #ffcccc">                enddo</a>
+   850) <a name="l850" style="background-color: #ffcccc"></a>
+   851) <a name="l851" style="background-color: #ffcccc">                Y(2*snl_lcl+1) = DS(2*snl_lcl+1)</a>
+   852) <a name="l852" style="background-color: #ffcccc">                do i=(2*snl_lcl+2),0,1</a>
+   853) <a name="l853" style="background-color: #ffcccc">                   Y(i) = DS(i)-(AS(i)*Y(i-1))</a>
+   854) <a name="l854" style="background-color: #ffcccc">                enddo</a>
+   855) <a name="l855" style="background-color: #ffcccc"></a>
+   856) <a name="l856" style="background-color: #ffcccc">                ! Downward direct-beam and net flux (F_net) at the base of each layer:</a>
+   857) <a name="l857" style="background-color: #ffcccc">                do i=snl_top,snl_btm,1</a>
+   858) <a name="l858" style="background-color: #ffcccc">                   F_direct(i) = mu_not*pi*flx_slrd_lcl(bnd_idx)*exp(-(tau_clm(i)+tau_star(i))/mu_not)</a>
+   859) <a name="l859" style="background-color: #ffcccc">                   F_net(i)    = (Y(2*i-1)*(e1(i)-e3(i))) + (Y(2*i)*(e2(i)-e4(i))) + &amp;</a>
+   860) <a name="l860" style="background-color: #ffcccc">                                 C_pls_btm(i) - C_mns_btm(i) - F_direct(i)</a>
+   861) <a name="l861" style="background-color: #ffcccc">                enddo</a>
+   862) <a name="l862" style="background-color: #ffcccc"></a>
+   863) <a name="l863" style="background-color: #ffcccc">                ! Upward flux at snowpack top:</a>
+   864) <a name="l864" style="background-color: #ffcccc">                F_sfc_pls = (Y(2*snl_lcl+1)*(exp(-lambda(snl_top)*tau_star(snl_top))+ &amp;</a>
+   865) <a name="l865" style="background-color: #ffcccc">                            GAMMA(snl_top))) + (Y(2*snl_lcl+2)*(exp(-lambda(snl_top)* &amp;</a>
+   866) <a name="l866" style="background-color: #ffcccc">                            tau_star(snl_top))-GAMMA(snl_top))) + C_pls_top(snl_top)</a>
+   867) <a name="l867" style="background-color: #ffcccc"></a>
+   868) <a name="l868" style="background-color: #ffcccc">                ! Net flux at bottom = absorbed radiation by underlying surface:</a>
+   869) <a name="l869" style="background-color: #ffcccc">                F_btm_net = -F_net(snl_btm)</a>
+   870) <a name="l870" style="background-color: #ffcccc"></a>
+   871) <a name="l871" style="background-color: #ffcccc"></a>
+   872) <a name="l872" style="background-color: #ffcccc">                ! Bulk column albedo and surface net flux</a>
+   873) <a name="l873" style="background-color: #ffcccc">                albedo    = F_sfc_pls/((mu_not*pi*flx_slrd_lcl(bnd_idx))+flx_slri_lcl(bnd_idx))</a>
+   874) <a name="l874" style="background-color: #ffcccc">                F_sfc_net = F_sfc_pls - ((mu_not*pi*flx_slrd_lcl(bnd_idx))+flx_slri_lcl(bnd_idx))</a>
+   875) <a name="l875" style="background-color: #ffcccc"></a>
+   876) <a name="l876" style="background-color: #ffcccc">                trip = 0</a>
+   877) <a name="l877" style="background-color: #ffcccc">                ! Absorbed flux in each layer</a>
+   878) <a name="l878" style="background-color: #ffcccc">                do i=snl_top,snl_btm,1</a>
+   879) <a name="l879" style="background-color: #ffcccc">                   if(i==snl_top) then</a>
+   880) <a name="l880" style="background-color: #ffcccc">                      F_abs(i) = F_net(i)-F_sfc_net</a>
+   881) <a name="l881" style="background-color: #ffcccc">                   else</a>
+   882) <a name="l882" style="background-color: #ffcccc">                      F_abs(i) = F_net(i)-F_net(i-1)</a>
+   883) <a name="l883" style="background-color: #ffcccc">                   endif</a>
+   884) <a name="l884" style="background-color: #ffcccc">                   flx_abs_lcl(i,bnd_idx) = F_abs(i)</a>
+   885) <a name="l885" style="background-color: #ffcccc">                   </a>
+   886) <a name="l886" style="background-color: #ffcccc"></a>
+   887) <a name="l887" style="background-color: #ffcccc">                   ! ERROR check: negative absorption</a>
+   888) <a name="l888" style="background-color: #ffcccc">                   if (flx_abs_lcl(i,bnd_idx) &lt; -0.00001) then</a>
+   889) <a name="l889" style="background-color: #ffcccc">                      trip = 1</a>
+   890) <a name="l890" style="background-color: #ffcccc">                   endif</a>
+   891) <a name="l891" style="background-color: #ffcccc">                enddo</a>
+   892) <a name="l892" style="background-color: #ffcccc">                </a>
+   893) <a name="l893" style="background-color: #ffcccc">                flx_abs_lcl(1,bnd_idx) = F_btm_net</a>
+   894) <a name="l894" style="background-color: #ffcccc">             </a>
+   895) <a name="l895" style="background-color: #ffcccc">                if (flg_nosnl == 1) then</a>
+   896) <a name="l896" style="background-color: #ffcccc">                   ! If there are no snow layers (but still snow), all absorbed energy must be in top soil layer</a>
+   897) <a name="l897" style="background-color: #ffcccc">                   !flx_abs_lcl(:,bnd_idx) = 0._r8</a>
+   898) <a name="l898" style="background-color: #ffcccc">                   !flx_abs_lcl(1,bnd_idx) = F_abs(0) + F_btm_net</a>
+   899) <a name="l899" style="background-color: #ffcccc"></a>
+   900) <a name="l900" style="background-color: #ffcccc">                   ! changed on 20070408:</a>
+   901) <a name="l901" style="background-color: #ffcccc">                   ! OK to put absorbed energy in the fictitous snow layer because routine SurfaceRadiation</a>
+   902) <a name="l902" style="background-color: #ffcccc">                   ! handles the case of no snow layers. Then, if a snow layer is addded between now and</a>
+   903) <a name="l903" style="background-color: #ffcccc">                   ! SurfaceRadiation (called in Hydrology1), absorbed energy will be properly distributed.</a>
+   904) <a name="l904" style="background-color: #ffcccc">                   flx_abs_lcl(0,bnd_idx) = F_abs(0)</a>
+   905) <a name="l905" style="background-color: #ffcccc">                   flx_abs_lcl(1,bnd_idx) = F_btm_net</a>
+   906) <a name="l906" style="background-color: #ffcccc">                endif</a>
+   907) <a name="l907" style="background-color: #ffcccc">                </a>
+   908) <a name="l908" style="background-color: #ffcccc">                !Underflow check (we've already tripped the error condition above)</a>
+   909) <a name="l909" style="background-color: #ffcccc">                do i=snl_top,1,1</a>
+   910) <a name="l910" style="background-color: #ffcccc">                   if (flx_abs_lcl(i,bnd_idx) &lt; 0._r8) then</a>
+   911) <a name="l911" style="background-color: #ffcccc">                      flx_abs_lcl(i,bnd_idx) = 0._r8</a>
+   912) <a name="l912" style="background-color: #ffcccc">                   endif</a>
+   913) <a name="l913" style="background-color: #ffcccc">                enddo</a>
+   914) <a name="l914" style="background-color: #ffcccc"></a>
+   915) <a name="l915" style="background-color: #ffcccc">                F_abs_sum = 0._r8</a>
+   916) <a name="l916" style="background-color: #ffcccc">                do i=snl_top,snl_btm,1</a>
+   917) <a name="l917" style="background-color: #ffcccc">                   F_abs_sum = F_abs_sum + F_abs(i)</a>
+   918) <a name="l918" style="background-color: #ffcccc">                enddo</a>
+   919) <a name="l919" style="background-color: #ffcccc"></a>
+   920) <a name="l920" style="background-color: #ffcccc"></a>
+   921) <a name="l921" style="background-color: #ffcccc">                !ERROR check: absorption greater than incident flux</a>
+   922) <a name="l922" style="background-color: #ffcccc">                ! (should make condition more generic than &quot;1._r8&quot;)</a>
+   923) <a name="l923" style="background-color: #ffcccc">                if (F_abs_sum &gt; 1._r8) then</a>
+   924) <a name="l924" style="background-color: #ffcccc">                   trip = 1</a>
+   925) <a name="l925" style="background-color: #ffcccc">                endif</a>
+   926) <a name="l926" style="background-color: #ffcccc"></a>
+   927) <a name="l927" style="background-color: #ffcccc">                !ERROR check:</a>
+   928) <a name="l928" style="background-color: #ffcccc">                if ((albedo &lt; 0._r8).and.(trip==0)) then</a>
+   929) <a name="l929" style="background-color: #ffcccc">                   trip = 1</a>
+   930) <a name="l930" style="background-color: #ffcccc">                endif</a>
+   931) <a name="l931" style="background-color: #ffcccc">                </a>
+   932) <a name="l932" style="background-color: #ffcccc">                ! Set conditions for redoing RT calculation </a>
+   933) <a name="l933" style="background-color: #ffcccc">                if ((trip == 1).and.(flg_dover == 1)) then</a>
+   934) <a name="l934" style="background-color: #ffcccc">                   flg_dover = 2</a>
+   935) <a name="l935" style="background-color: #ffcccc">                elseif ((trip == 1).and.(flg_dover == 2)) then</a>
+   936) <a name="l936" style="background-color: #ffcccc">                   flg_dover = 3</a>
+   937) <a name="l937" style="background-color: #ffcccc">                elseif ((trip == 1).and.(flg_dover == 3)) then</a>
+   938) <a name="l938" style="background-color: #ffcccc">                   flg_dover = 4</a>
+   939) <a name="l939" style="background-color: #ffcccc">                elseif((trip == 1).and.(flg_dover == 4).and.(err_idx &lt; 20)) then</a>
+   940) <a name="l940" style="background-color: #ffcccc">                   flg_dover = 3</a>
+   941) <a name="l941" style="background-color: #ffcccc">                   err_idx = err_idx + 1</a>
+   942) <a name="l942" style="background-color: #ffcccc">                elseif((trip == 1).and.(flg_dover == 4).and.(err_idx &gt;= 20)) then</a>
+   943) <a name="l943" style="background-color: #ffcccc">                   flg_dover = 0</a>
+   944) <a name="l944" style="background-color: #ffcccc">                   write(iulog,*) &quot;SNICAR ERROR: FOUND A WORMHOLE. STUCK IN INFINITE LOOP! Called from: &quot;, flg_snw_ice</a>
+   945) <a name="l945" style="background-color: #ffcccc">                   write(iulog,*) &quot;SNICAR STATS: snw_rds(0)= &quot;, snw_rds(c_idx,0)</a>
+   946) <a name="l946" style="background-color: #ffcccc">                   write(iulog,*) &quot;SNICAR STATS: L_snw(0)= &quot;, L_snw(0)</a>
+   947) <a name="l947" style="background-color: #ffcccc">                   write(iulog,*) &quot;SNICAR STATS: h2osno= &quot;, h2osno_lcl, &quot; snl= &quot;, snl_lcl</a>
+   948) <a name="l948" style="background-color: #ffcccc">                   write(iulog,*) &quot;SNICAR STATS: soot1(0)= &quot;, mss_cnc_aer_lcl(0,1)</a>
+   949) <a name="l949" style="background-color: #ffcccc">                   write(iulog,*) &quot;SNICAR STATS: soot2(0)= &quot;, mss_cnc_aer_lcl(0,2)</a>
+   950) <a name="l950" style="background-color: #ffcccc">                   write(iulog,*) &quot;SNICAR STATS: dust1(0)= &quot;, mss_cnc_aer_lcl(0,3)</a>
+   951) <a name="l951" style="background-color: #ffcccc">                   write(iulog,*) &quot;SNICAR STATS: dust2(0)= &quot;, mss_cnc_aer_lcl(0,4)</a>
+   952) <a name="l952" style="background-color: #ffcccc">                   write(iulog,*) &quot;SNICAR STATS: dust3(0)= &quot;, mss_cnc_aer_lcl(0,5)</a>
+   953) <a name="l953" style="background-color: #ffcccc">                   write(iulog,*) &quot;SNICAR STATS: dust4(0)= &quot;, mss_cnc_aer_lcl(0,6)</a>
+   954) <a name="l954" style="background-color: #ffcccc">                  </a>
+   955) <a name="l955" style="background-color: #ffcccc">                   call endrun()</a>
+   956) <a name="l956" style="background-color: #ffcccc">                else</a>
+   957) <a name="l957" style="background-color: #ffcccc">                   flg_dover = 0</a>
+   958) <a name="l958" style="background-color: #ffcccc">                endif</a>
+   959) <a name="l959" style="background-color: #ffcccc"></a>
+   960) <a name="l960" style="background-color: #ffcccc">             enddo !enddo while (flg_dover &gt; 0)</a>
+   961) <a name="l961" style="background-color: #ffcccc">             </a>
+   962) <a name="l962" style="background-color: #ffcccc">             ! Energy conservation check:</a>
+   963) <a name="l963" style="background-color: #ffcccc">             ! Incident direct+diffuse radiation equals (absorbed+bulk_transmitted+bulk_reflected)</a>
+   964) <a name="l964" style="background-color: #ffcccc">             energy_sum = (mu_not*pi*flx_slrd_lcl(bnd_idx)) + flx_slri_lcl(bnd_idx) - (F_abs_sum + F_btm_net + F_sfc_pls)</a>
+   965) <a name="l965" style="background-color: #ffcccc">             if (abs(energy_sum) &gt; 0.00001_r8) then</a>
+   966) <a name="l966" style="background-color: #ffcccc">                write (iulog,&quot;(a,e12.6,a,i6,a,i6)&quot;) &quot;SNICAR ERROR: Energy conservation error of : &quot;, energy_sum, &amp;</a>
+   967) <a name="l967" style="background-color: #ffcccc">                             &quot; at timestep: &quot;, nstep, &quot; at column: &quot;, c_idx</a>
+   968) <a name="l968" style="background-color: #ffcccc">                call endrun()</a>
+   969) <a name="l969" style="background-color: #ffcccc">             endif</a>
+   970) <a name="l970" style="background-color: #ffcccc"></a>
+   971) <a name="l971" style="background-color: #ffcccc">             albout_lcl(bnd_idx) = albedo</a>
+   972) <a name="l972" style="background-color: #ffcccc"></a>
+   973) <a name="l973" style="background-color: #ffcccc"></a>
+   974) <a name="l974" style="background-color: #ffcccc">             ! Check that albedo is less than 1</a>
+   975) <a name="l975" style="background-color: #ffcccc">             if (albout_lcl(bnd_idx) &gt; 1.0) then</a>
+   976) <a name="l976" style="background-color: #ffcccc"></a>
+   977) <a name="l977" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR ERROR: Albedo &gt; 1.0 at c: &quot;, c_idx, &quot; NSTEP= &quot;,nstep</a>
+   978) <a name="l978" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: bnd_idx= &quot;,bnd_idx</a>
+   979) <a name="l979" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: albout_lcl(bnd)= &quot;,albout_lcl(bnd_idx), &quot; albsfc_lcl(bnd_idx)= &quot;,albsfc_lcl(bnd_idx)</a>
+   980) <a name="l980" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: landtype= &quot;, sfctype</a>
+   981) <a name="l981" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: h2osno= &quot;, h2osno_lcl, &quot; snl= &quot;, snl_lcl</a>
+   982) <a name="l982" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: coszen= &quot;, coszen(c_idx), &quot; flg_slr= &quot;, flg_slr_in</a>
+   983) <a name="l983" style="background-color: #ffcccc"></a>
+   984) <a name="l984" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: soot(-4)= &quot;, mss_cnc_aer_lcl(-4,1)</a>
+   985) <a name="l985" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: soot(-3)= &quot;, mss_cnc_aer_lcl(-3,1)</a>
+   986) <a name="l986" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: soot(-2)= &quot;, mss_cnc_aer_lcl(-2,1)</a>
+   987) <a name="l987" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: soot(-1)= &quot;, mss_cnc_aer_lcl(-1,1)</a>
+   988) <a name="l988" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: soot(0)= &quot;, mss_cnc_aer_lcl(0,1)</a>
+   989) <a name="l989" style="background-color: #ffcccc"></a>
+   990) <a name="l990" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: L_snw(-4)= &quot;, L_snw(-4)</a>
+   991) <a name="l991" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: L_snw(-3)= &quot;, L_snw(-3)</a>
+   992) <a name="l992" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: L_snw(-2)= &quot;, L_snw(-2)</a>
+   993) <a name="l993" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: L_snw(-1)= &quot;, L_snw(-1)</a>
+   994) <a name="l994" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: L_snw(0)= &quot;, L_snw(0)</a>
+   995) <a name="l995" style="background-color: #ffcccc"></a>
+   996) <a name="l996" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: snw_rds(-4)= &quot;, snw_rds(c_idx,-4)</a>
+   997) <a name="l997" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: snw_rds(-3)= &quot;, snw_rds(c_idx,-3)</a>
+   998) <a name="l998" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: snw_rds(-2)= &quot;, snw_rds(c_idx,-2)</a>
+   999) <a name="l999" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: snw_rds(-1)= &quot;, snw_rds(c_idx,-1)</a>
+  1000) <a name="l1000" style="background-color: #ffcccc">                write (iulog,*) &quot;SNICAR STATS: snw_rds(0)= &quot;, snw_rds(c_idx,0)</a>
+  1001) <a name="l1001" style="background-color: #ffcccc">                </a>
+  1002) <a name="l1002" style="background-color: #ffcccc">                call endrun()</a>
+  1003) <a name="l1003" style="background-color: #ffcccc">             endif</a>
+  1004) <a name="l1004" style="background-color: #ffcccc">             </a>
+  1005) <a name="l1005" style="background-color: #ffcccc">          enddo   ! loop over wvl bands</a>
+  1006) <a name="l1006" style="background-color: #ffcccc"></a>
+  1007) <a name="l1007" style="background-color: #ffcccc"></a>
+  1008) <a name="l1008" style="background-color: #ffcccc">          ! Weight output NIR albedo appropriately</a>
+  1009) <a name="l1009" style="background-color: #ffcccc">          albout(c_idx,1) = albout_lcl(1)</a>
+  1010) <a name="l1010" style="background-color: #ffcccc">          flx_sum         = 0._r8</a>
+  1011) <a name="l1011" style="background-color: #ffcccc">          do bnd_idx= nir_bnd_bgn,nir_bnd_end</a>
+  1012) <a name="l1012" style="background-color: #ffcccc">             flx_sum = flx_sum + flx_wgt(bnd_idx)*albout_lcl(bnd_idx)</a>
+  1013) <a name="l1013" style="background-color: #ffcccc">          end do</a>
+  1014) <a name="l1014" style="background-color: #ffcccc">          albout(c_idx,2) = flx_sum / sum(flx_wgt(nir_bnd_bgn:nir_bnd_end))</a>
+  1015) <a name="l1015" style="background-color: #ffcccc"></a>
+  1016) <a name="l1016" style="background-color: #ffcccc">          ! Weight output NIR absorbed layer fluxes (flx_abs) appropriately</a>
+  1017) <a name="l1017" style="background-color: #ffcccc">          flx_abs(c_idx,:,1) = flx_abs_lcl(:,1)</a>
+  1018) <a name="l1018" style="background-color: #ffcccc">          do i=snl_top,1,1</a>
+  1019) <a name="l1019" style="background-color: #ffcccc">             flx_sum = 0._r8</a>
+  1020) <a name="l1020" style="background-color: #ffcccc">             do bnd_idx= nir_bnd_bgn,nir_bnd_end</a>
+  1021) <a name="l1021" style="background-color: #ffcccc">                flx_sum = flx_sum + flx_wgt(bnd_idx)*flx_abs_lcl(i,bnd_idx)</a>
+  1022) <a name="l1022" style="background-color: #ffcccc">             enddo</a>
+  1023) <a name="l1023" style="background-color: #ffcccc">             flx_abs(c_idx,i,2) = flx_sum / sum(flx_wgt(nir_bnd_bgn:nir_bnd_end))          </a>
+  1024) <a name="l1024" style="background-color: #ffcccc">          end do</a>
+  1025) <a name="l1025" style="background-color: #ffcccc"></a>
+  1026) <a name="l1026" style="background-color: #ffcccc">       ! If snow &lt; minimum_snow, but &gt; 0, and there is sun, set albedo to underlying surface albedo</a>
+  1027) <a name="l1027" style="background-color: #ffcccc">       elseif ( (coszen(c_idx) &gt; 0._r8) .and. (h2osno_lcl &lt; min_snw) .and. (h2osno_lcl &gt; 0._r8) ) then</a>
+  1028) <a name="l1028" style="background-color: #ffcccc">          albout(c_idx,1) = albsfc(c_idx,1)</a>
+  1029) <a name="l1029" style="background-color: #ffcccc">          albout(c_idx,2) = albsfc(c_idx,2)</a>
+  1030) <a name="l1030" style="background-color: #ffcccc"></a>
+  1031) <a name="l1031" style="background-color: #ffcccc">       ! There is either zero snow, or no sun</a>
+  1032) <a name="l1032" style="background-color: #ffcccc">       else</a>
+  1033) <a name="l1033" style="background-color: #ffcccc">          albout(c_idx,1) = 0._r8</a>
+  1034) <a name="l1034" style="background-color: #ffcccc">          albout(c_idx,2) = 0._r8</a>
+  1035) <a name="l1035" style="background-color: #ffcccc">       endif    ! if column has snow and coszen &gt; 0</a>
+  1036) <a name="l1036" style="background-color: #ffcccc"></a>
+  1037) <a name="l1037" style="background-color: #ffcccc">    enddo    ! loop over all columns</a>
+  1038) <a name="l1038" style="background-color: #ffcccc"></a>
+  1039) <a name="l1039" style="background-color: #ffcccc"></a>
+  1040) <a name="l1040" style="background-color: #ffcccc">  end subroutine SNICAR_RT</a>
+  1041) <a name="l1041" style="background-color: #ffffff"></a>
+  1042) <a name="l1042" style="background-color: #ffffff"></a>
+  1043) <a name="l1043" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1044) <a name="l1044" style="background-color: #ffffff">!BOP</a>
+  1045) <a name="l1045" style="background-color: #ffffff">!</a>
+  1046) <a name="l1046" style="background-color: #ffffff">! !IROUTINE: SnowAge_grain</a>
+  1047) <a name="l1047" style="background-color: #ffffff">!</a>
+  1048) <a name="l1048" style="background-color: #ffffff">! !INTERFACE:</a>
+  1049) <a name="l1049" style="background-color: #ffffff">  subroutine SnowAge_grain(lbc, ubc, num_snowc, filter_snowc, num_nosnowc, filter_nosnowc)</a>
+  1050) <a name="l1050" style="background-color: #ffffff">    !</a>
+  1051) <a name="l1051" style="background-color: #ffffff">    ! !DESCRIPTION:</a>
+  1052) <a name="l1052" style="background-color: #ffffff">    ! Updates the snow effective grain size (radius). </a>
+  1053) <a name="l1053" style="background-color: #ffffff">    ! Contributions to grain size evolution are from:</a>
+  1054) <a name="l1054" style="background-color: #ffffff">    !   1. vapor redistribution (dry snow) </a>
+  1055) <a name="l1055" style="background-color: #ffffff">    !   2. liquid water redistribution (wet snow)</a>
+  1056) <a name="l1056" style="background-color: #ffffff">    !   3. re-freezing of liquid water</a>
+  1057) <a name="l1057" style="background-color: #ffffff">    ! </a>
+  1058) <a name="l1058" style="background-color: #ffffff">    ! Vapor redistribution: Method is to retrieve 3 best-bit parameters that</a>
+  1059) <a name="l1059" style="background-color: #ffffff">    ! depend on snow temperature, temperature gradient, and density,</a>
+  1060) <a name="l1060" style="background-color: #ffffff">    ! that are derived from the microphysical model described in: </a>
+  1061) <a name="l1061" style="background-color: #ffffff">    ! Flanner and Zender (2006), Linking snowpack microphysics and albedo</a>
+  1062) <a name="l1062" style="background-color: #ffffff">    ! evolution, J. Geophys. Res., 111, D12208, doi:10.1029/2005JD006834. </a>
+  1063) <a name="l1063" style="background-color: #ffffff">    ! The parametric equation has the form: </a>
+  1064) <a name="l1064" style="background-color: #ffffff">    ! dr/dt = drdt_0*(tau/(dr_fresh+tau))^(1/kappa), where:</a>
+  1065) <a name="l1065" style="background-color: #ffffff">    !   r is the effective radius,</a>
+  1066) <a name="l1066" style="background-color: #ffffff">    !   tau and kappa are best-fit parameters,</a>
+  1067) <a name="l1067" style="background-color: #ffffff">    !   drdt_0 is the initial rate of change of effective radius, and</a>
+  1068) <a name="l1068" style="background-color: #ffffff">    !   dr_fresh is the difference between the current and fresh snow states </a>
+  1069) <a name="l1069" style="background-color: #ffffff">    !  (r_current - r_fresh).</a>
+  1070) <a name="l1070" style="background-color: #ffffff">    !</a>
+  1071) <a name="l1071" style="background-color: #ffffff">    ! Liquid water redistribution: Apply the grain growth function from:</a>
+  1072) <a name="l1072" style="background-color: #ffffff">    !   Brun, E. (1989), Investigation of wet-snow metamorphism in respect of </a>
+  1073) <a name="l1073" style="background-color: #ffffff">    !   liquid-water content, Annals of Glaciology, 13, 22-26.</a>
+  1074) <a name="l1074" style="background-color: #ffffff">    !   There are two parameters that describe the grain growth rate as </a>
+  1075) <a name="l1075" style="background-color: #ffffff">    !   a function of snow liquid water content (LWC). The &quot;LWC=0&quot; parameter</a>
+  1076) <a name="l1076" style="background-color: #ffffff">    !   is zeroed here because we are accounting for dry snowing with a </a>
+  1077) <a name="l1077" style="background-color: #ffffff">    !   different representation</a>
+  1078) <a name="l1078" style="background-color: #ffffff">    !</a>
+  1079) <a name="l1079" style="background-color: #ffffff">    ! Re-freezing of liquid water: Assume that re-frozen liquid water clumps</a>
+  1080) <a name="l1080" style="background-color: #ffffff">    !   into an arbitrarily large effective grain size (snw_rds_refrz). </a>
+  1081) <a name="l1081" style="background-color: #ffffff">    !   The phenomenon is observed (Grenfell), but so far unquantified, as far as </a>
+  1082) <a name="l1082" style="background-color: #ffffff">    !   I am aware.</a>
+  1083) <a name="l1083" style="background-color: #ffffff">    !</a>
+  1084) <a name="l1084" style="background-color: #ffffff">    !</a>
+  1085) <a name="l1085" style="background-color: #ffffff">    ! !USES:</a>
+  1086) <a name="l1086" style="background-color: #ffffff">    use clmtype</a>
+  1087) <a name="l1087" style="background-color: #ffffff">    use clm_time_manager , only : get_step_size, get_nstep</a>
+  1088) <a name="l1088" style="background-color: #ffffff">    use clm_varpar       , only : nlevsno</a>
+  1089) <a name="l1089" style="background-color: #ffffff">    use clm_varcon       , only : spval</a>
+  1090) <a name="l1090" style="background-color: #ffffff">    use abortutils       , only : endrun</a>
+  1091) <a name="l1091" style="background-color: #ffffff">    use shr_const_mod    , only : SHR_CONST_RHOICE, SHR_CONST_PI</a>
+  1092) <a name="l1092" style="background-color: #ffffff">    !</a>
+  1093) <a name="l1093" style="background-color: #ffffff">    ! !ARGUMENTS:</a>
+  1094) <a name="l1094" style="background-color: #ffffff">    implicit none</a>
+  1095) <a name="l1095" style="background-color: #ffffff">    integer, intent(in) :: lbc, ubc                  ! column bounds</a>
+  1096) <a name="l1096" style="background-color: #ffffff">    integer, intent(in) :: num_snowc                 ! number of column snow points in column filter</a>
+  1097) <a name="l1097" style="background-color: #ffffff">    integer, intent(in) :: filter_snowc(ubc-lbc+1)   ! column filter for snow points</a>
+  1098) <a name="l1098" style="background-color: #ffffff">    integer, intent(in) :: num_nosnowc               ! number of column non-snow points in column filter</a>
+  1099) <a name="l1099" style="background-color: #ffffff">    integer, intent(in) :: filter_nosnowc(ubc-lbc+1) ! column filter for non-snow points</a>
+  1100) <a name="l1100" style="background-color: #ffffff">    !</a>
+  1101) <a name="l1101" style="background-color: #ffffff">    !</a>
+  1102) <a name="l1102" style="background-color: #ffffff">    ! !CALLED FROM: clm_driver1</a>
+  1103) <a name="l1103" style="background-color: #ffffff">    !</a>
+  1104) <a name="l1104" style="background-color: #ffffff"></a>
+  1105) <a name="l1105" style="background-color: #ffffff">    ! !LOCAL VARIABLES:</a>
+  1106) <a name="l1106" style="background-color: #ffffff">    !</a>
+  1107) <a name="l1107" style="background-color: #ffffff">    ! local pointers to implicit arguments</a>
+  1108) <a name="l1108" style="background-color: #ffffff">    !</a>
+  1109) <a name="l1109" style="background-color: #ffffff"></a>
+  1110) <a name="l1110" style="background-color: #ffffff">    real(r8), pointer :: t_soisno(:,:)         ! soil and snow temperature (col,lyr) [K]</a>
+  1111) <a name="l1111" style="background-color: #ffffff">    integer,  pointer :: snl(:)                ! negative number of snow layers (col) [nbr]</a>
+  1112) <a name="l1112" style="background-color: #ffffff">    real(r8), pointer :: t_grnd(:)             ! ground temperature (col) [K]</a>
+  1113) <a name="l1113" style="background-color: #ffffff">    real(r8), pointer :: dz(:,:)               ! layer thickness (col,lyr) [m]</a>
+  1114) <a name="l1114" style="background-color: #ffffff">    real(r8), pointer :: h2osno(:)             ! snow water (col) [mm H2O]</a>
+  1115) <a name="l1115" style="background-color: #ffffff">    real(r8), pointer :: snw_rds(:,:)          ! effective grain radius (col,lyr) [microns, m-6]</a>
+  1116) <a name="l1116" style="background-color: #ffffff">    real(r8), pointer :: snw_rds_top(:)        ! effective grain radius, top layer (col) [microns, m-6]</a>
+  1117) <a name="l1117" style="background-color: #ffffff">    real(r8), pointer :: sno_liq_top(:)        ! liquid water fraction (mass) in top snow layer (col) [frc]</a>
+  1118) <a name="l1118" style="background-color: #ffffff">    real(r8), pointer :: h2osoi_liq(:,:)       ! liquid water content (col,lyr) [kg m-2]</a>
+  1119) <a name="l1119" style="background-color: #ffffff">    real(r8), pointer :: h2osoi_ice(:,:)       ! ice content (col,lyr) [kg m-2]</a>
+  1120) <a name="l1120" style="background-color: #ffffff">    real(r8), pointer :: snot_top(:)           ! snow temperature in top layer (col) [K]</a>
+  1121) <a name="l1121" style="background-color: #ffffff">    real(r8), pointer :: dTdz_top(:)           ! temperature gradient in top layer (col) [K m-1]</a>
+  1122) <a name="l1122" style="background-color: #ffffff">    real(r8), pointer :: qflx_snow_grnd_col(:) ! snow on ground after interception (col) [kg m-2 s-1]</a>
+  1123) <a name="l1123" style="background-color: #ffffff">    real(r8), pointer :: qflx_snwcp_ice(:)     ! excess precipitation due to snow capping [kg m-2 s-1]</a>
+  1124) <a name="l1124" style="background-color: #ffffff">    real(r8), pointer :: qflx_snofrz_lyr(:,:)  ! snow freezing rate (col,lyr) [kg m-2 s-1]</a>
+  1125) <a name="l1125" style="background-color: #ffffff">    logical , pointer :: do_capsnow(:)         ! true =&gt; do snow capping</a>
+  1126) <a name="l1126" style="background-color: #ffffff"> </a>
+  1127) <a name="l1127" style="background-color: #ffffff">    !</a>
+  1128) <a name="l1128" style="background-color: #ffffff">    ! !OTHER LOCAL VARIABLES:</a>
+  1129) <a name="l1129" style="background-color: #ffffff">    !</a>
+  1130) <a name="l1130" style="background-color: #ffffff">    integer :: snl_top                      ! top snow layer index [idx]</a>
+  1131) <a name="l1131" style="background-color: #ffffff">    integer :: snl_btm                      ! bottom snow layer index [idx]</a>
+  1132) <a name="l1132" style="background-color: #ffffff">    integer :: i                            ! layer index [idx]</a>
+  1133) <a name="l1133" style="background-color: #ffffff">    integer :: c_idx                        ! column index [idx]</a>
+  1134) <a name="l1134" style="background-color: #ffffff">    integer :: fc                           ! snow column filter index [idx]</a>
+  1135) <a name="l1135" style="background-color: #ffffff">    integer :: T_idx                        ! snow aging lookup table temperature index [idx]</a>
+  1136) <a name="l1136" style="background-color: #ffffff">    integer :: Tgrd_idx                     ! snow aging lookup table temperature gradient index [idx]</a>
+  1137) <a name="l1137" style="background-color: #ffffff">    integer :: rhos_idx                     ! snow aging lookup table snow density index [idx]</a>
+  1138) <a name="l1138" style="background-color: #ffffff">    real(r8) :: t_snotop                    ! temperature at upper layer boundary [K]</a>
+  1139) <a name="l1139" style="background-color: #ffffff">    real(r8) :: t_snobtm                    ! temperature at lower layer boundary [K]</a>
+  1140) <a name="l1140" style="background-color: #ffffff">    real(r8) :: dTdz(lbc:ubc,-nlevsno:0)    ! snow temperature gradient (col,lyr) [K m-1]</a>
+  1141) <a name="l1141" style="background-color: #ffffff">    real(r8) :: bst_tau                     ! snow aging parameter retrieved from lookup table [hour]</a>
+  1142) <a name="l1142" style="background-color: #ffffff">    real(r8) :: bst_kappa                   ! snow aging parameter retrieved from lookup table [unitless]</a>
+  1143) <a name="l1143" style="background-color: #ffffff">    real(r8) :: bst_drdt0                   ! snow aging parameter retrieved from lookup table [um hr-1]</a>
+  1144) <a name="l1144" style="background-color: #ffffff">    real(r8) :: dr                          ! incremental change in snow effective radius [um]</a>
+  1145) <a name="l1145" style="background-color: #ffffff">    real(r8) :: dr_wet                      ! incremental change in snow effective radius from wet growth [um]</a>
+  1146) <a name="l1146" style="background-color: #ffffff">    real(r8) :: dr_fresh                    ! difference between fresh snow r_e and current r_e [um]</a>
+  1147) <a name="l1147" style="background-color: #ffffff">    real(r8) :: newsnow                     ! fresh snowfall [kg m-2]</a>
+  1148) <a name="l1148" style="background-color: #ffffff">    real(r8) :: refrzsnow                   ! re-frozen snow [kg m-2]</a>
+  1149) <a name="l1149" style="background-color: #ffffff">    real(r8) :: frc_newsnow                 ! fraction of layer mass that is new snow [frc]</a>
+  1150) <a name="l1150" style="background-color: #ffffff">    real(r8) :: frc_oldsnow                 ! fraction of layer mass that is old snow [frc]</a>
+  1151) <a name="l1151" style="background-color: #ffffff">    real(r8) :: frc_refrz                   ! fraction of layer mass that is re-frozen snow [frc]</a>
+  1152) <a name="l1152" style="background-color: #ffffff">    real(r8) :: frc_liq                     ! fraction of layer mass that is liquid water[frc]    </a>
+  1153) <a name="l1153" style="background-color: #ffffff">    real(r8) :: dtime                       ! land model time step [sec]</a>
+  1154) <a name="l1154" style="background-color: #ffffff">    real(r8) :: rhos                        ! snow density [kg m-3]</a>
+  1155) <a name="l1155" style="background-color: #ffffff">    real(r8) :: h2osno_lyr                  ! liquid + solid H2O in snow layer [kg m-2]</a>
+  1156) <a name="l1156" style="background-color: #ffffff"></a>
+  1157) <a name="l1157" style="background-color: #ffffff"></a>
+  1158) <a name="l1158" style="background-color: #ffffff">    ! Assign local pointers to derived subtypes components (column-level)</a>
+  1159) <a name="l1159" style="background-color: #ffffff">    t_soisno           =&gt; ces%t_soisno</a>
+  1160) <a name="l1160" style="background-color: #ffffff">    snl                =&gt; cps%snl</a>
+  1161) <a name="l1161" style="background-color: #ffffff">    t_grnd             =&gt; ces%t_grnd</a>
+  1162) <a name="l1162" style="background-color: #ffffff">    dz                 =&gt; cps%dz</a>
+  1163) <a name="l1163" style="background-color: #ffffff">    h2osno             =&gt; cws%h2osno</a>
+  1164) <a name="l1164" style="background-color: #ffffff">    snw_rds            =&gt; cps%snw_rds</a>
+  1165) <a name="l1165" style="background-color: #ffffff">    h2osoi_liq         =&gt; cws%h2osoi_liq</a>
+  1166) <a name="l1166" style="background-color: #ffffff">    h2osoi_ice         =&gt; cws%h2osoi_ice</a>
+  1167) <a name="l1167" style="background-color: #ffffff">    snot_top           =&gt; cps%snot_top</a>
+  1168) <a name="l1168" style="background-color: #ffffff">    dTdz_top           =&gt; cps%dTdz_top</a>
+  1169) <a name="l1169" style="background-color: #ffffff">    snw_rds_top        =&gt; cps%snw_rds_top</a>
+  1170) <a name="l1170" style="background-color: #ffffff">    sno_liq_top        =&gt; cps%sno_liq_top</a>
+  1171) <a name="l1171" style="background-color: #ffffff">    qflx_snow_grnd_col =&gt; pwf_a%qflx_snow_grnd</a>
+  1172) <a name="l1172" style="background-color: #ffffff">    qflx_snwcp_ice     =&gt; pwf_a%qflx_snwcp_ice</a>
+  1173) <a name="l1173" style="background-color: #ffffff">    qflx_snofrz_lyr    =&gt; cwf%qflx_snofrz_lyr</a>
+  1174) <a name="l1174" style="background-color: #ffffff">    do_capsnow         =&gt; cps%do_capsnow</a>
+  1175) <a name="l1175" style="background-color: #ffffff">  </a>
+  1176) <a name="l1176" style="background-color: #ffffff"></a>
+  1177) <a name="l1177" style="background-color: #ffffff">    ! set timestep and step interval</a>
+  1178) <a name="l1178" style="background-color: #ffffff">    dtime = get_step_size()</a>
+  1179) <a name="l1179" style="background-color: #ffffff"></a>
+  1180) <a name="l1180" style="background-color: #ffffff">    ! loop over columns that have at least one snow layer</a>
+  1181) <a name="l1181" style="background-color: #ffffff">    do fc = 1, num_snowc</a>
+  1182) <a name="l1182" style="background-color: #ffffff">       c_idx = filter_snowc(fc)</a>
+  1183) <a name="l1183" style="background-color: #ffffff"></a>
+  1184) <a name="l1184" style="background-color: #ffffff">       snl_btm = 0</a>
+  1185) <a name="l1185" style="background-color: #ffffff">       snl_top = snl(c_idx) + 1</a>
+  1186) <a name="l1186" style="background-color: #ffffff"></a>
+  1187) <a name="l1187" style="background-color: #ffffff">       ! loop over snow layers</a>
+  1188) <a name="l1188" style="background-color: #ffffff">       do i=snl_top,snl_btm,1</a>
+  1189) <a name="l1189" style="background-color: #ffffff">          !</a>
+  1190) <a name="l1190" style="background-color: #ffffff">          !**********  1. DRY SNOW AGING  ***********</a>
+  1191) <a name="l1191" style="background-color: #ffffff">          !</a>
+  1192) <a name="l1192" style="background-color: #ffffff">          h2osno_lyr = h2osoi_liq(c_idx,i) + h2osoi_ice(c_idx,i)</a>
+  1193) <a name="l1193" style="background-color: #ffffff"></a>
+  1194) <a name="l1194" style="background-color: #ffffff">          ! temperature gradient</a>
+  1195) <a name="l1195" style="background-color: #ffffff">          if (i == snl_top) then </a>
+  1196) <a name="l1196" style="background-color: #ffffff">             ! top layer</a>
+  1197) <a name="l1197" style="background-color: #ffffff">             t_snotop = t_grnd(c_idx)</a>
+  1198) <a name="l1198" style="background-color: #ffffff">             t_snobtm = (t_soisno(c_idx,i+1)*dz(c_idx,i) + t_soisno(c_idx,i)*dz(c_idx,i+1)) / (dz(c_idx,i)+dz(c_idx,i+1))</a>
+  1199) <a name="l1199" style="background-color: #ffffff">          else</a>
+  1200) <a name="l1200" style="background-color: #ffffff">             t_snotop = (t_soisno(c_idx,i-1)*dz(c_idx,i) + t_soisno(c_idx,i)*dz(c_idx,i-1)) / (dz(c_idx,i)+dz(c_idx,i-1))</a>
+  1201) <a name="l1201" style="background-color: #ffffff">             t_snobtm = (t_soisno(c_idx,i+1)*dz(c_idx,i) + t_soisno(c_idx,i)*dz(c_idx,i+1)) / (dz(c_idx,i)+dz(c_idx,i+1))</a>
+  1202) <a name="l1202" style="background-color: #ffffff">          endif</a>
+  1203) <a name="l1203" style="background-color: #ffffff">          </a>
+  1204) <a name="l1204" style="background-color: #ffffff">          dTdz(c_idx,i) = abs((t_snotop - t_snobtm) / dz(c_idx,i))</a>
+  1205) <a name="l1205" style="background-color: #ffffff">          </a>
+  1206) <a name="l1206" style="background-color: #ffffff">          ! snow density</a>
+  1207) <a name="l1207" style="background-color: #ffffff">          rhos = (h2osoi_liq(c_idx,i)+h2osoi_ice(c_idx,i)) / dz(c_idx,i)</a>
+  1208) <a name="l1208" style="background-color: #ffffff"></a>
+  1209) <a name="l1209" style="background-color: #ffffff">          ! best-fit table indecies</a>
+  1210) <a name="l1210" style="background-color: #ffffff">          T_idx    = nint((t_soisno(c_idx,i)-223) / 5) + 1</a>
+  1211) <a name="l1211" style="background-color: #ffffff">          Tgrd_idx = nint(dTdz(c_idx,i) / 10) + 1</a>
+  1212) <a name="l1212" style="background-color: #ffffff">          rhos_idx = nint((rhos-50) / 50) + 1</a>
+  1213) <a name="l1213" style="background-color: #ffffff"></a>
+  1214) <a name="l1214" style="background-color: #ffffff">          ! boundary check:</a>
+  1215) <a name="l1215" style="background-color: #ffffff">          if (T_idx &lt; idx_T_min) then </a>
+  1216) <a name="l1216" style="background-color: #ffffff">             T_idx = idx_T_min</a>
+  1217) <a name="l1217" style="background-color: #ffffff">          endif</a>
+  1218) <a name="l1218" style="background-color: #ffffff">          if (T_idx &gt; idx_T_max) then </a>
+  1219) <a name="l1219" style="background-color: #ffffff">             T_idx = idx_T_max</a>
+  1220) <a name="l1220" style="background-color: #ffffff">          endif</a>
+  1221) <a name="l1221" style="background-color: #ffffff">          if (Tgrd_idx &lt; idx_Tgrd_min) then </a>
+  1222) <a name="l1222" style="background-color: #ffffff">             Tgrd_idx = idx_Tgrd_min</a>
+  1223) <a name="l1223" style="background-color: #ffffff">          endif</a>
+  1224) <a name="l1224" style="background-color: #ffffff">          if (Tgrd_idx &gt; idx_Tgrd_max) then </a>
+  1225) <a name="l1225" style="background-color: #ffffff">             Tgrd_idx = idx_Tgrd_max</a>
+  1226) <a name="l1226" style="background-color: #ffffff">          endif</a>
+  1227) <a name="l1227" style="background-color: #ffffff">          if (rhos_idx &lt; idx_rhos_min) then </a>
+  1228) <a name="l1228" style="background-color: #ffffff">             rhos_idx = idx_rhos_min</a>
+  1229) <a name="l1229" style="background-color: #ffffff">          endif</a>
+  1230) <a name="l1230" style="background-color: #ffffff">          if (rhos_idx &gt; idx_rhos_max) then </a>
+  1231) <a name="l1231" style="background-color: #ffffff">             rhos_idx = idx_rhos_max</a>
+  1232) <a name="l1232" style="background-color: #ffffff">          endif</a>
+  1233) <a name="l1233" style="background-color: #ffffff">             </a>
+  1234) <a name="l1234" style="background-color: #ffffff">          ! best-fit parameters</a>
+  1235) <a name="l1235" style="background-color: #ffffff">          bst_tau   = snowage_tau(rhos_idx,Tgrd_idx,T_idx)</a>
+  1236) <a name="l1236" style="background-color: #ffffff">          bst_kappa = snowage_kappa(rhos_idx,Tgrd_idx,T_idx)     </a>
+  1237) <a name="l1237" style="background-color: #ffffff">          bst_drdt0 = snowage_drdt0(rhos_idx,Tgrd_idx,T_idx)</a>
+  1238) <a name="l1238" style="background-color: #ffffff"></a>
+  1239) <a name="l1239" style="background-color: #ffffff"></a>
+  1240) <a name="l1240" style="background-color: #ffffff">          ! change in snow effective radius, using best-fit parameters</a>
+  1241) <a name="l1241" style="background-color: #ffffff">          dr_fresh = snw_rds(c_idx,i)-snw_rds_min</a>
+  1242) <a name="l1242" style="background-color: #ffffff">          dr = (bst_drdt0*(bst_tau/(dr_fresh+bst_tau))**(1/bst_kappa)) * (dtime/3600)</a>
+  1243) <a name="l1243" style="background-color: #ffffff">          </a>
+  1244) <a name="l1244" style="background-color: #ffffff"></a>
+  1245) <a name="l1245" style="background-color: #ffffff">          !</a>
+  1246) <a name="l1246" style="background-color: #ffffff">          !**********  2. WET SNOW AGING  ***********</a>
+  1247) <a name="l1247" style="background-color: #ffffff">          !</a>
+  1248) <a name="l1248" style="background-color: #ffffff">          ! We are assuming wet and dry evolution occur simultaneously, and </a>
+  1249) <a name="l1249" style="background-color: #ffffff">          ! the contributions from both can be summed. </a>
+  1250) <a name="l1250" style="background-color: #ffffff">          ! This is justified by setting the linear offset constant C1_liq_Brun89 to zero [Brun, 1989]</a>
+  1251) <a name="l1251" style="background-color: #ffffff">          </a>
+  1252) <a name="l1252" style="background-color: #ffffff">          ! liquid water faction</a>
+  1253) <a name="l1253" style="background-color: #ffffff">          frc_liq = min(0.1_r8, (h2osoi_liq(c_idx,i) / (h2osoi_liq(c_idx,i)+h2osoi_ice(c_idx,i))))</a>
+  1254) <a name="l1254" style="background-color: #ffffff"></a>
+  1255) <a name="l1255" style="background-color: #ffffff">          !dr_wet = 1E6_r8*(dtime*(C1_liq_Brun89 + C2_liq_Brun89*(frc_liq**(3))) / (4*SHR_CONST_PI*(snw_rds(c_idx,i)/1E6)**(2)))</a>
+  1256) <a name="l1256" style="background-color: #ffffff">          !simplified, units of microns:</a>
+  1257) <a name="l1257" style="background-color: #ffffff">          dr_wet = 1E18_r8*(dtime*(C2_liq_Brun89*(frc_liq**(3))) / (4*SHR_CONST_PI*snw_rds(c_idx,i)**(2)))</a>
+  1258) <a name="l1258" style="background-color: #ffffff"></a>
+  1259) <a name="l1259" style="background-color: #ffffff">          dr = dr + dr_wet</a>
+  1260) <a name="l1260" style="background-color: #ffffff">    </a>
+  1261) <a name="l1261" style="background-color: #ffffff">          !</a>
+  1262) <a name="l1262" style="background-color: #ffffff">          !**********  3. SNOWAGE SCALING (TURNED OFF BY DEFAULT)  *************</a>
+  1263) <a name="l1263" style="background-color: #ffffff">          !</a>
+  1264) <a name="l1264" style="background-color: #ffffff">          ! Multiply rate of change of effective radius by some constant, xdrdt</a>
+  1265) <a name="l1265" style="background-color: #ffffff">          if (flg_snoage_scl) then</a>
+  1266) <a name="l1266" style="background-color: #ffffff">             dr = dr*xdrdt</a>
+  1267) <a name="l1267" style="background-color: #ffffff">          endif</a>
+  1268) <a name="l1268" style="background-color: #ffffff"></a>
+  1269) <a name="l1269" style="background-color: #ffffff">          </a>
+  1270) <a name="l1270" style="background-color: #ffffff">          !</a>
+  1271) <a name="l1271" style="background-color: #ffffff">          !**********  4. INCREMENT EFFECTIVE RADIUS, ACCOUNTING FOR:  ***********</a>
+  1272) <a name="l1272" style="background-color: #ffffff">          !               DRY AGING</a>
+  1273) <a name="l1273" style="background-color: #ffffff">          !               WET AGING</a>
+  1274) <a name="l1274" style="background-color: #ffffff">          !               FRESH SNOW</a>
+  1275) <a name="l1275" style="background-color: #ffffff">          !               RE-FREEZING</a>
+  1276) <a name="l1276" style="background-color: #ffffff">          !</a>
+  1277) <a name="l1277" style="background-color: #ffffff">          ! new snowfall [kg/m2]</a>
+  1278) <a name="l1278" style="background-color: #ffffff">          if (do_capsnow(c_idx)) then</a>
+  1279) <a name="l1279" style="background-color: #ffffff">             newsnow = max(0._r8, (qflx_snwcp_ice(c_idx)*dtime))</a>
+  1280) <a name="l1280" style="background-color: #ffffff">          else</a>
+  1281) <a name="l1281" style="background-color: #ffffff">             newsnow = max(0._r8, (qflx_snow_grnd_col(c_idx)*dtime))</a>
+  1282) <a name="l1282" style="background-color: #ffffff">          endif</a>
+  1283) <a name="l1283" style="background-color: #ffffff"></a>
+  1284) <a name="l1284" style="background-color: #ffffff">          ! snow that has re-frozen [kg/m2]</a>
+  1285) <a name="l1285" style="background-color: #ffffff">          refrzsnow = max(0._r8, (qflx_snofrz_lyr(c_idx,i)*dtime))</a>
+  1286) <a name="l1286" style="background-color: #ffffff">          </a>
+  1287) <a name="l1287" style="background-color: #ffffff">          ! fraction of layer mass that is re-frozen</a>
+  1288) <a name="l1288" style="background-color: #ffffff">          frc_refrz = refrzsnow / h2osno_lyr</a>
+  1289) <a name="l1289" style="background-color: #ffffff">                  </a>
+  1290) <a name="l1290" style="background-color: #ffffff">          ! fraction of layer mass that is new snow</a>
+  1291) <a name="l1291" style="background-color: #ffffff">          if (i == snl_top) then</a>
+  1292) <a name="l1292" style="background-color: #ffffff">             frc_newsnow = newsnow / h2osno_lyr</a>
+  1293) <a name="l1293" style="background-color: #ffffff">          else</a>
+  1294) <a name="l1294" style="background-color: #ffffff">             frc_newsnow = 0._r8</a>
+  1295) <a name="l1295" style="background-color: #ffffff">          endif</a>
+  1296) <a name="l1296" style="background-color: #ffffff"></a>
+  1297) <a name="l1297" style="background-color: #ffffff">          if ((frc_refrz + frc_newsnow) &gt; 1._r8) then</a>
+  1298) <a name="l1298" style="background-color: #ffff99">             frc_refrz = frc_refrz / (frc_refrz + frc_newsnow)</a>
+  1299) <a name="l1299" style="background-color: #ffff99">             frc_newsnow = 1._r8 - frc_refrz</a>
+  1300) <a name="l1300" style="background-color: #ffff99">             frc_oldsnow = 0._r8</a>
+  1301) <a name="l1301" style="background-color: #ffff99">          else</a>
+  1302) <a name="l1302" style="background-color: #ffffff">             frc_oldsnow = 1._r8 - frc_refrz - frc_newsnow</a>
+  1303) <a name="l1303" style="background-color: #ffffff">          endif</a>
+  1304) <a name="l1304" style="background-color: #ffffff"></a>
+  1305) <a name="l1305" style="background-color: #ffffff">          ! mass-weighted mean of fresh snow, old snow, and re-frozen snow effective radius</a>
+  1306) <a name="l1306" style="background-color: #ffffff">          snw_rds(c_idx,i) = (snw_rds(c_idx,i)+dr)*frc_oldsnow + snw_rds_min*frc_newsnow + snw_rds_refrz*frc_refrz</a>
+  1307) <a name="l1307" style="background-color: #ffffff"></a>
+  1308) <a name="l1308" style="background-color: #ffffff">             </a>
+  1309) <a name="l1309" style="background-color: #ffffff">          !</a>
+  1310) <a name="l1310" style="background-color: #ffffff">          !**********  5. CHECK BOUNDARIES   ***********</a>
+  1311) <a name="l1311" style="background-color: #ffffff">          !</a>
+  1312) <a name="l1312" style="background-color: #ffffff">          ! boundary check</a>
+  1313) <a name="l1313" style="background-color: #ffffff">          if (snw_rds(c_idx,i) &lt; snw_rds_min) then</a>
+  1314) <a name="l1314" style="background-color: #ffffff">             snw_rds(c_idx,i) = snw_rds_min</a>
+  1315) <a name="l1315" style="background-color: #ffffff">          endif</a>
+  1316) <a name="l1316" style="background-color: #ffffff"></a>
+  1317) <a name="l1317" style="background-color: #ffffff">          if (snw_rds(c_idx,i) &gt; snw_rds_max) then</a>
+  1318) <a name="l1318" style="background-color: #ffffff">             snw_rds(c_idx,i) = snw_rds_max</a>
+  1319) <a name="l1319" style="background-color: #ffffff">          end if</a>
+  1320) <a name="l1320" style="background-color: #ffffff"></a>
+  1321) <a name="l1321" style="background-color: #ffffff">          ! set top layer variables for history files</a>
+  1322) <a name="l1322" style="background-color: #ffffff">          if (i == snl_top) then</a>
+  1323) <a name="l1323" style="background-color: #ffffff">             snot_top(c_idx)    = t_soisno(c_idx,i)</a>
+  1324) <a name="l1324" style="background-color: #ffffff">             dTdz_top(c_idx)    = dTdz(c_idx,i)</a>
+  1325) <a name="l1325" style="background-color: #ffffff">             snw_rds_top(c_idx) = snw_rds(c_idx,i)</a>
+  1326) <a name="l1326" style="background-color: #ffffff">             sno_liq_top(c_idx) = h2osoi_liq(c_idx,i) / (h2osoi_liq(c_idx,i)+h2osoi_ice(c_idx,i))</a>
+  1327) <a name="l1327" style="background-color: #ffffff">          endif</a>
+  1328) <a name="l1328" style="background-color: #ffffff"></a>
+  1329) <a name="l1329" style="background-color: #ffffff">       enddo</a>
+  1330) <a name="l1330" style="background-color: #ffffff">    enddo</a>
+  1331) <a name="l1331" style="background-color: #ffffff"></a>
+  1332) <a name="l1332" style="background-color: #ffffff">    ! Special case: snow on ground, but not enough to have defined a snow layer:</a>
+  1333) <a name="l1333" style="background-color: #ffffff">    !   set snw_rds to fresh snow grain size:</a>
+  1334) <a name="l1334" style="background-color: #ffffff">    do fc = 1, num_nosnowc</a>
+  1335) <a name="l1335" style="background-color: #ffffff">       c_idx = filter_nosnowc(fc)</a>
+  1336) <a name="l1336" style="background-color: #ffffff">       if (h2osno(c_idx) &gt; 0._r8) then</a>
+  1337) <a name="l1337" style="background-color: #ffffff">          snw_rds(c_idx,0) = snw_rds_min</a>
+  1338) <a name="l1338" style="background-color: #ffffff">       endif</a>
+  1339) <a name="l1339" style="background-color: #ffffff">    enddo</a>
+  1340) <a name="l1340" style="background-color: #ffffff">        </a>
+  1341) <a name="l1341" style="background-color: #ffffff">  end subroutine SnowAge_grain</a>
+  1342) <a name="l1342" style="background-color: #ffffff"></a>
+  1343) <a name="l1343" style="background-color: #ffffff">  subroutine SnowOptics_init( )</a>
+  1344) <a name="l1344" style="background-color: #ffffff">    use fileutils       , only : getfil</a>
+  1345) <a name="l1345" style="background-color: #ffffff">    use CLM_varctl      , only : fsnowoptics</a>
+  1346) <a name="l1346" style="background-color: #ffffff">    use spmdMod         , only : masterproc</a>
+  1347) <a name="l1347" style="background-color: #ffffff">    use ncdio_pio       , only : file_desc_t, ncd_io, ncd_pio_openfile, ncd_pio_closefile</a>
+  1348) <a name="l1348" style="background-color: #ffffff">   </a>
+  1349) <a name="l1349" style="background-color: #ffffff">    type(file_desc_t)  :: ncid                        ! netCDF file id</a>
+  1350) <a name="l1350" style="background-color: #ffffff">    character(len=256) :: locfn                       ! local filename</a>
+  1351) <a name="l1351" style="background-color: #ffffff">    character(len= 32) :: subname = 'SnowOptics_init' ! subroutine name</a>
+  1352) <a name="l1352" style="background-color: #ffffff">    integer            :: ier                         ! error status</a>
+  1353) <a name="l1353" style="background-color: #ffffff"></a>
+  1354) <a name="l1354" style="background-color: #ffffff"></a>
+  1355) <a name="l1355" style="background-color: #ffffff">    !</a>
+  1356) <a name="l1356" style="background-color: #ffffff">    ! Open optics file:</a>
+  1357) <a name="l1357" style="background-color: #ffffff">    if(masterproc) write(iulog,*) 'Attempting to read snow optical properties .....'</a>
+  1358) <a name="l1358" style="background-color: #ffffff">    call getfil (fsnowoptics, locfn, 0)</a>
+  1359) <a name="l1359" style="background-color: #ffffff">    call ncd_pio_openfile(ncid, locfn, 0)</a>
+  1360) <a name="l1360" style="background-color: #ffffff">    if(masterproc) write(iulog,*) subname,trim(fsnowoptics)</a>
+  1361) <a name="l1361" style="background-color: #ffffff"></a>
+  1362) <a name="l1362" style="background-color: #ffffff">    ! direct-beam snow Mie parameters:</a>
+  1363) <a name="l1363" style="background-color: #ffffff">    call ncd_io('ss_alb_ice_drc', ss_alb_snw_drc,            'read', ncid, posNOTonfile=.true.)</a>
+  1364) <a name="l1364" style="background-color: #ffffff">    call ncd_io( 'asm_prm_ice_drc',asm_prm_snw_drc,          'read', ncid, posNOTonfile=.true.)</a>
+  1365) <a name="l1365" style="background-color: #ffffff">    call ncd_io( 'ext_cff_mss_ice_drc', ext_cff_mss_snw_drc, 'read', ncid, posNOTonfile=.true.)</a>
+  1366) <a name="l1366" style="background-color: #ffffff"></a>
+  1367) <a name="l1367" style="background-color: #ffffff">    ! diffuse snow Mie parameters</a>
+  1368) <a name="l1368" style="background-color: #ffffff">    call ncd_io( 'ss_alb_ice_dfs', ss_alb_snw_dfs,           'read', ncid, posNOTonfile=.true.)</a>
+  1369) <a name="l1369" style="background-color: #ffffff">    call ncd_io( 'asm_prm_ice_dfs', asm_prm_snw_dfs,         'read', ncid, posNOTonfile=.true.)</a>
+  1370) <a name="l1370" style="background-color: #ffffff">    call ncd_io( 'ext_cff_mss_ice_dfs', ext_cff_mss_snw_dfs, 'read', ncid, posNOTonfile=.true.)</a>
+  1371) <a name="l1371" style="background-color: #ffffff"></a>
+  1372) <a name="l1372" style="background-color: #ffffff">    ! BC species 1 Mie parameters</a>
+  1373) <a name="l1373" style="background-color: #ffffff">    call ncd_io( 'ss_alb_bcphil', ss_alb_bc1,           'read', ncid, posNOTonfile=.true.)</a>
+  1374) <a name="l1374" style="background-color: #ffffff">    call ncd_io( 'asm_prm_bcphil', asm_prm_bc1,         'read', ncid, posNOTonfile=.true.)</a>
+  1375) <a name="l1375" style="background-color: #ffffff">    call ncd_io( 'ext_cff_mss_bcphil', ext_cff_mss_bc1, 'read', ncid, posNOTonfile=.true.)</a>
+  1376) <a name="l1376" style="background-color: #ffffff"></a>
+  1377) <a name="l1377" style="background-color: #ffffff">    ! BC species 2 Mie parameters</a>
+  1378) <a name="l1378" style="background-color: #ffffff">    call ncd_io( 'ss_alb_bcphob', ss_alb_bc2,           'read', ncid, posNOTonfile=.true.)</a>
+  1379) <a name="l1379" style="background-color: #ffffff">    call ncd_io( 'asm_prm_bcphob', asm_prm_bc2,         'read', ncid, posNOTonfile=.true.)</a>
+  1380) <a name="l1380" style="background-color: #ffffff">    call ncd_io( 'ext_cff_mss_bcphob', ext_cff_mss_bc2, 'read', ncid, posNOTonfile=.true.)</a>
+  1381) <a name="l1381" style="background-color: #ffffff"></a>
+  1382) <a name="l1382" style="background-color: #ffffff">    ! OC species 1 Mie parameters</a>
+  1383) <a name="l1383" style="background-color: #ffffff">    call ncd_io( 'ss_alb_ocphil', ss_alb_oc1,           'read', ncid, posNOTonfile=.true.)</a>
+  1384) <a name="l1384" style="background-color: #ffffff">    call ncd_io( 'asm_prm_ocphil', asm_prm_oc1,         'read', ncid, posNOTonfile=.true.)</a>
+  1385) <a name="l1385" style="background-color: #ffffff">    call ncd_io( 'ext_cff_mss_ocphil', ext_cff_mss_oc1, 'read', ncid, posNOTonfile=.true.)</a>
+  1386) <a name="l1386" style="background-color: #ffffff"></a>
+  1387) <a name="l1387" style="background-color: #ffffff">    ! OC species 2 Mie parameters</a>
+  1388) <a name="l1388" style="background-color: #ffffff">    call ncd_io( 'ss_alb_ocphob', ss_alb_oc2,           'read', ncid, posNOTonfile=.true.)</a>
+  1389) <a name="l1389" style="background-color: #ffffff">    call ncd_io( 'asm_prm_ocphob', asm_prm_oc2,         'read', ncid, posNOTonfile=.true.)</a>
+  1390) <a name="l1390" style="background-color: #ffffff">    call ncd_io( 'ext_cff_mss_ocphob', ext_cff_mss_oc2, 'read', ncid, posNOTonfile=.true.)</a>
+  1391) <a name="l1391" style="background-color: #ffffff"></a>
+  1392) <a name="l1392" style="background-color: #ffffff">    ! dust species 1 Mie parameters</a>
+  1393) <a name="l1393" style="background-color: #ffffff">    call ncd_io( 'ss_alb_dust01', ss_alb_dst1,           'read', ncid, posNOTonfile=.true.)</a>
+  1394) <a name="l1394" style="background-color: #ffffff">    call ncd_io( 'asm_prm_dust01', asm_prm_dst1,         'read', ncid, posNOTonfile=.true.)</a>
+  1395) <a name="l1395" style="background-color: #ffffff">    call ncd_io( 'ext_cff_mss_dust01', ext_cff_mss_dst1, 'read', ncid, posNOTonfile=.true.)</a>
+  1396) <a name="l1396" style="background-color: #ffffff"></a>
+  1397) <a name="l1397" style="background-color: #ffffff">    ! dust species 2 Mie parameters</a>
+  1398) <a name="l1398" style="background-color: #ffffff">    call ncd_io( 'ss_alb_dust02', ss_alb_dst2,           'read', ncid, posNOTonfile=.true.)</a>
+  1399) <a name="l1399" style="background-color: #ffffff">    call ncd_io( 'asm_prm_dust02', asm_prm_dst2,         'read', ncid, posNOTonfile=.true.)</a>
+  1400) <a name="l1400" style="background-color: #ffffff">    call ncd_io( 'ext_cff_mss_dust02', ext_cff_mss_dst2, 'read', ncid, posNOTonfile=.true.)</a>
+  1401) <a name="l1401" style="background-color: #ffffff"></a>
+  1402) <a name="l1402" style="background-color: #ffffff">    ! dust species 3 Mie parameters</a>
+  1403) <a name="l1403" style="background-color: #ffffff">    call ncd_io( 'ss_alb_dust03', ss_alb_dst3,           'read', ncid, posNOTonfile=.true.)</a>
+  1404) <a name="l1404" style="background-color: #ffffff">    call ncd_io( 'asm_prm_dust03', asm_prm_dst3,         'read', ncid, posNOTonfile=.true.)</a>
+  1405) <a name="l1405" style="background-color: #ffffff">    call ncd_io( 'ext_cff_mss_dust03', ext_cff_mss_dst3, 'read', ncid, posNOTonfile=.true.)</a>
+  1406) <a name="l1406" style="background-color: #ffffff"></a>
+  1407) <a name="l1407" style="background-color: #ffffff">    ! dust species 4 Mie parameters</a>
+  1408) <a name="l1408" style="background-color: #ffffff">    call ncd_io( 'ss_alb_dust04', ss_alb_dst4,           'read', ncid, posNOTonfile=.true.)</a>
+  1409) <a name="l1409" style="background-color: #ffffff">    call ncd_io( 'asm_prm_dust04', asm_prm_dst4,         'read', ncid, posNOTonfile=.true.)</a>
+  1410) <a name="l1410" style="background-color: #ffffff">    call ncd_io( 'ext_cff_mss_dust04', ext_cff_mss_dst4, 'read', ncid, posNOTonfile=.true.)</a>
+  1411) <a name="l1411" style="background-color: #ffffff"></a>
+  1412) <a name="l1412" style="background-color: #ffffff"></a>
+  1413) <a name="l1413" style="background-color: #ffffff">    call ncd_pio_closefile(ncid)</a>
+  1414) <a name="l1414" style="background-color: #ffffff">    if (masterproc) then</a>
+  1415) <a name="l1415" style="background-color: #ffffff"></a>
+  1416) <a name="l1416" style="background-color: #ffffff">       write(iulog,*) 'Successfully read snow optical properties'</a>
+  1417) <a name="l1417" style="background-color: #ffffff">       ! print some diagnostics:</a>
+  1418) <a name="l1418" style="background-color: #ffffff">       write (iulog,*) 'SNICAR: Mie single scatter albedos for direct-beam ice, rds=100um: ', &amp;</a>
+  1419) <a name="l1419" style="background-color: #ffffff">            ss_alb_snw_drc(71,1), ss_alb_snw_drc(71,2), ss_alb_snw_drc(71,3),     &amp;</a>
+  1420) <a name="l1420" style="background-color: #ffffff">            ss_alb_snw_drc(71,4), ss_alb_snw_drc(71,5)</a>
+  1421) <a name="l1421" style="background-color: #ffffff">       write (iulog,*) 'SNICAR: Mie single scatter albedos for diffuse ice, rds=100um: ',     &amp;</a>
+  1422) <a name="l1422" style="background-color: #ffffff">            ss_alb_snw_dfs(71,1), ss_alb_snw_dfs(71,2), ss_alb_snw_dfs(71,3),     &amp;</a>
+  1423) <a name="l1423" style="background-color: #ffffff">            ss_alb_snw_dfs(71,4), ss_alb_snw_dfs(71,5)</a>
+  1424) <a name="l1424" style="background-color: #ffffff">       if (DO_SNO_OC) then</a>
+  1425) <a name="l1425" style="background-color: #ffff99">          write (iulog,*) 'SNICAR: Including OC aerosols from snow radiative transfer calculations'</a>
+  1426) <a name="l1426" style="background-color: #ffff99">       else</a>
+  1427) <a name="l1427" style="background-color: #ffffff">          write (iulog,*) 'SNICAR: Excluding OC aerosols from snow radiative transfer calculations'</a>
+  1428) <a name="l1428" style="background-color: #ffffff">       endif</a>
+  1429) <a name="l1429" style="background-color: #ffffff">       write (iulog,*) 'SNICAR: Mie single scatter albedos for hydrophillic BC: ', &amp;</a>
+  1430) <a name="l1430" style="background-color: #ffffff">            ss_alb_bc1(1), ss_alb_bc1(2), ss_alb_bc1(3), ss_alb_bc1(4), ss_alb_bc1(5)</a>
+  1431) <a name="l1431" style="background-color: #ffffff">       write (iulog,*) 'SNICAR: Mie single scatter albedos for hydrophobic BC: ', &amp;</a>
+  1432) <a name="l1432" style="background-color: #ffffff">            ss_alb_bc2(1), ss_alb_bc2(2), ss_alb_bc2(3), ss_alb_bc2(4), ss_alb_bc2(5)</a>
+  1433) <a name="l1433" style="background-color: #ffffff">       if (DO_SNO_OC) then</a>
+  1434) <a name="l1434" style="background-color: #ffff99">          write (iulog,*) 'SNICAR: Mie single scatter albedos for hydrophillic OC: ', &amp;</a>
+  1435) <a name="l1435" style="background-color: #ffff99">               ss_alb_oc1(1), ss_alb_oc1(2), ss_alb_oc1(3), ss_alb_oc1(4), ss_alb_oc1(5)</a>
+  1436) <a name="l1436" style="background-color: #ffff99">          write (iulog,*) 'SNICAR: Mie single scatter albedos for hydrophobic OC: ', &amp;</a>
+  1437) <a name="l1437" style="background-color: #ffff99">               ss_alb_oc2(1), ss_alb_oc2(2), ss_alb_oc2(3), ss_alb_oc2(4), ss_alb_oc2(5)</a>
+  1438) <a name="l1438" style="background-color: #ffff99">       endif</a>
+  1439) <a name="l1439" style="background-color: #ffffff">       write (iulog,*) 'SNICAR: Mie single scatter albedos for dust species 1: ', &amp;</a>
+  1440) <a name="l1440" style="background-color: #ffffff">            ss_alb_dst1(1), ss_alb_dst1(2), ss_alb_dst1(3), ss_alb_dst1(4), ss_alb_dst1(5)</a>
+  1441) <a name="l1441" style="background-color: #ffffff">       write (iulog,*) 'SNICAR: Mie single scatter albedos for dust species 2: ', &amp;</a>
+  1442) <a name="l1442" style="background-color: #ffffff">            ss_alb_dst2(1), ss_alb_dst2(2), ss_alb_dst2(3), ss_alb_dst2(4), ss_alb_dst2(5)</a>
+  1443) <a name="l1443" style="background-color: #ffffff">       write (iulog,*) 'SNICAR: Mie single scatter albedos for dust species 3: ', &amp;</a>
+  1444) <a name="l1444" style="background-color: #ffffff">            ss_alb_dst3(1), ss_alb_dst3(2), ss_alb_dst3(3), ss_alb_dst3(4), ss_alb_dst3(5)</a>
+  1445) <a name="l1445" style="background-color: #ffffff">       write (iulog,*) 'SNICAR: Mie single scatter albedos for dust species 4: ', &amp;</a>
+  1446) <a name="l1446" style="background-color: #ffffff">            ss_alb_dst4(1), ss_alb_dst4(2), ss_alb_dst4(3), ss_alb_dst4(4), ss_alb_dst4(5)</a>
+  1447) <a name="l1447" style="background-color: #ffffff">       write(iulog,*)</a>
+  1448) <a name="l1448" style="background-color: #ffffff">    end if</a>
+  1449) <a name="l1449" style="background-color: #ffffff"></a>
+  1450) <a name="l1450" style="background-color: #ffffff">  end subroutine SnowOptics_init</a>
+  1451) <a name="l1451" style="background-color: #ffffff"></a>
+  1452) <a name="l1452" style="background-color: #ffffff">  subroutine SnowAge_init( )</a>
+  1453) <a name="l1453" style="background-color: #ffffff">   use CLM_varctl      , only : fsnowaging</a>
+  1454) <a name="l1454" style="background-color: #ffffff">   use fileutils       , only : getfil</a>
+  1455) <a name="l1455" style="background-color: #ffffff">   use spmdMod         , only : masterproc</a>
+  1456) <a name="l1456" style="background-color: #ffffff">   use ncdio_pio       , only : file_desc_t, ncd_io, ncd_pio_openfile, ncd_pio_closefile</a>
+  1457) <a name="l1457" style="background-color: #ffffff"></a>
+  1458) <a name="l1458" style="background-color: #ffffff">   type(file_desc_t)  :: ncid                        ! netCDF file id</a>
+  1459) <a name="l1459" style="background-color: #ffffff">   character(len=256) :: locfn                       ! local filename</a>
+  1460) <a name="l1460" style="background-color: #ffffff">   character(len= 32) :: subname = 'SnowOptics_init' ! subroutine name</a>
+  1461) <a name="l1461" style="background-color: #ffffff">   integer            :: varid                       ! netCDF id's</a>
+  1462) <a name="l1462" style="background-color: #ffffff">   integer            :: ier                         ! error status</a>
+  1463) <a name="l1463" style="background-color: #ffffff"></a>
+  1464) <a name="l1464" style="background-color: #ffffff">   ! Open snow aging (effective radius evolution) file:</a>
+  1465) <a name="l1465" style="background-color: #ffffff">   allocate(snowage_tau(idx_rhos_max,idx_Tgrd_max,idx_T_max))</a>
+  1466) <a name="l1466" style="background-color: #ffffff">   allocate(snowage_kappa(idx_rhos_max,idx_Tgrd_max,idx_T_max))</a>
+  1467) <a name="l1467" style="background-color: #ffffff">   allocate(snowage_drdt0(idx_rhos_max,idx_Tgrd_max,idx_T_max))</a>
+  1468) <a name="l1468" style="background-color: #ffffff"></a>
+  1469) <a name="l1469" style="background-color: #ffffff">   if(masterproc)  write(iulog,*) 'Attempting to read snow aging parameters .....'</a>
+  1470) <a name="l1470" style="background-color: #ffffff">   call getfil (fsnowaging, locfn, 0)</a>
+  1471) <a name="l1471" style="background-color: #ffffff">   call ncd_pio_openfile(ncid, locfn, 0)</a>
+  1472) <a name="l1472" style="background-color: #ffffff">   if(masterproc) write(iulog,*) subname,trim(fsnowaging)</a>
+  1473) <a name="l1473" style="background-color: #ffffff">   </a>
+  1474) <a name="l1474" style="background-color: #ffffff">    ! snow aging parameters</a>
+  1475) <a name="l1475" style="background-color: #ffffff">   </a>
+  1476) <a name="l1476" style="background-color: #ffffff">   call ncd_io('tau', snowage_tau,       'read', ncid, posNOTonfile=.true.)</a>
+  1477) <a name="l1477" style="background-color: #ffffff">   call ncd_io('kappa', snowage_kappa,   'read', ncid, posNOTonfile=.true.)</a>
+  1478) <a name="l1478" style="background-color: #ffffff">   call ncd_io('drdsdt0', snowage_drdt0, 'read', ncid, posNOTonfile=.true.)</a>
+  1479) <a name="l1479" style="background-color: #ffffff"></a>
+  1480) <a name="l1480" style="background-color: #ffffff">   call ncd_pio_closefile(ncid)</a>
+  1481) <a name="l1481" style="background-color: #ffffff">   if (masterproc) then</a>
+  1482) <a name="l1482" style="background-color: #ffffff">      </a>
+  1483) <a name="l1483" style="background-color: #ffffff">      write(iulog,*) 'Successfully read snow aging properties'</a>
+  1484) <a name="l1484" style="background-color: #ffffff">      </a>
+  1485) <a name="l1485" style="background-color: #ffffff">      ! print some diagnostics:</a>
+  1486) <a name="l1486" style="background-color: #ffffff">      write (iulog,*) 'SNICAR: snowage tau for T=263K, dTdz = 100 K/m, rhos = 150 kg/m3: ', snowage_tau(3,11,9)</a>
+  1487) <a name="l1487" style="background-color: #ffffff">      write (iulog,*) 'SNICAR: snowage kappa for T=263K, dTdz = 100 K/m, rhos = 150 kg/m3: ', snowage_kappa(3,11,9)</a>
+  1488) <a name="l1488" style="background-color: #ffffff">      write (iulog,*) 'SNICAR: snowage dr/dt_0 for T=263K, dTdz = 100 K/m, rhos = 150 kg/m3: ', snowage_drdt0(3,11,9)</a>
+  1489) <a name="l1489" style="background-color: #ffffff">   endif</a>
+  1490) <a name="l1490" style="background-color: #ffffff"></a>
+  1491) <a name="l1491" style="background-color: #ffffff">  end subroutine SnowAge_init</a>
+  1492) <a name="l1492" style="background-color: #ffffff"></a>
+  1493) <a name="l1493" style="background-color: #ffffff"></a>
+  1494) <a name="l1494" style="background-color: #ffffff">end module SNICARMod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

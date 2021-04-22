@@ -1,0 +1,799 @@
+<html>
+<head>
+<title>Listing of hb_diff.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;hb_diff.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module hb_diff</a>
+     2) <a name="l2" style="background-color: #ffffff">  !---------------------------------------------------------------------------------</a>
+     3) <a name="l3" style="background-color: #ffffff">  ! Module to compute mixing coefficients associated with turbulence in the </a>
+     4) <a name="l4" style="background-color: #ffffff">  ! planetary boundary layer and elsewhere.  PBL coefficients are based on Holtslag </a>
+     5) <a name="l5" style="background-color: #ffffff">  ! and Boville, 1991.</a>
+     6) <a name="l6" style="background-color: #ffffff">  !</a>
+     7) <a name="l7" style="background-color: #ffffff">  ! Public interfaces:</a>
+     8) <a name="l8" style="background-color: #ffffff">  !    init_hb_diff     initializes time independent coefficients</a>
+     9) <a name="l9" style="background-color: #ffffff">  !    compute_hb_diff  computes eddy diffusivities and counter-gradient fluxes</a>
+    10) <a name="l10" style="background-color: #ffffff">  !</a>
+    11) <a name="l11" style="background-color: #ffffff">  ! Private methods:</a>
+    12) <a name="l12" style="background-color: #ffffff">  !       trbintd         initializes time dependent variables</a>
+    13) <a name="l13" style="background-color: #ffffff">  !       pblintd         initializes time dependent variables that depend pbl depth</a>
+    14) <a name="l14" style="background-color: #ffffff">  !       austausch_atm   computes free atmosphere exchange coefficients</a>
+    15) <a name="l15" style="background-color: #ffffff">  !       austausch_pbl   computes pbl exchange coefficients</a>
+    16) <a name="l16" style="background-color: #ffffff">  !</a>
+    17) <a name="l17" style="background-color: #ffffff">  !---------------------------Code history--------------------------------</a>
+    18) <a name="l18" style="background-color: #ffffff">  ! Standardized:      J. Rosinski, June 1992</a>
+    19) <a name="l19" style="background-color: #ffffff">  ! Reviewed:          P. Rasch, B. Boville, August 1992</a>
+    20) <a name="l20" style="background-color: #ffffff">  ! Reviewed:          P. Rasch, April 1996</a>
+    21) <a name="l21" style="background-color: #ffffff">  ! Reviewed:          B. Boville, April 1996</a>
+    22) <a name="l22" style="background-color: #ffffff">  ! rewritten:         B. Boville, May 2000</a>
+    23) <a name="l23" style="background-color: #ffffff">  ! rewritten:         B. Stevens, August 2000</a>
+    24) <a name="l24" style="background-color: #ffffff">  ! modularized:       J. McCaa, September 2004</a>
+    25) <a name="l25" style="background-color: #ffffff">  !---------------------------------------------------------------------------------</a>
+    26) <a name="l26" style="background-color: #ffffff">  use shr_kind_mod, only: r8 =&gt; shr_kind_r8</a>
+    27) <a name="l27" style="background-color: #ffffff">  use spmd_utils,   only: masterproc          ! output from hb_init should be eliminated</a>
+    28) <a name="l28" style="background-color: #ffffff">  use ppgrid,       only: pver, pverp, pcols  ! these should be passed in</a>
+    29) <a name="l29" style="background-color: #ffffff">  use cam_logfile,  only: iulog</a>
+    30) <a name="l30" style="background-color: #ffffff"></a>
+    31) <a name="l31" style="background-color: #ffffff">  implicit none</a>
+    32) <a name="l32" style="background-color: #ffffff">  private</a>
+    33) <a name="l33" style="background-color: #ffffff">  save</a>
+    34) <a name="l34" style="background-color: #ffffff"></a>
+    35) <a name="l35" style="background-color: #ffffff">  ! Public interfaces</a>
+    36) <a name="l36" style="background-color: #ffffff">  public init_hb_diff</a>
+    37) <a name="l37" style="background-color: #ffffff">  public compute_hb_diff</a>
+    38) <a name="l38" style="background-color: #ffffff">  public pblintd</a>
+    39) <a name="l39" style="background-color: #ffffff">  !</a>
+    40) <a name="l40" style="background-color: #ffffff">  ! PBL limits</a>
+    41) <a name="l41" style="background-color: #ffffff">  !</a>
+    42) <a name="l42" style="background-color: #ffffff">  real(r8), parameter :: pblmaxp   = 4.e4_r8        ! pbl max depth in pressure units</a>
+    43) <a name="l43" style="background-color: #ffffff">  real(r8), parameter :: zkmin     = 0.01_r8        ! Minimum kneutral*f(ri)</a>
+    44) <a name="l44" style="background-color: #ffffff">  !</a>
+    45) <a name="l45" style="background-color: #ffffff">  ! PBL Parameters</a>
+    46) <a name="l46" style="background-color: #ffffff">  !</a>
+    47) <a name="l47" style="background-color: #ffffff">  real(r8), parameter :: onet  = 1._r8/3._r8 ! 1/3 power in wind gradient expression</a>
+    48) <a name="l48" style="background-color: #ffffff">  real(r8), parameter :: betam = 15.0_r8  ! Constant in wind gradient expression</a>
+    49) <a name="l49" style="background-color: #ffffff">  real(r8), parameter :: betas =  5.0_r8  ! Constant in surface layer gradient expression</a>
+    50) <a name="l50" style="background-color: #ffffff">  real(r8), parameter :: betah = 15.0_r8  ! Constant in temperature gradient expression </a>
+    51) <a name="l51" style="background-color: #ffffff">  real(r8), parameter :: fakn  =  7.2_r8  ! Constant in turbulent prandtl number</a>
+    52) <a name="l52" style="background-color: #ffffff">  real(r8), parameter :: fak   =  8.5_r8  ! Constant in surface temperature excess         </a>
+    53) <a name="l53" style="background-color: #ffffff">  real(r8), parameter :: ricr  =  0.3_r8  ! Critical richardson number</a>
+    54) <a name="l54" style="background-color: #ffffff">  real(r8), parameter :: sffrac=  0.1_r8  ! Surface layer fraction of boundary layer</a>
+    55) <a name="l55" style="background-color: #ffffff">  real(r8), parameter :: binm  = betam*sffrac       ! betam * sffrac</a>
+    56) <a name="l56" style="background-color: #ffffff">  real(r8), parameter :: binh  = betah*sffrac       ! betah * sffrac</a>
+    57) <a name="l57" style="background-color: #ffffff"></a>
+    58) <a name="l58" style="background-color: #ffffff">  ! Pbl constants set using values from other parts of code</a>
+    59) <a name="l59" style="background-color: #ffffff"></a>
+    60) <a name="l60" style="background-color: #ffffff">  real(r8) :: cpair      ! Specific heat of dry air</a>
+    61) <a name="l61" style="background-color: #ffffff">  real(r8) :: g          ! Gravitational acceleration</a>
+    62) <a name="l62" style="background-color: #ffffff">  real(r8) :: ml2(pverp) ! Mixing lengths squared</a>
+    63) <a name="l63" style="background-color: #ffffff">  real(r8) :: vk         ! Von Karman's constant</a>
+    64) <a name="l64" style="background-color: #ffffff">  real(r8) :: ccon       ! fak * sffrac * vk</a>
+    65) <a name="l65" style="background-color: #ffffff"></a>
+    66) <a name="l66" style="background-color: #ffffff">  integer :: npbl       ! Maximum number of levels in pbl from surface</a>
+    67) <a name="l67" style="background-color: #ffffff">  integer :: ntop_turb  ! Top level to which turbulent vertical diffusion is applied.</a>
+    68) <a name="l68" style="background-color: #ffffff">  integer :: nbot_turb  ! Bottom level to which turbulent vertical diff is applied.</a>
+    69) <a name="l69" style="background-color: #ffffff"></a>
+    70) <a name="l70" style="background-color: #ffffff">!===============================================================================</a>
+    71) <a name="l71" style="background-color: #ffffff">CONTAINS</a>
+    72) <a name="l72" style="background-color: #ffffff">!===============================================================================</a>
+    73) <a name="l73" style="background-color: #ffffff"></a>
+    74) <a name="l74" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">init_hb_diff(gravx, cpairx, ntop_eddy, nbot_eddy, pref_mid, &amp;</a>
+    75) <a name="l75" style="background-color: #ffcccc">                        vkx, eddy_scheme)</a>
+    76) <a name="l76" style="background-color: #ffcccc"></a>
+    77) <a name="l77" style="background-color: #ffcccc">   !----------------------------------------------------------------------- </a>
+    78) <a name="l78" style="background-color: #ffcccc">   ! </a>
+    79) <a name="l79" style="background-color: #ffcccc">   ! Initialize time independent variables of turbulence/pbl package.</a>
+    80) <a name="l80" style="background-color: #ffcccc">   ! </a>
+    81) <a name="l81" style="background-color: #ffcccc">   !-----------------------------------------------------------------------</a>
+    82) <a name="l82" style="background-color: #ffcccc"></a>
+    83) <a name="l83" style="background-color: #ffcccc">   !------------------------------Arguments--------------------------------</a>
+    84) <a name="l84" style="background-color: #ffcccc">   real(r8), intent(in) :: gravx     ! acceleration of gravity</a>
+    85) <a name="l85" style="background-color: #ffcccc">   real(r8), intent(in) :: cpairx    ! specific heat of dry air</a>
+    86) <a name="l86" style="background-color: #ffcccc">   real(r8), intent(in) :: pref_mid(pver)! reference pressures at midpoints</a>
+    87) <a name="l87" style="background-color: #ffcccc">   real(r8), intent(in) :: vkx       ! Von Karman's constant</a>
+    88) <a name="l88" style="background-color: #ffcccc">   integer, intent(in)  :: ntop_eddy ! Top level to which eddy vert diff is applied.</a>
+    89) <a name="l89" style="background-color: #ffcccc">   integer, intent(in)  :: nbot_eddy ! Bottom level to which eddy vert diff is applied.</a>
+    90) <a name="l90" style="background-color: #ffcccc">   character(len=16),  intent(in) :: eddy_scheme</a>
+    91) <a name="l91" style="background-color: #ffcccc"></a>
+    92) <a name="l92" style="background-color: #ffcccc">   !---------------------------Local workspace-----------------------------</a>
+    93) <a name="l93" style="background-color: #ffcccc">   integer :: k                     ! vertical loop index</a>
+    94) <a name="l94" style="background-color: #ffcccc">   !-----------------------------------------------------------------------</a>
+    95) <a name="l95" style="background-color: #ffcccc"></a>
+    96) <a name="l96" style="background-color: #ffcccc">   ! Basic constants</a>
+    97) <a name="l97" style="background-color: #ffcccc">   cpair = cpairx</a>
+    98) <a name="l98" style="background-color: #ffcccc">   g     = gravx</a>
+    99) <a name="l99" style="background-color: #ffcccc">   vk    = vkx</a>
+   100) <a name="l100" style="background-color: #ffcccc">   ccon  = fak*sffrac*vk</a>
+   101) <a name="l101" style="background-color: #ffcccc">   ntop_turb = ntop_eddy</a>
+   102) <a name="l102" style="background-color: #ffcccc">   nbot_turb = nbot_eddy</a>
+   103) <a name="l103" style="background-color: #ffcccc"></a>
+   104) <a name="l104" style="background-color: #ffcccc">   ! Set the square of the mixing lengths.</a>
+   105) <a name="l105" style="background-color: #ffcccc">   ml2(ntop_turb) = 0._r8</a>
+   106) <a name="l106" style="background-color: #ffcccc">   do k = ntop_turb+1, nbot_turb</a>
+   107) <a name="l107" style="background-color: #ffcccc">      ml2(k) = 30.0_r8**2                 ! HB scheme: length scale = 30m  </a>
+   108) <a name="l108" style="background-color: #ffcccc">      if  ( eddy_scheme .eq. 'HBR' ) then      </a>
+   109) <a name="l109" style="background-color: #ffcccc">         ml2(k) = 1.0_r8**2               ! HBR scheme: length scale = 1m  </a>
+   110) <a name="l110" style="background-color: #ffcccc">      end if</a>
+   111) <a name="l111" style="background-color: #ffcccc">   end do</a>
+   112) <a name="l112" style="background-color: #ffcccc">   ml2(nbot_turb+1) = 0._r8</a>
+   113) <a name="l113" style="background-color: #ffcccc"></a>
+   114) <a name="l114" style="background-color: #ffcccc">   ! Limit pbl height to regions below 400 mb</a>
+   115) <a name="l115" style="background-color: #ffcccc">   ! npbl = max number of levels (from bottom) in pbl</a>
+   116) <a name="l116" style="background-color: #ffcccc"></a>
+   117) <a name="l117" style="background-color: #ffcccc">   npbl = 0</a>
+   118) <a name="l118" style="background-color: #ffcccc">   do k=nbot_turb,ntop_turb,-1</a>
+   119) <a name="l119" style="background-color: #ffcccc">      if (pref_mid(k) &gt;= pblmaxp) then</a>
+   120) <a name="l120" style="background-color: #ffcccc">         npbl = npbl + 1</a>
+   121) <a name="l121" style="background-color: #ffcccc">      end if</a>
+   122) <a name="l122" style="background-color: #ffcccc">   end do</a>
+   123) <a name="l123" style="background-color: #ffcccc">   npbl = max(npbl,1)</a>
+   124) <a name="l124" style="background-color: #ffcccc"></a>
+   125) <a name="l125" style="background-color: #ffcccc">   if (masterproc) then</a>
+   126) <a name="l126" style="background-color: #ffcccc">      write(iulog,*)'INIT_HB_DIFF: PBL height will be limited to bottom ',npbl, &amp;</a>
+   127) <a name="l127" style="background-color: #ffcccc">         ' model levels. Top is ',pref_mid(pverp-npbl),' pascals'</a>
+   128) <a name="l128" style="background-color: #ffcccc">   end if</a>
+   129) <a name="l129" style="background-color: #ffcccc"></a>
+   130) <a name="l130" style="background-color: #ffcccc">end subroutine init_hb_diff</a>
+   131) <a name="l131" style="background-color: #ffffff"></a>
+   132) <a name="l132" style="background-color: #ffffff">!===============================================================================</a>
+   133) <a name="l133" style="background-color: #ffffff"></a>
+   134) <a name="l134" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">compute_hb_diff(lchnk, ncol,            &amp;</a>
+   135) <a name="l135" style="background-color: #ffcccc">       th      ,t       ,q       ,z       ,zi      , &amp;</a>
+   136) <a name="l136" style="background-color: #ffcccc">       pmid    ,u       ,v       ,taux    ,tauy    , &amp;</a>
+   137) <a name="l137" style="background-color: #ffcccc">       shflx   ,qflx    ,obklen  ,ustar   ,pblh    , &amp;</a>
+   138) <a name="l138" style="background-color: #ffcccc">       kvm     ,kvh     ,kvq     ,cgh     ,cgs     , &amp;</a>
+   139) <a name="l139" style="background-color: #ffcccc">       tpert   ,qpert   ,cldn    ,ocnfrac ,tke     , &amp;</a>
+   140) <a name="l140" style="background-color: #ffcccc">       ri      , &amp;</a>
+   141) <a name="l141" style="background-color: #ffcccc">       eddy_scheme)</a>
+   142) <a name="l142" style="background-color: #ffcccc">    !----------------------------------------------------------------------- </a>
+   143) <a name="l143" style="background-color: #ffcccc">    ! </a>
+   144) <a name="l144" style="background-color: #ffcccc">    ! Purpose: </a>
+   145) <a name="l145" style="background-color: #ffcccc">    !  Interface routines for calcualtion and diatnostics of turbulence related</a>
+   146) <a name="l146" style="background-color: #ffcccc">    !  coefficients</a>
+   147) <a name="l147" style="background-color: #ffcccc">    !</a>
+   148) <a name="l148" style="background-color: #ffcccc">    ! Author: B. Stevens (rewrite August 2000)</a>
+   149) <a name="l149" style="background-color: #ffcccc">    ! </a>
+   150) <a name="l150" style="background-color: #ffcccc">    !-----------------------------------------------------------------------</a>
+   151) <a name="l151" style="background-color: #ffcccc"></a>
+   152) <a name="l152" style="background-color: #ffcccc">    use pbl_utils, only: virtem, calc_ustar, calc_obklen</a>
+   153) <a name="l153" style="background-color: #ffcccc"></a>
+   154) <a name="l154" style="background-color: #ffcccc">    !------------------------------Arguments--------------------------------</a>
+   155) <a name="l155" style="background-color: #ffcccc">    !</a>
+   156) <a name="l156" style="background-color: #ffcccc">    ! Input arguments</a>
+   157) <a name="l157" style="background-color: #ffcccc">    !</a>
+   158) <a name="l158" style="background-color: #ffcccc">    integer, intent(in) :: lchnk                      ! chunk index (for debug only)</a>
+   159) <a name="l159" style="background-color: #ffcccc">    integer, intent(in) :: ncol                       ! number of atmospheric columns</a>
+   160) <a name="l160" style="background-color: #ffcccc"></a>
+   161) <a name="l161" style="background-color: #ffcccc">    real(r8), intent(in)  :: th(pcols,pver)           ! potential temperature [K]</a>
+   162) <a name="l162" style="background-color: #ffcccc">    real(r8), intent(in)  :: t(pcols,pver)            ! temperature (used for density)</a>
+   163) <a name="l163" style="background-color: #ffcccc">    real(r8), intent(in)  :: q(pcols,pver)            ! specific humidity [kg/kg]</a>
+   164) <a name="l164" style="background-color: #ffcccc">    real(r8), intent(in)  :: z(pcols,pver)            ! height above surface [m]</a>
+   165) <a name="l165" style="background-color: #ffcccc">    real(r8), intent(in)  :: zi(pcols,pverp)          ! height above surface [m]</a>
+   166) <a name="l166" style="background-color: #ffcccc">    real(r8), intent(in)  :: u(pcols,pver)            ! zonal velocity</a>
+   167) <a name="l167" style="background-color: #ffcccc">    real(r8), intent(in)  :: v(pcols,pver)            ! meridional velocity</a>
+   168) <a name="l168" style="background-color: #ffcccc">    real(r8), intent(in)  :: taux(pcols)              ! zonal stress [N/m2]</a>
+   169) <a name="l169" style="background-color: #ffcccc">    real(r8), intent(in)  :: tauy(pcols)              ! meridional stress [N/m2]</a>
+   170) <a name="l170" style="background-color: #ffcccc">    real(r8), intent(in)  :: shflx(pcols)             ! sensible heat flux</a>
+   171) <a name="l171" style="background-color: #ffcccc">    real(r8), intent(in)  :: qflx(pcols)              ! water vapor flux</a>
+   172) <a name="l172" style="background-color: #ffcccc">    real(r8), intent(in)  :: pmid(pcols,pver)         ! midpoint pressures</a>
+   173) <a name="l173" style="background-color: #ffcccc">    real(r8), intent(in)  :: cldn(pcols,pver)         ! new cloud fraction</a>
+   174) <a name="l174" style="background-color: #ffcccc">    real(r8), intent(in)  :: ocnfrac(pcols)           ! Land fraction</a>
+   175) <a name="l175" style="background-color: #ffcccc">    character(len=16), intent(in) :: eddy_scheme</a>
+   176) <a name="l176" style="background-color: #ffcccc"></a>
+   177) <a name="l177" style="background-color: #ffcccc">    !</a>
+   178) <a name="l178" style="background-color: #ffcccc">    ! Output arguments</a>
+   179) <a name="l179" style="background-color: #ffcccc">    !</a>
+   180) <a name="l180" style="background-color: #ffcccc">    real(r8), intent(out) :: kvm(pcols,pverp)         ! eddy diffusivity for momentum [m2/s]</a>
+   181) <a name="l181" style="background-color: #ffcccc">    real(r8), intent(out) :: kvh(pcols,pverp)         ! eddy diffusivity for heat [m2/s]</a>
+   182) <a name="l182" style="background-color: #ffcccc">    real(r8), intent(out) :: kvq(pcols,pverp)         ! eddy diffusivity for constituents [m2/s]</a>
+   183) <a name="l183" style="background-color: #ffcccc">    real(r8), intent(out) :: cgh(pcols,pverp)         ! counter-gradient term for heat [J/kg/m]</a>
+   184) <a name="l184" style="background-color: #ffcccc">    real(r8), intent(out) :: cgs(pcols,pverp)         ! counter-gradient star (cg/flux)</a>
+   185) <a name="l185" style="background-color: #ffcccc">    real(r8), intent(out) :: tpert(pcols)             ! convective temperature excess</a>
+   186) <a name="l186" style="background-color: #ffcccc">    real(r8), intent(out) :: qpert(pcols)             ! convective humidity excess</a>
+   187) <a name="l187" style="background-color: #ffcccc">    real(r8), intent(out) :: ustar(pcols)             ! surface friction velocity [m/s]</a>
+   188) <a name="l188" style="background-color: #ffcccc">    real(r8), intent(out) :: obklen(pcols)            ! Obukhov length</a>
+   189) <a name="l189" style="background-color: #ffcccc">    real(r8), intent(out) :: pblh(pcols)              ! boundary-layer height [m]</a>
+   190) <a name="l190" style="background-color: #ffcccc">    real(r8), intent(out) :: tke(pcols,pverp)         ! turbulent kinetic energy (estimated)</a>
+   191) <a name="l191" style="background-color: #ffcccc">    real(r8), intent(out) :: ri(pcols,pver)           ! richardson number: n2/s2</a>
+   192) <a name="l192" style="background-color: #ffcccc">    !</a>
+   193) <a name="l193" style="background-color: #ffcccc">    !---------------------------Local workspace-----------------------------</a>
+   194) <a name="l194" style="background-color: #ffcccc">    !</a>
+   195) <a name="l195" style="background-color: #ffcccc">    real(r8) :: thv(pcols,pver)         ! virtual temperature</a>
+   196) <a name="l196" style="background-color: #ffcccc">    real(r8) :: rrho(pcols)             ! 1./bottom level density</a>
+   197) <a name="l197" style="background-color: #ffcccc">    real(r8) :: wstar(pcols)            ! convective velocity scale [m/s]</a>
+   198) <a name="l198" style="background-color: #ffcccc">    real(r8) :: kqfs(pcols)             ! kinematic surf constituent flux (kg/m2/s)</a>
+   199) <a name="l199" style="background-color: #ffcccc">    real(r8) :: khfs(pcols)             ! kinimatic surface heat flux </a>
+   200) <a name="l200" style="background-color: #ffcccc">    real(r8) :: kbfs(pcols)             ! surface buoyancy flux </a>
+   201) <a name="l201" style="background-color: #ffcccc">    real(r8) :: kvf(pcols,pverp)        ! free atmospheric eddy diffsvty [m2/s]</a>
+   202) <a name="l202" style="background-color: #ffcccc">    real(r8) :: s2(pcols,pver)          ! shear squared</a>
+   203) <a name="l203" style="background-color: #ffcccc">    real(r8) :: n2(pcols,pver)          ! brunt vaisaila frequency</a>
+   204) <a name="l204" style="background-color: #ffcccc">    real(r8) :: bge(pcols)              ! buoyancy gradient enhancment</a>
+   205) <a name="l205" style="background-color: #ffcccc">    integer  :: ktopbl(pcols)           ! index of first midpoint inside pbl</a>
+   206) <a name="l206" style="background-color: #ffcccc">    !</a>
+   207) <a name="l207" style="background-color: #ffcccc">    ! Initialize time dependent variables that do not depend on pbl height</a>
+   208) <a name="l208" style="background-color: #ffcccc">    !</a>
+   209) <a name="l209" style="background-color: #ffcccc"></a>
+   210) <a name="l210" style="background-color: #ffcccc">    ! virtual temperature</a>
+   211) <a name="l211" style="background-color: #ffcccc">    thv(:ncol,ntop_turb:) = virtem(th(:ncol,ntop_turb:),q(:ncol,ntop_turb:))</a>
+   212) <a name="l212" style="background-color: #ffcccc"></a>
+   213) <a name="l213" style="background-color: #ffcccc">    ! Compute ustar, Obukhov length, and kinematic surface fluxes.</a>
+   214) <a name="l214" style="background-color: #ffcccc">    call calc_ustar(t(:ncol,pver),pmid(:ncol,pver),taux(:ncol),tauy(:ncol), &amp;</a>
+   215) <a name="l215" style="background-color: #ffcccc">         rrho(:ncol),ustar(:ncol))</a>
+   216) <a name="l216" style="background-color: #ffcccc">    call calc_obklen(th(:ncol,pver), thv(:ncol,pver), qflx(:ncol),  &amp;</a>
+   217) <a name="l217" style="background-color: #ffcccc">                     shflx(:ncol),   rrho(:ncol),     ustar(:ncol), &amp;</a>
+   218) <a name="l218" style="background-color: #ffcccc">                     khfs(:ncol),    kqfs(:ncol),     kbfs(:ncol),  &amp;</a>
+   219) <a name="l219" style="background-color: #ffcccc">                     obklen(:ncol))</a>
+   220) <a name="l220" style="background-color: #ffcccc">    ! Calculate s2, n2, and Richardson number.</a>
+   221) <a name="l221" style="background-color: #ffcccc">    call trbintd(ncol    ,                            &amp;</a>
+   222) <a name="l222" style="background-color: #ffcccc">         thv     ,z       ,u       ,v       , &amp;</a>
+   223) <a name="l223" style="background-color: #ffcccc">         s2      ,n2      ,ri      )</a>
+   224) <a name="l224" style="background-color: #ffcccc">    !</a>
+   225) <a name="l225" style="background-color: #ffcccc">    ! Initialize time dependent variables that do depend on pbl height</a>
+   226) <a name="l226" style="background-color: #ffcccc">    !</a>
+   227) <a name="l227" style="background-color: #ffcccc">    call  pblintd(ncol    ,                            &amp;</a>
+   228) <a name="l228" style="background-color: #ffcccc">         thv     ,z       ,u       ,v       , &amp;</a>
+   229) <a name="l229" style="background-color: #ffcccc">         ustar   ,obklen  ,kbfs    ,pblh    ,wstar   , &amp;</a>
+   230) <a name="l230" style="background-color: #ffcccc">         zi      ,cldn    ,ocnfrac ,bge     )</a>
+   231) <a name="l231" style="background-color: #ffcccc">    !</a>
+   232) <a name="l232" style="background-color: #ffcccc">    ! Get free atmosphere exchange coefficients</a>
+   233) <a name="l233" style="background-color: #ffcccc">    !</a>
+   234) <a name="l234" style="background-color: #ffcccc">    call austausch_atm(ncol    ,ri      ,s2      ,kvf     )</a>
+   235) <a name="l235" style="background-color: #ffcccc">    ! </a>
+   236) <a name="l236" style="background-color: #ffcccc">    ! Get pbl exchange coefficients</a>
+   237) <a name="l237" style="background-color: #ffcccc">    !</a>
+   238) <a name="l238" style="background-color: #ffcccc">    call austausch_pbl(lchnk, ncol,                    &amp;</a>
+   239) <a name="l239" style="background-color: #ffcccc">         z       ,kvf     ,kqfs    ,khfs    ,kbfs    , &amp;</a>
+   240) <a name="l240" style="background-color: #ffcccc">         obklen  ,ustar   ,wstar   ,pblh    ,kvm     , &amp;</a>
+   241) <a name="l241" style="background-color: #ffcccc">         kvh     ,cgh     ,cgs     ,tpert   ,qpert   , &amp;</a>
+   242) <a name="l242" style="background-color: #ffcccc">         ktopbl  ,tke     ,bge     ,eddy_scheme)</a>
+   243) <a name="l243" style="background-color: #ffcccc">    !</a>
+   244) <a name="l244" style="background-color: #ffcccc"></a>
+   245) <a name="l245" style="background-color: #ffcccc">    kvq(:ncol,:) = kvh(:ncol,:)</a>
+   246) <a name="l246" style="background-color: #ffcccc"></a>
+   247) <a name="l247" style="background-color: #ffcccc">    return</a>
+   248) <a name="l248" style="background-color: #ffcccc">  end subroutine compute_hb_diff</a>
+   249) <a name="l249" style="background-color: #ffcccc"></a><a style="background-color: #ffffff">  !</a>
+   250) <a name="l250" style="background-color: #ffffff">  !===============================================================================</a>
+   251) <a name="l251" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">trbintd(ncol    ,                            &amp;</a>
+   252) <a name="l252" style="background-color: #ffcccc">       thv     ,z       ,u       ,v       , &amp;</a>
+   253) <a name="l253" style="background-color: #ffcccc">       s2      ,n2      ,ri      )</a>
+   254) <a name="l254" style="background-color: #ffcccc"></a>
+   255) <a name="l255" style="background-color: #ffcccc">    !----------------------------------------------------------------------- </a>
+   256) <a name="l256" style="background-color: #ffcccc">    ! </a>
+   257) <a name="l257" style="background-color: #ffcccc">    ! Purpose: </a>
+   258) <a name="l258" style="background-color: #ffcccc">    !  Time dependent initialization</a>
+   259) <a name="l259" style="background-color: #ffcccc">    ! </a>
+   260) <a name="l260" style="background-color: #ffcccc">    ! Method: </a>
+   261) <a name="l261" style="background-color: #ffcccc">    !  Diagnosis of variables that do not depend on mixing assumptions or</a>
+   262) <a name="l262" style="background-color: #ffcccc">    !  PBL depth</a>
+   263) <a name="l263" style="background-color: #ffcccc">    !</a>
+   264) <a name="l264" style="background-color: #ffcccc">    ! Author: B. Stevens (extracted from pbldiff, August, 2000)</a>
+   265) <a name="l265" style="background-color: #ffcccc">    ! </a>
+   266) <a name="l266" style="background-color: #ffcccc">    !-----------------------------------------------------------------------</a>
+   267) <a name="l267" style="background-color: #ffcccc">    !------------------------------Arguments--------------------------------</a>
+   268) <a name="l268" style="background-color: #ffcccc">    !</a>
+   269) <a name="l269" style="background-color: #ffcccc">    ! Input arguments</a>
+   270) <a name="l270" style="background-color: #ffcccc">    !</a>
+   271) <a name="l271" style="background-color: #ffcccc">    integer, intent(in) :: ncol                      ! number of atmospheric columns</a>
+   272) <a name="l272" style="background-color: #ffcccc"></a>
+   273) <a name="l273" style="background-color: #ffcccc">    real(r8), intent(in)  :: thv(pcols,pver)         ! virtual temperature</a>
+   274) <a name="l274" style="background-color: #ffcccc">    real(r8), intent(in)  :: z(pcols,pver)           ! height above surface [m]</a>
+   275) <a name="l275" style="background-color: #ffcccc">    real(r8), intent(in)  :: u(pcols,pver)           ! windspeed x-direction [m/s]</a>
+   276) <a name="l276" style="background-color: #ffcccc">    real(r8), intent(in)  :: v(pcols,pver)           ! windspeed y-direction [m/s]</a>
+   277) <a name="l277" style="background-color: #ffcccc"></a>
+   278) <a name="l278" style="background-color: #ffcccc">    !</a>
+   279) <a name="l279" style="background-color: #ffcccc">    ! Output arguments</a>
+   280) <a name="l280" style="background-color: #ffcccc">    !</a>
+   281) <a name="l281" style="background-color: #ffcccc">    real(r8), intent(out) :: s2(pcols,pver)          ! shear squared</a>
+   282) <a name="l282" style="background-color: #ffcccc">    real(r8), intent(out) :: n2(pcols,pver)          ! brunt vaisaila frequency</a>
+   283) <a name="l283" style="background-color: #ffcccc">    real(r8), intent(out) :: ri(pcols,pver)          ! richardson number: n2/s2</a>
+   284) <a name="l284" style="background-color: #ffcccc">    !</a>
+   285) <a name="l285" style="background-color: #ffcccc">    !---------------------------Local workspace-----------------------------</a>
+   286) <a name="l286" style="background-color: #ffcccc">    !</a>
+   287) <a name="l287" style="background-color: #ffcccc">    integer  :: i                        ! longitude index</a>
+   288) <a name="l288" style="background-color: #ffcccc">    integer  :: k                        ! level index</a>
+   289) <a name="l289" style="background-color: #ffcccc"></a>
+   290) <a name="l290" style="background-color: #ffcccc">    real(r8) :: vvk                      ! velocity magnitude squared</a>
+   291) <a name="l291" style="background-color: #ffcccc">    real(r8) :: dvdz2                    ! velocity shear squared</a>
+   292) <a name="l292" style="background-color: #ffcccc">    real(r8) :: dz                       ! delta z between midpoints</a>
+   293) <a name="l293" style="background-color: #ffcccc">    !</a>
+   294) <a name="l294" style="background-color: #ffcccc">    ! Compute shear squared (s2), brunt vaisaila frequency (n2) and related richardson</a>
+   295) <a name="l295" style="background-color: #ffcccc">    ! number (ri). Use virtual temperature to compute n2.</a>
+   296) <a name="l296" style="background-color: #ffcccc">    !</a>
+   297) <a name="l297" style="background-color: #ffcccc"></a>
+   298) <a name="l298" style="background-color: #ffcccc">    do k=ntop_turb,nbot_turb-1</a>
+   299) <a name="l299" style="background-color: #ffcccc">       do i=1,ncol</a>
+   300) <a name="l300" style="background-color: #ffcccc">          dvdz2   = (u(i,k)-u(i,k+1))**2 + (v(i,k)-v(i,k+1))**2</a>
+   301) <a name="l301" style="background-color: #ffcccc">          dvdz2   = max(dvdz2,1.e-36_r8)</a>
+   302) <a name="l302" style="background-color: #ffcccc">          dz      = z(i,k) - z(i,k+1)</a>
+   303) <a name="l303" style="background-color: #ffcccc">          s2(i,k) = dvdz2/(dz**2)</a>
+   304) <a name="l304" style="background-color: #ffcccc">          n2(i,k) = g*2.0_r8*( thv(i,k) - thv(i,k+1))/((thv(i,k) + thv(i,k+1))*dz)</a>
+   305) <a name="l305" style="background-color: #ffcccc">          ri(i,k) = n2(i,k)/s2(i,k)</a>
+   306) <a name="l306" style="background-color: #ffcccc">       end do</a>
+   307) <a name="l307" style="background-color: #ffcccc">    end do</a>
+   308) <a name="l308" style="background-color: #ffcccc"></a>
+   309) <a name="l309" style="background-color: #ffcccc">    return</a>
+   310) <a name="l310" style="background-color: #ffcccc">  end subroutine trbintd</a>
+   311) <a name="l311" style="background-color: #ffcccc"></a><a style="background-color: #ffffff">  !</a>
+   312) <a name="l312" style="background-color: #ffffff">  !===============================================================================</a>
+   313) <a name="l313" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">pblintd(ncol    ,                            &amp;</a>
+   314) <a name="l314" style="background-color: #ffcccc">       thv     ,z       ,u       ,v       , &amp;</a>
+   315) <a name="l315" style="background-color: #ffcccc">       ustar   ,obklen  ,kbfs    ,pblh    ,wstar   , &amp;</a>
+   316) <a name="l316" style="background-color: #ffcccc">       zi      ,cldn    ,ocnfrac ,bge     )</a>
+   317) <a name="l317" style="background-color: #ffcccc">    !----------------------------------------------------------------------- </a>
+   318) <a name="l318" style="background-color: #ffcccc">    ! </a>
+   319) <a name="l319" style="background-color: #ffcccc">    ! Purpose: </a>
+   320) <a name="l320" style="background-color: #ffcccc">    ! Diagnose standard PBL variables</a>
+   321) <a name="l321" style="background-color: #ffcccc">    ! </a>
+   322) <a name="l322" style="background-color: #ffcccc">    ! Method: </a>
+   323) <a name="l323" style="background-color: #ffcccc">    ! Diagnosis of PBL depth and related variables.  In this case only wstar.</a>
+   324) <a name="l324" style="background-color: #ffcccc">    ! The PBL depth follows:</a>
+   325) <a name="l325" style="background-color: #ffcccc">    !    Holtslag, A.A.M., and B.A. Boville, 1993:</a>
+   326) <a name="l326" style="background-color: #ffcccc">    !    Local versus Nonlocal Boundary-Layer Diffusion in a Global Climate</a>
+   327) <a name="l327" style="background-color: #ffcccc">    !    Model. J. Clim., vol. 6., p. 1825--1842.</a>
+   328) <a name="l328" style="background-color: #ffcccc">    !</a>
+   329) <a name="l329" style="background-color: #ffcccc">    ! Updated by Holtslag and Hack to exclude the surface layer from the</a>
+   330) <a name="l330" style="background-color: #ffcccc">    ! definition of the boundary layer Richardson number. Ri is now defined</a>
+   331) <a name="l331" style="background-color: #ffcccc">    ! across the outer layer of the pbl (between the top of the surface</a>
+   332) <a name="l332" style="background-color: #ffcccc">    ! layer and the pbl top) instead of the full pbl (between the surface and</a>
+   333) <a name="l333" style="background-color: #ffcccc">    ! the pbl top). For simiplicity, the surface layer is assumed to be the</a>
+   334) <a name="l334" style="background-color: #ffcccc">    ! region below the first model level (otherwise the boundary layer depth</a>
+   335) <a name="l335" style="background-color: #ffcccc">    ! determination would require iteration).</a>
+   336) <a name="l336" style="background-color: #ffcccc">    !</a>
+   337) <a name="l337" style="background-color: #ffcccc">    ! Modified for boundary layer height diagnosis: Bert Holtslag, june 1994</a>
+   338) <a name="l338" style="background-color: #ffcccc">    ! &gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;  (Use ricr = 0.3 in this formulation)</a>
+   339) <a name="l339" style="background-color: #ffcccc">    ! </a>
+   340) <a name="l340" style="background-color: #ffcccc">    ! Author: B. Stevens (extracted from pbldiff, August 2000)</a>
+   341) <a name="l341" style="background-color: #ffcccc">    ! </a>
+   342) <a name="l342" style="background-color: #ffcccc">    !-----------------------------------------------------------------------</a>
+   343) <a name="l343" style="background-color: #ffcccc">    !------------------------------Arguments--------------------------------</a>
+   344) <a name="l344" style="background-color: #ffcccc">    !</a>
+   345) <a name="l345" style="background-color: #ffcccc">    ! Input arguments</a>
+   346) <a name="l346" style="background-color: #ffcccc">    !</a>
+   347) <a name="l347" style="background-color: #ffcccc">    integer, intent(in) :: ncol                      ! number of atmospheric columns</a>
+   348) <a name="l348" style="background-color: #ffcccc"></a>
+   349) <a name="l349" style="background-color: #ffcccc">    real(r8), intent(in)  :: thv(pcols,pver)         ! virtual temperature</a>
+   350) <a name="l350" style="background-color: #ffcccc">    real(r8), intent(in)  :: z(pcols,pver)           ! height above surface [m]</a>
+   351) <a name="l351" style="background-color: #ffcccc">    real(r8), intent(in)  :: u(pcols,pver)           ! windspeed x-direction [m/s]</a>
+   352) <a name="l352" style="background-color: #ffcccc">    real(r8), intent(in)  :: v(pcols,pver)           ! windspeed y-direction [m/s]</a>
+   353) <a name="l353" style="background-color: #ffcccc">    real(r8), intent(in)  :: ustar(pcols)            ! surface friction velocity [m/s]</a>
+   354) <a name="l354" style="background-color: #ffcccc">    real(r8), intent(in)  :: obklen(pcols)           ! Obukhov length</a>
+   355) <a name="l355" style="background-color: #ffcccc">    real(r8), intent(in)  :: kbfs(pcols)             ! sfc kinematic buoyancy flux [m^2/s^3]</a>
+   356) <a name="l356" style="background-color: #ffcccc">    real(r8), intent(in)  :: zi(pcols,pverp)         ! height above surface [m]</a>
+   357) <a name="l357" style="background-color: #ffcccc">    real(r8), intent(in)  :: cldn(pcols,pver)        ! new cloud fraction</a>
+   358) <a name="l358" style="background-color: #ffcccc">    real(r8), intent(in)  :: ocnfrac(pcols)          ! Land fraction</a>
+   359) <a name="l359" style="background-color: #ffcccc"></a>
+   360) <a name="l360" style="background-color: #ffcccc">    !</a>
+   361) <a name="l361" style="background-color: #ffcccc">    ! Output arguments</a>
+   362) <a name="l362" style="background-color: #ffcccc">    !</a>
+   363) <a name="l363" style="background-color: #ffcccc">    real(r8), intent(out) :: wstar(pcols)            ! convective sclae velocity [m/s]</a>
+   364) <a name="l364" style="background-color: #ffcccc">    real(r8), intent(out) :: pblh(pcols)             ! boundary-layer height [m]</a>
+   365) <a name="l365" style="background-color: #ffcccc">    real(r8), intent(out) :: bge(pcols)              ! buoyancy gradient enhancment</a>
+   366) <a name="l366" style="background-color: #ffcccc">    !</a>
+   367) <a name="l367" style="background-color: #ffcccc">    !---------------------------Local parameters----------------------------</a>
+   368) <a name="l368" style="background-color: #ffcccc">    !</a>
+   369) <a name="l369" style="background-color: #ffcccc">    real(r8), parameter   :: tiny = 1.e-36_r8           ! lower bound for wind magnitude</a>
+   370) <a name="l370" style="background-color: #ffcccc">    real(r8), parameter   :: fac  = 100._r8             ! ustar parameter in height diagnosis </a>
+   371) <a name="l371" style="background-color: #ffcccc">    !</a>
+   372) <a name="l372" style="background-color: #ffcccc">    !---------------------------Local workspace-----------------------------</a>
+   373) <a name="l373" style="background-color: #ffcccc">    !</a>
+   374) <a name="l374" style="background-color: #ffcccc">    integer  :: i                       ! longitude index</a>
+   375) <a name="l375" style="background-color: #ffcccc">    integer  :: k                       ! level index</a>
+   376) <a name="l376" style="background-color: #ffcccc"></a>
+   377) <a name="l377" style="background-color: #ffcccc">    real(r8) :: phiminv(pcols)          ! inverse phi function for momentum</a>
+   378) <a name="l378" style="background-color: #ffcccc">    real(r8) :: phihinv(pcols)          ! inverse phi function for heat</a>
+   379) <a name="l379" style="background-color: #ffcccc">    real(r8) :: rino(pcols,pver)        ! bulk Richardson no. from level to ref lev</a>
+   380) <a name="l380" style="background-color: #ffcccc">    real(r8) :: tlv(pcols)              ! ref. level pot tmp + tmp excess</a>
+   381) <a name="l381" style="background-color: #ffcccc">    real(r8) :: vvk                     ! velocity magnitude squared</a>
+   382) <a name="l382" style="background-color: #ffcccc"></a>
+   383) <a name="l383" style="background-color: #ffcccc">    logical  :: unstbl(pcols)           ! pts w/unstbl pbl (positive virtual ht flx)</a>
+   384) <a name="l384" style="background-color: #ffcccc">    logical  :: check(pcols)            ! True=&gt;chk if Richardson no.&gt;critcal</a>
+   385) <a name="l385" style="background-color: #ffcccc">    logical  :: ocncldcheck(pcols)      ! True=&gt;if ocean surface and cloud in lowest layer</a>
+   386) <a name="l386" style="background-color: #ffcccc">    !</a>
+   387) <a name="l387" style="background-color: #ffcccc">    ! Compute Obukhov length virtual temperature flux and various arrays for use later:</a>
+   388) <a name="l388" style="background-color: #ffcccc">    !</a>
+   389) <a name="l389" style="background-color: #ffcccc">    do i=1,ncol</a>
+   390) <a name="l390" style="background-color: #ffcccc">       check(i)     = .true.</a>
+   391) <a name="l391" style="background-color: #ffcccc">       rino(i,pver) = 0.0_r8</a>
+   392) <a name="l392" style="background-color: #ffcccc">       pblh(i)      = z(i,pver)</a>
+   393) <a name="l393" style="background-color: #ffcccc">    end do</a>
+   394) <a name="l394" style="background-color: #ffcccc">    !</a>
+   395) <a name="l395" style="background-color: #ffcccc">    !</a>
+   396) <a name="l396" style="background-color: #ffcccc">    ! PBL height calculation:  Scan upward until the Richardson number between</a>
+   397) <a name="l397" style="background-color: #ffcccc">    ! the first level and the current level exceeds the &quot;critical&quot; value.</a>
+   398) <a name="l398" style="background-color: #ffcccc">    !</a>
+   399) <a name="l399" style="background-color: #ffcccc">    do k=pver-1,pver-npbl+1,-1</a>
+   400) <a name="l400" style="background-color: #ffcccc">       do i=1,ncol</a>
+   401) <a name="l401" style="background-color: #ffcccc">          if (check(i)) then</a>
+   402) <a name="l402" style="background-color: #ffcccc">             vvk = (u(i,k) - u(i,pver))**2 + (v(i,k) - v(i,pver))**2 + fac*ustar(i)**2</a>
+   403) <a name="l403" style="background-color: #ffcccc">             vvk = max(vvk,tiny)</a>
+   404) <a name="l404" style="background-color: #ffcccc">             rino(i,k) = g*(thv(i,k) - thv(i,pver))*(z(i,k)-z(i,pver))/(thv(i,pver)*vvk)</a>
+   405) <a name="l405" style="background-color: #ffcccc">             if (rino(i,k) &gt;= ricr) then</a>
+   406) <a name="l406" style="background-color: #ffcccc">                pblh(i) = z(i,k+1) + (ricr - rino(i,k+1))/(rino(i,k) - rino(i,k+1)) * &amp;</a>
+   407) <a name="l407" style="background-color: #ffcccc">                     (z(i,k) - z(i,k+1))</a>
+   408) <a name="l408" style="background-color: #ffcccc">                check(i) = .false.</a>
+   409) <a name="l409" style="background-color: #ffcccc">             end if</a>
+   410) <a name="l410" style="background-color: #ffcccc">          end if</a>
+   411) <a name="l411" style="background-color: #ffcccc">       end do</a>
+   412) <a name="l412" style="background-color: #ffcccc">    end do</a>
+   413) <a name="l413" style="background-color: #ffcccc">    !</a>
+   414) <a name="l414" style="background-color: #ffcccc">    ! Estimate an effective surface temperature to account for surface fluctuations</a>
+   415) <a name="l415" style="background-color: #ffcccc">    !</a>
+   416) <a name="l416" style="background-color: #ffcccc">    do i=1,ncol</a>
+   417) <a name="l417" style="background-color: #ffcccc">       if (check(i)) pblh(i) = z(i,pverp-npbl)</a>
+   418) <a name="l418" style="background-color: #ffcccc">       unstbl(i) = (kbfs(i) &gt; 0._r8)</a>
+   419) <a name="l419" style="background-color: #ffcccc">       check(i)  = (kbfs(i) &gt; 0._r8)</a>
+   420) <a name="l420" style="background-color: #ffcccc">       if (check(i)) then</a>
+   421) <a name="l421" style="background-color: #ffcccc">          phiminv(i)   = (1._r8 - binm*pblh(i)/obklen(i))**onet</a>
+   422) <a name="l422" style="background-color: #ffcccc">          rino(i,pver) = 0.0_r8</a>
+   423) <a name="l423" style="background-color: #ffcccc">          tlv(i)       = thv(i,pver) + kbfs(i)*fak/( ustar(i)*phiminv(i) )</a>
+   424) <a name="l424" style="background-color: #ffcccc">       end if</a>
+   425) <a name="l425" style="background-color: #ffcccc">    end do</a>
+   426) <a name="l426" style="background-color: #ffcccc">    !</a>
+   427) <a name="l427" style="background-color: #ffcccc">    ! Improve pblh estimate for unstable conditions using the convective temperature excess:</a>
+   428) <a name="l428" style="background-color: #ffcccc">    !</a>
+   429) <a name="l429" style="background-color: #ffcccc">    do i = 1,ncol</a>
+   430) <a name="l430" style="background-color: #ffcccc">       bge(i) = 1.e-8_r8</a>
+   431) <a name="l431" style="background-color: #ffcccc">    end do</a>
+   432) <a name="l432" style="background-color: #ffcccc">    do k=pver-1,pver-npbl+1,-1</a>
+   433) <a name="l433" style="background-color: #ffcccc">       do i=1,ncol</a>
+   434) <a name="l434" style="background-color: #ffcccc">          if (check(i)) then</a>
+   435) <a name="l435" style="background-color: #ffcccc">             vvk = (u(i,k) - u(i,pver))**2 + (v(i,k) - v(i,pver))**2 + fac*ustar(i)**2</a>
+   436) <a name="l436" style="background-color: #ffcccc">             vvk = max(vvk,tiny)</a>
+   437) <a name="l437" style="background-color: #ffcccc">             rino(i,k) = g*(thv(i,k) - tlv(i))*(z(i,k)-z(i,pver))/(thv(i,pver)*vvk)</a>
+   438) <a name="l438" style="background-color: #ffcccc">             if (rino(i,k) &gt;= ricr) then</a>
+   439) <a name="l439" style="background-color: #ffcccc">                pblh(i) = z(i,k+1) + (ricr - rino(i,k+1))/(rino(i,k) - rino(i,k+1))* &amp;</a>
+   440) <a name="l440" style="background-color: #ffcccc">                     (z(i,k) - z(i,k+1))</a>
+   441) <a name="l441" style="background-color: #ffcccc">                bge(i) = 2._r8*g/(thv(i,k)+thv(i,k+1))*(thv(i,k)-thv(i,k+1))/(z(i,k)-z(i,k+1))*pblh(i)</a>
+   442) <a name="l442" style="background-color: #ffcccc">                if (bge(i).lt.0._r8) then</a>
+   443) <a name="l443" style="background-color: #ffcccc">                   bge(i) = 1.e-8_r8</a>
+   444) <a name="l444" style="background-color: #ffcccc">                endif</a>
+   445) <a name="l445" style="background-color: #ffcccc">                check(i) = .false.</a>
+   446) <a name="l446" style="background-color: #ffcccc">             end if</a>
+   447) <a name="l447" style="background-color: #ffcccc">          end if</a>
+   448) <a name="l448" style="background-color: #ffcccc">       end do</a>
+   449) <a name="l449" style="background-color: #ffcccc">    end do</a>
+   450) <a name="l450" style="background-color: #ffcccc">    !</a>
+   451) <a name="l451" style="background-color: #ffcccc">    ! PBL height must be greater than some minimum mechanical mixing depth</a>
+   452) <a name="l452" style="background-color: #ffcccc">    ! Several investigators have proposed minimum mechanical mixing depth</a>
+   453) <a name="l453" style="background-color: #ffcccc">    ! relationships as a function of the local friction velocity, u*.  We</a>
+   454) <a name="l454" style="background-color: #ffcccc">    ! make use of a linear relationship of the form h = c u* where c=700.</a>
+   455) <a name="l455" style="background-color: #ffcccc">    ! The scaling arguments that give rise to this relationship most often</a>
+   456) <a name="l456" style="background-color: #ffcccc">    ! represent the coefficient c as some constant over the local coriolis</a>
+   457) <a name="l457" style="background-color: #ffcccc">    ! parameter.  Here we make use of the experimental results of Koracin</a>
+   458) <a name="l458" style="background-color: #ffcccc">    ! and Berkowicz (1988) [BLM, Vol 43] for wich they recommend 0.07/f</a>
+   459) <a name="l459" style="background-color: #ffcccc">    ! where f was evaluated at 39.5 N and 52 N.  Thus we use a typical mid</a>
+   460) <a name="l460" style="background-color: #ffcccc">    ! latitude value for f so that c = 0.07/f = 700.  Also, do not allow </a>
+   461) <a name="l461" style="background-color: #ffcccc">    ! PBL to exceed some maximum (npbl) number of allowable points</a>
+   462) <a name="l462" style="background-color: #ffcccc">    !</a>
+   463) <a name="l463" style="background-color: #ffcccc">    do i=1,ncol</a>
+   464) <a name="l464" style="background-color: #ffcccc">       if (check(i)) pblh(i) = z(i,pverp-npbl)</a>
+   465) <a name="l465" style="background-color: #ffcccc">       pblh(i) = max(pblh(i),700.0_r8*ustar(i))</a>
+   466) <a name="l466" style="background-color: #ffcccc">       wstar(i) = (max(0._r8,kbfs(i))*g*pblh(i)/thv(i,pver))**onet</a>
+   467) <a name="l467" style="background-color: #ffcccc">    end do</a>
+   468) <a name="l468" style="background-color: #ffcccc">    !</a>
+   469) <a name="l469" style="background-color: #ffcccc">    ! Final requirement on PBL heightis that it must be greater than the depth</a>
+   470) <a name="l470" style="background-color: #ffcccc">    ! of the lowest model level over ocean if there is any cloud diagnosed in </a>
+   471) <a name="l471" style="background-color: #ffcccc">    ! the lowest model level.  This is to deal with the inadequacies of the </a>
+   472) <a name="l472" style="background-color: #ffcccc">    ! current &quot;dry&quot; formulation of the boundary layer, where this test is </a>
+   473) <a name="l473" style="background-color: #ffcccc">    ! used to identify circumstances where there is marine stratus in the </a>
+   474) <a name="l474" style="background-color: #ffcccc">    ! lowest level, and to provide a weak ventilation of the layer to avoid</a>
+   475) <a name="l475" style="background-color: #ffcccc">    ! a pathology in the cloud scheme (locking in low-level stratiform cloud)</a>
+   476) <a name="l476" style="background-color: #ffcccc">    ! If over an ocean surface, and any cloud is diagnosed in the </a>
+   477) <a name="l477" style="background-color: #ffcccc">    ! lowest level, set pblh to 50 meters higher than top interface of lowest level</a>
+   478) <a name="l478" style="background-color: #ffcccc">    !</a>
+   479) <a name="l479" style="background-color: #ffcccc">    !  jrm This is being applied everywhere (not just ocean)!</a>
+   480) <a name="l480" style="background-color: #ffcccc">    do i=1,ncol</a>
+   481) <a name="l481" style="background-color: #ffcccc">       ocncldcheck(i) = .false.</a>
+   482) <a name="l482" style="background-color: #ffcccc">       if (cldn(i,pver).ge.0.0_r8) ocncldcheck(i) = .true.</a>
+   483) <a name="l483" style="background-color: #ffcccc">       if (ocncldcheck(i)) pblh(i) = max(pblh(i),zi(i,pver) + 50._r8)</a>
+   484) <a name="l484" style="background-color: #ffcccc">    end do</a>
+   485) <a name="l485" style="background-color: #ffcccc">    !</a>
+   486) <a name="l486" style="background-color: #ffcccc">    return</a>
+   487) <a name="l487" style="background-color: #ffcccc">  end subroutine pblintd</a>
+   488) <a name="l488" style="background-color: #ffcccc"></a><a style="background-color: #ffffff">  !</a>
+   489) <a name="l489" style="background-color: #ffffff">  !===============================================================================</a>
+   490) <a name="l490" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">austausch_atm(ncol    ,ri      ,s2      ,kvf     )</a>
+   491) <a name="l491" style="background-color: #ffcccc">    !----------------------------------------------------------------------- </a>
+   492) <a name="l492" style="background-color: #ffcccc">    ! </a>
+   493) <a name="l493" style="background-color: #ffcccc">    ! Purpose: </a>
+   494) <a name="l494" style="background-color: #ffcccc">    !  Computes exchange coefficients for free turbulent flows. </a>
+   495) <a name="l495" style="background-color: #ffcccc">    ! </a>
+   496) <a name="l496" style="background-color: #ffcccc">    ! Method: </a>
+   497) <a name="l497" style="background-color: #ffcccc">    !</a>
+   498) <a name="l498" style="background-color: #ffcccc">    ! The free atmosphere diffusivities are based on standard mixing length</a>
+   499) <a name="l499" style="background-color: #ffcccc">    ! forms for the neutral diffusivity multiplied by functns of Richardson</a>
+   500) <a name="l500" style="background-color: #ffcccc">    ! number. K = l^2 * |dV/dz| * f(Ri). The same functions are used for</a>
+   501) <a name="l501" style="background-color: #ffcccc">    ! momentum, potential temperature, and constitutents. </a>
+   502) <a name="l502" style="background-color: #ffcccc">    !</a>
+   503) <a name="l503" style="background-color: #ffcccc">    ! The stable Richardson num function (Ri&gt;0) is taken from Holtslag and</a>
+   504) <a name="l504" style="background-color: #ffcccc">    ! Beljaars (1989), ECMWF proceedings. f = 1 / (1 + 10*Ri*(1 + 8*Ri))</a>
+   505) <a name="l505" style="background-color: #ffcccc">    ! The unstable Richardson number function (Ri&lt;0) is taken from  CCM1.</a>
+   506) <a name="l506" style="background-color: #ffcccc">    ! f = sqrt(1 - 18*Ri)</a>
+   507) <a name="l507" style="background-color: #ffcccc">    ! </a>
+   508) <a name="l508" style="background-color: #ffcccc">    ! Author: B. Stevens (rewrite, August 2000)</a>
+   509) <a name="l509" style="background-color: #ffcccc">    ! </a>
+   510) <a name="l510" style="background-color: #ffcccc">    !-----------------------------------------------------------------------</a>
+   511) <a name="l511" style="background-color: #ffcccc">    !------------------------------Arguments--------------------------------</a>
+   512) <a name="l512" style="background-color: #ffcccc">    !</a>
+   513) <a name="l513" style="background-color: #ffcccc">    ! Input arguments</a>
+   514) <a name="l514" style="background-color: #ffcccc">    !</a>
+   515) <a name="l515" style="background-color: #ffcccc">    integer, intent(in) :: ncol                     ! number of atmospheric columns</a>
+   516) <a name="l516" style="background-color: #ffcccc"></a>
+   517) <a name="l517" style="background-color: #ffcccc">    real(r8), intent(in)  ::  s2(pcols,pver)        ! shear squared</a>
+   518) <a name="l518" style="background-color: #ffcccc">    real(r8), intent(in)  ::  ri(pcols,pver)        ! richardson no</a>
+   519) <a name="l519" style="background-color: #ffcccc">    !</a>
+   520) <a name="l520" style="background-color: #ffcccc">    ! Output arguments</a>
+   521) <a name="l521" style="background-color: #ffcccc">    !</a>
+   522) <a name="l522" style="background-color: #ffcccc">    real(r8), intent(out) :: kvf(pcols,pverp)       ! coefficient for heat and tracers</a>
+   523) <a name="l523" style="background-color: #ffcccc">    !</a>
+   524) <a name="l524" style="background-color: #ffcccc">    !---------------------------Local workspace-----------------------------</a>
+   525) <a name="l525" style="background-color: #ffcccc">    !</a>
+   526) <a name="l526" style="background-color: #ffcccc">    real(r8) :: fofri                  ! f(ri)</a>
+   527) <a name="l527" style="background-color: #ffcccc">    real(r8) :: kvn                    ! neutral Kv</a>
+   528) <a name="l528" style="background-color: #ffcccc"></a>
+   529) <a name="l529" style="background-color: #ffcccc">    integer  :: i                      ! longitude index</a>
+   530) <a name="l530" style="background-color: #ffcccc">    integer  :: k                      ! vertical index</a>
+   531) <a name="l531" style="background-color: #ffcccc">    !</a>
+   532) <a name="l532" style="background-color: #ffcccc">    !-----------------------------------------------------------------------</a>
+   533) <a name="l533" style="background-color: #ffcccc">    !</a>
+   534) <a name="l534" style="background-color: #ffcccc">    ! The surface diffusivity is always zero</a>
+   535) <a name="l535" style="background-color: #ffcccc">    !</a>
+   536) <a name="l536" style="background-color: #ffcccc">    kvf(:ncol,pverp) = 0.0_r8</a>
+   537) <a name="l537" style="background-color: #ffcccc">    !</a>
+   538) <a name="l538" style="background-color: #ffcccc">    ! Set the vertical diffusion coefficient above the top diffusion level</a>
+   539) <a name="l539" style="background-color: #ffcccc">    ! Note that nbot_turb != pver is not supported</a>
+   540) <a name="l540" style="background-color: #ffcccc">    !</a>
+   541) <a name="l541" style="background-color: #ffcccc">    kvf(:ncol,1:ntop_turb) = 0.0_r8</a>
+   542) <a name="l542" style="background-color: #ffcccc">    !</a>
+   543) <a name="l543" style="background-color: #ffcccc">    ! Compute the free atmosphere vertical diffusion coefficients: kvh = kvq = kvm. </a>
+   544) <a name="l544" style="background-color: #ffcccc">    !</a>
+   545) <a name="l545" style="background-color: #ffcccc">    do k = ntop_turb, nbot_turb-1</a>
+   546) <a name="l546" style="background-color: #ffcccc">       do i=1,ncol</a>
+   547) <a name="l547" style="background-color: #ffcccc">          if (ri(i,k) &lt; 0.0_r8) then</a>
+   548) <a name="l548" style="background-color: #ffcccc">             fofri = sqrt(max(1._r8 - 18._r8*ri(i,k),0._r8))</a>
+   549) <a name="l549" style="background-color: #ffcccc">          else </a>
+   550) <a name="l550" style="background-color: #ffcccc">             fofri = 1.0_r8/(1.0_r8 + 10.0_r8*ri(i,k)*(1.0_r8 + 8.0_r8*ri(i,k)))    </a>
+   551) <a name="l551" style="background-color: #ffcccc">          end if</a>
+   552) <a name="l552" style="background-color: #ffcccc">          kvn = ml2(k)*sqrt(s2(i,k))</a>
+   553) <a name="l553" style="background-color: #ffcccc">          kvf(i,k+1) = max(zkmin,kvn*fofri)</a>
+   554) <a name="l554" style="background-color: #ffcccc">       end do</a>
+   555) <a name="l555" style="background-color: #ffcccc">    end do</a>
+   556) <a name="l556" style="background-color: #ffcccc"></a>
+   557) <a name="l557" style="background-color: #ffcccc">    return</a>
+   558) <a name="l558" style="background-color: #ffcccc">  end subroutine austausch_atm</a>
+   559) <a name="l559" style="background-color: #ffcccc"></a><a style="background-color: #ffffff">  !</a>
+   560) <a name="l560" style="background-color: #ffffff">  !===============================================================================</a>
+   561) <a name="l561" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">austausch_pbl(lchnk ,ncol    ,          &amp;</a>
+   562) <a name="l562" style="background-color: #ffcccc">       z       ,kvf     ,kqfs    ,khfs    ,kbfs    , &amp;</a>
+   563) <a name="l563" style="background-color: #ffcccc">       obklen  ,ustar   ,wstar   ,pblh    ,kvm     , &amp;</a>
+   564) <a name="l564" style="background-color: #ffcccc">       kvh     ,cgh     ,cgs     ,tpert   ,qpert   , &amp;</a>
+   565) <a name="l565" style="background-color: #ffcccc">       ktopbl  ,tke     ,bge     ,eddy_scheme)</a>
+   566) <a name="l566" style="background-color: #ffcccc">    !----------------------------------------------------------------------- </a>
+   567) <a name="l567" style="background-color: #ffcccc">    ! </a>
+   568) <a name="l568" style="background-color: #ffcccc">    ! Purpose: </a>
+   569) <a name="l569" style="background-color: #ffcccc">    ! Atmospheric Boundary Layer Computation</a>
+   570) <a name="l570" style="background-color: #ffcccc">    ! </a>
+   571) <a name="l571" style="background-color: #ffcccc">    ! Method: </a>
+   572) <a name="l572" style="background-color: #ffcccc">    ! Nonlocal scheme that determines eddy diffusivities based on a</a>
+   573) <a name="l573" style="background-color: #ffcccc">    ! specified boundary layer height and a turbulent velocity scale;</a>
+   574) <a name="l574" style="background-color: #ffcccc">    ! also, countergradient effects for heat and moisture, and constituents</a>
+   575) <a name="l575" style="background-color: #ffcccc">    ! are included, along with temperature and humidity perturbations which</a>
+   576) <a name="l576" style="background-color: #ffcccc">    ! measure the strength of convective thermals in the lower part of the</a>
+   577) <a name="l577" style="background-color: #ffcccc">    ! atmospheric boundary layer.</a>
+   578) <a name="l578" style="background-color: #ffcccc">    !</a>
+   579) <a name="l579" style="background-color: #ffcccc">    ! For more information, see Holtslag, A.A.M., and B.A. Boville, 1993:</a>
+   580) <a name="l580" style="background-color: #ffcccc">    ! Local versus Nonlocal Boundary-Layer Diffusion in a Global Climate</a>
+   581) <a name="l581" style="background-color: #ffcccc">    ! Model. J. Clim., vol. 6., p. 1825--1842.</a>
+   582) <a name="l582" style="background-color: #ffcccc">    !</a>
+   583) <a name="l583" style="background-color: #ffcccc">    ! Updated by Holtslag and Hack to exclude the surface layer from the</a>
+   584) <a name="l584" style="background-color: #ffcccc">    ! definition of the boundary layer Richardson number. Ri is now defined</a>
+   585) <a name="l585" style="background-color: #ffcccc">    ! across the outer layer of the pbl (between the top of the surface</a>
+   586) <a name="l586" style="background-color: #ffcccc">    ! layer and the pbl top) instead of the full pbl (between the surface and</a>
+   587) <a name="l587" style="background-color: #ffcccc">    ! the pbl top). For simiplicity, the surface layer is assumed to be the</a>
+   588) <a name="l588" style="background-color: #ffcccc">    ! region below the first model level (otherwise the boundary layer depth</a>
+   589) <a name="l589" style="background-color: #ffcccc">    ! determination would require iteration).</a>
+   590) <a name="l590" style="background-color: #ffcccc">    !</a>
+   591) <a name="l591" style="background-color: #ffcccc">    ! Author: B. Boville, B. Stevens (rewrite August 2000)</a>
+   592) <a name="l592" style="background-color: #ffcccc">    ! </a>
+   593) <a name="l593" style="background-color: #ffcccc">    !-----------------------------------------------------------------------</a>
+   594) <a name="l594" style="background-color: #ffcccc">!++ debug code to be removed after validation of PBL codes</a>
+   595) <a name="l595" style="background-color: #ffcccc">     use phys_debug, only: phys_debug_hbdiff1</a>
+   596) <a name="l596" style="background-color: #ffcccc">!++ debug code to be removed after validation of PBL codes</a>
+   597) <a name="l597" style="background-color: #ffcccc">    !------------------------------Arguments--------------------------------</a>
+   598) <a name="l598" style="background-color: #ffcccc">    !</a>
+   599) <a name="l599" style="background-color: #ffcccc">    ! Input arguments</a>
+   600) <a name="l600" style="background-color: #ffcccc">    !</a>
+   601) <a name="l601" style="background-color: #ffcccc">    integer, intent(in) :: lchnk                    ! local chunk index (for debug only)</a>
+   602) <a name="l602" style="background-color: #ffcccc">    integer, intent(in) :: ncol                     ! number of atmospheric columns</a>
+   603) <a name="l603" style="background-color: #ffcccc"></a>
+   604) <a name="l604" style="background-color: #ffcccc">    real(r8), intent(in) :: z(pcols,pver)           ! height above surface [m]</a>
+   605) <a name="l605" style="background-color: #ffcccc">    real(r8), intent(in) :: kvf(pcols,pverp)        ! free atmospheric eddy diffsvty [m2/s]</a>
+   606) <a name="l606" style="background-color: #ffcccc">    real(r8), intent(in) :: kqfs(pcols)             ! kinematic surf cnstituent flux (kg/m2/s)</a>
+   607) <a name="l607" style="background-color: #ffcccc">    real(r8), intent(in) :: khfs(pcols)             ! kinimatic surface heat flux </a>
+   608) <a name="l608" style="background-color: #ffcccc">    real(r8), intent(in) :: kbfs(pcols)             ! surface buoyancy flux </a>
+   609) <a name="l609" style="background-color: #ffcccc">    real(r8), intent(in) :: pblh(pcols)             ! boundary-layer height [m]</a>
+   610) <a name="l610" style="background-color: #ffcccc">    real(r8), intent(in) :: obklen(pcols)           ! Obukhov length</a>
+   611) <a name="l611" style="background-color: #ffcccc">    real(r8), intent(in) :: ustar(pcols)            ! surface friction velocity [m/s]</a>
+   612) <a name="l612" style="background-color: #ffcccc">    real(r8), intent(in) :: wstar(pcols)            ! convective velocity scale [m/s]</a>
+   613) <a name="l613" style="background-color: #ffcccc">    real(r8), intent(in) :: bge(pcols)              ! buoyancy gradient enhancment</a>
+   614) <a name="l614" style="background-color: #ffcccc">    character(len=16), intent(in) :: eddy_scheme</a>
+   615) <a name="l615" style="background-color: #ffcccc"></a>
+   616) <a name="l616" style="background-color: #ffcccc">    !</a>
+   617) <a name="l617" style="background-color: #ffcccc">    ! Output arguments</a>
+   618) <a name="l618" style="background-color: #ffcccc">    !</a>
+   619) <a name="l619" style="background-color: #ffcccc">    real(r8), intent(out) :: kvm(pcols,pverp)       ! eddy diffusivity for momentum [m2/s]</a>
+   620) <a name="l620" style="background-color: #ffcccc">    real(r8), intent(out) :: kvh(pcols,pverp)       ! eddy diffusivity for heat [m2/s]</a>
+   621) <a name="l621" style="background-color: #ffcccc">    real(r8), intent(out) :: cgh(pcols,pverp)       ! counter-gradient term for heat [J/kg/m]</a>
+   622) <a name="l622" style="background-color: #ffcccc">    real(r8), intent(out) :: cgs(pcols,pverp)       ! counter-gradient star (cg/flux)</a>
+   623) <a name="l623" style="background-color: #ffcccc">    real(r8), intent(out) :: tpert(pcols)           ! convective temperature excess</a>
+   624) <a name="l624" style="background-color: #ffcccc">    real(r8), intent(out) :: qpert(pcols)           ! convective humidity excess</a>
+   625) <a name="l625" style="background-color: #ffcccc"></a>
+   626) <a name="l626" style="background-color: #ffcccc">    integer,  intent(out) :: ktopbl(pcols)          ! index of first midpoint inside pbl</a>
+   627) <a name="l627" style="background-color: #ffcccc">    real(r8), intent(out) :: tke(pcols,pverp)       ! turbulent kinetic energy (estimated)</a>
+   628) <a name="l628" style="background-color: #ffcccc">    !</a>
+   629) <a name="l629" style="background-color: #ffcccc">    !---------------------------Local workspace-----------------------------</a>
+   630) <a name="l630" style="background-color: #ffcccc">    !</a>
+   631) <a name="l631" style="background-color: #ffcccc">    integer  :: i                       ! longitude index</a>
+   632) <a name="l632" style="background-color: #ffcccc">    integer  :: k                       ! level index</a>
+   633) <a name="l633" style="background-color: #ffcccc"></a>
+   634) <a name="l634" style="background-color: #ffcccc">    real(r8) :: phiminv(pcols)          ! inverse phi function for momentum</a>
+   635) <a name="l635" style="background-color: #ffcccc">    real(r8) :: phihinv(pcols)          ! inverse phi function for heat</a>
+   636) <a name="l636" style="background-color: #ffcccc">    real(r8) :: wm(pcols)               ! turbulent velocity scale for momentum</a>
+   637) <a name="l637" style="background-color: #ffcccc">    real(r8) :: zp(pcols)               ! current level height + one level up </a>
+   638) <a name="l638" style="background-color: #ffcccc">    real(r8) :: fak1(pcols)             ! k*ustar*pblh     </a>
+   639) <a name="l639" style="background-color: #ffcccc">    real(r8) :: fak2(pcols)             ! k*wm*pblh</a>
+   640) <a name="l640" style="background-color: #ffcccc">    real(r8) :: fak3(pcols)             ! fakn*wstar/wm</a>
+   641) <a name="l641" style="background-color: #ffcccc">    real(r8) :: pblk(pcols)             ! level eddy diffusivity for momentum</a>
+   642) <a name="l642" style="background-color: #ffcccc">    real(r8) :: pr(pcols)               ! Prandtl number for eddy diffusivities</a>
+   643) <a name="l643" style="background-color: #ffcccc">    real(r8) :: zl(pcols)               ! zmzp / Obukhov length</a>
+   644) <a name="l644" style="background-color: #ffcccc">    real(r8) :: zh(pcols)               ! zmzp / pblh</a>
+   645) <a name="l645" style="background-color: #ffcccc">    real(r8) :: zzh(pcols)              ! (1-(zmzp/pblh))**2</a>
+   646) <a name="l646" style="background-color: #ffcccc">    real(r8) :: zmzp                    ! level height halfway between zm and zp</a>
+   647) <a name="l647" style="background-color: #ffcccc">    real(r8) :: term                    ! intermediate calculation</a>
+   648) <a name="l648" style="background-color: #ffcccc">    real(r8) :: kve                     ! diffusivity at entrainment layer in unstable cases </a>
+   649) <a name="l649" style="background-color: #ffcccc"></a>
+   650) <a name="l650" style="background-color: #ffcccc">    logical  :: unstbl(pcols)           ! pts w/unstbl pbl (positive virtual ht flx)</a>
+   651) <a name="l651" style="background-color: #ffcccc">    logical  :: pblpt(pcols)            ! pts within pbl</a>
+   652) <a name="l652" style="background-color: #ffcccc">    !</a>
+   653) <a name="l653" style="background-color: #ffcccc">    ! Initialize height independent arrays</a>
+   654) <a name="l654" style="background-color: #ffcccc">    !</a>
+   655) <a name="l655" style="background-color: #ffcccc"></a>
+   656) <a name="l656" style="background-color: #ffcccc">    !drb initialize variables for runtime error checking</a>
+   657) <a name="l657" style="background-color: #ffcccc">    kvm = 0._r8	</a>
+   658) <a name="l658" style="background-color: #ffcccc">    kvh = 0._r8</a>
+   659) <a name="l659" style="background-color: #ffcccc">    kve = 0._r8</a>
+   660) <a name="l660" style="background-color: #ffcccc">    cgh = 0._r8</a>
+   661) <a name="l661" style="background-color: #ffcccc">    cgs = 0._r8</a>
+   662) <a name="l662" style="background-color: #ffcccc">    tpert = 0._r8</a>
+   663) <a name="l663" style="background-color: #ffcccc">    qpert = 0._r8</a>
+   664) <a name="l664" style="background-color: #ffcccc">    ktopbl = 0._r8</a>
+   665) <a name="l665" style="background-color: #ffcccc">    tke = 0._r8</a>
+   666) <a name="l666" style="background-color: #ffcccc"></a>
+   667) <a name="l667" style="background-color: #ffcccc">    do i=1,ncol</a>
+   668) <a name="l668" style="background-color: #ffcccc">       unstbl(i) = (kbfs(i) &gt; 0._r8)</a>
+   669) <a name="l669" style="background-color: #ffcccc">       pblk(i) = 0.0_r8</a>
+   670) <a name="l670" style="background-color: #ffcccc">       fak1(i) = ustar(i)*pblh(i)*vk</a>
+   671) <a name="l671" style="background-color: #ffcccc">       if (unstbl(i)) then</a>
+   672) <a name="l672" style="background-color: #ffcccc">          phiminv(i) = (1._r8 - binm*pblh(i)/obklen(i))**onet</a>
+   673) <a name="l673" style="background-color: #ffcccc">          phihinv(i) = sqrt(1._r8 - binh*pblh(i)/obklen(i))</a>
+   674) <a name="l674" style="background-color: #ffcccc">          wm(i)      = ustar(i)*phiminv(i)</a>
+   675) <a name="l675" style="background-color: #ffcccc">          fak2(i)    = wm(i)*pblh(i)*vk</a>
+   676) <a name="l676" style="background-color: #ffcccc">          fak3(i)    = fakn*wstar(i)/wm(i)</a>
+   677) <a name="l677" style="background-color: #ffcccc">          tpert(i)   = max(khfs(i)*fak/wm(i),0._r8)</a>
+   678) <a name="l678" style="background-color: #ffcccc">          qpert(i)   = max(kqfs(i)*fak/wm(i),0._r8)</a>
+   679) <a name="l679" style="background-color: #ffcccc">       else</a>
+   680) <a name="l680" style="background-color: #ffcccc">          tpert(i)   = max(khfs(i)*fak/ustar(i),0._r8)</a>
+   681) <a name="l681" style="background-color: #ffcccc">          qpert(i)   = max(kqfs(i)*fak/ustar(i),0._r8)</a>
+   682) <a name="l682" style="background-color: #ffcccc">       end if</a>
+   683) <a name="l683" style="background-color: #ffcccc">    end do</a>
+   684) <a name="l684" style="background-color: #ffcccc">    !</a>
+   685) <a name="l685" style="background-color: #ffcccc">    ! Initialize output arrays with free atmosphere values</a>
+   686) <a name="l686" style="background-color: #ffcccc">    !</a>
+   687) <a name="l687" style="background-color: #ffcccc">    do k=1,pverp</a>
+   688) <a name="l688" style="background-color: #ffcccc">       do i=1,ncol</a>
+   689) <a name="l689" style="background-color: #ffcccc">          kvm(i,k) = kvf(i,k)</a>
+   690) <a name="l690" style="background-color: #ffcccc">          kvh(i,k) = kvf(i,k)</a>
+   691) <a name="l691" style="background-color: #ffcccc">          cgh(i,k) = 0.0_r8</a>
+   692) <a name="l692" style="background-color: #ffcccc">          cgs(i,k) = 0.0_r8</a>
+   693) <a name="l693" style="background-color: #ffcccc">       end do</a>
+   694) <a name="l694" style="background-color: #ffcccc">    end do</a>
+   695) <a name="l695" style="background-color: #ffcccc">    !</a>
+   696) <a name="l696" style="background-color: #ffcccc">    ! Main level loop to compute the diffusivities and counter-gradient terms. These terms are </a>
+   697) <a name="l697" style="background-color: #ffcccc">    ! only calculated at points determined to be in the interior of the pbl (pblpt(i)==.true.),</a>
+   698) <a name="l698" style="background-color: #ffcccc">    ! and then calculations are directed toward regime: stable vs unstable, surface vs outer </a>
+   699) <a name="l699" style="background-color: #ffcccc">    ! layer.</a>
+   700) <a name="l700" style="background-color: #ffcccc">    !</a>
+   701) <a name="l701" style="background-color: #ffcccc">    do k=pver,pver-npbl+2,-1</a>
+   702) <a name="l702" style="background-color: #ffcccc">       do i=1,ncol</a>
+   703) <a name="l703" style="background-color: #ffcccc">          pblpt(i) = (z(i,k) &lt; pblh(i))</a>
+   704) <a name="l704" style="background-color: #ffcccc">          if (pblpt(i)) then</a>
+   705) <a name="l705" style="background-color: #ffcccc">             ktopbl(i) = k</a>
+   706) <a name="l706" style="background-color: #ffcccc">             zp(i)  = z(i,k-1)</a>
+   707) <a name="l707" style="background-color: #ffcccc">             if (zkmin == 0.0_r8 .and. zp(i) &gt; pblh(i)) zp(i) = pblh(i)</a>
+   708) <a name="l708" style="background-color: #ffcccc">             zmzp    = 0.5_r8*(z(i,k) + zp(i)) ! we think this is an approximation to the interface height (where KVs are calculated)</a>
+   709) <a name="l709" style="background-color: #ffcccc">             zh(i)   = zmzp/pblh(i)</a>
+   710) <a name="l710" style="background-color: #ffcccc">             zl(i)   = zmzp/obklen(i)</a>
+   711) <a name="l711" style="background-color: #ffcccc">             zzh(i)  = zh(i)*max(0._r8,(1._r8 - zh(i)))**2</a>
+   712) <a name="l712" style="background-color: #ffcccc">             if (unstbl(i)) then</a>
+   713) <a name="l713" style="background-color: #ffcccc">                if (zh(i) &lt; sffrac) then</a>
+   714) <a name="l714" style="background-color: #ffcccc">                   term     = (1._r8 - betam*zl(i))**onet</a>
+   715) <a name="l715" style="background-color: #ffcccc">                   pblk(i)  = fak1(i)*zzh(i)*term</a>
+   716) <a name="l716" style="background-color: #ffcccc">                   pr(i)    = term/sqrt(1._r8 - betah*zl(i))</a>
+   717) <a name="l717" style="background-color: #ffcccc">                else</a>
+   718) <a name="l718" style="background-color: #ffcccc">                   pblk(i)  = fak2(i)*zzh(i)</a>
+   719) <a name="l719" style="background-color: #ffcccc">                   pr(i)    = phiminv(i)/phihinv(i) + ccon*fak3(i)/fak</a>
+   720) <a name="l720" style="background-color: #ffcccc">                   cgs(i,k) = fak3(i)/(pblh(i)*wm(i))</a>
+   721) <a name="l721" style="background-color: #ffcccc">                   cgh(i,k) = khfs(i)*cgs(i,k)*cpair</a>
+   722) <a name="l722" style="background-color: #ffcccc">                end if</a>
+   723) <a name="l723" style="background-color: #ffcccc">             else</a>
+   724) <a name="l724" style="background-color: #ffcccc">                if (zl(i) &lt;= 1._r8) then</a>
+   725) <a name="l725" style="background-color: #ffcccc">                   pblk(i) = fak1(i)*zzh(i)/(1._r8 + betas*zl(i))</a>
+   726) <a name="l726" style="background-color: #ffcccc">                else</a>
+   727) <a name="l727" style="background-color: #ffcccc">                   pblk(i) = fak1(i)*zzh(i)/(betas + zl(i))</a>
+   728) <a name="l728" style="background-color: #ffcccc">                end if</a>
+   729) <a name="l729" style="background-color: #ffcccc">                pr(i)    = 1._r8</a>
+   730) <a name="l730" style="background-color: #ffcccc">             end if</a>
+   731) <a name="l731" style="background-color: #ffcccc">             kvm(i,k) = max(pblk(i),kvf(i,k))</a>
+   732) <a name="l732" style="background-color: #ffcccc">             kvh(i,k) = max(pblk(i)/pr(i),kvf(i,k))</a>
+   733) <a name="l733" style="background-color: #ffcccc">          end if</a>
+   734) <a name="l734" style="background-color: #ffcccc">       end do</a>
+   735) <a name="l735" style="background-color: #ffcccc">    end do</a>
+   736) <a name="l736" style="background-color: #ffcccc"></a>
+   737) <a name="l737" style="background-color: #ffcccc">!++ debug code to be removed after validation of PBL codes</a>
+   738) <a name="l738" style="background-color: #ffcccc">    call phys_debug_hbdiff1(lchnk, pblh, zl, zh)</a>
+   739) <a name="l739" style="background-color: #ffcccc">!++ debug code to be removed after validation of PBL codes</a>
+   740) <a name="l740" style="background-color: #ffcccc"></a>
+   741) <a name="l741" style="background-color: #ffcccc">    !</a>
+   742) <a name="l742" style="background-color: #ffcccc">    ! Check whether last allowed midpoint is within pbl</a>
+   743) <a name="l743" style="background-color: #ffcccc">    !</a>
+   744) <a name="l744" style="background-color: #ffcccc"></a>
+   745) <a name="l745" style="background-color: #ffcccc">    if  ( eddy_scheme .eq. 'HBR' ) then  </a>
+   746) <a name="l746" style="background-color: #ffcccc">       ! apply new diffusivity at entrainment zone </a>
+   747) <a name="l747" style="background-color: #ffcccc">       do i = 1,ncol</a>
+   748) <a name="l748" style="background-color: #ffcccc">          if (bge(i) &gt; 1.e-7_r8) then</a>
+   749) <a name="l749" style="background-color: #ffcccc">             k = ktopbl(i)</a>
+   750) <a name="l750" style="background-color: #ffcccc">             kve = 0.2_r8*(wstar(i)**3+5._r8*ustar(i)**3)/bge(i)</a>
+   751) <a name="l751" style="background-color: #ffcccc">             kvm(i,k) = kve</a>
+   752) <a name="l752" style="background-color: #ffcccc">             kvh(i,k) = kve</a>
+   753) <a name="l753" style="background-color: #ffcccc">          end if</a>
+   754) <a name="l754" style="background-color: #ffcccc">       end do</a>
+   755) <a name="l755" style="background-color: #ffcccc">    end if</a>
+   756) <a name="l756" style="background-color: #ffcccc"></a>
+   757) <a name="l757" style="background-color: #ffcccc">    ! Crude estimate of tke (tke=0 above boundary layer)</a>
+   758) <a name="l758" style="background-color: #ffcccc">    do k = max(pverp-npbl,2),pverp</a>
+   759) <a name="l759" style="background-color: #ffcccc">       do i = 1, ncol</a>
+   760) <a name="l760" style="background-color: #ffcccc">          if (z(i,k-1) &lt; pblh(i)) then</a>
+   761) <a name="l761" style="background-color: #ffcccc">             tke(i,k) = ( kvm(i,k) / pblh(i) ) ** 2</a>
+   762) <a name="l762" style="background-color: #ffcccc">          endif</a>
+   763) <a name="l763" style="background-color: #ffcccc">       end do</a>
+   764) <a name="l764" style="background-color: #ffcccc">    end do</a>
+   765) <a name="l765" style="background-color: #ffcccc">    return</a>
+   766) <a name="l766" style="background-color: #ffcccc">  end subroutine austausch_pbl</a>
+   767) <a name="l767" style="background-color: #ffffff"></a>
+   768) <a name="l768" style="background-color: #ffffff">end module hb_diff</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

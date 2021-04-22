@@ -1,0 +1,1052 @@
+<html>
+<head>
+<title>Listing of cam3_aero_data.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;cam3_aero_data.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 16.67&#160;%func&#160;&#160;&#160;&#160;  2.75&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module cam3_aero_data</a>
+     2) <a name="l2" style="background-color: #ffffff">!----------------------------------------------------------------------- </a>
+     3) <a name="l3" style="background-color: #ffffff">! </a>
+     4) <a name="l4" style="background-color: #ffffff">! Purposes: </a>
+     5) <a name="l5" style="background-color: #ffffff">!       read, store, interpolate, and return fields</a>
+     6) <a name="l6" style="background-color: #ffffff">!         of aerosols to CAM.  The initialization</a>
+     7) <a name="l7" style="background-color: #ffffff">!         file (mass.nc) is assumed to be a monthly climatology</a>
+     8) <a name="l8" style="background-color: #ffffff">!         of aerosols from MATCH (on a sigma pressure</a>
+     9) <a name="l9" style="background-color: #ffffff">!         coordinate system).</a>
+    10) <a name="l10" style="background-color: #ffffff">!       also provide a &quot;background&quot; aerosol field to correct</a>
+    11) <a name="l11" style="background-color: #ffffff">!         for any deficiencies in the physical parameterizations</a>
+    12) <a name="l12" style="background-color: #ffffff">!         This fields is a &quot;tuning&quot; parameter.</a>
+    13) <a name="l13" style="background-color: #ffffff">!       Public methods:</a>
+    14) <a name="l14" style="background-color: #ffffff">!       (1) - initialization</a>
+    15) <a name="l15" style="background-color: #ffffff">!          read aerosol masses from external file</a>
+    16) <a name="l16" style="background-color: #ffffff">!             also pressure coordinates</a>
+    17) <a name="l17" style="background-color: #ffffff">!          convert from monthly average values to mid-month values</a>
+    18) <a name="l18" style="background-color: #ffffff">!       (2) - interpolation (time and vertical)</a>
+    19) <a name="l19" style="background-color: #ffffff">!          interpolate onto pressure levels of CAM</a>
+    20) <a name="l20" style="background-color: #ffffff">!          interpolate to time step of CAM</a>
+    21) <a name="l21" style="background-color: #ffffff">!          return mass of aerosols </a>
+    22) <a name="l22" style="background-color: #ffffff">!</a>
+    23) <a name="l23" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    24) <a name="l24" style="background-color: #ffffff"></a>
+    25) <a name="l25" style="background-color: #ffffff">  use shr_kind_mod,   only: r8 =&gt; shr_kind_r8</a>
+    26) <a name="l26" style="background-color: #ffffff">  use shr_scam_mod,   only: shr_scam_GetCloseLatLon</a>
+    27) <a name="l27" style="background-color: #ffffff">  use spmd_utils,     only: masterproc</a>
+    28) <a name="l28" style="background-color: #ffffff">  use ppgrid,         only: pcols, pver, pverp, begchunk, endchunk</a>
+    29) <a name="l29" style="background-color: #ffffff">  use phys_grid,      only: get_ncols_p, scatter_field_to_chunk</a>
+    30) <a name="l30" style="background-color: #ffffff">  use time_manager,   only: get_curr_calday</a>
+    31) <a name="l31" style="background-color: #ffffff">  use infnan,         only: nan, assignment(=)</a>
+    32) <a name="l32" style="background-color: #ffffff">  use abortutils,     only: endrun</a>
+    33) <a name="l33" style="background-color: #ffffff">  use scamMod,        only: scmlon,scmlat,single_column</a>
+    34) <a name="l34" style="background-color: #ffffff">  use error_messages, only: handle_ncerr</a>
+    35) <a name="l35" style="background-color: #ffffff">  use physics_types,  only: physics_state</a>
+    36) <a name="l36" style="background-color: #ffffff">  use boundarydata,   only: boundarydata_init, boundarydata_type</a>
+    37) <a name="l37" style="background-color: #ffffff">  use perf_mod,       only: t_startf, t_stopf</a>
+    38) <a name="l38" style="background-color: #ffffff">  use cam_logfile,    only: iulog</a>
+    39) <a name="l39" style="background-color: #ffffff">  use netcdf</a>
+    40) <a name="l40" style="background-color: #ffffff"></a>
+    41) <a name="l41" style="background-color: #ffffff">  implicit none</a>
+    42) <a name="l42" style="background-color: #ffffff">  private</a>
+    43) <a name="l43" style="background-color: #ffffff">  save</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">  public :: &amp;</a>
+    46) <a name="l46" style="background-color: #ffffff">     cam3_aero_data_readnl,       &amp; ! read namelist</a>
+    47) <a name="l47" style="background-color: #ffffff">     cam3_aero_data_register,     &amp; ! register these aerosols with pbuf2d</a>
+    48) <a name="l48" style="background-color: #ffffff">     cam3_aero_data_init,         &amp; ! read from file, interpolate onto horiz grid</a>
+    49) <a name="l49" style="background-color: #ffffff">     cam3_aero_data_timestep_init   ! update data-aerosols to this timestep</a>
+    50) <a name="l50" style="background-color: #ffffff"></a>
+    51) <a name="l51" style="background-color: #ffffff">  ! namelist variables</a>
+    52) <a name="l52" style="background-color: #ffffff">  logical, public :: cam3_aero_data_on = .false.</a>
+    53) <a name="l53" style="background-color: #ffffff">  character(len=256) :: bndtvaer = 'bndtvaer'   ! full pathname for time-variant aerosol mass climatology dataset</a>
+    54) <a name="l54" style="background-color: #ffffff"></a>
+    55) <a name="l55" style="background-color: #ffffff">  ! naer is number of species in climatology</a>
+    56) <a name="l56" style="background-color: #ffffff">  integer, parameter :: naer = 11</a>
+    57) <a name="l57" style="background-color: #ffffff"></a>
+    58) <a name="l58" style="background-color: #ffffff">  real(r8), parameter :: wgt_sscm = 6.0_r8 / 7.0_r8 ! Fraction of total seasalt mass in coarse mode</a>
+    59) <a name="l59" style="background-color: #ffffff"></a>
+    60) <a name="l60" style="background-color: #ffffff">  ! indices to aerosol array (species portion)</a>
+    61) <a name="l61" style="background-color: #ffffff">  integer, parameter :: &amp;</a>
+    62) <a name="l62" style="background-color: #ffffff">      idxSUL   =  1, &amp;</a>
+    63) <a name="l63" style="background-color: #ffffff">      idxSSLTA =  2, &amp; ! accumulation mode</a>
+    64) <a name="l64" style="background-color: #ffffff">      idxSSLTC =  3, &amp; ! coarse mode</a>
+    65) <a name="l65" style="background-color: #ffffff">      idxOCPHO =  8, &amp;</a>
+    66) <a name="l66" style="background-color: #ffffff">      idxBCPHO =  9, &amp;</a>
+    67) <a name="l67" style="background-color: #ffffff">      idxOCPHI =  10, &amp;</a>
+    68) <a name="l68" style="background-color: #ffffff">      idxBCPHI = 11</a>
+    69) <a name="l69" style="background-color: #ffffff"></a>
+    70) <a name="l70" style="background-color: #ffffff">  ! indices to sections of array that represent </a>
+    71) <a name="l71" style="background-color: #ffffff">  ! groups of aerosols</a>
+    72) <a name="l72" style="background-color: #ffffff">  integer, parameter :: &amp;</a>
+    73) <a name="l73" style="background-color: #ffffff">      idxSSLTfirst    = 2, numSSLT  = 2, &amp;</a>
+    74) <a name="l74" style="background-color: #ffffff">      idxDUSTfirst    = 4, &amp;</a>
+    75) <a name="l75" style="background-color: #ffffff">      numDUST         = 4, &amp;</a>
+    76) <a name="l76" style="background-color: #ffffff">      idxCARBONfirst = 8, &amp;</a>
+    77) <a name="l77" style="background-color: #ffffff">      numCARBON      = 4</a>
+    78) <a name="l78" style="background-color: #ffffff"></a>
+    79) <a name="l79" style="background-color: #ffffff">  ! names of aerosols are they are represented in</a>
+    80) <a name="l80" style="background-color: #ffffff">  ! the climatology file.</a>
+    81) <a name="l81" style="background-color: #ffffff">  ! Appended '_V' indicates field has been vertically summed.</a>
+    82) <a name="l82" style="background-color: #ffffff">  character(len=8), parameter :: aerosol_name(naer) =  &amp;</a>
+    83) <a name="l83" style="background-color: #ffffff">     (/&quot;MSUL_V  &quot;&amp;</a>
+    84) <a name="l84" style="background-color: #ffffff">      ,&quot;MSSLTA_V&quot;&amp;</a>
+    85) <a name="l85" style="background-color: #ffffff">      ,&quot;MSSLTC_V&quot;&amp;</a>
+    86) <a name="l86" style="background-color: #ffffff">      ,&quot;MDUST1_V&quot;&amp;</a>
+    87) <a name="l87" style="background-color: #ffffff">      ,&quot;MDUST2_V&quot;&amp;</a>
+    88) <a name="l88" style="background-color: #ffffff">      ,&quot;MDUST3_V&quot;&amp;</a>
+    89) <a name="l89" style="background-color: #ffffff">      ,&quot;MDUST4_V&quot;&amp;</a>
+    90) <a name="l90" style="background-color: #ffffff">      ,&quot;MOCPHO_V&quot;&amp;</a>
+    91) <a name="l91" style="background-color: #ffffff">      ,&quot;MBCPHO_V&quot;&amp;</a>
+    92) <a name="l92" style="background-color: #ffffff">      ,&quot;MOCPHI_V&quot;&amp;</a>
+    93) <a name="l93" style="background-color: #ffffff">      ,&quot;MBCPHI_V&quot;/)</a>
+    94) <a name="l94" style="background-color: #ffffff"></a>
+    95) <a name="l95" style="background-color: #ffffff">  ! number of different &quot;groups&quot; of aerosols</a>
+    96) <a name="l96" style="background-color: #ffffff">  integer, parameter :: num_aer_groups=4</a>
+    97) <a name="l97" style="background-color: #ffffff"></a>
+    98) <a name="l98" style="background-color: #ffffff">  ! which group does each bin belong to?</a>
+    99) <a name="l99" style="background-color: #ffffff">  integer, dimension(naer), parameter ::  &amp;</a>
+   100) <a name="l100" style="background-color: #ffffff">      group =(/1,2,2,3,3,3,3,4,4,4,4/)</a>
+   101) <a name="l101" style="background-color: #ffffff"></a>
+   102) <a name="l102" style="background-color: #ffffff">  ! name of each group</a>
+   103) <a name="l103" style="background-color: #ffffff">  character(len=10), dimension(num_aer_groups), parameter :: &amp;</a>
+   104) <a name="l104" style="background-color: #ffffff">      aerosol_names = (/'sul  ','sslt ','dust ','car  '/)</a>
+   105) <a name="l105" style="background-color: #ffffff"></a>
+   106) <a name="l106" style="background-color: #ffffff">  ! this boundarydata_type is used for datasets in the ncols format only.</a>
+   107) <a name="l107" style="background-color: #ffffff">  type(boundarydata_type) :: aerosol_datan</a>
+   108) <a name="l108" style="background-color: #ffffff"></a>
+   109) <a name="l109" style="background-color: #ffffff">  integer :: aernid = -1           ! netcdf id for aerosol file (init to invalid)</a>
+   110) <a name="l110" style="background-color: #ffffff">  integer :: species_id(naer) = -1 ! netcdf_id of each aerosol species (init to invalid)</a>
+   111) <a name="l111" style="background-color: #ffffff">  integer :: Mpsid                 ! netcdf id for MATCH PS</a>
+   112) <a name="l112" style="background-color: #ffffff">  integer :: nm = 1                ! index to prv month in array. init to 1 and toggle between 1 and 2</a>
+   113) <a name="l113" style="background-color: #ffffff">  integer :: np = 2                ! index to nxt month in array. init to 2 and toggle between 1 and 2</a>
+   114) <a name="l114" style="background-color: #ffffff">  integer :: mo_nxt = huge(1)      ! index to nxt month in file</a>
+   115) <a name="l115" style="background-color: #ffffff"></a>
+   116) <a name="l116" style="background-color: #ffffff">  real(r8) :: cdaym                ! calendar day of prv month</a>
+   117) <a name="l117" style="background-color: #ffffff">  real(r8) :: cdayp                ! calendar day of next month</a>
+   118) <a name="l118" style="background-color: #ffffff"></a>
+   119) <a name="l119" style="background-color: #ffffff">  ! aerosol mass </a>
+   120) <a name="l120" style="background-color: #ffffff">  real(r8), allocatable :: aer_mass(:, :, :, :)</a>
+   121) <a name="l121" style="background-color: #ffffff"></a>
+   122) <a name="l122" style="background-color: #ffffff">  ! Days into year for mid month date</a>
+   123) <a name="l123" style="background-color: #ffffff">  ! This variable is dumb, the dates are in the dataset to be read in but they are</a>
+   124) <a name="l124" style="background-color: #ffffff">  ! slightly different than this so getting rid of it causes a change which </a>
+   125) <a name="l125" style="background-color: #ffffff">  ! exceeds roundoff.</a>
+   126) <a name="l126" style="background-color: #ffffff">  real(r8) :: Mid(12) = (/16.5_r8,  46.0_r8,  75.5_r8, 106.0_r8, 136.5_r8, 167.0_r8, &amp;</a>
+   127) <a name="l127" style="background-color: #ffffff">                         197.5_r8, 228.5_r8, 259.0_r8, 289.5_r8, 320.0_r8, 350.5_r8 /)</a>
+   128) <a name="l128" style="background-color: #ffffff">  </a>
+   129) <a name="l129" style="background-color: #ffffff">  !  values read from file and temporary values used for interpolation</a>
+   130) <a name="l130" style="background-color: #ffffff">  !</a>
+   131) <a name="l131" style="background-color: #ffffff">  !  aerosolc is:</a>
+   132) <a name="l132" style="background-color: #ffffff">  !  Cumulative Mass at midpoint of each month</a>
+   133) <a name="l133" style="background-color: #ffffff">  !    on CAM's horizontal grid (col)</a>
+   134) <a name="l134" style="background-color: #ffffff">  !    on MATCH's levels (lev)</a>
+   135) <a name="l135" style="background-color: #ffffff">  !  aerosolc</a>
+   136) <a name="l136" style="background-color: #ffffff">  integer, parameter :: paerlev = 28       ! number of levels for aerosol fields (MUST = naerlev)</a>
+   137) <a name="l137" style="background-color: #ffffff">  integer :: naerlev                       ! size of level dimension in MATCH data</a>
+   138) <a name="l138" style="background-color: #ffffff">  integer :: naerlon</a>
+   139) <a name="l139" style="background-color: #ffffff">  integer :: naerlat</a>
+   140) <a name="l140" style="background-color: #ffffff">  real(r8), pointer :: M_hybi(:)           ! MATCH hybi</a>
+   141) <a name="l141" style="background-color: #ffffff">  real(r8), pointer :: M_ps(:,:)           ! surface pressure from MATCH file</a>
+   142) <a name="l142" style="background-color: #ffffff">  real(r8), pointer :: aerosolc(:,:,:,:,:) ! Aerosol cumulative mass from MATCH</a>
+   143) <a name="l143" style="background-color: #ffffff">  real(r8), pointer :: M_ps_cam_col(:,:,:) ! PS from MATCH on Cam Columns</a>
+   144) <a name="l144" style="background-color: #ffffff"></a>
+   145) <a name="l145" style="background-color: #ffffff">  ! indices for fields in the physics buffer</a>
+   146) <a name="l146" style="background-color: #ffffff">  integer :: cam3_sul_idx, cam3_ssam_idx, cam3_sscm_idx, &amp;</a>
+   147) <a name="l147" style="background-color: #ffffff">      cam3_dust1_idx, cam3_dust2_idx, cam3_dust3_idx, cam3_dust4_idx,&amp;</a>
+   148) <a name="l148" style="background-color: #ffffff">      cam3_ocpho_idx, cam3_bcpho_idx, cam3_ocphi_idx, cam3_bcphi_idx</a>
+   149) <a name="l149" style="background-color: #ffffff"></a>
+   150) <a name="l150" style="background-color: #ffffff">!================================================================================================</a>
+   151) <a name="l151" style="background-color: #ffffff">contains</a>
+   152) <a name="l152" style="background-color: #ffffff">!================================================================================================</a>
+   153) <a name="l153" style="background-color: #ffffff"></a>
+   154) <a name="l154" style="background-color: #ffffff">subroutine cam3_aero_data_readnl(nlfile)</a>
+   155) <a name="l155" style="background-color: #ffffff"></a>
+   156) <a name="l156" style="background-color: #ffffff">   use namelist_utils,  only: find_group_name</a>
+   157) <a name="l157" style="background-color: #ffffff">   use units,           only: getunit, freeunit</a>
+   158) <a name="l158" style="background-color: #ffffff">   use mpishorthand</a>
+   159) <a name="l159" style="background-color: #ffffff"></a>
+   160) <a name="l160" style="background-color: #ffffff">   character(len=*), intent(in) :: nlfile  ! filepath for file containing namelist input</a>
+   161) <a name="l161" style="background-color: #ffffff"></a>
+   162) <a name="l162" style="background-color: #ffffff">   ! Local variables</a>
+   163) <a name="l163" style="background-color: #ffffff">   integer :: unitn, ierr</a>
+   164) <a name="l164" style="background-color: #ffffff">   character(len=*), parameter :: subname = 'cam3_aero_data_readnl'</a>
+   165) <a name="l165" style="background-color: #ffffff"></a>
+   166) <a name="l166" style="background-color: #ffffff">   namelist /cam3_aero_data_nl/ </a><a style="background-color: #ffff99">cam3_aero_data_on, bndtvaer</a>
+   167) <a name="l167" style="background-color: #ffff99">   !-----------------------------------------------------------------------------</a>
+   168) <a name="l168" style="background-color: #ffff99"></a>
+   169) <a name="l169" style="background-color: #ffffff">   if (masterproc) then</a>
+   170) <a name="l170" style="background-color: #ffffff">      unitn = getunit()</a>
+   171) <a name="l171" style="background-color: #ffffff">      open( unitn, file=trim(nlfile), status='old' )</a>
+   172) <a name="l172" style="background-color: #ffffff">      call find_group_name(unitn, 'cam3_aero_data_nl', status=ierr)</a>
+   173) <a name="l173" style="background-color: #ffffff">      if (ierr == 0) then</a>
+   174) <a name="l174" style="background-color: #ffff99">         read(unitn, cam3_aero_data_nl, iostat=ierr)</a>
+   175) <a name="l175" style="background-color: #ffff99">         if (ierr /= 0) then</a>
+   176) <a name="l176" style="background-color: #ffff99">            call endrun(subname // ':: ERROR reading namelist')</a>
+   177) <a name="l177" style="background-color: #ffff99">         end if</a>
+   178) <a name="l178" style="background-color: #ffff99">      end if</a>
+   179) <a name="l179" style="background-color: #ffff99">      close(</a><a style="background-color: #ffffff">unitn)</a>
+   180) <a name="l180" style="background-color: #ffffff">      call freeunit(unitn)</a>
+   181) <a name="l181" style="background-color: #ffffff">   end if</a>
+   182) <a name="l182" style="background-color: #ffffff"></a>
+   183) <a name="l183" style="background-color: #ffffff">#ifdef SPMD</a>
+   184) <a name="l184" style="background-color: #ffffff">   ! Broadcast namelist variables</a>
+   185) <a name="l185" style="background-color: #ffffff">   call mpibcast(cam3_aero_data_on, 1, mpilog, 0, mpicom)</a>
+   186) <a name="l186" style="background-color: #ffffff">   call mpibcast(bndtvaer, len(bndtvaer), mpichar, 0, mpicom)</a>
+   187) <a name="l187" style="background-color: #ffffff">#endif</a>
+   188) <a name="l188" style="background-color: #ffffff"></a>
+   189) <a name="l189" style="background-color: #ffffff">   ! Prevent using these before they are set.</a>
+   190) <a name="l190" style="background-color: #ffffff">   cdaym = nan</a>
+   191) <a name="l191" style="background-color: #ffffff">   cdayp = nan</a>
+   192) <a name="l192" style="background-color: #ffffff"></a>
+   193) <a name="l193" style="background-color: #ffffff">end subroutine cam3_aero_data_readnl</a>
+   194) <a name="l194" style="background-color: #ffffff"></a>
+   195) <a name="l195" style="background-color: #ffffff">!================================================================================================</a>
+   196) <a name="l196" style="background-color: #ffffff"></a>
+   197) <a name="l197" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">cam3_aero_data_register</a>
+   198) <a name="l198" style="background-color: #ffcccc"></a>
+   199) <a name="l199" style="background-color: #ffcccc">   ! register old prescribed aerosols with physics buffer</a>
+   200) <a name="l200" style="background-color: #ffcccc">   </a>
+   201) <a name="l201" style="background-color: #ffcccc">   use physics_buffer, only: pbuf_add_field, dtype_r8</a>
+   202) <a name="l202" style="background-color: #ffcccc"></a>
+   203) <a name="l203" style="background-color: #ffcccc">   call pbuf_add_field('cam3_sul',  'physpkg',dtype_r8,(/pcols,pver/),cam3_sul_idx)</a>
+   204) <a name="l204" style="background-color: #ffcccc">   call pbuf_add_field('cam3_ssam', 'physpkg',dtype_r8,(/pcols,pver/),cam3_ssam_idx)</a>
+   205) <a name="l205" style="background-color: #ffcccc">   call pbuf_add_field('cam3_sscm', 'physpkg',dtype_r8,(/pcols,pver/),cam3_sscm_idx)</a>
+   206) <a name="l206" style="background-color: #ffcccc">   call pbuf_add_field('cam3_dust1','physpkg',dtype_r8,(/pcols,pver/),cam3_dust1_idx)</a>
+   207) <a name="l207" style="background-color: #ffcccc">   call pbuf_add_field('cam3_dust2','physpkg',dtype_r8,(/pcols,pver/),cam3_dust2_idx)</a>
+   208) <a name="l208" style="background-color: #ffcccc">   call pbuf_add_field('cam3_dust3','physpkg',dtype_r8,(/pcols,pver/),cam3_dust3_idx)</a>
+   209) <a name="l209" style="background-color: #ffcccc">   call pbuf_add_field('cam3_dust4','physpkg',dtype_r8,(/pcols,pver/),cam3_dust4_idx)</a>
+   210) <a name="l210" style="background-color: #ffcccc">   call pbuf_add_field('cam3_ocpho','physpkg',dtype_r8,(/pcols,pver/),cam3_ocpho_idx)</a>
+   211) <a name="l211" style="background-color: #ffcccc">   call pbuf_add_field('cam3_bcpho','physpkg',dtype_r8,(/pcols,pver/),cam3_bcpho_idx)</a>
+   212) <a name="l212" style="background-color: #ffcccc">   call pbuf_add_field('cam3_ocphi','physpkg',dtype_r8,(/pcols,pver/),cam3_ocphi_idx)</a>
+   213) <a name="l213" style="background-color: #ffcccc">   call pbuf_add_field('cam3_bcphi','physpkg',dtype_r8,(/pcols,pver/),cam3_bcphi_idx)</a>
+   214) <a name="l214" style="background-color: #ffcccc"></a>
+   215) <a name="l215" style="background-color: #ffcccc">end subroutine cam3_aero_data_register</a>
+   216) <a name="l216" style="background-color: #ffffff"></a>
+   217) <a name="l217" style="background-color: #ffffff">!================================================================================================</a>
+   218) <a name="l218" style="background-color: #ffffff"></a>
+   219) <a name="l219" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">cam3_aero_data_init(phys_state)</a>
+   220) <a name="l220" style="background-color: #ffcccc">!------------------------------------------------------------------</a>
+   221) <a name="l221" style="background-color: #ffcccc">!  Reads in:</a>
+   222) <a name="l222" style="background-color: #ffcccc">!     file from which to read aerosol Masses on CAM grid. Currently</a>
+   223) <a name="l223" style="background-color: #ffcccc">!        assumed to be MATCH ncep runs, averaged by month.</a>
+   224) <a name="l224" style="background-color: #ffcccc">!     NOTE (Data have been externally interpolated onto CAM grid </a>
+   225) <a name="l225" style="background-color: #ffcccc">!        and backsolved to provide Mid-month values)</a>
+   226) <a name="l226" style="background-color: #ffcccc">!     </a>
+   227) <a name="l227" style="background-color: #ffcccc">!  Populates:</a>
+   228) <a name="l228" style="background-color: #ffcccc">!     module variables:</a>
+   229) <a name="l229" style="background-color: #ffcccc">!       aerosolc(pcols,paerlev+1,begchunk:endchunk,naer,2))</a>
+   230) <a name="l230" style="background-color: #ffcccc">!       aerosolc(  column_index</a>
+   231) <a name="l231" style="background-color: #ffcccc">!                , level_index (match levels)</a>
+   232) <a name="l232" style="background-color: #ffcccc">!                , chunk_index </a>
+   233) <a name="l233" style="background-color: #ffcccc">!                , species_index</a>
+   234) <a name="l234" style="background-color: #ffcccc">!                , month = 1:2 )</a>
+   235) <a name="l235" style="background-color: #ffcccc">!       M_hybi(level_index = Lev_MATCH) = pressure at mid-level.</a>
+   236) <a name="l236" style="background-color: #ffcccc">!       M_ps_cam_col(column,chunk,month) ! PS from MATCH on Cam Columns</a>
+   237) <a name="l237" style="background-color: #ffcccc">!</a>
+   238) <a name="l238" style="background-color: #ffcccc">!  Method:</a>
+   239) <a name="l239" style="background-color: #ffcccc">!    read data from file</a>
+   240) <a name="l240" style="background-color: #ffcccc">!    allocate memory for storage of aerosol data on CAM horizontal grid</a>
+   241) <a name="l241" style="background-color: #ffcccc">!    distribute data to remote nodes</a>
+   242) <a name="l242" style="background-color: #ffcccc">!    populates the module variables</a>
+   243) <a name="l243" style="background-color: #ffcccc">!</a>
+   244) <a name="l244" style="background-color: #ffcccc">!------------------------------------------------------------------</a>
+   245) <a name="l245" style="background-color: #ffcccc">   use ioFileMod,    only: getfil</a>
+   246) <a name="l246" style="background-color: #ffcccc"></a>
+   247) <a name="l247" style="background-color: #ffcccc">#if ( defined SPMD )</a>
+   248) <a name="l248" style="background-color: #ffcccc">   use mpishorthand</a>
+   249) <a name="l249" style="background-color: #ffcccc">#endif</a>
+   250) <a name="l250" style="background-color: #ffcccc">   type(physics_state), intent(in) :: phys_state(begchunk:endchunk)</a>
+   251) <a name="l251" style="background-color: #ffcccc"></a>
+   252) <a name="l252" style="background-color: #ffcccc">! local variables</a>
+   253) <a name="l253" style="background-color: #ffcccc"></a>
+   254) <a name="l254" style="background-color: #ffcccc">   integer :: naerlev</a>
+   255) <a name="l255" style="background-color: #ffcccc"></a>
+   256) <a name="l256" style="background-color: #ffcccc">   integer dateid                       ! netcdf id for date variable</a>
+   257) <a name="l257" style="background-color: #ffcccc">   integer secid                        ! netcdf id for seconds variable</a>
+   258) <a name="l258" style="background-color: #ffcccc">   integer londimid                     ! netcdf id for longitude dimension</a>
+   259) <a name="l259" style="background-color: #ffcccc">   integer latdimid                     ! netcdf id for latitude dimension</a>
+   260) <a name="l260" style="background-color: #ffcccc">   integer levdimid                     ! netcdf id for level dimension</a>
+   261) <a name="l261" style="background-color: #ffcccc"></a>
+   262) <a name="l262" style="background-color: #ffcccc">   integer timesiz                      ! number of time samples (=12) in netcdf file</a>
+   263) <a name="l263" style="background-color: #ffcccc">   integer latid                        ! netcdf id for latitude variable</a>
+   264) <a name="l264" style="background-color: #ffcccc">   integer Mhybiid                      ! netcdf id for MATCH hybi</a>
+   265) <a name="l265" style="background-color: #ffcccc">   integer timeid                       ! netcdf id for time variable</a>
+   266) <a name="l266" style="background-color: #ffcccc">   integer dimids(nf90_max_var_dims)      ! variable shape</a>
+   267) <a name="l267" style="background-color: #ffcccc">   integer :: start(4)                  ! start vector for netcdf calls</a>
+   268) <a name="l268" style="background-color: #ffcccc">   integer :: kount(4)                  ! count vector for netcdf calls</a>
+   269) <a name="l269" style="background-color: #ffcccc">   integer mo                           ! month index</a>
+   270) <a name="l270" style="background-color: #ffcccc">   integer m                            ! constituent index</a>
+   271) <a name="l271" style="background-color: #ffcccc">   integer :: n                         ! loop index</a>
+   272) <a name="l272" style="background-color: #ffcccc">   integer :: i,j,k                     ! spatial indices</a>
+   273) <a name="l273" style="background-color: #ffcccc">   integer :: date_aer(12)              ! Date on aerosol dataset (YYYYMMDD)</a>
+   274) <a name="l274" style="background-color: #ffcccc">   integer :: attnum                    ! attribute number</a>
+   275) <a name="l275" style="background-color: #ffcccc">   integer :: ierr                      ! netcdf return code</a>
+   276) <a name="l276" style="background-color: #ffcccc">   real(r8) ::  coldata(paerlev)    ! aerosol field read in from dataset</a>
+   277) <a name="l277" style="background-color: #ffcccc">   integer :: ret</a>
+   278) <a name="l278" style="background-color: #ffcccc">   integer mo_prv                       ! index to previous month</a>
+   279) <a name="l279" style="background-color: #ffcccc">   integer latidx,lonidx</a>
+   280) <a name="l280" style="background-color: #ffcccc"></a>
+   281) <a name="l281" style="background-color: #ffcccc">   character(len=8) :: aname                   ! temporary aerosol name</a>
+   282) <a name="l282" style="background-color: #ffcccc">   character(len=8) :: tmp_aero_name(naer) ! name for input to boundary data</a>
+   283) <a name="l283" style="background-color: #ffcccc"></a>
+   284) <a name="l284" style="background-color: #ffcccc">   character(len=256) :: locfn          ! netcdf local filename to open</a>
+   285) <a name="l285" style="background-color: #ffcccc">!</a>
+   286) <a name="l286" style="background-color: #ffcccc">! aerosol_data will be read in from the aerosol boundary dataset, then scattered to chunks</a>
+   287) <a name="l287" style="background-color: #ffcccc">! after filling in the bottom level with zeros</a>
+   288) <a name="l288" style="background-color: #ffcccc">! </a>
+   289) <a name="l289" style="background-color: #ffcccc">   real(r8), allocatable :: aerosol_data(:,:,:)    ! aerosol field read in from dataset</a>
+   290) <a name="l290" style="background-color: #ffcccc">   real(r8), allocatable :: aerosol_field(:,:,:)   ! (plon,paerlev+1,plat)  aerosol field to be scattered</a>
+   291) <a name="l291" style="background-color: #ffcccc">   real(r8) :: caldayloc                           ! calendar day of current timestep</a>
+   292) <a name="l292" style="background-color: #ffcccc">   real(r8) :: closelat,closelon</a>
+   293) <a name="l293" style="background-color: #ffcccc"></a>
+   294) <a name="l294" style="background-color: #ffcccc">   character(len=*), parameter :: subname = 'cam3_aero_data_init'</a>
+   295) <a name="l295" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   296) <a name="l296" style="background-color: #ffcccc"></a>
+   297) <a name="l297" style="background-color: #ffcccc">   call t_startf(subname)</a>
+   298) <a name="l298" style="background-color: #ffcccc"></a>
+   299) <a name="l299" style="background-color: #ffcccc">   allocate (aer_mass(pcols, pver, naer, begchunk:endchunk) )</a>
+   300) <a name="l300" style="background-color: #ffcccc"></a>
+   301) <a name="l301" style="background-color: #ffcccc">   ! set new aerosol names because input file has 1 seasalt bin</a>
+   302) <a name="l302" style="background-color: #ffcccc">   do m = 1, naer</a>
+   303) <a name="l303" style="background-color: #ffcccc">      tmp_aero_name(m)=aerosol_name(m)</a>
+   304) <a name="l304" style="background-color: #ffcccc">      if (aerosol_name(m)=='MSSLTA_V') tmp_aero_name(m) = 'MSSLT_V'</a>
+   305) <a name="l305" style="background-color: #ffcccc">      if (aerosol_name(m)=='MSSLTC_V') tmp_aero_name(m) = 'MSSLT_V'</a>
+   306) <a name="l306" style="background-color: #ffcccc">   end do</a>
+   307) <a name="l307" style="background-color: #ffcccc"></a>
+   308) <a name="l308" style="background-color: #ffcccc">   allocate (aerosolc(pcols,paerlev+1,begchunk:endchunk,naer,2))</a>
+   309) <a name="l309" style="background-color: #ffcccc">   aerosolc(:,:,:,:,:) = 0._r8</a>
+   310) <a name="l310" style="background-color: #ffcccc"></a>
+   311) <a name="l311" style="background-color: #ffcccc">   caldayloc = get_curr_calday ()</a>
+   312) <a name="l312" style="background-color: #ffcccc">   </a>
+   313) <a name="l313" style="background-color: #ffcccc">   if (caldayloc &lt; Mid(1)) then</a>
+   314) <a name="l314" style="background-color: #ffcccc">      mo_prv = 12</a>
+   315) <a name="l315" style="background-color: #ffcccc">      mo_nxt =  1</a>
+   316) <a name="l316" style="background-color: #ffcccc">   else if (caldayloc &gt;= Mid(12)) then</a>
+   317) <a name="l317" style="background-color: #ffcccc">      mo_prv = 12</a>
+   318) <a name="l318" style="background-color: #ffcccc">      mo_nxt =  1</a>
+   319) <a name="l319" style="background-color: #ffcccc">   else</a>
+   320) <a name="l320" style="background-color: #ffcccc">      do i = 2 , 12</a>
+   321) <a name="l321" style="background-color: #ffcccc">         if (caldayloc &lt; Mid(i)) then</a>
+   322) <a name="l322" style="background-color: #ffcccc">            mo_prv = i-1</a>
+   323) <a name="l323" style="background-color: #ffcccc">            mo_nxt = i</a>
+   324) <a name="l324" style="background-color: #ffcccc">            exit</a>
+   325) <a name="l325" style="background-color: #ffcccc">         end if</a>
+   326) <a name="l326" style="background-color: #ffcccc">      end do</a>
+   327) <a name="l327" style="background-color: #ffcccc">   end if</a>
+   328) <a name="l328" style="background-color: #ffcccc"></a>
+   329) <a name="l329" style="background-color: #ffcccc">   ! Set initial calendar day values</a>
+   330) <a name="l330" style="background-color: #ffcccc">   cdaym = Mid(mo_prv)</a>
+   331) <a name="l331" style="background-color: #ffcccc">   cdayp = Mid(mo_nxt)</a>
+   332) <a name="l332" style="background-color: #ffcccc"></a>
+   333) <a name="l333" style="background-color: #ffcccc">   if (masterproc) &amp;</a>
+   334) <a name="l334" style="background-color: #ffcccc">      write(iulog,*) subname//': CAM3 prescribed aerosol dataset is: ', trim(bndtvaer)</a>
+   335) <a name="l335" style="background-color: #ffcccc"></a>
+   336) <a name="l336" style="background-color: #ffcccc">   call getfil (bndtvaer, locfn, 0)</a>
+   337) <a name="l337" style="background-color: #ffcccc"></a>
+   338) <a name="l338" style="background-color: #ffcccc">   call handle_ncerr( nf90_open (locfn, 0, aernid),&amp;</a>
+   339) <a name="l339" style="background-color: #ffcccc">      subname, __LINE__)</a>
+   340) <a name="l340" style="background-color: #ffcccc"></a>
+   341) <a name="l341" style="background-color: #ffcccc">   if (single_column) &amp;</a>
+   342) <a name="l342" style="background-color: #ffcccc">      call shr_scam_GetCloseLatLon(aernid,scmlat,scmlon,closelat,closelon,latidx,lonidx)</a>
+   343) <a name="l343" style="background-color: #ffcccc"></a>
+   344) <a name="l344" style="background-color: #ffcccc">   ! Check to see if this dataset is in ncol format. </a>
+   345) <a name="l345" style="background-color: #ffcccc">   aerosol_datan%isncol=.false.</a>
+   346) <a name="l346" style="background-color: #ffcccc">   ierr = nf90_inq_dimid( aernid,  'ncol', londimid )</a>
+   347) <a name="l347" style="background-color: #ffcccc">   if ( ierr==NF90_NOERR ) then</a>
+   348) <a name="l348" style="background-color: #ffcccc"></a>
+   349) <a name="l349" style="background-color: #ffcccc">      aerosol_datan%isncol=.true.</a>
+   350) <a name="l350" style="background-color: #ffcccc">      call handle_ncerr(nf90_close(aernid),subname, __LINE__)</a>
+   351) <a name="l351" style="background-color: #ffcccc"></a>
+   352) <a name="l352" style="background-color: #ffcccc">      call boundarydata_init(bndtvaer, phys_state, tmp_aero_name, naer, &amp;</a>
+   353) <a name="l353" style="background-color: #ffcccc">                             aerosol_datan, 3)</a>
+   354) <a name="l354" style="background-color: #ffcccc"></a>
+   355) <a name="l355" style="background-color: #ffcccc">      aerosolc(:,1:paerlev,:,:,:)=aerosol_datan%fields</a>
+   356) <a name="l356" style="background-color: #ffcccc"></a>
+   357) <a name="l357" style="background-color: #ffcccc">      M_ps_cam_col=&gt;aerosol_datan%ps</a>
+   358) <a name="l358" style="background-color: #ffcccc">      M_hybi=&gt;aerosol_datan%hybi</a>
+   359) <a name="l359" style="background-color: #ffcccc"></a>
+   360) <a name="l360" style="background-color: #ffcccc">   else </a>
+   361) <a name="l361" style="background-color: #ffcccc"></a>
+   362) <a name="l362" style="background-color: #ffcccc">      ! Allocate memory for dynamic arrays local to this module</a>
+   363) <a name="l363" style="background-color: #ffcccc">      allocate (M_ps_cam_col(pcols,begchunk:endchunk,2))</a>
+   364) <a name="l364" style="background-color: #ffcccc">      allocate (M_hybi(paerlev+1))</a>
+   365) <a name="l365" style="background-color: #ffcccc">      ! TBH:  HACK to avoid use of uninitialized values when ncols &lt; pcols</a>
+   366) <a name="l366" style="background-color: #ffcccc">      M_ps_cam_col(:,:,:) = 0._r8</a>
+   367) <a name="l367" style="background-color: #ffcccc"></a>
+   368) <a name="l368" style="background-color: #ffcccc">      if (masterproc) then</a>
+   369) <a name="l369" style="background-color: #ffcccc"></a>
+   370) <a name="l370" style="background-color: #ffcccc">         ! First ensure dataset is CAM-ready</a>
+   371) <a name="l371" style="background-color: #ffcccc"></a>
+   372) <a name="l372" style="background-color: #ffcccc">         call handle_ncerr(nf90_inquire_attribute (aernid, nf90_global, 'cam-ready', attnum=attnum),&amp;</a>
+   373) <a name="l373" style="background-color: #ffcccc">              subname//': interpaerosols needs to be run to create a cam-ready aerosol dataset')</a>
+   374) <a name="l374" style="background-color: #ffcccc"></a>
+   375) <a name="l375" style="background-color: #ffcccc">         ! Get and check dimension info</a>
+   376) <a name="l376" style="background-color: #ffcccc"></a>
+   377) <a name="l377" style="background-color: #ffcccc">         call handle_ncerr( nf90_inq_dimid( aernid,  'lon', londimid ),&amp;</a>
+   378) <a name="l378" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   379) <a name="l379" style="background-color: #ffcccc">         call handle_ncerr( nf90_inq_dimid( aernid,  'lev', levdimid ),&amp;</a>
+   380) <a name="l380" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   381) <a name="l381" style="background-color: #ffcccc">         call handle_ncerr( nf90_inq_dimid( aernid, 'time',   timeid ),&amp;</a>
+   382) <a name="l382" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   383) <a name="l383" style="background-color: #ffcccc">         call handle_ncerr( nf90_inq_dimid( aernid,  'lat', latdimid ),&amp;</a>
+   384) <a name="l384" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   385) <a name="l385" style="background-color: #ffcccc">         call handle_ncerr( nf90_inquire_dimension( aernid, londimid, len=naerlon ),&amp;</a>
+   386) <a name="l386" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   387) <a name="l387" style="background-color: #ffcccc">         call handle_ncerr( nf90_inquire_dimension( aernid, levdimid, len=naerlev ),&amp;</a>
+   388) <a name="l388" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   389) <a name="l389" style="background-color: #ffcccc">         call handle_ncerr( nf90_inquire_dimension( aernid, latdimid, len=naerlat ),&amp;</a>
+   390) <a name="l390" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   391) <a name="l391" style="background-color: #ffcccc">         call handle_ncerr( nf90_inquire_dimension( aernid,   timeid, len=timesiz ),&amp;</a>
+   392) <a name="l392" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   393) <a name="l393" style="background-color: #ffcccc"></a>
+   394) <a name="l394" style="background-color: #ffcccc">         call handle_ncerr( nf90_inq_varid( aernid, 'date',   dateid ),&amp;</a>
+   395) <a name="l395" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   396) <a name="l396" style="background-color: #ffcccc">         call handle_ncerr( nf90_inq_varid( aernid, 'datesec', secid ),&amp;</a>
+   397) <a name="l397" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   398) <a name="l398" style="background-color: #ffcccc"></a>
+   399) <a name="l399" style="background-color: #ffcccc">         do m = 1, naer</a>
+   400) <a name="l400" style="background-color: #ffcccc">            aname=aerosol_name(m)</a>
+   401) <a name="l401" style="background-color: #ffcccc">            ! rename because file has only one seasalt field</a>
+   402) <a name="l402" style="background-color: #ffcccc">            if (aname=='MSSLTA_V') aname = 'MSSLT_V'</a>
+   403) <a name="l403" style="background-color: #ffcccc">            if (aname=='MSSLTC_V') aname = 'MSSLT_V'</a>
+   404) <a name="l404" style="background-color: #ffcccc">            call handle_ncerr( nf90_inq_varid( aernid, TRIM(aname), species_id(m)), &amp;</a>
+   405) <a name="l405" style="background-color: #ffcccc">               subname, __LINE__)</a>
+   406) <a name="l406" style="background-color: #ffcccc">         end do</a>
+   407) <a name="l407" style="background-color: #ffcccc"></a>
+   408) <a name="l408" style="background-color: #ffcccc">         call handle_ncerr( nf90_inq_varid( aernid, 'lat', latid   ),&amp;</a>
+   409) <a name="l409" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   410) <a name="l410" style="background-color: #ffcccc"></a>
+   411) <a name="l411" style="background-color: #ffcccc">         ! quick sanity check on one field</a>
+   412) <a name="l412" style="background-color: #ffcccc">         call handle_ncerr( nf90_inquire_variable (aernid, species_id(1), dimids=dimids),&amp;</a>
+   413) <a name="l413" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   414) <a name="l414" style="background-color: #ffcccc"></a>
+   415) <a name="l415" style="background-color: #ffcccc">         if ( (dimids(4) /= timeid) .or. &amp;</a>
+   416) <a name="l416" style="background-color: #ffcccc">              (dimids(3) /= levdimid) .or. &amp;</a>
+   417) <a name="l417" style="background-color: #ffcccc">              (dimids(2) /= latdimid) .or. &amp;</a>
+   418) <a name="l418" style="background-color: #ffcccc">              (dimids(1) /= londimid) ) then</a>
+   419) <a name="l419" style="background-color: #ffcccc">            write(iulog,*) subname//': Data must be ordered time, lev, lat, lon'</a>
+   420) <a name="l420" style="background-color: #ffcccc">            write(iulog,*) 'data are       ordered as', dimids(4), dimids(3), dimids(2), dimids(1)</a>
+   421) <a name="l421" style="background-color: #ffcccc">            write(iulog,*) 'data should be ordered as', timeid, levdimid, latdimid, londimid</a>
+   422) <a name="l422" style="background-color: #ffcccc">            call endrun ()</a>
+   423) <a name="l423" style="background-color: #ffcccc">         end if</a>
+   424) <a name="l424" style="background-color: #ffcccc"></a>
+   425) <a name="l425" style="background-color: #ffcccc">         ! use hybi,PS from MATCH</a>
+   426) <a name="l426" style="background-color: #ffcccc">         call handle_ncerr( nf90_inq_varid( aernid, 'hybi', Mhybiid   ),&amp;</a>
+   427) <a name="l427" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   428) <a name="l428" style="background-color: #ffcccc">         call handle_ncerr( nf90_inq_varid( aernid, 'PS', Mpsid   ),&amp;</a>
+   429) <a name="l429" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   430) <a name="l430" style="background-color: #ffcccc"></a>
+   431) <a name="l431" style="background-color: #ffcccc">         ! check dimension order for MATCH's surface pressure</a>
+   432) <a name="l432" style="background-color: #ffcccc">         call handle_ncerr( nf90_inquire_variable (aernid, Mpsid, dimids=dimids),&amp;</a>
+   433) <a name="l433" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   434) <a name="l434" style="background-color: #ffcccc">         if ( (dimids(3) /= timeid) .or. &amp;</a>
+   435) <a name="l435" style="background-color: #ffcccc">              (dimids(2) /= latdimid) .or. &amp;</a>
+   436) <a name="l436" style="background-color: #ffcccc">              (dimids(1) /= londimid) ) then</a>
+   437) <a name="l437" style="background-color: #ffcccc">            write(iulog,*) subname//': Pressure must be ordered time, lat, lon'</a>
+   438) <a name="l438" style="background-color: #ffcccc">            write(iulog,*) 'data are       ordered as', dimids(3), dimids(2), dimids(1)</a>
+   439) <a name="l439" style="background-color: #ffcccc">            write(iulog,*) 'data should be ordered as', timeid, levdimid, latdimid, londimid</a>
+   440) <a name="l440" style="background-color: #ffcccc">            call endrun ()</a>
+   441) <a name="l441" style="background-color: #ffcccc">         end if</a>
+   442) <a name="l442" style="background-color: #ffcccc"></a>
+   443) <a name="l443" style="background-color: #ffcccc">         ! read in hybi from MATCH</a>
+   444) <a name="l444" style="background-color: #ffcccc">         call handle_ncerr( nf90_get_var (aernid, Mhybiid, M_hybi),&amp;</a>
+   445) <a name="l445" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   446) <a name="l446" style="background-color: #ffcccc"></a>
+   447) <a name="l447" style="background-color: #ffcccc">         ! Retrieve date and sec variables.</a>
+   448) <a name="l448" style="background-color: #ffcccc">         call handle_ncerr( nf90_get_var (aernid, dateid, date_aer),&amp;</a>
+   449) <a name="l449" style="background-color: #ffcccc">              subname, __LINE__)</a>
+   450) <a name="l450" style="background-color: #ffcccc">         if (timesiz &lt; 12) then</a>
+   451) <a name="l451" style="background-color: #ffcccc">            write(iulog,*) subname//': When cycling aerosols, dataset must have 12 consecutive ', &amp;</a>
+   452) <a name="l452" style="background-color: #ffcccc">                 'months of data starting with Jan'</a>
+   453) <a name="l453" style="background-color: #ffcccc">            write(iulog,*) 'Current dataset has only ',timesiz,' months'</a>
+   454) <a name="l454" style="background-color: #ffcccc">            call endrun ()</a>
+   455) <a name="l455" style="background-color: #ffcccc">         end if</a>
+   456) <a name="l456" style="background-color: #ffcccc">         do mo = 1,12</a>
+   457) <a name="l457" style="background-color: #ffcccc">            if (mod(date_aer(mo),10000)/100 /= mo) then</a>
+   458) <a name="l458" style="background-color: #ffcccc">               write(iulog,*) subname//': When cycling aerosols, dataset must have 12 consecutive ', &amp;</a>
+   459) <a name="l459" style="background-color: #ffcccc">                    'months of data starting with Jan'</a>
+   460) <a name="l460" style="background-color: #ffcccc">               write(iulog,*)'Month ',mo,' of dataset says date=',date_aer(mo)</a>
+   461) <a name="l461" style="background-color: #ffcccc">               call endrun ()</a>
+   462) <a name="l462" style="background-color: #ffcccc">            end if</a>
+   463) <a name="l463" style="background-color: #ffcccc">         end do</a>
+   464) <a name="l464" style="background-color: #ffcccc">         if (single_column) then</a>
+   465) <a name="l465" style="background-color: #ffcccc">            naerlat=1</a>
+   466) <a name="l466" style="background-color: #ffcccc">            naerlon=1</a>
+   467) <a name="l467" style="background-color: #ffcccc">         endif</a>
+   468) <a name="l468" style="background-color: #ffcccc">         kount(:) = (/naerlon,naerlat,paerlev,1/)</a>
+   469) <a name="l469" style="background-color: #ffcccc">      end if          ! masterproc</a>
+   470) <a name="l470" style="background-color: #ffcccc"></a>
+   471) <a name="l471" style="background-color: #ffcccc">      ! broadcast hybi to nodes</a>
+   472) <a name="l472" style="background-color: #ffcccc"></a>
+   473) <a name="l473" style="background-color: #ffcccc">#if ( defined SPMD )</a>
+   474) <a name="l474" style="background-color: #ffcccc">      call mpibcast (M_hybi, paerlev+1, mpir8, 0, mpicom)</a>
+   475) <a name="l475" style="background-color: #ffcccc">      call mpibcast (kount, 3, mpiint, 0, mpicom)</a>
+   476) <a name="l476" style="background-color: #ffcccc">      naerlon = kount(1)</a>
+   477) <a name="l477" style="background-color: #ffcccc">      naerlat = kount(2)</a>
+   478) <a name="l478" style="background-color: #ffcccc">#endif</a>
+   479) <a name="l479" style="background-color: #ffcccc">      allocate(aerosol_field(kount(1),kount(3)+1,kount(2)))</a>
+   480) <a name="l480" style="background-color: #ffcccc">      allocate(M_ps(kount(1),kount(2)))</a>
+   481) <a name="l481" style="background-color: #ffcccc">      if (masterproc) allocate(aerosol_data(kount(1),kount(2),kount(3)))</a>
+   482) <a name="l482" style="background-color: #ffcccc"></a>
+   483) <a name="l483" style="background-color: #ffcccc">      ! Retrieve Aerosol Masses (kg/m^2 in each layer), transpose to model order (lon,lev,lat),</a>
+   484) <a name="l484" style="background-color: #ffcccc">      ! then scatter to slaves.</a>
+   485) <a name="l485" style="background-color: #ffcccc">      if (nm /= 1 .or. np /= 2) call endrun (subname//': bad nm or np value')</a>
+   486) <a name="l486" style="background-color: #ffcccc">      do n=nm,np</a>
+   487) <a name="l487" style="background-color: #ffcccc">         if (n == 1) then</a>
+   488) <a name="l488" style="background-color: #ffcccc">            mo = mo_prv</a>
+   489) <a name="l489" style="background-color: #ffcccc">         else</a>
+   490) <a name="l490" style="background-color: #ffcccc">            mo = mo_nxt</a>
+   491) <a name="l491" style="background-color: #ffcccc">         end if</a>
+   492) <a name="l492" style="background-color: #ffcccc">         </a>
+   493) <a name="l493" style="background-color: #ffcccc">         do m=1,naer</a>
+   494) <a name="l494" style="background-color: #ffcccc">            if (masterproc) then</a>
+   495) <a name="l495" style="background-color: #ffcccc">               if (single_column) then</a>
+   496) <a name="l496" style="background-color: #ffcccc">                  start(:) = (/lonidx,latidx,1,mo/)</a>
+   497) <a name="l497" style="background-color: #ffcccc">               else</a>
+   498) <a name="l498" style="background-color: #ffcccc">                  start(:) = (/1,1,1,mo/)</a>
+   499) <a name="l499" style="background-color: #ffcccc">               endif</a>
+   500) <a name="l500" style="background-color: #ffcccc">               kount(:) = (/naerlon,naerlat,paerlev,1/)</a>
+   501) <a name="l501" style="background-color: #ffcccc"></a>
+   502) <a name="l502" style="background-color: #ffcccc">               call handle_ncerr( nf90_get_var (aernid, species_id(m),aerosol_data, start, kount),&amp;</a>
+   503) <a name="l503" style="background-color: #ffcccc">                    subname, __LINE__)</a>
+   504) <a name="l504" style="background-color: #ffcccc">               do j=1,naerlat</a>
+   505) <a name="l505" style="background-color: #ffcccc">                  do k=1,paerlev</a>
+   506) <a name="l506" style="background-color: #ffcccc">                     aerosol_field(:,k,j) = aerosol_data(:,j,k)</a>
+   507) <a name="l507" style="background-color: #ffcccc">                  end do</a>
+   508) <a name="l508" style="background-color: #ffcccc">                  aerosol_field(:,paerlev+1,j) = 0._r8   ! value at bottom</a>
+   509) <a name="l509" style="background-color: #ffcccc">               end do</a>
+   510) <a name="l510" style="background-color: #ffcccc">               </a>
+   511) <a name="l511" style="background-color: #ffcccc">            end if</a>
+   512) <a name="l512" style="background-color: #ffcccc">            call scatter_field_to_chunk (1, paerlev+1, 1, naerlon, aerosol_field, &amp;</a>
+   513) <a name="l513" style="background-color: #ffcccc">                 aerosolc(:,:,:,m,n))</a>
+   514) <a name="l514" style="background-color: #ffcccc">         end do</a>
+   515) <a name="l515" style="background-color: #ffcccc"></a>
+   516) <a name="l516" style="background-color: #ffcccc">         ! Retrieve PS from Match</a>
+   517) <a name="l517" style="background-color: #ffcccc"></a>
+   518) <a name="l518" style="background-color: #ffcccc">         if (masterproc) then</a>
+   519) <a name="l519" style="background-color: #ffcccc">            if (single_column) then</a>
+   520) <a name="l520" style="background-color: #ffcccc">               start(:) = (/lonidx,latidx,mo,-1/)</a>
+   521) <a name="l521" style="background-color: #ffcccc">            else</a>
+   522) <a name="l522" style="background-color: #ffcccc">               start(:) = (/1,1,mo,-1/)</a>
+   523) <a name="l523" style="background-color: #ffcccc">            endif</a>
+   524) <a name="l524" style="background-color: #ffcccc">            kount(:) = (/naerlon,naerlat,1,-1/)</a>
+   525) <a name="l525" style="background-color: #ffcccc">            call handle_ncerr( nf90_get_var(aernid, Mpsid, M_ps,start,kount),&amp;</a>
+   526) <a name="l526" style="background-color: #ffcccc">                 subname, __LINE__)</a>
+   527) <a name="l527" style="background-color: #ffcccc">         end if</a>
+   528) <a name="l528" style="background-color: #ffcccc">         call scatter_field_to_chunk (1, 1, 1, naerlon, M_ps(:,:), M_ps_cam_col(:,:,n))</a>
+   529) <a name="l529" style="background-color: #ffcccc">      end do     ! n=nm,np (=1,2)</a>
+   530) <a name="l530" style="background-color: #ffcccc"></a>
+   531) <a name="l531" style="background-color: #ffcccc">      if(masterproc) deallocate(aerosol_data)</a>
+   532) <a name="l532" style="background-color: #ffcccc">      deallocate(aerosol_field)</a>
+   533) <a name="l533" style="background-color: #ffcccc"></a>
+   534) <a name="l534" style="background-color: #ffcccc">   end if   ! Check to see if this dataset is in ncol format. </a>
+   535) <a name="l535" style="background-color: #ffcccc"></a>
+   536) <a name="l536" style="background-color: #ffcccc">   call t_stopf(subname)</a>
+   537) <a name="l537" style="background-color: #ffcccc"></a>
+   538) <a name="l538" style="background-color: #ffcccc">end subroutine cam3_aero_data_init</a>
+   539) <a name="l539" style="background-color: #ffffff"></a>
+   540) <a name="l540" style="background-color: #ffffff">!================================================================================================</a>
+   541) <a name="l541" style="background-color: #ffffff"></a>
+   542) <a name="l542" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">cam3_aero_data_timestep_init(pbuf2d,  phys_state)</a>
+   543) <a name="l543" style="background-color: #ffcccc">!------------------------------------------------------------------</a>
+   544) <a name="l544" style="background-color: #ffcccc">!</a>
+   545) <a name="l545" style="background-color: #ffcccc">!  Input:</a>
+   546) <a name="l546" style="background-color: #ffcccc">!     time at which aerosol masses are needed (get_curr_calday())</a>
+   547) <a name="l547" style="background-color: #ffcccc">!     chunk index</a>
+   548) <a name="l548" style="background-color: #ffcccc">!     CAM's vertical grid (pint)</a>
+   549) <a name="l549" style="background-color: #ffcccc">!</a>
+   550) <a name="l550" style="background-color: #ffcccc">!  Output:</a>
+   551) <a name="l551" style="background-color: #ffcccc">!     values for Aerosol Mass at time specified by get_curr_calday</a>
+   552) <a name="l552" style="background-color: #ffcccc">!     on vertical grid specified by pint (aer_mass) :: aerosol at time t</a>
+   553) <a name="l553" style="background-color: #ffcccc">!</a>
+   554) <a name="l554" style="background-color: #ffcccc">!  Method:</a>
+   555) <a name="l555" style="background-color: #ffcccc">!     first determine which indexs of aerosols are the bounding data sets</a>
+   556) <a name="l556" style="background-color: #ffcccc">!     interpolate both onto vertical grid aerm(),aerp().</a>
+   557) <a name="l557" style="background-color: #ffcccc">!     from those two, interpolate in time.</a>
+   558) <a name="l558" style="background-color: #ffcccc">!</a>
+   559) <a name="l559" style="background-color: #ffcccc">!------------------------------------------------------------------</a>
+   560) <a name="l560" style="background-color: #ffcccc"></a>
+   561) <a name="l561" style="background-color: #ffcccc">   use interpolate_data, only: get_timeinterp_factors</a>
+   562) <a name="l562" style="background-color: #ffcccc">   </a>
+   563) <a name="l563" style="background-color: #ffcccc">   use physics_buffer, only: physics_buffer_desc, dtype_r8, pbuf_set_field, pbuf_get_chunk</a>
+   564) <a name="l564" style="background-color: #ffcccc">   use cam_logfile,     only: iulog</a>
+   565) <a name="l565" style="background-color: #ffcccc">   use ppgrid,          only: begchunk,endchunk</a>
+   566) <a name="l566" style="background-color: #ffcccc">   use physconst,       only: gravit</a>
+   567) <a name="l567" style="background-color: #ffcccc"></a>
+   568) <a name="l568" style="background-color: #ffcccc">!</a>
+   569) <a name="l569" style="background-color: #ffcccc">! aerosol fields interpolated to current time step</a>
+   570) <a name="l570" style="background-color: #ffcccc">!   on pressure levels of this time step.</a>
+   571) <a name="l571" style="background-color: #ffcccc">! these should be made read-only for other modules</a>
+   572) <a name="l572" style="background-color: #ffcccc">! Is allocation done correctly here?</a>
+   573) <a name="l573" style="background-color: #ffcccc">!</a>
+   574) <a name="l574" style="background-color: #ffcccc">   </a>
+   575) <a name="l575" style="background-color: #ffcccc">   type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+   576) <a name="l576" style="background-color: #ffcccc">   type(physics_state), intent(in), dimension(begchunk:endchunk) :: phys_state</a>
+   577) <a name="l577" style="background-color: #ffcccc"></a>
+   578) <a name="l578" style="background-color: #ffcccc">!</a>
+   579) <a name="l579" style="background-color: #ffcccc">! Local workspace</a>
+   580) <a name="l580" style="background-color: #ffcccc">!</a>
+   581) <a name="l581" style="background-color: #ffcccc">   type(physics_buffer_desc), pointer :: phys_buffer_chunk(:)</a>
+   582) <a name="l582" style="background-color: #ffcccc">   real(r8) :: pint(pcols,pverp)  ! interface pres.</a>
+   583) <a name="l583" style="background-color: #ffcccc">   integer :: c                           ! chunk index</a>
+   584) <a name="l584" style="background-color: #ffcccc">   real(r8) caldayloc                     ! calendar day of current timestep</a>
+   585) <a name="l585" style="background-color: #ffcccc">   real(r8) fact1, fact2                  ! time interpolation factors</a>
+   586) <a name="l586" style="background-color: #ffcccc"></a>
+   587) <a name="l587" style="background-color: #ffcccc">   integer i, k, j                        ! spatial indices</a>
+   588) <a name="l588" style="background-color: #ffcccc">   integer m                              ! constituent index</a>
+   589) <a name="l589" style="background-color: #ffcccc">   integer lats(pcols),lons(pcols)        ! latitude and longitudes of column</a>
+   590) <a name="l590" style="background-color: #ffcccc">   integer ncol                           ! number of columns</a>
+   591) <a name="l591" style="background-color: #ffcccc">   integer lchnk                          ! chunk index</a>
+   592) <a name="l592" style="background-color: #ffcccc">   </a>
+   593) <a name="l593" style="background-color: #ffcccc">   real(r8) speciesmin(naer)              ! minimal value for each species</a>
+   594) <a name="l594" style="background-color: #ffcccc">!</a>
+   595) <a name="l595" style="background-color: #ffcccc">! values before current time step &quot;the minus month&quot;</a>
+   596) <a name="l596" style="background-color: #ffcccc">! aerosolm(pcols,pver) is value of preceeding month's aerosol masses</a>
+   597) <a name="l597" style="background-color: #ffcccc">! aerosolp(pcols,pver) is value of next month's aerosol masses</a>
+   598) <a name="l598" style="background-color: #ffcccc">!  (think minus and plus or values to left and right of point to be interpolated)</a>
+   599) <a name="l599" style="background-color: #ffcccc">!</a>
+   600) <a name="l600" style="background-color: #ffcccc">   real(r8) aerosolm(pcols,pver,naer,begchunk:endchunk) ! aerosol mass from MATCH in column,level at previous (minus) month</a>
+   601) <a name="l601" style="background-color: #ffcccc">!</a>
+   602) <a name="l602" style="background-color: #ffcccc">! values beyond (or at) current time step &quot;the plus month&quot;</a>
+   603) <a name="l603" style="background-color: #ffcccc">!</a>
+   604) <a name="l604" style="background-color: #ffcccc">   real(r8) aerosolp(pcols,pver,naer,begchunk:endchunk) ! aerosol mass from MATCH in column,level at next (plus) month </a>
+   605) <a name="l605" style="background-color: #ffcccc">   real(r8) :: mass_to_mmr(pcols,pver)</a>
+   606) <a name="l606" style="background-color: #ffcccc"></a>
+   607) <a name="l607" style="background-color: #ffcccc">   character(len=*), parameter :: subname = 'cam3_aero_data_timestep_init'</a>
+   608) <a name="l608" style="background-color: #ffcccc"></a>
+   609) <a name="l609" style="background-color: #ffcccc">   logical error_found</a>
+   610) <a name="l610" style="background-color: #ffcccc">   !------------------------------------------------------------------</a>
+   611) <a name="l611" style="background-color: #ffcccc"></a>
+   612) <a name="l612" style="background-color: #ffcccc">   call aerint(phys_state)</a>
+   613) <a name="l613" style="background-color: #ffcccc"></a>
+   614) <a name="l614" style="background-color: #ffcccc">   caldayloc = get_curr_calday ()</a>
+   615) <a name="l615" style="background-color: #ffcccc"></a>
+   616) <a name="l616" style="background-color: #ffcccc">   ! Determine time interpolation factors.  1st arg says we are cycling 1 year of data</a>
+   617) <a name="l617" style="background-color: #ffcccc">   call get_timeinterp_factors (.true., mo_nxt, cdaym, cdayp, caldayloc, &amp;</a>
+   618) <a name="l618" style="background-color: #ffcccc">                    fact1, fact2, 'GET_AEROSOL:')</a>
+   619) <a name="l619" style="background-color: #ffcccc"></a>
+   620) <a name="l620" style="background-color: #ffcccc">   ! interpolate (prv and nxt month) bounding datasets onto cam vertical grid.</a>
+   621) <a name="l621" style="background-color: #ffcccc">   ! compute mass mixing ratios on CAMS's pressure coordinate</a>
+   622) <a name="l622" style="background-color: #ffcccc">   !  for both the &quot;minus&quot; and &quot;plus&quot; months</a>
+   623) <a name="l623" style="background-color: #ffcccc">   !</a>
+   624) <a name="l624" style="background-color: #ffcccc">   !  This loop over chunk could probably be removed by working with the whole</a>
+   625) <a name="l625" style="background-color: #ffcccc">   !  begchunk:endchunk group at once.  It would require a slight generalization </a>
+   626) <a name="l626" style="background-color: #ffcccc">   !  in vert_interpolate.</a>
+   627) <a name="l627" style="background-color: #ffcccc">   do c = begchunk,endchunk  </a>
+   628) <a name="l628" style="background-color: #ffcccc">                                </a>
+   629) <a name="l629" style="background-color: #ffcccc">      lchnk = phys_state(c)%lchnk</a>
+   630) <a name="l630" style="background-color: #ffcccc">      pint = phys_state(c)%pint</a>
+   631) <a name="l631" style="background-color: #ffcccc">      ncol = get_ncols_p(c)</a>
+   632) <a name="l632" style="background-color: #ffcccc"></a>
+   633) <a name="l633" style="background-color: #ffcccc">      call vert_interpolate (M_ps_cam_col(:,c,nm), pint, nm, aerosolm(:,:,:,c), ncol, c)</a>
+   634) <a name="l634" style="background-color: #ffcccc">      call vert_interpolate (M_ps_cam_col(:,c,np), pint, np, aerosolp(:,:,:,c), ncol, c)</a>
+   635) <a name="l635" style="background-color: #ffcccc"></a>
+   636) <a name="l636" style="background-color: #ffcccc">      ! Time interpolate.</a>
+   637) <a name="l637" style="background-color: #ffcccc">      do m=1,naer</a>
+   638) <a name="l638" style="background-color: #ffcccc">         do k=1,pver</a>
+   639) <a name="l639" style="background-color: #ffcccc">            do i=1,ncol</a>
+   640) <a name="l640" style="background-color: #ffcccc">               aer_mass(i,k,m,c) = aerosolm(i,k,m,c)*fact1 + aerosolp(i,k,m,c)*fact2</a>
+   641) <a name="l641" style="background-color: #ffcccc">            end do</a>
+   642) <a name="l642" style="background-color: #ffcccc">         end do</a>
+   643) <a name="l643" style="background-color: #ffcccc">         ! Partition seasalt aerosol mass</a>
+   644) <a name="l644" style="background-color: #ffcccc">         if (m .eq. idxSSLTA) then</a>
+   645) <a name="l645" style="background-color: #ffcccc">            aer_mass(:ncol,:,m,c) = (1._r8-wgt_sscm)*aer_mass(:ncol,:,m,c) ! fraction of seasalt mass in accumulation mode</a>
+   646) <a name="l646" style="background-color: #ffcccc">         elseif (m .eq. idxSSLTC) then</a>
+   647) <a name="l647" style="background-color: #ffcccc">            aer_mass(:ncol,:,m,c) = wgt_sscm*aer_mass(:ncol,:,m,c)      ! fraction of seasalt mass in coarse mode</a>
+   648) <a name="l648" style="background-color: #ffcccc">         endif</a>
+   649) <a name="l649" style="background-color: #ffcccc">      end do</a>
+   650) <a name="l650" style="background-color: #ffcccc"></a>
+   651) <a name="l651" style="background-color: #ffcccc">      ! exit if mass is negative (we have previously set</a>
+   652) <a name="l652" style="background-color: #ffcccc">      !  cumulative mass to be a decreasing function.)</a>
+   653) <a name="l653" style="background-color: #ffcccc">      speciesmin(:) = 0._r8 ! speciesmin(m) = 0 is minimum mass for each species</a>
+   654) <a name="l654" style="background-color: #ffcccc"> </a>
+   655) <a name="l655" style="background-color: #ffcccc">      error_found = .false.</a>
+   656) <a name="l656" style="background-color: #ffcccc">      do m=1,naer</a>
+   657) <a name="l657" style="background-color: #ffcccc">         do k=1,pver</a>
+   658) <a name="l658" style="background-color: #ffcccc">            do i=1,ncol</a>
+   659) <a name="l659" style="background-color: #ffcccc">               if (aer_mass(i, k, m,c) &lt; speciesmin(m)) error_found = .true.</a>
+   660) <a name="l660" style="background-color: #ffcccc">            end do</a>
+   661) <a name="l661" style="background-color: #ffcccc">         end do</a>
+   662) <a name="l662" style="background-color: #ffcccc">      end do</a>
+   663) <a name="l663" style="background-color: #ffcccc">      if (error_found) then</a>
+   664) <a name="l664" style="background-color: #ffcccc">         do m=1,naer</a>
+   665) <a name="l665" style="background-color: #ffcccc">            do k=1,pver</a>
+   666) <a name="l666" style="background-color: #ffcccc">               do i=1,ncol</a>
+   667) <a name="l667" style="background-color: #ffcccc">                  if (aer_mass(i, k, m,c) &lt; speciesmin(m)) then</a>
+   668) <a name="l668" style="background-color: #ffcccc">                     write(iulog,*) subname//': negative mass mixing ratio, exiting'</a>
+   669) <a name="l669" style="background-color: #ffcccc">                     write(iulog,*) 'm, column, pver',m, i, k ,aer_mass(i, k, m,c)</a>
+   670) <a name="l670" style="background-color: #ffcccc">                     call endrun ()</a>
+   671) <a name="l671" style="background-color: #ffcccc">                  end if</a>
+   672) <a name="l672" style="background-color: #ffcccc">               end do</a>
+   673) <a name="l673" style="background-color: #ffcccc">            end do</a>
+   674) <a name="l674" style="background-color: #ffcccc">         end do</a>
+   675) <a name="l675" style="background-color: #ffcccc">      end if</a>
+   676) <a name="l676" style="background-color: #ffcccc">      do k = 1, pver</a>
+   677) <a name="l677" style="background-color: #ffcccc">         mass_to_mmr(1:ncol,k) = gravit/(pint(1:ncol,k+1)-pint(1:ncol,k))</a>
+   678) <a name="l678" style="background-color: #ffcccc">      enddo</a>
+   679) <a name="l679" style="background-color: #ffcccc"></a>
+   680) <a name="l680" style="background-color: #ffcccc">      phys_buffer_chunk =&gt; pbuf_get_chunk(pbuf2d, lchnk)</a>
+   681) <a name="l681" style="background-color: #ffcccc"></a>
+   682) <a name="l682" style="background-color: #ffcccc">      call pbuf_set_field(phys_buffer_chunk, cam3_sul_idx,   aer_mass(1:ncol,:,        idxSUL,c)*mass_to_mmr(:ncol,:), &amp;</a>
+   683) <a name="l683" style="background-color: #ffcccc">           start=(/1,1/), kount=(/ncol,pver/))</a>
+   684) <a name="l684" style="background-color: #ffcccc">      call pbuf_set_field(phys_buffer_chunk, cam3_ssam_idx,  aer_mass(1:ncol,:,      idxSSLTA,c)*mass_to_mmr(:ncol,:), &amp;</a>
+   685) <a name="l685" style="background-color: #ffcccc">           start=(/1,1/), kount=(/ncol,pver/))</a>
+   686) <a name="l686" style="background-color: #ffcccc">      call pbuf_set_field(phys_buffer_chunk, cam3_sscm_idx,  aer_mass(1:ncol,:,      idxSSLTC,c)*mass_to_mmr(:ncol,:), &amp;</a>
+   687) <a name="l687" style="background-color: #ffcccc">           start=(/1,1/), kount=(/ncol,pver/))</a>
+   688) <a name="l688" style="background-color: #ffcccc">      call pbuf_set_field(phys_buffer_chunk, cam3_dust1_idx, aer_mass(1:ncol,:,  idxDUSTfirst,c)*mass_to_mmr(:ncol,:), &amp;</a>
+   689) <a name="l689" style="background-color: #ffcccc">           start=(/1,1/), kount=(/ncol,pver/))</a>
+   690) <a name="l690" style="background-color: #ffcccc">      call pbuf_set_field(phys_buffer_chunk, cam3_dust2_idx, aer_mass(1:ncol,:,idxDUSTfirst+1,c)*mass_to_mmr(:ncol,:), &amp;</a>
+   691) <a name="l691" style="background-color: #ffcccc">           start=(/1,1/), kount=(/ncol,pver/))</a>
+   692) <a name="l692" style="background-color: #ffcccc">      call pbuf_set_field(phys_buffer_chunk, cam3_dust3_idx, aer_mass(1:ncol,:,idxDUSTfirst+2,c)*mass_to_mmr(:ncol,:), &amp;</a>
+   693) <a name="l693" style="background-color: #ffcccc">           start=(/1,1/), kount=(/ncol,pver/))</a>
+   694) <a name="l694" style="background-color: #ffcccc">      call pbuf_set_field(phys_buffer_chunk, cam3_dust4_idx, aer_mass(1:ncol,:,idxDUSTfirst+3,c)*mass_to_mmr(:ncol,:), &amp;</a>
+   695) <a name="l695" style="background-color: #ffcccc">           start=(/1,1/), kount=(/ncol,pver/))</a>
+   696) <a name="l696" style="background-color: #ffcccc">      call pbuf_set_field(phys_buffer_chunk, cam3_ocpho_idx, aer_mass(1:ncol,:,      idxOCPHO,c)*mass_to_mmr(:ncol,:), &amp;</a>
+   697) <a name="l697" style="background-color: #ffcccc">           start=(/1,1/), kount=(/ncol,pver/))</a>
+   698) <a name="l698" style="background-color: #ffcccc">      call pbuf_set_field(phys_buffer_chunk, cam3_bcpho_idx, aer_mass(1:ncol,:,      idxBCPHO,c)*mass_to_mmr(:ncol,:), &amp;</a>
+   699) <a name="l699" style="background-color: #ffcccc">           start=(/1,1/), kount=(/ncol,pver/))</a>
+   700) <a name="l700" style="background-color: #ffcccc">      call pbuf_set_field(phys_buffer_chunk, cam3_ocphi_idx, aer_mass(1:ncol,:,      idxOCPHI,c)*mass_to_mmr(:ncol,:), &amp;</a>
+   701) <a name="l701" style="background-color: #ffcccc">           start=(/1,1/), kount=(/ncol,pver/))</a>
+   702) <a name="l702" style="background-color: #ffcccc">      call pbuf_set_field(phys_buffer_chunk, cam3_bcphi_idx, aer_mass(1:ncol,:,      idxBCPHI,c)*mass_to_mmr(:ncol,:), &amp;</a>
+   703) <a name="l703" style="background-color: #ffcccc">           start=(/1,1/), kount=(/ncol,pver/))</a>
+   704) <a name="l704" style="background-color: #ffcccc"></a>
+   705) <a name="l705" style="background-color: #ffcccc">   enddo ! c = begchunk:endchunk</a>
+   706) <a name="l706" style="background-color: #ffcccc"></a>
+   707) <a name="l707" style="background-color: #ffcccc">end subroutine cam3_aero_data_timestep_init</a>
+   708) <a name="l708" style="background-color: #ffffff"></a>
+   709) <a name="l709" style="background-color: #ffffff">!================================================================================================</a>
+   710) <a name="l710" style="background-color: #ffffff"></a>
+   711) <a name="l711" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">vert_interpolate (Match_ps, pint, n, aerosol_mass, ncol, c)</a>
+   712) <a name="l712" style="background-color: #ffcccc">!--------------------------------------------------------------------</a>
+   713) <a name="l713" style="background-color: #ffcccc">! Input: match surface pressure, cam interface pressure, </a>
+   714) <a name="l714" style="background-color: #ffcccc">!        month index, number of columns, chunk index</a>
+   715) <a name="l715" style="background-color: #ffcccc">! </a>
+   716) <a name="l716" style="background-color: #ffcccc">! Output: Aerosol mass mixing ratio (aerosol_mass)</a>
+   717) <a name="l717" style="background-color: #ffcccc">!</a>
+   718) <a name="l718" style="background-color: #ffcccc">! Method:</a>
+   719) <a name="l719" style="background-color: #ffcccc">!         interpolate column mass (cumulative) from match onto</a>
+   720) <a name="l720" style="background-color: #ffcccc">!           cam's vertical grid (pressure coordinate)</a>
+   721) <a name="l721" style="background-color: #ffcccc">!         convert back to mass mixing ratio</a>
+   722) <a name="l722" style="background-color: #ffcccc">!</a>
+   723) <a name="l723" style="background-color: #ffcccc">!--------------------------------------------------------------------</a>
+   724) <a name="l724" style="background-color: #ffcccc"></a>
+   725) <a name="l725" style="background-color: #ffcccc">   real(r8), intent(out) :: aerosol_mass(pcols,pver,naer)  ! aerosol mass from MATCH</a>
+   726) <a name="l726" style="background-color: #ffcccc">   real(r8), intent(in) :: Match_ps(pcols)                ! surface pressure at a particular month</a>
+   727) <a name="l727" style="background-color: #ffcccc">   real(r8), intent(in) :: pint(pcols,pverp)              ! interface pressure from CAM</a>
+   728) <a name="l728" style="background-color: #ffcccc"></a>
+   729) <a name="l729" style="background-color: #ffcccc">   integer, intent(in) :: ncol,c                          ! chunk index and number of columns</a>
+   730) <a name="l730" style="background-color: #ffcccc">   integer, intent(in) :: n                               ! prv or nxt month index</a>
+   731) <a name="l731" style="background-color: #ffcccc">!</a>
+   732) <a name="l732" style="background-color: #ffcccc">! Local workspace</a>
+   733) <a name="l733" style="background-color: #ffcccc">!</a>
+   734) <a name="l734" style="background-color: #ffcccc">   integer m                           ! index to aerosol species</a>
+   735) <a name="l735" style="background-color: #ffcccc">   integer kupper(pcols)               ! last upper bound for interpolation</a>
+   736) <a name="l736" style="background-color: #ffcccc">   integer i, k, kk, kkstart, kount    ! loop vars for interpolation</a>
+   737) <a name="l737" style="background-color: #ffcccc">   integer isv, ksv, msv               ! loop indices to save</a>
+   738) <a name="l738" style="background-color: #ffcccc"></a>
+   739) <a name="l739" style="background-color: #ffcccc">   logical bad                         ! indicates a bad point found</a>
+   740) <a name="l740" style="background-color: #ffcccc">   logical lev_interp_comp             ! interpolation completed for a level </a>
+   741) <a name="l741" style="background-color: #ffcccc">   logical error_found</a>
+   742) <a name="l742" style="background-color: #ffcccc"></a>
+   743) <a name="l743" style="background-color: #ffcccc">   real(r8) aerosol(pcols,pverp,naer)  ! cumulative mass of aerosol in column beneath upper </a>
+   744) <a name="l744" style="background-color: #ffcccc">                                       ! interface of level in column at particular month</a>
+   745) <a name="l745" style="background-color: #ffcccc">   real(r8) dpl, dpu                   ! lower and upper intepolation factors</a>
+   746) <a name="l746" style="background-color: #ffcccc">   real(r8) v_coord                    ! vertical coordinate</a>
+   747) <a name="l747" style="background-color: #ffcccc">   real(r8) AER_diff                   ! temp var for difference between aerosol masses</a>
+   748) <a name="l748" style="background-color: #ffcccc"></a>
+   749) <a name="l749" style="background-color: #ffcccc">   character(len=*), parameter :: subname = 'cam3_aero_data.vert_interpolate'</a>
+   750) <a name="l750" style="background-color: #ffcccc">   !-----------------------------------------------------------------------</a>
+   751) <a name="l751" style="background-color: #ffcccc"></a>
+   752) <a name="l752" style="background-color: #ffcccc">   call t_startf ('vert_interpolate')</a>
+   753) <a name="l753" style="background-color: #ffcccc">!</a>
+   754) <a name="l754" style="background-color: #ffcccc">! Initialize index array </a>
+   755) <a name="l755" style="background-color: #ffcccc">!</a>
+   756) <a name="l756" style="background-color: #ffcccc">   do i=1,ncol</a>
+   757) <a name="l757" style="background-color: #ffcccc">      kupper(i) = 1</a>
+   758) <a name="l758" style="background-color: #ffcccc">   end do</a>
+   759) <a name="l759" style="background-color: #ffcccc">!</a>
+   760) <a name="l760" style="background-color: #ffcccc">! assign total mass to topmost level</a>
+   761) <a name="l761" style="background-color: #ffcccc">!</a>
+   762) <a name="l762" style="background-color: #ffcccc">   aerosol(:,1,:) = aerosolc(:,1,c,:,n)</a>
+   763) <a name="l763" style="background-color: #ffcccc">!</a>
+   764) <a name="l764" style="background-color: #ffcccc">! At every pressure level, interpolate onto that pressure level</a>
+   765) <a name="l765" style="background-color: #ffcccc">!</a>
+   766) <a name="l766" style="background-color: #ffcccc">   do k=2,pver</a>
+   767) <a name="l767" style="background-color: #ffcccc">!</a>
+   768) <a name="l768" style="background-color: #ffcccc">! Top level we need to start looking is the top level for the previous k</a>
+   769) <a name="l769" style="background-color: #ffcccc">! for all longitude points</a>
+   770) <a name="l770" style="background-color: #ffcccc">!</a>
+   771) <a name="l771" style="background-color: #ffcccc">      kkstart = paerlev+1</a>
+   772) <a name="l772" style="background-color: #ffcccc">      do i=1,ncol</a>
+   773) <a name="l773" style="background-color: #ffcccc">         kkstart = min0(kkstart,kupper(i))</a>
+   774) <a name="l774" style="background-color: #ffcccc">      end do</a>
+   775) <a name="l775" style="background-color: #ffcccc">      kount = 0</a>
+   776) <a name="l776" style="background-color: #ffcccc">!</a>
+   777) <a name="l777" style="background-color: #ffcccc">! Store level indices for interpolation</a>
+   778) <a name="l778" style="background-color: #ffcccc">!</a>
+   779) <a name="l779" style="background-color: #ffcccc">! for the pressure interpolation should be comparing</a>
+   780) <a name="l780" style="background-color: #ffcccc">! pint(column,lev) with M_hybi(lev)*M_ps_cam_col(month,column,chunk)</a>
+   781) <a name="l781" style="background-color: #ffcccc">!</a>
+   782) <a name="l782" style="background-color: #ffcccc">      lev_interp_comp = .false.</a>
+   783) <a name="l783" style="background-color: #ffcccc">      do kk=kkstart,paerlev</a>
+   784) <a name="l784" style="background-color: #ffcccc">         if(.not.lev_interp_comp) then</a>
+   785) <a name="l785" style="background-color: #ffcccc">         do i=1,ncol</a>
+   786) <a name="l786" style="background-color: #ffcccc">            v_coord = pint(i,k)</a>
+   787) <a name="l787" style="background-color: #ffcccc">            if (M_hybi(kk)*Match_ps(i) .lt. v_coord .and. v_coord .le. M_hybi(kk+1)*Match_ps(i)) then</a>
+   788) <a name="l788" style="background-color: #ffcccc">               kupper(i) = kk</a>
+   789) <a name="l789" style="background-color: #ffcccc">               kount = kount + 1</a>
+   790) <a name="l790" style="background-color: #ffcccc">            end if</a>
+   791) <a name="l791" style="background-color: #ffcccc">         end do</a>
+   792) <a name="l792" style="background-color: #ffcccc">!</a>
+   793) <a name="l793" style="background-color: #ffcccc">! If all indices for this level have been found, do the interpolation and</a>
+   794) <a name="l794" style="background-color: #ffcccc">! go to the next level</a>
+   795) <a name="l795" style="background-color: #ffcccc">!</a>
+   796) <a name="l796" style="background-color: #ffcccc">! Interpolate in pressure.</a>
+   797) <a name="l797" style="background-color: #ffcccc">!</a>
+   798) <a name="l798" style="background-color: #ffcccc">         if (kount.eq.ncol) then</a>
+   799) <a name="l799" style="background-color: #ffcccc">            do m=1,naer</a>
+   800) <a name="l800" style="background-color: #ffcccc">               do i=1,ncol</a>
+   801) <a name="l801" style="background-color: #ffcccc">                  dpu = pint(i,k) - M_hybi(kupper(i))*Match_ps(i)</a>
+   802) <a name="l802" style="background-color: #ffcccc">                  dpl = M_hybi(kupper(i)+1)*Match_ps(i) - pint(i,k)</a>
+   803) <a name="l803" style="background-color: #ffcccc">                  aerosol(i,k,m) = &amp;</a>
+   804) <a name="l804" style="background-color: #ffcccc">                     (aerosolc(i,kupper(i)  ,c,m,n)*dpl + &amp;</a>
+   805) <a name="l805" style="background-color: #ffcccc">                     aerosolc(i,kupper(i)+1,c,m,n)*dpu)/(dpl + dpu)</a>
+   806) <a name="l806" style="background-color: #ffcccc">               enddo !i</a>
+   807) <a name="l807" style="background-color: #ffcccc">            end do</a>
+   808) <a name="l808" style="background-color: #ffcccc">            lev_interp_comp = .true.</a>
+   809) <a name="l809" style="background-color: #ffcccc">         end if</a>
+   810) <a name="l810" style="background-color: #ffcccc">         end if</a>
+   811) <a name="l811" style="background-color: #ffcccc">      end do</a>
+   812) <a name="l812" style="background-color: #ffcccc">!</a>
+   813) <a name="l813" style="background-color: #ffcccc">! If we've fallen through the kk=1,levsiz-1 loop, we cannot interpolate and</a>
+   814) <a name="l814" style="background-color: #ffcccc">! must extrapolate from the bottom or top pressure level for at least some</a>
+   815) <a name="l815" style="background-color: #ffcccc">! of the longitude points.</a>
+   816) <a name="l816" style="background-color: #ffcccc">!</a>
+   817) <a name="l817" style="background-color: #ffcccc"></a>
+   818) <a name="l818" style="background-color: #ffcccc">      if(.not.lev_interp_comp) then</a>
+   819) <a name="l819" style="background-color: #ffcccc">         do m=1,naer</a>
+   820) <a name="l820" style="background-color: #ffcccc">            do i=1,ncol</a>
+   821) <a name="l821" style="background-color: #ffcccc">               if (pint(i,k) .lt. M_hybi(1)*Match_ps(i)) then</a>
+   822) <a name="l822" style="background-color: #ffcccc">                  aerosol(i,k,m) =  aerosolc(i,1,c,m,n)</a>
+   823) <a name="l823" style="background-color: #ffcccc">               else if (pint(i,k) .gt. M_hybi(paerlev+1)*Match_ps(i)) then</a>
+   824) <a name="l824" style="background-color: #ffcccc">                  aerosol(i,k,m) = 0.0_r8</a>
+   825) <a name="l825" style="background-color: #ffcccc">               else</a>
+   826) <a name="l826" style="background-color: #ffcccc">                  dpu = pint(i,k) - M_hybi(kupper(i))*Match_ps(i)</a>
+   827) <a name="l827" style="background-color: #ffcccc">                  dpl = M_hybi(kupper(i)+1)*Match_ps(i) - pint(i,k)</a>
+   828) <a name="l828" style="background-color: #ffcccc">                  aerosol(i,k,m) = &amp;</a>
+   829) <a name="l829" style="background-color: #ffcccc">                     (aerosolc(i,kupper(i)  ,c,m,n)*dpl + &amp;</a>
+   830) <a name="l830" style="background-color: #ffcccc">                     aerosolc(i,kupper(i)+1,c,m,n)*dpu)/(dpl + dpu)</a>
+   831) <a name="l831" style="background-color: #ffcccc">               end if</a>
+   832) <a name="l832" style="background-color: #ffcccc">            end do</a>
+   833) <a name="l833" style="background-color: #ffcccc">         end do</a>
+   834) <a name="l834" style="background-color: #ffcccc"></a>
+   835) <a name="l835" style="background-color: #ffcccc">         if (kount.gt.ncol) then</a>
+   836) <a name="l836" style="background-color: #ffcccc">            call endrun (subname//': Bad data: non-monotonicity suspected in dependent variable')</a>
+   837) <a name="l837" style="background-color: #ffcccc">         end if</a>
+   838) <a name="l838" style="background-color: #ffcccc">      end if</a>
+   839) <a name="l839" style="background-color: #ffcccc">   end do</a>
+   840) <a name="l840" style="background-color: #ffcccc"></a>
+   841) <a name="l841" style="background-color: #ffcccc">!   call t_startf ('vi_checks')</a>
+   842) <a name="l842" style="background-color: #ffcccc">!</a>
+   843) <a name="l843" style="background-color: #ffcccc">! aerosol mass beneath lowest interface (pverp) must be 0</a>
+   844) <a name="l844" style="background-color: #ffcccc">!</a>
+   845) <a name="l845" style="background-color: #ffcccc">   aerosol(1:ncol,pverp,:) = 0._r8</a>
+   846) <a name="l846" style="background-color: #ffcccc">!</a>
+   847) <a name="l847" style="background-color: #ffcccc">! Set mass in layer to zero whenever it is less than </a>
+   848) <a name="l848" style="background-color: #ffcccc">!   1.e-40 kg/m^2 in the layer</a>
+   849) <a name="l849" style="background-color: #ffcccc">!</a>
+   850) <a name="l850" style="background-color: #ffcccc">   do m = 1, naer</a>
+   851) <a name="l851" style="background-color: #ffcccc">      do k = 1, pver</a>
+   852) <a name="l852" style="background-color: #ffcccc">         do i = 1, ncol</a>
+   853) <a name="l853" style="background-color: #ffcccc">            if (aerosol(i,k,m) &lt; 1.e-40_r8) aerosol(i,k,m) = 0._r8</a>
+   854) <a name="l854" style="background-color: #ffcccc">         end do</a>
+   855) <a name="l855" style="background-color: #ffcccc">      end do</a>
+   856) <a name="l856" style="background-color: #ffcccc">   end do</a>
+   857) <a name="l857" style="background-color: #ffcccc">!</a>
+   858) <a name="l858" style="background-color: #ffcccc">! Set mass in layer to zero whenever it is less than </a>
+   859) <a name="l859" style="background-color: #ffcccc">!   10^-15 relative to column total mass</a>
+   860) <a name="l860" style="background-color: #ffcccc">!</a>
+   861) <a name="l861" style="background-color: #ffcccc">   error_found = .false.</a>
+   862) <a name="l862" style="background-color: #ffcccc">   do m = 1, naer</a>
+   863) <a name="l863" style="background-color: #ffcccc">      do k = 1, pver</a>
+   864) <a name="l864" style="background-color: #ffcccc">         do i = 1, ncol</a>
+   865) <a name="l865" style="background-color: #ffcccc">            AER_diff = aerosol(i,k,m) - aerosol(i,k+1,m)</a>
+   866) <a name="l866" style="background-color: #ffcccc">            if( abs(AER_diff) &lt; 1e-15_r8*aerosol(i,1,m)) then</a>
+   867) <a name="l867" style="background-color: #ffcccc">               AER_diff = 0._r8</a>
+   868) <a name="l868" style="background-color: #ffcccc">            end if</a>
+   869) <a name="l869" style="background-color: #ffcccc">            aerosol_mass(i,k,m)= AER_diff </a>
+   870) <a name="l870" style="background-color: #ffcccc">            if (aerosol_mass(i,k,m) &lt; 0) error_found = .true.</a>
+   871) <a name="l871" style="background-color: #ffcccc">         end do</a>
+   872) <a name="l872" style="background-color: #ffcccc">      end do</a>
+   873) <a name="l873" style="background-color: #ffcccc">   end do</a>
+   874) <a name="l874" style="background-color: #ffcccc">   if (error_found) then</a>
+   875) <a name="l875" style="background-color: #ffcccc">      do m = 1, naer</a>
+   876) <a name="l876" style="background-color: #ffcccc">         do k = 1, pver</a>
+   877) <a name="l877" style="background-color: #ffcccc">            do i = 1, ncol</a>
+   878) <a name="l878" style="background-color: #ffcccc">               if (aerosol_mass(i,k,m) &lt; 0) then</a>
+   879) <a name="l879" style="background-color: #ffcccc">                  write(iulog,*) subname//': mass &lt; 0, m, col, lev, mass',m, i, k, aerosol_mass(i,k,m)</a>
+   880) <a name="l880" style="background-color: #ffcccc">                  write(iulog,*) subname//': aerosol(k),(k+1)',aerosol(i,k,m),aerosol(i,k+1,m)</a>
+   881) <a name="l881" style="background-color: #ffcccc">                  write(iulog,*) subname//': pint(k+1),(k)',pint(i,k+1),pint(i,k)</a>
+   882) <a name="l882" style="background-color: #ffcccc">                  write(iulog,*)'n,c',n,c</a>
+   883) <a name="l883" style="background-color: #ffcccc">                  call endrun()</a>
+   884) <a name="l884" style="background-color: #ffcccc">               end if</a>
+   885) <a name="l885" style="background-color: #ffcccc">            end do</a>
+   886) <a name="l886" style="background-color: #ffcccc">         end do</a>
+   887) <a name="l887" style="background-color: #ffcccc">      end do</a>
+   888) <a name="l888" style="background-color: #ffcccc">   end if</a>
+   889) <a name="l889" style="background-color: #ffcccc"></a>
+   890) <a name="l890" style="background-color: #ffcccc">   call t_stopf ('vert_interpolate')</a>
+   891) <a name="l891" style="background-color: #ffcccc"></a>
+   892) <a name="l892" style="background-color: #ffcccc">   return</a>
+   893) <a name="l893" style="background-color: #ffcccc">end subroutine vert_interpolate</a>
+   894) <a name="l894" style="background-color: #ffffff"></a>
+   895) <a name="l895" style="background-color: #ffffff">!================================================================================================</a>
+   896) <a name="l896" style="background-color: #ffffff"></a>
+   897) <a name="l897" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">aerint (phys_state)</a>
+   898) <a name="l898" style="background-color: #ffcccc"></a>
+   899) <a name="l899" style="background-color: #ffcccc">   type(physics_state), intent(in) :: phys_state(begchunk:endchunk)</a>
+   900) <a name="l900" style="background-color: #ffcccc"></a>
+   901) <a name="l901" style="background-color: #ffcccc">   integer :: ntmp                                ! used in index swapping</a>
+   902) <a name="l902" style="background-color: #ffcccc">   integer :: start(4)                            ! start vector for netcdf calls</a>
+   903) <a name="l903" style="background-color: #ffcccc">   integer :: kount(4)                            ! count vector for netcdf calls</a>
+   904) <a name="l904" style="background-color: #ffcccc">   integer :: i,j,k                               ! spatial indices</a>
+   905) <a name="l905" style="background-color: #ffcccc">   integer :: m                                   ! constituent index</a>
+   906) <a name="l906" style="background-color: #ffcccc">   integer :: cols, cole</a>
+   907) <a name="l907" style="background-color: #ffcccc">   integer :: lchnk, ncol</a>
+   908) <a name="l908" style="background-color: #ffcccc">   real(r8) :: caldayloc                          ! calendar day of current timestep</a>
+   909) <a name="l909" style="background-color: #ffcccc">   real(r8) :: aerosol_data(naerlon,naerlat,paerlev)    ! aerosol field read in from dataset</a>
+   910) <a name="l910" style="background-color: #ffcccc">   real(r8) :: aerosol_field(naerlon,paerlev+1,naerlat) ! aerosol field to be scattered</a>
+   911) <a name="l911" style="background-color: #ffcccc">   integer latidx,lonidx</a>
+   912) <a name="l912" style="background-color: #ffcccc">   real(r8) closelat,closelon</a>
+   913) <a name="l913" style="background-color: #ffcccc"></a>
+   914) <a name="l914" style="background-color: #ffcccc">   character(len=*), parameter :: subname = 'cam3_aero_data.aerint'</a>
+   915) <a name="l915" style="background-color: #ffcccc">   !-----------------------------------------------------------------------</a>
+   916) <a name="l916" style="background-color: #ffcccc"></a>
+   917) <a name="l917" style="background-color: #ffcccc">   if (single_column) &amp;</a>
+   918) <a name="l918" style="background-color: #ffcccc">      call shr_scam_GetCloseLatLon(aernid,scmlat,scmlon,closelat,closelon,latidx,lonidx)</a>
+   919) <a name="l919" style="background-color: #ffcccc"> </a>
+   920) <a name="l920" style="background-color: #ffcccc">!</a>
+   921) <a name="l921" style="background-color: #ffcccc">! determine if need to read in next month data</a>
+   922) <a name="l922" style="background-color: #ffcccc">! also determine time interpolation factors</a>
+   923) <a name="l923" style="background-color: #ffcccc">!</a>
+   924) <a name="l924" style="background-color: #ffcccc">   caldayloc = get_curr_calday ()  </a>
+   925) <a name="l925" style="background-color: #ffcccc">!</a>
+   926) <a name="l926" style="background-color: #ffcccc">! If model time is past current forward timeslice, then</a>
+   927) <a name="l927" style="background-color: #ffcccc">! masterproc reads in the next timeslice for time interpolation.  Messy logic is </a>
+   928) <a name="l928" style="background-color: #ffcccc">! for interpolation between December and January (mo_nxt == 1).  Just like</a>
+   929) <a name="l929" style="background-color: #ffcccc">! ozone_data_timestep_init, sstint.</a>
+   930) <a name="l930" style="background-color: #ffcccc">!</a>
+   931) <a name="l931" style="background-color: #ffcccc">   if (caldayloc &gt; cdayp .and. .not. (mo_nxt == 1 .and. caldayloc &gt;= cdaym)) then</a>
+   932) <a name="l932" style="background-color: #ffcccc">      mo_nxt = mod(mo_nxt,12) + 1</a>
+   933) <a name="l933" style="background-color: #ffcccc">      cdaym = cdayp</a>
+   934) <a name="l934" style="background-color: #ffcccc">      cdayp = Mid(mo_nxt)</a>
+   935) <a name="l935" style="background-color: #ffcccc">!</a>
+   936) <a name="l936" style="background-color: #ffcccc">! Check for valid date info</a>
+   937) <a name="l937" style="background-color: #ffcccc">!</a>
+   938) <a name="l938" style="background-color: #ffcccc">      if (.not. (mo_nxt == 1 .or. caldayloc &lt;= cdayp)) then</a>
+   939) <a name="l939" style="background-color: #ffcccc">         call endrun (subname//': Non-monotonicity suspected in input aerosol data')</a>
+   940) <a name="l940" style="background-color: #ffcccc">      end if</a>
+   941) <a name="l941" style="background-color: #ffcccc"></a>
+   942) <a name="l942" style="background-color: #ffcccc">      ntmp = nm</a>
+   943) <a name="l943" style="background-color: #ffcccc">      nm = np</a>
+   944) <a name="l944" style="background-color: #ffcccc">      np = ntmp</a>
+   945) <a name="l945" style="background-color: #ffcccc"></a>
+   946) <a name="l946" style="background-color: #ffcccc">      if(aerosol_datan%isncol) then</a>
+   947) <a name="l947" style="background-color: #ffcccc">         do lchnk=begchunk,endchunk</a>
+   948) <a name="l948" style="background-color: #ffcccc">            ncol=phys_state(lchnk)%ncol</a>
+   949) <a name="l949" style="background-color: #ffcccc">            cols=1</a>
+   950) <a name="l950" style="background-color: #ffcccc">            cole=cols+aerosol_datan%count(cols,lchnk)-1</a>
+   951) <a name="l951" style="background-color: #ffcccc">            do while(cole&lt;=ncol)</a>
+   952) <a name="l952" style="background-color: #ffcccc">               start=(/aerosol_datan%start(cols,lchnk),mo_nxt,1,-1/)</a>
+   953) <a name="l953" style="background-color: #ffcccc">               kount=(/aerosol_datan%count(cols,lchnk),1,-1,-1/)</a>
+   954) <a name="l954" style="background-color: #ffcccc">               call handle_ncerr( nf90_get_var(aerosol_datan%ncid, aerosol_datan%psid , &amp;</a>
+   955) <a name="l955" style="background-color: #ffcccc">                    aerosol_datan%ps(cols:cole,lchnk,np), start(1:2), &amp;</a>
+   956) <a name="l956" style="background-color: #ffcccc">                    kount(1:2)),&amp;</a>
+   957) <a name="l957" style="background-color: #ffcccc">                    subname, __LINE__)</a>
+   958) <a name="l958" style="background-color: #ffcccc">               start(2)=1</a>
+   959) <a name="l959" style="background-color: #ffcccc">               start(3)=mo_nxt</a>
+   960) <a name="l960" style="background-color: #ffcccc">               kount(2)=paerlev</a>
+   961) <a name="l961" style="background-color: #ffcccc">               kount(3)=1</a>
+   962) <a name="l962" style="background-color: #ffcccc">               do m=1,naer</a>
+   963) <a name="l963" style="background-color: #ffcccc">                  call handle_ncerr( nf90_get_var(aerosol_datan%ncid, aerosol_datan%dataid(m) , &amp;</a>
+   964) <a name="l964" style="background-color: #ffcccc">                       aerosol_datan%fields(cols:cole,:,lchnk,m,np),  &amp;</a>
+   965) <a name="l965" style="background-color: #ffcccc">                       start(1:3), kount(1:3)),&amp;</a>
+   966) <a name="l966" style="background-color: #ffcccc">                       subname, __LINE__)</a>
+   967) <a name="l967" style="background-color: #ffcccc"></a>
+   968) <a name="l968" style="background-color: #ffcccc">               end do</a>
+   969) <a name="l969" style="background-color: #ffcccc">               if(cols==ncol) exit</a>
+   970) <a name="l970" style="background-color: #ffcccc">               cols=cols+aerosol_datan%count(cols,lchnk)</a>
+   971) <a name="l971" style="background-color: #ffcccc">               cole=cols+aerosol_datan%count(cols,lchnk)-1</a>
+   972) <a name="l972" style="background-color: #ffcccc">            end do</a>
+   973) <a name="l973" style="background-color: #ffcccc">         end do</a>
+   974) <a name="l974" style="background-color: #ffcccc">         aerosolc(:,1:paerlev,:,:,np)=aerosol_datan%fields(:,:,:,:,np)</a>
+   975) <a name="l975" style="background-color: #ffcccc">      else</a>
+   976) <a name="l976" style="background-color: #ffcccc">         do m=1,naer</a>
+   977) <a name="l977" style="background-color: #ffcccc">            if (masterproc) then</a>
+   978) <a name="l978" style="background-color: #ffcccc">               if (single_column) then</a>
+   979) <a name="l979" style="background-color: #ffcccc">                  naerlon=1</a>
+   980) <a name="l980" style="background-color: #ffcccc">                  naerlat=1</a>
+   981) <a name="l981" style="background-color: #ffcccc">                  start(:) = (/lonidx,latidx,1,mo_nxt/)</a>
+   982) <a name="l982" style="background-color: #ffcccc">               else</a>
+   983) <a name="l983" style="background-color: #ffcccc">                  start(:) = (/1,1,1,mo_nxt/)</a>
+   984) <a name="l984" style="background-color: #ffcccc">               endif</a>
+   985) <a name="l985" style="background-color: #ffcccc">               kount(:) = (/naerlon,naerlat,paerlev,1/)</a>
+   986) <a name="l986" style="background-color: #ffcccc">               call handle_ncerr( nf90_get_var (aernid, species_id(m), aerosol_data, start, kount),&amp;</a>
+   987) <a name="l987" style="background-color: #ffcccc">                    subname, __LINE__)</a>
+   988) <a name="l988" style="background-color: #ffcccc"></a>
+   989) <a name="l989" style="background-color: #ffcccc">               do j=1,naerlat</a>
+   990) <a name="l990" style="background-color: #ffcccc">                  do k=1,paerlev</a>
+   991) <a name="l991" style="background-color: #ffcccc">                     aerosol_field(:,k,j) = aerosol_data(:,j,k)</a>
+   992) <a name="l992" style="background-color: #ffcccc">                  end do</a>
+   993) <a name="l993" style="background-color: #ffcccc">                  aerosol_field(:,paerlev+1,j) = 0._r8   ! value at bottom</a>
+   994) <a name="l994" style="background-color: #ffcccc">               end do</a>
+   995) <a name="l995" style="background-color: #ffcccc">            end if</a>
+   996) <a name="l996" style="background-color: #ffcccc">            call scatter_field_to_chunk (1, paerlev+1, 1, naerlon, aerosol_field, &amp;</a>
+   997) <a name="l997" style="background-color: #ffcccc">                 aerosolc(:,:,:,m,np))</a>
+   998) <a name="l998" style="background-color: #ffcccc">         end do</a>
+   999) <a name="l999" style="background-color: #ffcccc">!</a>
+  1000) <a name="l1000" style="background-color: #ffcccc">! Retrieve PS from Match</a>
+  1001) <a name="l1001" style="background-color: #ffcccc">!</a>
+  1002) <a name="l1002" style="background-color: #ffcccc">         if (masterproc) then</a>
+  1003) <a name="l1003" style="background-color: #ffcccc">               if (single_column) then</a>
+  1004) <a name="l1004" style="background-color: #ffcccc">                  naerlon=1</a>
+  1005) <a name="l1005" style="background-color: #ffcccc">                  naerlat=1</a>
+  1006) <a name="l1006" style="background-color: #ffcccc">                  start(:) = (/lonidx,latidx,mo_nxt,-1/)</a>
+  1007) <a name="l1007" style="background-color: #ffcccc">               else</a>
+  1008) <a name="l1008" style="background-color: #ffcccc">                  start(:) = (/1,1,mo_nxt,-1/)</a>
+  1009) <a name="l1009" style="background-color: #ffcccc">               endif</a>
+  1010) <a name="l1010" style="background-color: #ffcccc">               kount(:) = (/naerlon,naerlat,1,-1/)</a>
+  1011) <a name="l1011" style="background-color: #ffcccc">               call handle_ncerr( nf90_get_var (aernid, Mpsid, M_ps, start, kount),&amp;</a>
+  1012) <a name="l1012" style="background-color: #ffcccc">                    subname, __LINE__)</a>
+  1013) <a name="l1013" style="background-color: #ffcccc">               write(iulog,*) subname//': Read aerosols data for julian day', Mid(mo_nxt)</a>
+  1014) <a name="l1014" style="background-color: #ffcccc">            end if</a>
+  1015) <a name="l1015" style="background-color: #ffcccc">            call scatter_field_to_chunk (1, 1, 1, naerlon, M_ps(:,:), M_ps_cam_col(:,:,np))</a>
+  1016) <a name="l1016" style="background-color: #ffcccc">         end if</a>
+  1017) <a name="l1017" style="background-color: #ffcccc">      end if</a>
+  1018) <a name="l1018" style="background-color: #ffcccc"></a>
+  1019) <a name="l1019" style="background-color: #ffcccc">end subroutine aerint</a>
+  1020) <a name="l1020" style="background-color: #ffffff"></a>
+  1021) <a name="l1021" style="background-color: #ffffff">end module cam3_aero_data</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

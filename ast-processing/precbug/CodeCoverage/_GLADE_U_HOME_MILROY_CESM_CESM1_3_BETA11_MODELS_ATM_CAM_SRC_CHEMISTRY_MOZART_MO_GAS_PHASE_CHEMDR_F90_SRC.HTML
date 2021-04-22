@@ -1,0 +1,1094 @@
+<html>
+<head>
+<title>Listing of mo_gas_phase_chemdr.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;mo_gas_phase_chemdr.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 51.66&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module mo_gas_phase_chemdr</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">  use shr_kind_mod,     only : r8 =&gt; shr_kind_r8</a>
+     4) <a name="l4" style="background-color: #ffffff">  use shr_const_mod,    only : pi =&gt; shr_const_pi</a>
+     5) <a name="l5" style="background-color: #ffffff">  use constituents,     only : pcnst</a>
+     6) <a name="l6" style="background-color: #ffffff">  use cam_history,      only : fieldname_len</a>
+     7) <a name="l7" style="background-color: #ffffff">  use chem_mods,        only : phtcnt, rxntot, gas_pcnst</a>
+     8) <a name="l8" style="background-color: #ffffff">  use chem_mods,        only : rxt_tag_cnt, rxt_tag_lst, rxt_tag_map, extcnt</a>
+     9) <a name="l9" style="background-color: #ffffff">  use dust_model,       only : dust_names, ndust =&gt; dust_nbin</a>
+    10) <a name="l10" style="background-color: #ffffff">  use ppgrid,           only : pcols, pver</a>
+    11) <a name="l11" style="background-color: #ffffff">  use spmd_utils,       only : iam</a>
+    12) <a name="l12" style="background-color: #ffffff">  use phys_control,     only : phys_getopts</a>
+    13) <a name="l13" style="background-color: #ffffff">  use carma_flags_mod,  only : carma_do_hetchem</a>
+    14) <a name="l14" style="background-color: #ffffff"></a>
+    15) <a name="l15" style="background-color: #ffffff">  implicit none</a>
+    16) <a name="l16" style="background-color: #ffffff">  save</a>
+    17) <a name="l17" style="background-color: #ffffff"></a>
+    18) <a name="l18" style="background-color: #ffffff">  private</a>
+    19) <a name="l19" style="background-color: #ffffff">  public :: gas_phase_chemdr, gas_phase_chemdr_inti </a>
+    20) <a name="l20" style="background-color: #ffffff">  public :: map2chm</a>
+    21) <a name="l21" style="background-color: #ffffff"></a>
+    22) <a name="l22" style="background-color: #ffffff">  integer :: map2chm(pcnst) = 0           ! index map to/from chemistry/constituents list</a>
+    23) <a name="l23" style="background-color: #ffffff"></a>
+    24) <a name="l24" style="background-color: #ffffff">  integer :: synoz_ndx, so4_ndx, h2o_ndx, o2_ndx, o_ndx, hno3_ndx, hcl_ndx, dst_ndx, cldice_ndx</a>
+    25) <a name="l25" style="background-color: #ffffff">  integer :: o3_ndx, o3s_ndx</a>
+    26) <a name="l26" style="background-color: #ffffff">  integer :: het1_ndx</a>
+    27) <a name="l27" style="background-color: #ffffff">  integer :: ndx_cldfr, ndx_cmfdqr, ndx_nevapr, ndx_cldtop, ndx_prain</a>
+    28) <a name="l28" style="background-color: #ffffff">  integer :: ndx_h2so4</a>
+    29) <a name="l29" style="background-color: #ffffff">!</a>
+    30) <a name="l30" style="background-color: #ffffff">! CCMI</a>
+    31) <a name="l31" style="background-color: #ffffff">!</a>
+    32) <a name="l32" style="background-color: #ffffff">  integer :: st80_25_ndx</a>
+    33) <a name="l33" style="background-color: #ffffff">  integer :: st80_25_tau_ndx</a>
+    34) <a name="l34" style="background-color: #ffffff">  integer :: aoa_nh_ndx</a>
+    35) <a name="l35" style="background-color: #ffffff">  integer :: aoa_nh_ext_ndx</a>
+    36) <a name="l36" style="background-color: #ffffff">  integer :: nh_5_ndx</a>
+    37) <a name="l37" style="background-color: #ffffff">  integer :: nh_50_ndx</a>
+    38) <a name="l38" style="background-color: #ffffff">  integer :: nh_50w_ndx</a>
+    39) <a name="l39" style="background-color: #ffffff">  integer :: sad_pbf_ndx</a>
+    40) <a name="l40" style="background-color: #ffffff">  integer :: cb1_ndx,cb2_ndx,oc1_ndx,oc2_ndx,dst1_ndx,dst2_ndx,sslt1_ndx,sslt2_ndx</a>
+    41) <a name="l41" style="background-color: #ffffff">  integer :: soa_ndx,soai_ndx,soam_ndx,soat_ndx,soab_ndx,soax_ndx</a>
+    42) <a name="l42" style="background-color: #ffffff"></a>
+    43) <a name="l43" style="background-color: #ffffff">  character(len=fieldname_len),dimension(rxntot-phtcnt) :: rxn_names</a>
+    44) <a name="l44" style="background-color: #ffffff">  character(len=fieldname_len),dimension(phtcnt)        :: pht_names</a>
+    45) <a name="l45" style="background-color: #ffffff">  character(len=fieldname_len),dimension(rxt_tag_cnt)   :: tag_names</a>
+    46) <a name="l46" style="background-color: #ffffff">  character(len=fieldname_len),dimension(extcnt)        :: extfrc_name</a>
+    47) <a name="l47" style="background-color: #ffffff"></a>
+    48) <a name="l48" style="background-color: #ffffff">  logical :: pm25_srf_diag</a>
+    49) <a name="l49" style="background-color: #ffffff">  logical :: pm25_srf_diag_soa</a>
+    50) <a name="l50" style="background-color: #ffffff"></a>
+    51) <a name="l51" style="background-color: #ffffff">contains</a>
+    52) <a name="l52" style="background-color: #ffffff"></a>
+    53) <a name="l53" style="background-color: #ffffff">  subroutine gas_phase_chemdr_inti()</a>
+    54) <a name="l54" style="background-color: #ffffff"></a>
+    55) <a name="l55" style="background-color: #ffffff">    use mo_chem_utls,      only : get_spc_ndx, get_extfrc_ndx, get_inv_ndx, get_rxt_ndx</a>
+    56) <a name="l56" style="background-color: #ffffff">    use cam_history,       only : addfld,phys_decomp</a>
+    57) <a name="l57" style="background-color: #ffffff">    use abortutils,        only : endrun</a>
+    58) <a name="l58" style="background-color: #ffffff">    use mo_chm_diags,      only : chm_diags_inti</a>
+    59) <a name="l59" style="background-color: #ffffff">    use mo_tracname,       only : solsym</a>
+    60) <a name="l60" style="background-color: #ffffff">    use constituents,      only : cnst_get_ind</a>
+    61) <a name="l61" style="background-color: #ffffff">    use physics_buffer,    only : pbuf_get_index</a>
+    62) <a name="l62" style="background-color: #ffffff">    use rate_diags,        only : rate_diags_init</a>
+    63) <a name="l63" style="background-color: #ffffff">    use rad_constituents,  only : rad_cnst_get_info</a>
+    64) <a name="l64" style="background-color: #ffffff"></a>
+    65) <a name="l65" style="background-color: #ffffff">    implicit none</a>
+    66) <a name="l66" style="background-color: #ffffff"></a>
+    67) <a name="l67" style="background-color: #ffffff">    character(len=3) :: string</a>
+    68) <a name="l68" style="background-color: #ffffff">    integer          :: n, m, err</a>
+    69) <a name="l69" style="background-color: #ffffff">    logical          :: history_aerosol      ! Output the MAM aerosol tendencies</a>
+    70) <a name="l70" style="background-color: #ffffff"></a>
+    71) <a name="l71" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+    72) <a name="l72" style="background-color: #ffffff"></a>
+    73) <a name="l73" style="background-color: #ffffff">    call phys_getopts( history_aerosol_out = history_aerosol )</a>
+    74) <a name="l74" style="background-color: #ffffff">   </a>
+    75) <a name="l75" style="background-color: #ffffff">    ndx_h2so4 = get_spc_ndx('H2SO4')</a>
+    76) <a name="l76" style="background-color: #ffffff">!</a>
+    77) <a name="l77" style="background-color: #ffffff">! CCMI</a>
+    78) <a name="l78" style="background-color: #ffffff">!</a>
+    79) <a name="l79" style="background-color: #ffffff">    st80_25_ndx     = get_spc_ndx   ('ST80_25')</a>
+    80) <a name="l80" style="background-color: #ffffff">    st80_25_tau_ndx = get_rxt_ndx   ('ST80_25_tau')</a>
+    81) <a name="l81" style="background-color: #ffffff">    aoa_nh_ndx      = get_spc_ndx   ('AOA_NH')</a>
+    82) <a name="l82" style="background-color: #ffffff">    aoa_nh_ext_ndx  = get_extfrc_ndx('AOA_NH')</a>
+    83) <a name="l83" style="background-color: #ffffff">    nh_5_ndx        = get_spc_ndx('NH_5')</a>
+    84) <a name="l84" style="background-color: #ffffff">    nh_50_ndx       = get_spc_ndx('NH_50')</a>
+    85) <a name="l85" style="background-color: #ffffff">    nh_50w_ndx      = get_spc_ndx('NH_50W')</a>
+    86) <a name="l86" style="background-color: #ffffff">!</a>
+    87) <a name="l87" style="background-color: #ffffff">    cb1_ndx         = get_spc_ndx('CB1')</a>
+    88) <a name="l88" style="background-color: #ffffff">    cb2_ndx         = get_spc_ndx('CB2')</a>
+    89) <a name="l89" style="background-color: #ffffff">    oc1_ndx         = get_spc_ndx('OC1')</a>
+    90) <a name="l90" style="background-color: #ffffff">    oc2_ndx         = get_spc_ndx('OC2')</a>
+    91) <a name="l91" style="background-color: #ffffff">    dst1_ndx        = get_spc_ndx('DST01')</a>
+    92) <a name="l92" style="background-color: #ffffff">    dst2_ndx        = get_spc_ndx('DST02')</a>
+    93) <a name="l93" style="background-color: #ffffff">    sslt1_ndx       = get_spc_ndx('SSLT01')</a>
+    94) <a name="l94" style="background-color: #ffffff">    sslt2_ndx       = get_spc_ndx('SSLT02')</a>
+    95) <a name="l95" style="background-color: #ffffff">    soa_ndx         = get_spc_ndx('SOA')</a>
+    96) <a name="l96" style="background-color: #ffffff">    soam_ndx         = get_spc_ndx('SOAM')</a>
+    97) <a name="l97" style="background-color: #ffffff">    soai_ndx         = get_spc_ndx('SOAI')</a>
+    98) <a name="l98" style="background-color: #ffffff">    soat_ndx         = get_spc_ndx('SOAT')</a>
+    99) <a name="l99" style="background-color: #ffffff">    soab_ndx         = get_spc_ndx('SOAB')</a>
+   100) <a name="l100" style="background-color: #ffffff">    soax_ndx         = get_spc_ndx('SOAX')</a>
+   101) <a name="l101" style="background-color: #ffffff"></a>
+   102) <a name="l102" style="background-color: #ffffff">    pm25_srf_diag = cb1_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. cb2_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. oc1_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. oc2_ndx</a><a style="background-color: #fafad2">&gt;0 &amp;</a>
+   103) <a name="l103" style="background-color: #ffffff">              .and. dst1_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. dst2_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. sslt1_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. sslt2_ndx</a><a style="background-color: #fafad2">&gt;0 &amp;</a>
+   104) <a name="l104" style="background-color: #fafad2">              .and. soa_ndx&gt;0 </a>
+   105) <a name="l105" style="background-color: #fafad2"></a>
+   106) <a name="l106" style="background-color: #ffffff">    pm25_srf_diag_soa = cb1_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. cb2_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. oc1_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. oc2_ndx</a><a style="background-color: #fafad2">&gt;0 &amp;</a>
+   107) <a name="l107" style="background-color: #ffffff">              .and. dst1_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. dst2_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. sslt1_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. sslt2_ndx</a><a style="background-color: #fafad2">&gt;0 &amp;</a>
+   108) <a name="l108" style="background-color: #ffffff">              .and. soam_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. soai_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. soat_ndx</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. soab_ndx</a><a style="background-color: #fafad2">&gt;0 .and. soax_ndx&gt;0</a>
+   109) <a name="l109" style="background-color: #fafad2">    </a>
+   110) <a name="l110" style="background-color: #fafad2">    if ( pm25_srf_diag .or. pm25_srf_diag_soa) then</a>
+   111) <a name="l111" style="background-color: #fafad2">       call </a><a style="background-color: #ffff99">addfld('PM25_SRF','kg/kg',1,'I','bottom layer PM2.5 mixing ratio', phys_decomp )</a>
+   112) <a name="l112" style="background-color: #ffff99">    endif</a>
+   113) <a name="l113" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">addfld('U_SRF','m/s',1,'I','bottom layer wind velocity', phys_decomp )</a>
+   114) <a name="l114" style="background-color: #ffffff">    call addfld('V_SRF','m/s',1,'I','bottom layer wind velocity', phys_decomp )</a>
+   115) <a name="l115" style="background-color: #ffffff">    call addfld('Q_SRF','kg/kg',1,'I','bottom layer specific humidity', phys_decomp )</a>
+   116) <a name="l116" style="background-color: #ffffff">!</a>
+   117) <a name="l117" style="background-color: #ffffff">    call addfld('O3S_LOSS','mol/mol',pver,'I','O3S loss rate', phys_decomp )</a>
+   118) <a name="l118" style="background-color: #ffffff">!</a>
+   119) <a name="l119" style="background-color: #ffffff">    het1_ndx= get_rxt_ndx('het1')</a>
+   120) <a name="l120" style="background-color: #ffffff">    o3_ndx  = get_spc_ndx('O3')</a>
+   121) <a name="l121" style="background-color: #ffffff">    o3s_ndx = get_spc_ndx('O3S')</a>
+   122) <a name="l122" style="background-color: #ffffff">    o_ndx   = get_spc_ndx('O')</a>
+   123) <a name="l123" style="background-color: #ffffff">    o2_ndx  = get_spc_ndx('O2')</a>
+   124) <a name="l124" style="background-color: #ffffff">    so4_ndx = get_spc_ndx('SO4')</a>
+   125) <a name="l125" style="background-color: #ffffff">    h2o_ndx = get_spc_ndx('H2O')</a>
+   126) <a name="l126" style="background-color: #ffffff">    hno3_ndx = get_spc_ndx('HNO3')</a>
+   127) <a name="l127" style="background-color: #ffffff">    hcl_ndx  = get_spc_ndx('HCL')</a>
+   128) <a name="l128" style="background-color: #ffffff">    dst_ndx = get_spc_ndx( dust_names(1) )</a>
+   129) <a name="l129" style="background-color: #ffffff">    synoz_ndx = get_extfrc_ndx( 'SYNOZ' )</a>
+   130) <a name="l130" style="background-color: #ffffff">    call cnst_get_ind( 'CLDICE', cldice_ndx )</a>
+   131) <a name="l131" style="background-color: #ffffff"></a>
+   132) <a name="l132" style="background-color: #ffffff">    do m = 1,extcnt</a>
+   133) <a name="l133" style="background-color: #ffffff">       WRITE(UNIT=string, FMT='(I2.2)') m</a>
+   134) <a name="l134" style="background-color: #ffffff">       extfrc_name(m) = 'extfrc_'// trim(string)</a>
+   135) <a name="l135" style="background-color: #ffffff">       call addfld( extfrc_name(m), ' ', pver, 'I', 'ext frcing', phys_decomp )</a>
+   136) <a name="l136" style="background-color: #ffffff">    end do</a>
+   137) <a name="l137" style="background-color: #ffffff"></a>
+   138) <a name="l138" style="background-color: #ffffff">    do n = 1,rxt_tag_cnt</a>
+   139) <a name="l139" style="background-color: #ffffff">       tag_names(n) = trim(rxt_tag_lst(n))</a>
+   140) <a name="l140" style="background-color: #ffffff">       if (n&lt;=phtcnt) then</a>
+   141) <a name="l141" style="background-color: #ffffff">          call addfld( tag_names(n), '/s ', pver, 'I', 'photolysis rate', phys_decomp )</a>
+   142) <a name="l142" style="background-color: #ffffff">       else</a>
+   143) <a name="l143" style="background-color: #ffffff">          call addfld( tag_names(n), '/cm3/s ', pver, 'I', 'reaction rate', phys_decomp )</a>
+   144) <a name="l144" style="background-color: #ffffff">       endif</a>
+   145) <a name="l145" style="background-color: #ffffff">    enddo</a>
+   146) <a name="l146" style="background-color: #ffffff"></a>
+   147) <a name="l147" style="background-color: #ffffff">    do n = 1,phtcnt</a>
+   148) <a name="l148" style="background-color: #ffffff">       WRITE(UNIT=string, FMT='(I3.3)') n</a>
+   149) <a name="l149" style="background-color: #ffffff">       pht_names(n) = 'J_' // trim(string)</a>
+   150) <a name="l150" style="background-color: #ffffff">       call addfld( pht_names(n), '/s ', pver, 'I', 'photolysis rate', phys_decomp )</a>
+   151) <a name="l151" style="background-color: #ffffff">    enddo</a>
+   152) <a name="l152" style="background-color: #ffffff"></a>
+   153) <a name="l153" style="background-color: #ffffff">    do n = 1,rxntot-phtcnt</a>
+   154) <a name="l154" style="background-color: #ffffff">       WRITE(UNIT=string, FMT='(I3.3)') n</a>
+   155) <a name="l155" style="background-color: #ffffff">       rxn_names(n) = 'R_' // trim(string)</a>
+   156) <a name="l156" style="background-color: #ffffff">       call addfld( rxn_names(n), '/cm3/s ', pver, 'I', 'reaction rate', phys_decomp )</a>
+   157) <a name="l157" style="background-color: #ffffff">    enddo</a>
+   158) <a name="l158" style="background-color: #ffffff"></a>
+   159) <a name="l159" style="background-color: #ffffff">    call addfld( 'DTCBS',   ' ',  1, 'I','photolysis diagnostic black carbon OD', phys_decomp )</a>
+   160) <a name="l160" style="background-color: #ffffff">    call addfld( 'DTOCS',   ' ',  1, 'I','photolysis diagnostic organic carbon OD', phys_decomp )</a>
+   161) <a name="l161" style="background-color: #ffffff">    call addfld( 'DTSO4',   ' ',  1, 'I','photolysis diagnostic SO4 OD', phys_decomp )</a>
+   162) <a name="l162" style="background-color: #ffffff">    call addfld( 'DTSOA',   ' ',  1, 'I','photolysis diagnostic SOA OD', phys_decomp )</a>
+   163) <a name="l163" style="background-color: #ffffff">    call addfld( 'DTANT',   ' ',  1, 'I','photolysis diagnostic NH4SO4 OD', phys_decomp )</a>
+   164) <a name="l164" style="background-color: #ffffff">    call addfld( 'DTSAL',   ' ',  1, 'I','photolysis diagnostic salt OD', phys_decomp )</a>
+   165) <a name="l165" style="background-color: #ffffff">    call addfld( 'DTDUST',  ' ',  1, 'I','photolysis diagnostic dust OD', phys_decomp )</a>
+   166) <a name="l166" style="background-color: #ffffff">    call addfld( 'DTTOTAL', ' ',  1, 'I','photolysis diagnostic total aerosol OD', phys_decomp )   </a>
+   167) <a name="l167" style="background-color: #ffffff">    call addfld( 'FRACDAY', ' ',  1, 'I','photolysis diagnostic fraction of day', phys_decomp )</a>
+   168) <a name="l168" style="background-color: #ffffff"></a>
+   169) <a name="l169" style="background-color: #ffffff">    call addfld( 'QDSAD', '/s ', pver, 'I', 'water vapor sad delta', phys_decomp )</a>
+   170) <a name="l170" style="background-color: #ffffff">    call addfld( 'SAD', 'cm2/cm3 ', pver, 'I', 'sulfate aerosol SAD', phys_decomp )</a>
+   171) <a name="l171" style="background-color: #ffffff">    call addfld( 'SAD_SULFC', 'cm2/cm3 ', pver, 'I', 'chemical sulfate aerosol SAD', phys_decomp )</a>
+   172) <a name="l172" style="background-color: #ffffff">    call addfld( 'SAD_SAGE', 'cm2/cm3 ', pver, 'I', 'SAGE sulfate aerosol SAD', phys_decomp )</a>
+   173) <a name="l173" style="background-color: #ffffff">    call addfld( 'SAD_LNAT', 'cm2/cm3 ', pver, 'I', 'large-mode NAT aerosol SAD', phys_decomp )</a>
+   174) <a name="l174" style="background-color: #ffffff">    call addfld( 'SAD_ICE', 'cm2/cm3 ', pver, 'I', 'water-ice aerosol SAD', phys_decomp )</a>
+   175) <a name="l175" style="background-color: #ffffff">    call addfld( 'RAD_SULFC', 'cm ', pver, 'I', 'chemical sad sulfate', phys_decomp )</a>
+   176) <a name="l176" style="background-color: #ffffff">    call addfld( 'RAD_LNAT', 'cm ', pver, 'I', 'large nat radius', phys_decomp )</a>
+   177) <a name="l177" style="background-color: #ffffff">    call addfld( 'RAD_ICE', 'cm ', pver, 'I', 'sad ice', phys_decomp )</a>
+   178) <a name="l178" style="background-color: #ffffff">    call addfld( 'SAD_TROP', 'cm2/cm3 ', pver, 'I', 'tropospheric aerosol SAD', phys_decomp )</a>
+   179) <a name="l179" style="background-color: #ffffff">    call addfld( 'QDSETT', '/s ', pver, 'I', 'water vapor settling delta', phys_decomp )</a>
+   180) <a name="l180" style="background-color: #ffffff">    call addfld( 'QDCHEM', '/s ', pver, 'I', 'water vapor chemistry delta', phys_decomp)</a>
+   181) <a name="l181" style="background-color: #ffffff">    call addfld( 'HNO3_TOTAL', 'mol/mol', pver, 'I', 'total HNO3', phys_decomp )</a>
+   182) <a name="l182" style="background-color: #ffffff">    call addfld( 'HNO3_STS',   'mol/mol', pver, 'I', 'STS condensed HNO3', phys_decomp )</a>
+   183) <a name="l183" style="background-color: #ffffff">    call addfld( 'HNO3_NAT',   'mol/mol', pver, 'I', 'NAT condensed HNO3', phys_decomp )</a>
+   184) <a name="l184" style="background-color: #ffffff">    call addfld( 'HNO3_GAS',   'mol/mol', pver, 'I', 'gas-phase hno3', phys_decomp )</a>
+   185) <a name="l185" style="background-color: #ffffff">    call addfld( 'H2O_GAS',    'mol/mol', pver, 'I', 'gas-phase h2o', phys_decomp )</a>
+   186) <a name="l186" style="background-color: #ffffff">    call addfld( 'HCL_TOTAL',  'mol/mol', pver, 'I', 'total hcl', phys_decomp )</a>
+   187) <a name="l187" style="background-color: #ffffff">    call addfld( 'HCL_GAS',    'mol/mol', pver, 'I', 'gas-phase hcl', phys_decomp )</a>
+   188) <a name="l188" style="background-color: #ffffff">    call addfld( 'HCL_STS',    'mol/mol', pver, 'I', 'STS condensed HCL', phys_decomp )</a>
+   189) <a name="l189" style="background-color: #ffffff"></a>
+   190) <a name="l190" style="background-color: #ffffff">    if (het1_ndx&gt;0) then</a>
+   191) <a name="l191" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">addfld( 'het1_total', '/s', pver, 'I', 'total N2O5 + H2O het rate constant', phys_decomp )</a>
+   192) <a name="l192" style="background-color: #ffff99">    endif</a>
+   193) <a name="l193" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">addfld( 'SZA', 'degrees', 1, 'I', 'solar zenith angle', phys_decomp )</a>
+   194) <a name="l194" style="background-color: #ffffff"></a>
+   195) <a name="l195" style="background-color: #ffffff">    call chm_diags_inti()</a>
+   196) <a name="l196" style="background-color: #ffffff">    call rate_diags_init()</a>
+   197) <a name="l197" style="background-color: #ffffff"></a>
+   198) <a name="l198" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   199) <a name="l199" style="background-color: #ffffff">! get pbuf indicies</a>
+   200) <a name="l200" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   201) <a name="l201" style="background-color: #ffffff">    ndx_cldfr  = pbuf_get_index('CLD')</a>
+   202) <a name="l202" style="background-color: #ffffff">    ndx_cmfdqr = pbuf_get_index('RPRDTOT')</a>
+   203) <a name="l203" style="background-color: #ffffff">    ndx_nevapr = pbuf_get_index('NEVAPR')</a>
+   204) <a name="l204" style="background-color: #ffffff">    ndx_prain  = pbuf_get_index('PRAIN')</a>
+   205) <a name="l205" style="background-color: #ffffff">    ndx_cldtop = pbuf_get_index('CLDTOP')</a>
+   206) <a name="l206" style="background-color: #ffffff"></a>
+   207) <a name="l207" style="background-color: #ffffff">    sad_pbf_ndx= pbuf_get_index('VOLC_SAD',errcode=err) ! prescribed  strat aerosols (volcanic)</a>
+   208) <a name="l208" style="background-color: #ffffff">    if (.not.sad_pbf_ndx&gt;0) sad_pbf_ndx = pbuf_get_index('SADSULF',errcode=err) ! CARMA's version of strat aerosols</a>
+   209) <a name="l209" style="background-color: #ffffff">    </a>
+   210) <a name="l210" style="background-color: #ffffff">  end subroutine gas_phase_chemdr_inti</a>
+   211) <a name="l211" style="background-color: #ffffff"></a>
+   212) <a name="l212" style="background-color: #ffffff"></a>
+   213) <a name="l213" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   214) <a name="l214" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   215) <a name="l215" style="background-color: #ffffff">  subroutine gas_phase_chemdr(lchnk, ncol, imozart, q, &amp;</a>
+   216) <a name="l216" style="background-color: #ffffff">                              phis, zm, zi, calday, &amp;</a>
+   217) <a name="l217" style="background-color: #ffffff">                              tfld, pmid, pdel, pint,  &amp;</a>
+   218) <a name="l218" style="background-color: #ffffff">                              cldw, troplev, &amp;</a>
+   219) <a name="l219" style="background-color: #ffffff">                              ncldwtr, ufld, vfld,  &amp;</a>
+   220) <a name="l220" style="background-color: #ffffff">                              delt, ps, xactive_prates, &amp;</a>
+   221) <a name="l221" style="background-color: #ffffff">                              fsds, ts, asdir, ocnfrac, icefrac, &amp;</a>
+   222) <a name="l222" style="background-color: #ffffff">                              precc, precl, snowhland, ghg_chem, latmapback, &amp;</a>
+   223) <a name="l223" style="background-color: #ffffff">                              chem_name, drydepflx, cflx, qtend, pbuf)</a>
+   224) <a name="l224" style="background-color: #ffffff"></a>
+   225) <a name="l225" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   226) <a name="l226" style="background-color: #ffffff">    !     ... Chem_solver advances the volumetric mixing ratio</a>
+   227) <a name="l227" style="background-color: #ffffff">    !         forward one time step via a combination of explicit,</a>
+   228) <a name="l228" style="background-color: #ffffff">    !         ebi, hov, fully implicit, and/or rodas algorithms.</a>
+   229) <a name="l229" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   230) <a name="l230" style="background-color: #ffffff"></a>
+   231) <a name="l231" style="background-color: #ffffff">    use chem_mods,         only : nabscol, nfs, indexm</a>
+   232) <a name="l232" style="background-color: #ffffff">    use physconst,         only : rga</a>
+   233) <a name="l233" style="background-color: #ffffff">    use mo_photo,          only : set_ub_col, setcol, table_photo, xactive_photo</a>
+   234) <a name="l234" style="background-color: #ffffff">    use mo_exp_sol,        only : exp_sol</a>
+   235) <a name="l235" style="background-color: #ffffff">    use mo_imp_sol,        only : imp_sol</a>
+   236) <a name="l236" style="background-color: #ffffff">    use mo_setrxt,         only : setrxt</a>
+   237) <a name="l237" style="background-color: #ffffff">    use mo_adjrxt,         only : adjrxt</a>
+   238) <a name="l238" style="background-color: #ffffff">    use mo_phtadj,         only : phtadj</a>
+   239) <a name="l239" style="background-color: #ffffff">    use llnl_O1D_to_2OH_adj,only : O1D_to_2OH_adj</a>
+   240) <a name="l240" style="background-color: #ffffff">    use mo_usrrxt,         only : usrrxt</a>
+   241) <a name="l241" style="background-color: #ffffff">    use mo_setinv,         only : setinv</a>
+   242) <a name="l242" style="background-color: #ffffff">    use mo_negtrc,         only : negtrc</a>
+   243) <a name="l243" style="background-color: #ffffff">    use mo_sulf,           only : sulf_interp</a>
+   244) <a name="l244" style="background-color: #ffffff">    use mo_lightning,      only : prod_no</a>
+   245) <a name="l245" style="background-color: #ffffff">    use mo_setext,         only : setext</a>
+   246) <a name="l246" style="background-color: #ffffff">    use mo_sethet,         only : sethet</a>
+   247) <a name="l247" style="background-color: #ffffff">    use mo_drydep,         only : drydep, set_soilw</a>
+   248) <a name="l248" style="background-color: #ffffff">    use seq_drydep_mod,    only : DD_XLND, DD_XATM, DD_TABL, drydep_method</a>
+   249) <a name="l249" style="background-color: #ffffff">    use mo_fstrat,         only : set_fstrat_vals, set_fstrat_h2o</a>
+   250) <a name="l250" style="background-color: #ffffff">    use noy_ubc,           only : noy_ubc_set</a>
+   251) <a name="l251" style="background-color: #ffffff">    use mo_flbc,           only : flbc_set</a>
+   252) <a name="l252" style="background-color: #ffffff">    use phys_grid,         only : get_rlat_all_p, get_rlon_all_p, get_lat_all_p, get_lon_all_p</a>
+   253) <a name="l253" style="background-color: #ffffff">    use mo_mean_mass,      only : set_mean_mass</a>
+   254) <a name="l254" style="background-color: #ffffff">    use cam_history,       only : outfld</a>
+   255) <a name="l255" style="background-color: #ffffff">    use wv_saturation,     only : qsat</a>
+   256) <a name="l256" style="background-color: #ffffff">    use constituents,      only : cnst_mw</a>
+   257) <a name="l257" style="background-color: #ffffff">    use mo_drydep,         only : has_drydep</a>
+   258) <a name="l258" style="background-color: #ffffff">    use time_manager,      only : get_ref_date</a>
+   259) <a name="l259" style="background-color: #ffffff">    use mo_ghg_chem,       only : ghg_chem_set_rates, ghg_chem_set_flbc</a>
+   260) <a name="l260" style="background-color: #ffffff">    use mo_sad,            only : sad_strat_calc</a>
+   261) <a name="l261" style="background-color: #ffffff">    use charge_neutrality, only : charge_balance</a>
+   262) <a name="l262" style="background-color: #ffffff">    use mo_strato_rates,   only : ratecon_sfstrat</a>
+   263) <a name="l263" style="background-color: #ffffff">    use mo_aero_settling,  only : strat_aer_settling</a>
+   264) <a name="l264" style="background-color: #ffffff">    use shr_orb_mod,       only : shr_orb_decl</a>
+   265) <a name="l265" style="background-color: #ffffff">    use cam_control_mod,   only : lambm0, eccen, mvelpp, obliqr</a>
+   266) <a name="l266" style="background-color: #ffffff">    use mo_strato_rates,   only : has_strato_chem</a>
+   267) <a name="l267" style="background-color: #ffffff">    use short_lived_species,only: set_short_lived_species,get_short_lived_species</a>
+   268) <a name="l268" style="background-color: #ffffff">    use mo_chm_diags,      only : chm_diags, het_diags</a>
+   269) <a name="l269" style="background-color: #ffffff">    use perf_mod,          only : t_startf, t_stopf</a>
+   270) <a name="l270" style="background-color: #ffffff">    use mo_neu_wetdep,     only : do_neu_wetdep</a>
+   271) <a name="l271" style="background-color: #ffffff">    use physics_buffer,    only : physics_buffer_desc, pbuf_get_field, pbuf_old_tim_idx</a>
+   272) <a name="l272" style="background-color: #ffffff">    use infnan,            only : nan, assignment(=)</a>
+   273) <a name="l273" style="background-color: #ffffff">    use rate_diags,        only : rate_diags_calc</a>
+   274) <a name="l274" style="background-color: #ffffff">    use mo_mass_xforms,    only : mmr2vmr, vmr2mmr, h2o_to_vmr, mmr2vmri</a>
+   275) <a name="l275" style="background-color: #ffffff">!</a>
+   276) <a name="l276" style="background-color: #ffffff">! LINOZ</a>
+   277) <a name="l277" style="background-color: #ffffff">!</a>
+   278) <a name="l278" style="background-color: #ffffff">    use lin_strat_chem,    only : do_lin_strat_chem, lin_strat_chem_solve</a>
+   279) <a name="l279" style="background-color: #ffffff">    use linoz_data,        only : has_linoz_data</a>
+   280) <a name="l280" style="background-color: #ffffff">!</a>
+   281) <a name="l281" style="background-color: #ffffff">! for aqueous chemistry and aerosol growth</a>
+   282) <a name="l282" style="background-color: #ffffff">!</a>
+   283) <a name="l283" style="background-color: #ffffff">    use aero_model,        only : aero_model_gasaerexch</a>
+   284) <a name="l284" style="background-color: #ffffff"></a>
+   285) <a name="l285" style="background-color: #ffffff">    implicit none</a>
+   286) <a name="l286" style="background-color: #ffffff"></a>
+   287) <a name="l287" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   288) <a name="l288" style="background-color: #ffffff">    !        ... Dummy arguments</a>
+   289) <a name="l289" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   290) <a name="l290" style="background-color: #ffffff">    integer,        intent(in)    :: lchnk                          ! chunk index</a>
+   291) <a name="l291" style="background-color: #ffffff">    integer,        intent(in)    :: ncol                           ! number columns in chunk</a>
+   292) <a name="l292" style="background-color: #ffffff">    integer,        intent(in)    :: imozart                        ! gas phase start index in q</a>
+   293) <a name="l293" style="background-color: #ffffff">    real(r8),       intent(in)    :: delt                           ! timestep (s)</a>
+   294) <a name="l294" style="background-color: #ffffff">    real(r8),       intent(in)    :: calday                         ! day of year</a>
+   295) <a name="l295" style="background-color: #ffffff">    real(r8),       intent(in)    :: ps(pcols)                      ! surface pressure</a>
+   296) <a name="l296" style="background-color: #ffffff">    real(r8),       intent(in)    :: phis(pcols)                    ! surface geopotential</a>
+   297) <a name="l297" style="background-color: #ffffff">    real(r8),       intent(in)    :: tfld(pcols,pver)               ! midpoint temperature (K)</a>
+   298) <a name="l298" style="background-color: #ffffff">    real(r8),       intent(in)    :: pmid(pcols,pver)               ! midpoint pressures (Pa)</a>
+   299) <a name="l299" style="background-color: #ffffff">    real(r8),       intent(in)    :: pdel(pcols,pver)               ! pressure delta about midpoints (Pa)</a>
+   300) <a name="l300" style="background-color: #ffffff">    real(r8),       intent(in)    :: ufld(pcols,pver)               ! zonal velocity (m/s)</a>
+   301) <a name="l301" style="background-color: #ffffff">    real(r8),       intent(in)    :: vfld(pcols,pver)               ! meridional velocity (m/s)</a>
+   302) <a name="l302" style="background-color: #ffffff">    real(r8),       intent(in)    :: cldw(pcols,pver)               ! cloud water (kg/kg)</a>
+   303) <a name="l303" style="background-color: #ffffff">    real(r8),       intent(in)    :: ncldwtr(pcols,pver)            ! droplet number concentration (#/kg)</a>
+   304) <a name="l304" style="background-color: #ffffff">    real(r8),       intent(in)    :: zm(pcols,pver)                 ! midpoint geopotential height above the surface (m)</a>
+   305) <a name="l305" style="background-color: #ffffff">    real(r8),       intent(in)    :: zi(pcols,pver+1)               ! interface geopotential height above the surface (m)</a>
+   306) <a name="l306" style="background-color: #ffffff">    real(r8),       intent(in)    :: pint(pcols,pver+1)             ! interface pressures (Pa)</a>
+   307) <a name="l307" style="background-color: #ffffff">    real(r8),       intent(in)    :: q(pcols,pver,pcnst)            ! species concentrations (kg/kg)</a>
+   308) <a name="l308" style="background-color: #ffffff">    logical,        intent(in)    :: xactive_prates</a>
+   309) <a name="l309" style="background-color: #ffffff">    real(r8),       intent(in)    :: fsds(pcols)                    ! longwave down at sfc</a>
+   310) <a name="l310" style="background-color: #ffffff">    real(r8),       intent(in)    :: icefrac(pcols)                 ! sea-ice areal fraction</a>
+   311) <a name="l311" style="background-color: #ffffff">    real(r8),       intent(in)    :: ocnfrac(pcols)                 ! ocean areal fraction</a>
+   312) <a name="l312" style="background-color: #ffffff">    real(r8),       intent(in)    :: asdir(pcols)                   ! albedo: shortwave, direct</a>
+   313) <a name="l313" style="background-color: #ffffff">    real(r8),       intent(in)    :: ts(pcols)                      ! sfc temp (merged w/ocean if coupled)</a>
+   314) <a name="l314" style="background-color: #ffffff">    real(r8),       intent(in)    :: precc(pcols)                   !</a>
+   315) <a name="l315" style="background-color: #ffffff">    real(r8),       intent(in)    :: precl(pcols)                   !</a>
+   316) <a name="l316" style="background-color: #ffffff">    real(r8),       intent(in)    :: snowhland(pcols)               !</a>
+   317) <a name="l317" style="background-color: #ffffff">    logical,        intent(in)    :: ghg_chem </a>
+   318) <a name="l318" style="background-color: #ffffff">    integer,        intent(in)    :: latmapback(pcols)</a>
+   319) <a name="l319" style="background-color: #ffffff">    character(len=*), intent(in)  :: chem_name</a>
+   320) <a name="l320" style="background-color: #ffffff">    integer,         intent(in) ::  troplev(pcols)</a>
+   321) <a name="l321" style="background-color: #ffffff"></a>
+   322) <a name="l322" style="background-color: #ffffff">    real(r8),       intent(inout) :: qtend(pcols,pver,pcnst)        ! species tendencies (kg/kg/s)</a>
+   323) <a name="l323" style="background-color: #ffffff">    real(r8),       intent(inout) :: cflx(pcols,pcnst)              ! constituent surface flux (kg/m^2/s)</a>
+   324) <a name="l324" style="background-color: #ffffff">    real(r8),       intent(out)   :: drydepflx(pcols,pcnst)         ! dry deposition flux (kg/m^2/s)</a>
+   325) <a name="l325" style="background-color: #ffffff"></a>
+   326) <a name="l326" style="background-color: #ffffff">    type(physics_buffer_desc), pointer :: pbuf(:)</a>
+   327) <a name="l327" style="background-color: #ffffff"></a>
+   328) <a name="l328" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   329) <a name="l329" style="background-color: #ffffff">    !     	... Local variables</a>
+   330) <a name="l330" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   331) <a name="l331" style="background-color: #ffffff">    real(r8), parameter :: m2km  = 1.e-3_r8</a>
+   332) <a name="l332" style="background-color: #ffffff">    real(r8), parameter :: Pa2mb = 1.e-2_r8</a>
+   333) <a name="l333" style="background-color: #ffffff"></a>
+   334) <a name="l334" style="background-color: #ffffff">    real(r8),       pointer    :: prain(:,:)</a>
+   335) <a name="l335" style="background-color: #ffffff">    real(r8),       pointer    :: nevapr(:,:)</a>
+   336) <a name="l336" style="background-color: #ffffff">    real(r8),       pointer    :: cmfdqr(:,:)</a>
+   337) <a name="l337" style="background-color: #ffffff">    real(r8),       pointer    :: cldfr(:,:)</a>
+   338) <a name="l338" style="background-color: #ffffff">    real(r8),       pointer    :: cldtop(:)</a>
+   339) <a name="l339" style="background-color: #ffffff"></a>
+   340) <a name="l340" style="background-color: #ffffff">    integer      ::  i, k, m, n</a>
+   341) <a name="l341" style="background-color: #ffffff">    integer      ::  tim_ndx</a>
+   342) <a name="l342" style="background-color: #ffffff">    real(r8)     ::  delt_inverse</a>
+   343) <a name="l343" style="background-color: #ffffff">    real(r8)     ::  esfact</a>
+   344) <a name="l344" style="background-color: #ffffff">    integer      ::  latndx(pcols)                         ! chunk lat indicies</a>
+   345) <a name="l345" style="background-color: #ffffff">    integer      ::  lonndx(pcols)                         ! chunk lon indicies</a>
+   346) <a name="l346" style="background-color: #ffffff">    real(r8)     ::  invariants(ncol,pver,nfs)</a>
+   347) <a name="l347" style="background-color: #ffffff">    real(r8)     ::  col_dens(ncol,pver,max(1,nabscol))    ! column densities (molecules/cm^2)</a>
+   348) <a name="l348" style="background-color: #ffffff">    real(r8)     ::  col_delta(ncol,0:pver,max(1,nabscol)) ! layer column densities (molecules/cm^2)</a>
+   349) <a name="l349" style="background-color: #ffffff">    real(r8)     ::  extfrc(ncol,pver,max(1,extcnt))</a>
+   350) <a name="l350" style="background-color: #ffffff">    real(r8)     ::  vmr(ncol,pver,gas_pcnst)         ! xported species (vmr)</a>
+   351) <a name="l351" style="background-color: #ffffff">    real(r8)     ::  reaction_rates(ncol,pver,max(1,rxntot))      ! reaction rates</a>
+   352) <a name="l352" style="background-color: #ffffff">    real(r8)     ::  depvel(ncol,gas_pcnst)                ! dry deposition velocity (cm/s)</a>
+   353) <a name="l353" style="background-color: #ffffff">    real(r8)     ::  het_rates(ncol,pver,max(1,gas_pcnst)) ! washout rate (1/s)</a>
+   354) <a name="l354" style="background-color: #ffffff">    real(r8), dimension(ncol,pver) :: &amp;</a>
+   355) <a name="l355" style="background-color: #ffffff">         h2ovmr, &amp;                                         ! water vapor volume mixing ratio</a>
+   356) <a name="l356" style="background-color: #ffffff">         mbar, &amp;                                           ! mean wet atmospheric mass ( amu )</a>
+   357) <a name="l357" style="background-color: #ffffff">         zmid, &amp;                                           ! midpoint geopotential in km</a>
+   358) <a name="l358" style="background-color: #ffffff">         zmidr, &amp;                                          ! midpoint geopotential in km realitive to surf</a>
+   359) <a name="l359" style="background-color: #ffffff">         sulfate, &amp;                                        ! trop sulfate aerosols</a>
+   360) <a name="l360" style="background-color: #ffffff">         pmb                                               ! pressure at midpoints ( hPa )</a>
+   361) <a name="l361" style="background-color: #ffffff">    real(r8), dimension(ncol,pver) :: &amp;</a>
+   362) <a name="l362" style="background-color: #ffffff">         cwat, &amp;                                           ! cloud water mass mixing ratio (kg/kg)</a>
+   363) <a name="l363" style="background-color: #ffffff">         wrk</a>
+   364) <a name="l364" style="background-color: #ffffff">    real(r8), dimension(ncol,pver+1) :: &amp;</a>
+   365) <a name="l365" style="background-color: #ffffff">         zintr                                              ! interface geopotential in km realitive to surf</a>
+   366) <a name="l366" style="background-color: #ffffff">    real(r8), dimension(ncol,pver+1) :: &amp;</a>
+   367) <a name="l367" style="background-color: #ffffff">         zint                                              ! interface geopotential in km</a>
+   368) <a name="l368" style="background-color: #ffffff">    real(r8), dimension(ncol)  :: &amp;</a>
+   369) <a name="l369" style="background-color: #ffffff">         zen_angle, &amp;                                      ! solar zenith angles</a>
+   370) <a name="l370" style="background-color: #ffffff">         zsurf, &amp;                                          ! surface height (m)</a>
+   371) <a name="l371" style="background-color: #ffffff">         rlats, rlons                                      ! chunk latitudes and longitudes (radians)</a>
+   372) <a name="l372" style="background-color: #ffffff">    real(r8) :: sza(ncol)                                  ! solar zenith angles (degrees)</a>
+   373) <a name="l373" style="background-color: #ffffff">    real(r8), parameter :: rad2deg = 180._r8/pi                ! radians to degrees conversion factor</a>
+   374) <a name="l374" style="background-color: #ffffff">    real(r8) :: relhum(ncol,pver)                          ! relative humidity</a>
+   375) <a name="l375" style="background-color: #ffffff">    real(r8) :: satv(ncol,pver)                            ! wrk array for relative humidity</a>
+   376) <a name="l376" style="background-color: #ffffff">    real(r8) :: satq(ncol,pver)                            ! wrk array for relative humidity</a>
+   377) <a name="l377" style="background-color: #ffffff"></a>
+   378) <a name="l378" style="background-color: #ffffff">    integer                   :: j,wd_index</a>
+   379) <a name="l379" style="background-color: #ffffff">    real(r8), dimension(ncol) :: noy_wk, sox_wk, nhx_wk</a>
+   380) <a name="l380" style="background-color: #ffffff">    integer                   ::  ltrop_sol(pcols)         ! tropopause vertical index used in chem solvers</a>
+   381) <a name="l381" style="background-color: #ffffff">    real(r8), pointer         ::  strato_sad(:,:)          ! stratospheric sad (1/cm)</a>
+   382) <a name="l382" style="background-color: #ffffff"></a>
+   383) <a name="l383" style="background-color: #ffffff">    real(r8)                  ::  sad_total(pcols,pver)    ! total trop. sad (cm^2/cm^3)</a>
+   384) <a name="l384" style="background-color: #ffffff"></a>
+   385) <a name="l385" style="background-color: #ffffff">    real(r8) :: tvs(pcols)</a>
+   386) <a name="l386" style="background-color: #ffffff">    integer  :: ncdate,yr,mon,day,sec</a>
+   387) <a name="l387" style="background-color: #ffffff">    real(r8) :: wind_speed(pcols)        ! surface wind speed (m/s)</a>
+   388) <a name="l388" style="background-color: #ffffff">    logical, parameter :: dyn_soilw = .false.</a>
+   389) <a name="l389" style="background-color: #ffffff">    logical  :: table_soilw</a>
+   390) <a name="l390" style="background-color: #ffffff">    real(r8) :: soilw(pcols)</a>
+   391) <a name="l391" style="background-color: #ffffff">    real(r8) :: prect(pcols)</a>
+   392) <a name="l392" style="background-color: #ffffff">    real(r8) :: sflx(pcols,gas_pcnst)</a>
+   393) <a name="l393" style="background-color: #ffffff">    real(r8) :: dust_vmr(ncol,pver,ndust)</a>
+   394) <a name="l394" style="background-color: #ffffff">    real(r8) :: noy(ncol,pver)</a>
+   395) <a name="l395" style="background-color: #ffffff">    real(r8) :: sox(ncol,pver)</a>
+   396) <a name="l396" style="background-color: #ffffff">    real(r8) :: nhx(ncol,pver)</a>
+   397) <a name="l397" style="background-color: #ffffff">    real(r8) :: dt_diag(pcols,8)               ! od diagnostics</a>
+   398) <a name="l398" style="background-color: #ffffff">    real(r8) :: fracday(pcols)                 ! fraction of day</a>
+   399) <a name="l399" style="background-color: #ffffff">    real(r8) :: o2mmr(ncol,pver)               ! o2 concentration (kg/kg)</a>
+   400) <a name="l400" style="background-color: #ffffff">    real(r8) :: ommr(ncol,pver)                ! o concentration (kg/kg)</a>
+   401) <a name="l401" style="background-color: #ffffff">    real(r8) :: mmr(pcols,pver,gas_pcnst)      ! chem working concentrations (kg/kg)</a>
+   402) <a name="l402" style="background-color: #ffffff">    real(r8) :: mmr_new(pcols,pver,gas_pcnst)      ! chem working concentrations (kg/kg)</a>
+   403) <a name="l403" style="background-color: #ffffff">    real(r8) :: hno3_gas(ncol,pver)            ! hno3 gas phase concentration (mol/mol)</a>
+   404) <a name="l404" style="background-color: #ffffff">    real(r8) :: hno3_cond(ncol,pver,2)         ! hno3 condensed phase concentration (mol/mol)</a>
+   405) <a name="l405" style="background-color: #ffffff">    real(r8) :: hcl_gas(ncol,pver)             ! hcl gas phase concentration (mol/mol)</a>
+   406) <a name="l406" style="background-color: #ffffff">    real(r8) :: hcl_cond(ncol,pver)            ! hcl condensed phase concentration (mol/mol)</a>
+   407) <a name="l407" style="background-color: #ffffff">    real(r8) :: h2o_gas(ncol,pver)             ! h2o gas phase concentration (mol/mol)</a>
+   408) <a name="l408" style="background-color: #ffffff">    real(r8) :: h2o_cond(ncol,pver)            ! h2o condensed phase concentration (mol/mol)</a>
+   409) <a name="l409" style="background-color: #ffffff">    real(r8) :: cldice(pcols,pver)             ! cloud water &quot;ice&quot; (kg/kg)</a>
+   410) <a name="l410" style="background-color: #ffffff">    real(r8) :: radius_strat(ncol,pver,3)      ! radius of sulfate, nat, &amp; ice ( cm )</a>
+   411) <a name="l411" style="background-color: #ffffff">    real(r8) :: sad_strat(ncol,pver,3)         ! surf area density of sulfate, nat, &amp; ice ( cm^2/cm^3 )</a>
+   412) <a name="l412" style="background-color: #ffffff">    real(r8) :: mmr_tend(pcols,pver,gas_pcnst) ! chemistry species tendencies (kg/kg/s)</a>
+   413) <a name="l413" style="background-color: #ffffff">    real(r8) :: qh2o(pcols,pver)               ! specific humidity (kg/kg)</a>
+   414) <a name="l414" style="background-color: #ffffff">    real(r8) :: delta</a>
+   415) <a name="l415" style="background-color: #ffffff"></a>
+   416) <a name="l416" style="background-color: #ffffff">  ! for aerosol formation....  </a>
+   417) <a name="l417" style="background-color: #ffffff">    real(r8) :: del_h2so4_gasprod(ncol,pver)</a>
+   418) <a name="l418" style="background-color: #ffffff">    real(r8) :: vmr0(ncol,pver,gas_pcnst)</a>
+   419) <a name="l419" style="background-color: #ffffff"></a>
+   420) <a name="l420" style="background-color: #ffffff">!</a>
+   421) <a name="l421" style="background-color: #ffffff">! CCMI</a>
+   422) <a name="l422" style="background-color: #ffffff">!</a>
+   423) <a name="l423" style="background-color: #ffffff">    real(r8) :: xlat</a>
+   424) <a name="l424" style="background-color: #ffffff">    real(r8) :: pm25(ncol)</a>
+   425) <a name="l425" style="background-color: #ffffff">    real(r8), dimension(ncol,pver) :: o3s_loss             ! tropospheric ozone loss for o3s</a>
+   426) <a name="l426" style="background-color: #ffffff">!</a>
+   427) <a name="l427" style="background-color: #ffffff">! jfl</a>
+   428) <a name="l428" style="background-color: #ffffff">!</a>
+   429) <a name="l429" style="background-color: #ffffff">!</a>
+   430) <a name="l430" style="background-color: #ffffff"></a>
+   431) <a name="l431" style="background-color: #ffffff">    ! initialize to NaN to hopefully catch user defined rxts that go unset</a>
+   432) <a name="l432" style="background-color: #ffffff">    reaction_rates(:,:,:) = nan</a>
+   433) <a name="l433" style="background-color: #ffffff"></a>
+   434) <a name="l434" style="background-color: #ffffff">    delt_inverse = 1._r8 / delt</a>
+   435) <a name="l435" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   436) <a name="l436" style="background-color: #ffffff">    !        ... Get chunck latitudes and longitudes</a>
+   437) <a name="l437" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   438) <a name="l438" style="background-color: #ffffff">    call get_lat_all_p( lchnk, ncol, latndx )</a>
+   439) <a name="l439" style="background-color: #ffffff">    call get_lon_all_p( lchnk, ncol, lonndx )</a>
+   440) <a name="l440" style="background-color: #ffffff">    call get_rlat_all_p( lchnk, ncol, rlats )</a>
+   441) <a name="l441" style="background-color: #ffffff">    call get_rlon_all_p( lchnk, ncol, rlons )</a>
+   442) <a name="l442" style="background-color: #ffffff">    tim_ndx = pbuf_old_tim_idx()</a>
+   443) <a name="l443" style="background-color: #ffffff">    call pbuf_get_field(pbuf, ndx_prain,      prain,  start=(/1,1/), kount=(/ncol,pver/))</a>
+   444) <a name="l444" style="background-color: #ffffff">    call pbuf_get_field(pbuf, ndx_cldfr,        cldfr, start=(/1,1,tim_ndx/), kount=(/ncol,pver,1/) )</a>
+   445) <a name="l445" style="background-color: #ffffff">    call pbuf_get_field(pbuf, ndx_cmfdqr,     cmfdqr, start=(/1,1/), kount=(/ncol,pver/))</a>
+   446) <a name="l446" style="background-color: #ffffff">    call pbuf_get_field(pbuf, ndx_nevapr,     nevapr, start=(/1,1/), kount=(/ncol,pver/))</a>
+   447) <a name="l447" style="background-color: #ffffff">    call pbuf_get_field(pbuf, ndx_cldtop,     cldtop )</a>
+   448) <a name="l448" style="background-color: #ffffff"></a>
+   449) <a name="l449" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   450) <a name="l450" style="background-color: #ffffff">    !        ... Calculate cosine of zenith angle</a>
+   451) <a name="l451" style="background-color: #ffffff">    !            then cast back to angle (radians)</a>
+   452) <a name="l452" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   453) <a name="l453" style="background-color: #ffffff">    call zenith( calday, rlats, rlons, zen_angle, ncol )</a>
+   454) <a name="l454" style="background-color: #ffffff">    zen_angle(:) = acos( zen_angle(:) )</a>
+   455) <a name="l455" style="background-color: #ffffff"></a>
+   456) <a name="l456" style="background-color: #ffffff">    sza(:) = zen_angle(:) * rad2deg</a>
+   457) <a name="l457" style="background-color: #ffffff">    call outfld( 'SZA',   sza,    ncol, lchnk )</a>
+   458) <a name="l458" style="background-color: #ffffff"></a>
+   459) <a name="l459" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   460) <a name="l460" style="background-color: #ffffff">    !        ... Xform geopotential height from m to km </a>
+   461) <a name="l461" style="background-color: #ffffff">    !            and pressure from Pa to mb</a>
+   462) <a name="l462" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   463) <a name="l463" style="background-color: #ffffff">    zsurf(:ncol) = rga * phis(:ncol)</a>
+   464) <a name="l464" style="background-color: #ffffff">    do k = 1,pver</a>
+   465) <a name="l465" style="background-color: #ffffff">       zintr(:ncol,k) = m2km * zi(:ncol,k)</a>
+   466) <a name="l466" style="background-color: #ffffff">       zmidr(:ncol,k) = m2km * zm(:ncol,k)</a>
+   467) <a name="l467" style="background-color: #ffffff">       zmid(:ncol,k) = m2km * (zm(:ncol,k) + zsurf(:ncol))</a>
+   468) <a name="l468" style="background-color: #ffffff">       zint(:ncol,k) = m2km * (zi(:ncol,k) + zsurf(:ncol))</a>
+   469) <a name="l469" style="background-color: #ffffff">       pmb(:ncol,k)  = Pa2mb * pmid(:ncol,k)</a>
+   470) <a name="l470" style="background-color: #ffffff">    end do</a>
+   471) <a name="l471" style="background-color: #ffffff">    zint(:ncol,pver+1) = m2km * (zi(:ncol,pver+1) + zsurf(:ncol))</a>
+   472) <a name="l472" style="background-color: #ffffff">    zintr(:ncol,pver+1)= m2km *  zi(:ncol,pver+1)</a>
+   473) <a name="l473" style="background-color: #ffffff"></a>
+   474) <a name="l474" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   475) <a name="l475" style="background-color: #ffffff">    !        ... map incoming concentrations to working array</a>
+   476) <a name="l476" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   477) <a name="l477" style="background-color: #ffffff">    do m = 1,pcnst</a>
+   478) <a name="l478" style="background-color: #ffffff">       n = map2chm(m)</a>
+   479) <a name="l479" style="background-color: #ffffff">       if( n &gt; 0 ) then</a>
+   480) <a name="l480" style="background-color: #ffffff">          mmr(:ncol,:,n) = q(:ncol,:,m)</a>
+   481) <a name="l481" style="background-color: #ffffff">       end if</a>
+   482) <a name="l482" style="background-color: #ffffff">    end do</a>
+   483) <a name="l483" style="background-color: #ffffff"></a>
+   484) <a name="l484" style="background-color: #ffffff">    call get_short_lived_species( mmr, lchnk, ncol, pbuf )</a>
+   485) <a name="l485" style="background-color: #ffffff"></a>
+   486) <a name="l486" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   487) <a name="l487" style="background-color: #ffffff">    !        ... Set atmosphere mean mass</a>
+   488) <a name="l488" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   489) <a name="l489" style="background-color: #ffffff">    call set_mean_mass( ncol, mmr, mbar )</a>
+   490) <a name="l490" style="background-color: #ffffff"></a>
+   491) <a name="l491" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   492) <a name="l492" style="background-color: #ffffff">    !        ... Xform from mmr to vmr</a>
+   493) <a name="l493" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   494) <a name="l494" style="background-color: #ffffff">    call mmr2vmr( mmr, vmr, mbar, ncol )</a>
+   495) <a name="l495" style="background-color: #ffffff"></a>
+   496) <a name="l496" style="background-color: #ffffff">!</a>
+   497) <a name="l497" style="background-color: #ffffff">! CCMI</a>
+   498) <a name="l498" style="background-color: #ffffff">!</a>
+   499) <a name="l499" style="background-color: #ffffff">! reset STE tracer to specific vmr of 200 ppbv</a>
+   500) <a name="l500" style="background-color: #ffffff">!</a>
+   501) <a name="l501" style="background-color: #ffffff">    if ( st80_25_ndx &gt; 0 ) then </a>
+   502) <a name="l502" style="background-color: #ffffff">       where ( pmid(:ncol,:) </a><a style="background-color: #ffff99">&lt; 80.e+2_r8 )</a>
+   503) <a name="l503" style="background-color: #ffff99">          vmr(:ncol,:,st80_25_ndx) = 200.e-9_r8 </a>
+   504) <a name="l504" style="background-color: #ffff99">       end where</a>
+   505) <a name="l505" style="background-color: #ffff99">    end if</a>
+   506) <a name="l506" style="background-color: #ffff99">!</a>
+   507) <a name="l507" style="background-color: #ffff99">! reset AOA_NH, NH_5, NH_50, NH_50W surface mixing ratios between 30N and 50N</a>
+   508) <a name="l508" style="background-color: #ffff99">!</a>
+   509) <a name="l509" style="background-color: #ffffff">    if ( aoa_nh_ndx</a><a style="background-color: #ffff99">&gt;0 .and. nh_5_ndx&gt;0 .and. nh_50_ndx&gt;0 .and. nh_50w_ndx&gt;0 ) then</a>
+   510) <a name="l510" style="background-color: #ffff99">      do j=1,ncol</a>
+   511) <a name="l511" style="background-color: #ffff99">        xlat = rlats(j)*rad2deg              ! convert to degrees</a>
+   512) <a name="l512" style="background-color: #ffff99">        if ( xlat &gt;= 30._r8 .and. xlat &lt;= 50._r8 ) then</a>
+   513) <a name="l513" style="background-color: #ffff99">           vmr(j,pver,nh_5_ndx)   = 100.e-9_r8</a>
+   514) <a name="l514" style="background-color: #ffff99">           vmr(j,pver,nh_50_ndx)  = 100.e-9_r8</a>
+   515) <a name="l515" style="background-color: #ffff99">           vmr(j,pver,nh_50w_ndx) = 100.e-9_r8</a>
+   516) <a name="l516" style="background-color: #ffff99">           vmr(j,pver,aoa_nh_ndx) = 0._r8</a>
+   517) <a name="l517" style="background-color: #ffff99">        end if</a>
+   518) <a name="l518" style="background-color: #ffff99">      end do</a>
+   519) <a name="l519" style="background-color: #ffff99">    end if</a>
+   520) <a name="l520" style="background-color: #ffff99"></a>
+   521) <a name="l521" style="background-color: #ffffff">    if (h2o_ndx&gt;0) then</a>
+   522) <a name="l522" style="background-color: #ffffff">       !-----------------------------------------------------------------------      </a>
+   523) <a name="l523" style="background-color: #ffffff">       !        ... store water vapor in wrk variable</a>
+   524) <a name="l524" style="background-color: #ffffff">       !-----------------------------------------------------------------------      </a>
+   525) <a name="l525" style="background-color: #ffff99">       qh2o(:ncol,:) = mmr(:ncol,:,h2o_ndx)</a>
+   526) <a name="l526" style="background-color: #ffff99">       h2ovmr(:ncol,:) = vmr(:ncol,:,h2o_ndx)</a>
+   527) <a name="l527" style="background-color: #ffff99">    else</a>
+   528) <a name="l528" style="background-color: #ffffff">       qh2o(:ncol,:) = q(:ncol,:,1)</a>
+   529) <a name="l529" style="background-color: #ffffff">       !-----------------------------------------------------------------------      </a>
+   530) <a name="l530" style="background-color: #ffffff">       !        ... Xform water vapor from mmr to vmr and set upper bndy values</a>
+   531) <a name="l531" style="background-color: #ffffff">       !-----------------------------------------------------------------------      </a>
+   532) <a name="l532" style="background-color: #ffffff">       call h2o_to_vmr( q(:,:,1), h2ovmr, mbar, ncol )</a>
+   533) <a name="l533" style="background-color: #ffffff"></a>
+   534) <a name="l534" style="background-color: #ffffff">       call set_fstrat_h2o( h2ovmr, pmid, troplev, calday, ncol, lchnk )</a>
+   535) <a name="l535" style="background-color: #ffffff"></a>
+   536) <a name="l536" style="background-color: #ffffff">    endif</a>
+   537) <a name="l537" style="background-color: #ffffff"></a>
+   538) <a name="l538" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   539) <a name="l539" style="background-color: #ffffff">    !        ... force ion/electron balance</a>
+   540) <a name="l540" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   541) <a name="l541" style="background-color: #ffffff">    call charge_balance( ncol, vmr )</a>
+   542) <a name="l542" style="background-color: #ffffff"></a>
+   543) <a name="l543" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   544) <a name="l544" style="background-color: #ffffff">    !        ... Set the &quot;invariants&quot;</a>
+   545) <a name="l545" style="background-color: #ffffff">    !-----------------------------------------------------------------------  </a>
+   546) <a name="l546" style="background-color: #ffffff">    call setinv( invariants, tfld, h2ovmr, vmr, pmid, ncol, lchnk, pbuf )</a>
+   547) <a name="l547" style="background-color: #ffffff"></a>
+   548) <a name="l548" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   549) <a name="l549" style="background-color: #ffffff">    !        ... stratosphere aerosol surface area</a>
+   550) <a name="l550" style="background-color: #ffffff">    !-----------------------------------------------------------------------  </a>
+   551) <a name="l551" style="background-color: #ffffff">    if (sad_pbf_ndx&gt;0) then</a>
+   552) <a name="l552" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">pbuf_get_field(pbuf, sad_pbf_ndx, strato_sad)</a>
+   553) <a name="l553" style="background-color: #ffff99">    else</a>
+   554) <a name="l554" style="background-color: #ffffff">       allocate(strato_sad(pcols,pver))</a>
+   555) <a name="l555" style="background-color: #ffffff">       strato_sad(:,:) = 0._r8</a>
+   556) <a name="l556" style="background-color: #ffffff">    endif</a>
+   557) <a name="l557" style="background-color: #ffffff"></a>
+   558) <a name="l558" style="background-color: #ffffff">    stratochem: if ( has_strato_chem ) then</a>
+   559) <a name="l559" style="background-color: #ffffff">       !-----------------------------------------------------------------------      </a>
+   560) <a name="l560" style="background-color: #ffffff">       !        ... initialize condensed and gas phases; all hno3 to gas</a>
+   561) <a name="l561" style="background-color: #ffffff">       !-----------------------------------------------------------------------    </a>
+   562) <a name="l562" style="background-color: #ffff99">       hcl_cond(:,:)      = 0.0_r8</a>
+   563) <a name="l563" style="background-color: #ffff99">       hcl_gas (:,:)      = 0.0_r8  </a>
+   564) <a name="l564" style="background-color: #ffff99">       do k = 1,pver</a>
+   565) <a name="l565" style="background-color: #ffff99">          hno3_gas(:,k)   = vmr(:,k,hno3_ndx)</a>
+   566) <a name="l566" style="background-color: #ffff99">          h2o_gas(:,k)    = h2ovmr(:,k)</a>
+   567) <a name="l567" style="background-color: #ffff99">          hcl_gas(:,k)    = vmr(:,k,hcl_ndx)</a>
+   568) <a name="l568" style="background-color: #ffff99">          wrk(:,k)        = h2ovmr(:,k)</a>
+   569) <a name="l569" style="background-color: #ffff99">          cldice(:ncol,k) = q(:ncol,k,cldice_ndx)</a>
+   570) <a name="l570" style="background-color: #ffff99">       end do</a>
+   571) <a name="l571" style="background-color: #ffff99">       do m = 1,2</a>
+   572) <a name="l572" style="background-color: #ffff99">          do k = 1,pver</a>
+   573) <a name="l573" style="background-color: #ffff99">             hno3_cond(:,k,m) = 0._r8</a>
+   574) <a name="l574" style="background-color: #ffff99">          end do</a>
+   575) <a name="l575" style="background-color: #ffff99">       end do</a>
+   576) <a name="l576" style="background-color: #ffff99"></a>
+   577) <a name="l577" style="background-color: #ffff99">       call mmr2vmri( cldice, h2o_cond, mbar, cnst_mw(cldice_ndx), ncol )</a>
+   578) <a name="l578" style="background-color: #ffff99"></a>
+   579) <a name="l579" style="background-color: #ffff99">       !-----------------------------------------------------------------------      </a>
+   580) <a name="l580" style="background-color: #ffff99">       !        ... call SAD routine</a>
+   581) <a name="l581" style="background-color: #ffff99">       !-----------------------------------------------------------------------      </a>
+   582) <a name="l582" style="background-color: #ffff99">       call sad_strat_calc( lchnk, invariants(:ncol,:,indexm), pmb, tfld, hno3_gas, &amp;</a>
+   583) <a name="l583" style="background-color: #ffff99">            hno3_cond, h2o_gas, h2o_cond, hcl_gas, hcl_cond, strato_sad(:ncol,:), radius_strat, &amp;</a>
+   584) <a name="l584" style="background-color: #ffff99">            sad_strat, ncol, pbuf )</a>
+   585) <a name="l585" style="background-color: #ffff99"></a>
+   586) <a name="l586" style="background-color: #ffff99">!      NOTE: output of total HNO3 is before vmr is set to gas-phase.</a>
+   587) <a name="l587" style="background-color: #ffff99">       call outfld( 'HNO3_TOTAL', vmr(:ncol,:,hno3_ndx), ncol ,lchnk )</a>
+   588) <a name="l588" style="background-color: #ffff99"></a>
+   589) <a name="l589" style="background-color: #ffff99"></a>
+   590) <a name="l590" style="background-color: #ffff99">       do k = 1,pver</a>
+   591) <a name="l591" style="background-color: #ffff99">          vmr(:,k,hno3_ndx) = hno3_gas(:,k)</a>
+   592) <a name="l592" style="background-color: #ffff99">          h2ovmr(:,k)       = h2o_gas(:,k)</a>
+   593) <a name="l593" style="background-color: #ffff99">          vmr(:,k,h2o_ndx)  = h2o_gas(:,k)</a>
+   594) <a name="l594" style="background-color: #ffff99">          wrk(:,k)          = (h2ovmr(:,k) - wrk(:,k))*delt_inverse</a>
+   595) <a name="l595" style="background-color: #ffff99">       end do</a>
+   596) <a name="l596" style="background-color: #ffff99"></a>
+   597) <a name="l597" style="background-color: #ffff99">       call outfld( 'QDSAD', wrk(:,:), ncol, lchnk )</a>
+   598) <a name="l598" style="background-color: #ffff99">!</a>
+   599) <a name="l599" style="background-color: #ffff99">       call outfld( 'SAD', strato_sad    (:ncol,:), ncol, lchnk )</a>
+   600) <a name="l600" style="background-color: #ffff99">       call outfld( 'SAD_SULFC',  sad_strat(:,:,1), ncol, lchnk )</a>
+   601) <a name="l601" style="background-color: #ffff99">       call outfld( 'SAD_LNAT',   sad_strat(:,:,2), ncol, lchnk )</a>
+   602) <a name="l602" style="background-color: #ffff99">       call outfld( 'SAD_ICE',    sad_strat(:,:,3), ncol, lchnk )</a>
+   603) <a name="l603" style="background-color: #ffff99">!</a>
+   604) <a name="l604" style="background-color: #ffff99">       call outfld( 'RAD_SULFC',  radius_strat(:,:,1), ncol, lchnk )</a>
+   605) <a name="l605" style="background-color: #ffff99">       call outfld( 'RAD_LNAT',   radius_strat(:,:,2), ncol, lchnk )</a>
+   606) <a name="l606" style="background-color: #ffff99">       call outfld( 'RAD_ICE',    radius_strat(:,:,3), ncol, lchnk )</a>
+   607) <a name="l607" style="background-color: #ffff99">!</a>
+   608) <a name="l608" style="background-color: #ffff99">       call outfld( 'HNO3_GAS',   vmr(:ncol,:,hno3_ndx), ncol, lchnk )</a>
+   609) <a name="l609" style="background-color: #ffff99">       call outfld( 'HNO3_STS',   hno3_cond(:,:,1), ncol, lchnk )</a>
+   610) <a name="l610" style="background-color: #ffff99">       call outfld( 'HNO3_NAT',   hno3_cond(:,:,2), ncol, lchnk )</a>
+   611) <a name="l611" style="background-color: #ffff99">!</a>
+   612) <a name="l612" style="background-color: #ffff99">       call outfld( 'HCL_TOTAL',  vmr(:ncol,:,hcl_ndx), ncol, lchnk )</a>
+   613) <a name="l613" style="background-color: #ffff99">       call outfld( 'HCL_GAS',    hcl_gas (:,:), ncol ,lchnk )</a>
+   614) <a name="l614" style="background-color: #ffff99">       call outfld( 'HCL_STS',    hcl_cond(:,:), ncol ,lchnk )</a>
+   615) <a name="l615" style="background-color: #ffff99"></a>
+   616) <a name="l616" style="background-color: #ffff99">       !-----------------------------------------------------------------------      </a>
+   617) <a name="l617" style="background-color: #ffff99">       !        ... call aerosol reaction rates</a>
+   618) <a name="l618" style="background-color: #ffff99">       !-----------------------------------------------------------------------      </a>
+   619) <a name="l619" style="background-color: #ffff99">       call ratecon_sfstrat( invariants(:,:,indexm), pmid, tfld, &amp;</a>
+   620) <a name="l620" style="background-color: #ffff99">            radius_strat(:,:,1), sad_strat(:,:,1), sad_strat(:,:,2), &amp;</a>
+   621) <a name="l621" style="background-color: #ffff99">            sad_strat(:,:,3), h2ovmr, vmr, reaction_rates, ncol )</a>
+   622) <a name="l622" style="background-color: #ffff99"></a>
+   623) <a name="l623" style="background-color: #ffff99">    endif stratochem</a>
+   624) <a name="l624" style="background-color: #ffff99"></a>
+   625) <a name="l625" style="background-color: #ffff99">!      NOTE: For gas-phase solver only. </a>
+   626) <a name="l626" style="background-color: #ffff99">!            ratecon_sfstrat needs total hcl.</a>
+   627) <a name="l627" style="background-color: #ffffff">    if (hcl_ndx&gt;0) then</a>
+   628) <a name="l628" style="background-color: #ffff99">       vmr(:,:,hcl_ndx)  = hcl_gas(:,:)</a>
+   629) <a name="l629" style="background-color: #ffff99">    endif</a>
+   630) <a name="l630" style="background-color: #ffff99"></a>
+   631) <a name="l631" style="background-color: #ffff99">    !-----------------------------------------------------------------------      </a>
+   632) <a name="l632" style="background-color: #ffff99">    !        ... Set the column densities at the upper boundary</a>
+   633) <a name="l633" style="background-color: #ffff99">    !-----------------------------------------------------------------------      </a>
+   634) <a name="l634" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">set_ub_col( col_delta, vmr, invariants, pint(:,1), pdel, ncol, lchnk)</a>
+   635) <a name="l635" style="background-color: #ffffff"></a>
+   636) <a name="l636" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   637) <a name="l637" style="background-color: #ffffff">    !       ...  Set rates for &quot;tabular&quot; and user specified reactions</a>
+   638) <a name="l638" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   639) <a name="l639" style="background-color: #ffffff">    call setrxt( reaction_rates, tfld, invariants(1,1,indexm), ncol )</a>
+   640) <a name="l640" style="background-color: #ffffff">    </a>
+   641) <a name="l641" style="background-color: #ffffff">    sulfate(:,:) = 0._r8</a>
+   642) <a name="l642" style="background-color: #ffffff">    if ( .not. carma_do_hetchem ) then</a>
+   643) <a name="l643" style="background-color: #ffffff">       if( so4_ndx &lt; 1 ) then ! get offline so4 field if not prognostic</a>
+   644) <a name="l644" style="background-color: #ffffff">          call sulf_interp( ncol, lchnk, sulfate )</a>
+   645) <a name="l645" style="background-color: #ffffff">       else</a>
+   646) <a name="l646" style="background-color: #ffff99">          sulfate(:,:) = vmr(:,:,so4_ndx)</a>
+   647) <a name="l647" style="background-color: #ffff99">       endif</a>
+   648) <a name="l648" style="background-color: #ffff99">    endif</a>
+   649) <a name="l649" style="background-color: #ffff99">    </a>
+   650) <a name="l650" style="background-color: #ffff99">    !-----------------------------------------------------------------</a>
+   651) <a name="l651" style="background-color: #ffff99">    ! ... zero out sulfate above tropopause</a>
+   652) <a name="l652" style="background-color: #ffff99">    !-----------------------------------------------------------------</a>
+   653) <a name="l653" style="background-color: #ffffff">    do k = 1, pver</a>
+   654) <a name="l654" style="background-color: #ffffff">       do i = 1, ncol</a>
+   655) <a name="l655" style="background-color: #ffffff">          if( k &lt; troplev(i) ) then</a>
+   656) <a name="l656" style="background-color: #ffffff">             sulfate(i,k) = 0.0_r8</a>
+   657) <a name="l657" style="background-color: #ffffff">          end if</a>
+   658) <a name="l658" style="background-color: #ffffff">       end do</a>
+   659) <a name="l659" style="background-color: #ffffff">    end do</a>
+   660) <a name="l660" style="background-color: #ffffff"></a>
+   661) <a name="l661" style="background-color: #ffffff">    !-----------------------------------------------------------------</a>
+   662) <a name="l662" style="background-color: #ffffff">    !	... compute the relative humidity</a>
+   663) <a name="l663" style="background-color: #ffffff">    !-----------------------------------------------------------------</a>
+   664) <a name="l664" style="background-color: #ffffff">    call qsat(tfld(:ncol,:), pmid(:ncol,:), satv, satq)</a>
+   665) <a name="l665" style="background-color: #ffffff"></a>
+   666) <a name="l666" style="background-color: #ffffff">    do k = 1,pver</a>
+   667) <a name="l667" style="background-color: #ffffff">       relhum(:,k) = .622_r8 * h2ovmr(:,k) / satq(:,k)</a>
+   668) <a name="l668" style="background-color: #ffffff">       relhum(:,k) = max( 0._r8,min( 1._r8,relhum(:,k) ) )</a>
+   669) <a name="l669" style="background-color: #ffffff">    end do</a>
+   670) <a name="l670" style="background-color: #ffffff">    </a>
+   671) <a name="l671" style="background-color: #ffffff">    cwat(:ncol,:pver) = cldw(:ncol,:pver)</a>
+   672) <a name="l672" style="background-color: #ffffff"></a>
+   673) <a name="l673" style="background-color: #ffffff">    call </a><a style="background-color: #fafad2">usrrxt( reaction_rates, tfld, tfld, tfld, invariants, h2ovmr, ps, &amp;</a>
+   674) <a name="l674" style="background-color: #fafad2">                 pmid, invariants(:,:,indexm), sulfate, mmr, relhum, strato_sad, &amp;</a>
+   675) <a name="l675" style="background-color: #fafad2">                 troplev, ncol, sad_total, cwat, mbar, pbuf )</a>
+   676) <a name="l676" style="background-color: #fafad2"></a>
+   677) <a name="l677" style="background-color: #fafad2">    call </a><a style="background-color: #ffffff">outfld( 'SAD_TROP', sad_total(:ncol,:), ncol, lchnk )</a>
+   678) <a name="l678" style="background-color: #ffffff"></a>
+   679) <a name="l679" style="background-color: #ffffff">    if (het1_ndx&gt;0) then</a>
+   680) <a name="l680" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">outfld( 'het1_total', reaction_rates(:,:,het1_ndx), ncol, lchnk )</a>
+   681) <a name="l681" style="background-color: #ffff99">    endif</a>
+   682) <a name="l682" style="background-color: #ffff99"></a>
+   683) <a name="l683" style="background-color: #ffffff">    if (ghg_chem) then</a>
+   684) <a name="l684" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">ghg_chem_set_rates( reaction_rates, latmapback, zen_angle, ncol, lchnk )</a>
+   685) <a name="l685" style="background-color: #ffff99">    endif</a>
+   686) <a name="l686" style="background-color: #ffff99"></a>
+   687) <a name="l687" style="background-color: #ffffff">    do i = phtcnt+1,rxntot</a>
+   688) <a name="l688" style="background-color: #ffffff">       call outfld( rxn_names(i-phtcnt), reaction_rates(:,:,i), ncol, lchnk )</a>
+   689) <a name="l689" style="background-color: #ffffff">    enddo</a>
+   690) <a name="l690" style="background-color: #ffffff"></a>
+   691) <a name="l691" style="background-color: #ffffff">    call adjrxt( reaction_rates, invariants, invariants(1,1,indexm), ncol )</a>
+   692) <a name="l692" style="background-color: #ffffff"></a>
+   693) <a name="l693" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   694) <a name="l694" style="background-color: #ffffff">    !        ... Compute the photolysis rates at time = t(n+1)</a>
+   695) <a name="l695" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   696) <a name="l696" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   697) <a name="l697" style="background-color: #ffffff">    !     	... Set the column densities</a>
+   698) <a name="l698" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   699) <a name="l699" style="background-color: #ffffff">    call setcol( col_delta, col_dens, vmr, pdel,  ncol )</a>
+   700) <a name="l700" style="background-color: #ffffff"></a>
+   701) <a name="l701" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   702) <a name="l702" style="background-color: #ffffff">    !     	... Calculate the photodissociation rates</a>
+   703) <a name="l703" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   704) <a name="l704" style="background-color: #ffffff"></a>
+   705) <a name="l705" style="background-color: #ffffff">    esfact = 1._r8</a>
+   706) <a name="l706" style="background-color: #ffffff">    call shr_orb_decl( calday, eccen, mvelpp, lambm0, obliqr  , &amp;</a>
+   707) <a name="l707" style="background-color: #ffffff">         delta, esfact )</a>
+   708) <a name="l708" style="background-color: #ffffff"></a>
+   709) <a name="l709" style="background-color: #ffffff"></a>
+   710) <a name="l710" style="background-color: #ffffff">    if ( xactive_prates ) then</a>
+   711) <a name="l711" style="background-color: #ffff99">       if ( dst_ndx &gt; 0 ) then</a>
+   712) <a name="l712" style="background-color: #ffff99">          dust_vmr(:ncol,:,1:ndust) = vmr(:ncol,:,dst_ndx:dst_ndx+ndust-1)</a>
+   713) <a name="l713" style="background-color: #ffff99">       else </a>
+   714) <a name="l714" style="background-color: #ffff99">          dust_vmr(:ncol,:,:) = 0._r8</a>
+   715) <a name="l715" style="background-color: #ffff99">       endif</a>
+   716) <a name="l716" style="background-color: #ffff99"></a>
+   717) <a name="l717" style="background-color: #ffff99">       !-----------------------------------------------------------------</a>
+   718) <a name="l718" style="background-color: #ffff99">       !	... compute the photolysis rates</a>
+   719) <a name="l719" style="background-color: #ffff99">       !-----------------------------------------------------------------</a>
+   720) <a name="l720" style="background-color: #ffff99">       call xactive_photo( reaction_rates, vmr, tfld, cwat, cldfr, &amp;</a>
+   721) <a name="l721" style="background-color: #ffff99">            pmid, zmidr, col_dens, zen_angle, asdir, &amp;</a>
+   722) <a name="l722" style="background-color: #ffff99">            invariants(1,1,indexm), ps, ts, &amp;</a>
+   723) <a name="l723" style="background-color: #ffff99">            esfact, relhum, dust_vmr, dt_diag, fracday, ncol, lchnk )</a>
+   724) <a name="l724" style="background-color: #ffff99"></a>
+   725) <a name="l725" style="background-color: #ffff99">       call outfld('DTCBS',   dt_diag(:ncol,1), ncol, lchnk )</a>
+   726) <a name="l726" style="background-color: #ffff99">       call outfld('DTOCS',   dt_diag(:ncol,2), ncol, lchnk )</a>
+   727) <a name="l727" style="background-color: #ffff99">       call outfld('DTSO4',   dt_diag(:ncol,3), ncol, lchnk )</a>
+   728) <a name="l728" style="background-color: #ffff99">       call outfld('DTANT',   dt_diag(:ncol,4), ncol, lchnk )</a>
+   729) <a name="l729" style="background-color: #ffff99">       call outfld('DTSAL',   dt_diag(:ncol,5), ncol, lchnk )</a>
+   730) <a name="l730" style="background-color: #ffff99">       call outfld('DTDUST',  dt_diag(:ncol,6), ncol, lchnk )</a>
+   731) <a name="l731" style="background-color: #ffff99">       call outfld('DTSOA',   dt_diag(:ncol,7), ncol, lchnk )</a>
+   732) <a name="l732" style="background-color: #ffff99">       call outfld('DTTOTAL', dt_diag(:ncol,8), ncol, lchnk )</a>
+   733) <a name="l733" style="background-color: #ffff99">       call outfld('FRACDAY', fracday(:ncol), ncol, lchnk )</a>
+   734) <a name="l734" style="background-color: #ffff99"></a>
+   735) <a name="l735" style="background-color: #ffff99">    else</a>
+   736) <a name="l736" style="background-color: #ffff99">       !-----------------------------------------------------------------</a>
+   737) <a name="l737" style="background-color: #ffff99">       !	... lookup the photolysis rates from table</a>
+   738) <a name="l738" style="background-color: #ffff99">       !-----------------------------------------------------------------</a>
+   739) <a name="l739" style="background-color: #ffff99">       call </a><a style="background-color: #ffffff">table_photo( reaction_rates, pmid, pdel, tfld, zmid, zint, &amp;</a>
+   740) <a name="l740" style="background-color: #ffffff">                         col_dens, zen_angle, asdir, cwat, cldfr, &amp;</a>
+   741) <a name="l741" style="background-color: #ffffff">                         esfact, vmr, invariants, ncol, lchnk, pbuf )</a>
+   742) <a name="l742" style="background-color: #ffffff">    endif</a>
+   743) <a name="l743" style="background-color: #ffffff"></a>
+   744) <a name="l744" style="background-color: #ffffff">    do i = 1,phtcnt</a>
+   745) <a name="l745" style="background-color: #ffffff">       call </a><a style="background-color: #fafad2">outfld( pht_names(i), reaction_rates(:ncol,:,i), ncol, lchnk )</a>
+   746) <a name="l746" style="background-color: #fafad2">       call outfld( tag_names(i), reaction_rates(:ncol,:,rxt_tag_map(i)), ncol, lchnk )</a>
+   747) <a name="l747" style="background-color: #fafad2">    enddo</a>
+   748) <a name="l748" style="background-color: #fafad2"></a>
+   749) <a name="l749" style="background-color: #fafad2">    !-----------------------------------------------------------------------      </a>
+   750) <a name="l750" style="background-color: #fafad2">    !     	... Adjust the photodissociation rates</a>
+   751) <a name="l751" style="background-color: #fafad2">    !-----------------------------------------------------------------------  </a>
+   752) <a name="l752" style="background-color: #fafad2">    call </a><a style="background-color: #ffffff">O1D_to_2OH_adj( reaction_rates, invariants, invariants(:,:,indexm), ncol, tfld )</a>
+   753) <a name="l753" style="background-color: #ffffff">    call phtadj( reaction_rates, invariants, invariants(:,:,indexm), ncol )</a>
+   754) <a name="l754" style="background-color: #ffffff"></a>
+   755) <a name="l755" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   756) <a name="l756" style="background-color: #ffffff">    !        ... Compute the extraneous frcing at time = t(n+1)</a>
+   757) <a name="l757" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   758) <a name="l758" style="background-color: #ffffff">    if ( o2_ndx </a><a style="background-color: #ffff99">&gt; 0 .and. o_ndx &gt; 0 ) then</a>
+   759) <a name="l759" style="background-color: #ffff99">       do k = 1,pver</a>
+   760) <a name="l760" style="background-color: #ffff99">          o2mmr(:ncol,k) = mmr(:ncol,k,o2_ndx)</a>
+   761) <a name="l761" style="background-color: #ffff99">          ommr(:ncol,k)  = mmr(:ncol,k,o_ndx)</a>
+   762) <a name="l762" style="background-color: #ffff99">       end do</a>
+   763) <a name="l763" style="background-color: #ffff99">    endif</a>
+   764) <a name="l764" style="background-color: #ffff99">    !-----------------------------------------------------------------------</a>
+   765) <a name="l765" style="background-color: #ffff99">    !        ... Compute the extraneous frcing at time = t(n+1)</a>
+   766) <a name="l766" style="background-color: #ffff99">    !-----------------------------------------------------------------------      </a>
+   767) <a name="l767" style="background-color: #ffff99">    call </a><a style="background-color: #fafad2">setext( extfrc, zint, zintr, cldtop, &amp;</a>
+   768) <a name="l768" style="background-color: #fafad2">                 zmid, lchnk, tfld, o2mmr, ommr, &amp;</a>
+   769) <a name="l769" style="background-color: #fafad2">                 pmid, mbar, rlats, calday, ncol, rlons, pbuf )</a>
+   770) <a name="l770" style="background-color: #fafad2"></a>
+   771) <a name="l771" style="background-color: #ffffff">    do m = 1,extcnt</a>
+   772) <a name="l772" style="background-color: #ffffff">       if( m /= synoz_ndx .and. m /= aoa_nh_ext_ndx ) then</a>
+   773) <a name="l773" style="background-color: #ffffff">          do k = 1,pver</a>
+   774) <a name="l774" style="background-color: #ffffff">             extfrc(:ncol,k,m) = extfrc(:ncol,k,m) / invariants(:ncol,k,indexm)</a>
+   775) <a name="l775" style="background-color: #ffffff">          end do</a>
+   776) <a name="l776" style="background-color: #ffffff">       endif</a>
+   777) <a name="l777" style="background-color: #ffffff">       call </a><a style="background-color: #fafad2">outfld( extfrc_name(m), extfrc(:ncol,:,m), ncol, lchnk )</a>
+   778) <a name="l778" style="background-color: #fafad2">    end do</a>
+   779) <a name="l779" style="background-color: #fafad2"></a>
+   780) <a name="l780" style="background-color: #fafad2">    !-----------------------------------------------------------------------</a>
+   781) <a name="l781" style="background-color: #fafad2">    !        ... Form the washout rates</a>
+   782) <a name="l782" style="background-color: #fafad2">    !-----------------------------------------------------------------------      </a>
+   783) <a name="l783" style="background-color: #ffffff">    if ( do_neu_wetdep ) then</a>
+   784) <a name="l784" style="background-color: #ffffff">      het_rates = 0._r8</a>
+   785) <a name="l785" style="background-color: #ffffff">    else</a>
+   786) <a name="l786" style="background-color: #ffffff">      call </a><a style="background-color: #ffff99">sethet( het_rates, pmid, zmid, phis, tfld, &amp;</a>
+   787) <a name="l787" style="background-color: #ffff99">                   cmfdqr, prain, nevapr, delt, invariants(:,:,indexm), &amp;</a>
+   788) <a name="l788" style="background-color: #ffff99">                   vmr, ncol, lchnk )</a>
+   789) <a name="l789" style="background-color: #ffff99">      call het_diags( het_rates(:ncol,:,:), mmr(:ncol,:,:), pdel(:ncol,:), lchnk, ncol )</a>
+   790) <a name="l790" style="background-color: #ffff99">    end if</a>
+   791) <a name="l791" style="background-color: #ffff99">!</a>
+   792) <a name="l792" style="background-color: #ffff99">! CCMI</a>
+   793) <a name="l793" style="background-color: #ffff99">!</a>
+   794) <a name="l794" style="background-color: #ffff99">! set loss to below the tropopause only</a>
+   795) <a name="l795" style="background-color: #ffff99">!</a>
+   796) <a name="l796" style="background-color: #ffffff">    if ( st80_25_tau_ndx &gt; 0 ) then</a>
+   797) <a name="l797" style="background-color: #ffff99">       do i = 1,ncol</a>
+   798) <a name="l798" style="background-color: #ffff99">          reaction_rates(i,1:troplev(i),st80_25_tau_ndx) = 0._r8</a>
+   799) <a name="l799" style="background-color: #ffff99">       enddo</a>
+   800) <a name="l800" style="background-color: #ffff99">    end if</a>
+   801) <a name="l801" style="background-color: #ffff99"></a>
+   802) <a name="l802" style="background-color: #ffff99">!</a>
+   803) <a name="l803" style="background-color: #ffff99"></a>
+   804) <a name="l804" style="background-color: #ffffff">    do i = phtcnt+1,rxt_tag_cnt</a>
+   805) <a name="l805" style="background-color: #ffffff">       call </a><a style="background-color: #fafad2">outfld( tag_names(i), reaction_rates(:ncol,:,rxt_tag_map(i)), ncol, lchnk )</a>
+   806) <a name="l806" style="background-color: #fafad2">    enddo</a>
+   807) <a name="l807" style="background-color: #fafad2"></a>
+   808) <a name="l808" style="background-color: #ffffff">    if ( has_linoz_data ) then</a>
+   809) <a name="l809" style="background-color: #ffff99">       ltrop_sol(:ncol) = troplev(:ncol)</a>
+   810) <a name="l810" style="background-color: #ffff99">    else</a>
+   811) <a name="l811" style="background-color: #ffffff">       ltrop_sol(:ncol) = 0 ! apply solver to all levels</a>
+   812) <a name="l812" style="background-color: #ffffff">    endif</a>
+   813) <a name="l813" style="background-color: #ffffff"></a>
+   814) <a name="l814" style="background-color: #ffffff">    ! save h2so4 before gas phase chem (for later new particle nucleation)</a>
+   815) <a name="l815" style="background-color: #ffffff">    if (ndx_h2so4 &gt; 0) then</a>
+   816) <a name="l816" style="background-color: #ffffff">       del_h2so4_gasprod(1:ncol,:) = vmr(1:ncol,:,ndx_h2so4)</a>
+   817) <a name="l817" style="background-color: #ffffff">    else</a>
+   818) <a name="l818" style="background-color: #ffff99">       del_h2so4_gasprod(:,:) = 0.0_r8</a>
+   819) <a name="l819" style="background-color: #ffff99">    endif</a>
+   820) <a name="l820" style="background-color: #ffff99"></a>
+   821) <a name="l821" style="background-color: #ffffff">    vmr0(:ncol,:,:) = vmr(:ncol,:,:) ! mixing ratios before chemistry changes</a>
+   822) <a name="l822" style="background-color: #ffffff"></a>
+   823) <a name="l823" style="background-color: #ffffff">    !=======================================================================</a>
+   824) <a name="l824" style="background-color: #ffffff">    !        ... Call the class solution algorithms</a>
+   825) <a name="l825" style="background-color: #ffffff">    !=======================================================================</a>
+   826) <a name="l826" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   827) <a name="l827" style="background-color: #ffffff">    !	... Solve for &quot;Explicit&quot; species</a>
+   828) <a name="l828" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   829) <a name="l829" style="background-color: #ffffff">    call exp_sol( vmr, reaction_rates, het_rates, extfrc, delt, invariants(1,1,indexm), ncol, lchnk, ltrop_sol )</a>
+   830) <a name="l830" style="background-color: #ffffff"></a>
+   831) <a name="l831" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   832) <a name="l832" style="background-color: #ffffff">    !	... Solve for &quot;Implicit&quot; species</a>
+   833) <a name="l833" style="background-color: #ffffff">    !-----------------------------------------------------------------------</a>
+   834) <a name="l834" style="background-color: #ffffff">    if ( has_strato_chem ) </a><a style="background-color: #ffff99">wrk(:,:) = vmr(:,:,h2o_ndx)</a>
+   835) <a name="l835" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">t_startf('imp_sol')</a>
+   836) <a name="l836" style="background-color: #ffffff">    !</a>
+   837) <a name="l837" style="background-color: #ffffff">    call imp_sol( vmr, reaction_rates, het_rates, extfrc, delt, &amp;</a>
+   838) <a name="l838" style="background-color: #ffffff">                  invariants(1,1,indexm), ncol, lchnk, ltrop_sol(:ncol), o3s_loss=o3s_loss )</a>
+   839) <a name="l839" style="background-color: #ffffff">    call t_stopf('imp_sol')</a>
+   840) <a name="l840" style="background-color: #ffffff"></a>
+   841) <a name="l841" style="background-color: #ffffff">    if( h2o_ndx&gt;0) </a><a style="background-color: #ffff99">call outfld( 'H2O_GAS',  vmr(1,1,h2o_ndx),  ncol ,lchnk )</a>
+   842) <a name="l842" style="background-color: #ffff99"></a>
+   843) <a name="l843" style="background-color: #ffff99">!</a>
+   844) <a name="l844" style="background-color: #ffff99">! jfl : CCMI : implement O3S here because mo_fstrat is not called</a>
+   845) <a name="l845" style="background-color: #ffff99">!</a>
+   846) <a name="l846" style="background-color: #ffffff">    if ( o3_ndx </a><a style="background-color: #ffff99">&gt; 0 .and. o3s_ndx &gt; 0 ) then</a>
+   847) <a name="l847" style="background-color: #ffff99">       do i = 1,ncol</a>
+   848) <a name="l848" style="background-color: #ffff99">          vmr(i,1:troplev(i),o3s_ndx) = vmr(i,1:troplev(i),o3_ndx)</a>
+   849) <a name="l849" style="background-color: #ffff99">          vmr(i,troplev(i)+1:pver,o3s_ndx) = vmr(i,troplev(i)+1:pver,o3s_ndx) * exp(-delt*o3s_loss(i,troplev(i)+1:pver))</a>
+   850) <a name="l850" style="background-color: #ffff99">       enddo</a>
+   851) <a name="l851" style="background-color: #ffff99">       call outfld( 'O3S_LOSS',  o3s_loss,  ncol ,lchnk )</a>
+   852) <a name="l852" style="background-color: #ffff99">    end if</a>
+   853) <a name="l853" style="background-color: #ffff99"></a>
+   854) <a name="l854" style="background-color: #ffff99">    ! save h2so4 change by gas phase chem (for later new particle nucleation)</a>
+   855) <a name="l855" style="background-color: #ffffff">    if (ndx_h2so4 &gt; 0) then</a>
+   856) <a name="l856" style="background-color: #ffffff">       del_h2so4_gasprod(1:ncol,:) = vmr(1:ncol,:,ndx_h2so4) - del_h2so4_gasprod(1:ncol,:)</a>
+   857) <a name="l857" style="background-color: #ffffff">    endif</a>
+   858) <a name="l858" style="background-color: #ffffff"></a>
+   859) <a name="l859" style="background-color: #ffffff">!</a>
+   860) <a name="l860" style="background-color: #ffffff">! Aerosol processes ...</a>
+   861) <a name="l861" style="background-color: #ffffff">!</a>
+   862) <a name="l862" style="background-color: #ffffff"></a>
+   863) <a name="l863" style="background-color: #ffffff">    call aero_model_gasaerexch( imozart-1, ncol, lchnk, delt, reaction_rates, &amp;</a>
+   864) <a name="l864" style="background-color: #ffffff">                                tfld, pmid, pdel, mbar, relhum, &amp;</a>
+   865) <a name="l865" style="background-color: #ffffff">                                zm,  qh2o, cwat, cldfr, ncldwtr, &amp;</a>
+   866) <a name="l866" style="background-color: #ffffff">                                invariants(:,:,indexm), invariants, del_h2so4_gasprod,  &amp;</a>
+   867) <a name="l867" style="background-color: #ffffff">                                vmr0, vmr, pbuf )</a>
+   868) <a name="l868" style="background-color: #ffffff"></a>
+   869) <a name="l869" style="background-color: #ffffff">    if ( has_strato_chem ) then </a>
+   870) <a name="l870" style="background-color: #ffffff"></a>
+   871) <a name="l871" style="background-color: #ffff99">       wrk(:ncol,:) = (vmr(:ncol,:,h2o_ndx) - wrk(:ncol,:))*delt_inverse</a>
+   872) <a name="l872" style="background-color: #ffff99">       call outfld( 'QDCHEM',   wrk(:ncol,:),         ncol, lchnk )</a>
+   873) <a name="l873" style="background-color: #ffff99">       call outfld( 'HNO3_GAS', vmr(:ncol,:,hno3_ndx), ncol ,lchnk )</a>
+   874) <a name="l874" style="background-color: #ffff99"></a>
+   875) <a name="l875" style="background-color: #ffff99">       !-----------------------------------------------------------------------      </a>
+   876) <a name="l876" style="background-color: #ffff99">       !         ... aerosol settling</a>
+   877) <a name="l877" style="background-color: #ffff99">       !             first settle hno3(2) using radius ice</a>
+   878) <a name="l878" style="background-color: #ffff99">       !             secnd settle hno3(3) using radius large nat</a>
+   879) <a name="l879" style="background-color: #ffff99">       !-----------------------------------------------------------------------      </a>
+   880) <a name="l880" style="background-color: #ffff99">       wrk(:,:) = vmr(:,:,h2o_ndx)</a>
+   881) <a name="l881" style="background-color: #ffff99">#ifdef ALT_SETTL</a>
+   882) <a name="l882" style="background-color: #ffff99">       where( h2o_cond(:,:) &gt; 0._r8 )</a>
+   883) <a name="l883" style="background-color: #ffff99">          settl_rad(:,:) = radius_strat(:,:,3)</a>
+   884) <a name="l884" style="background-color: #ffff99">       elsewhere</a>
+   885) <a name="l885" style="background-color: #ffff99">          settl_rad(:,:) = 0._r8</a>
+   886) <a name="l886" style="background-color: #ffff99">       endwhere</a>
+   887) <a name="l887" style="background-color: #ffff99">       call strat_aer_settling( invariants(1,1,indexm), pmid, delt, zmid, tfld, &amp;</a>
+   888) <a name="l888" style="background-color: #ffff99">            hno3_cond(1,1,2), settl_rad, ncol, lchnk, 1 )</a>
+   889) <a name="l889" style="background-color: #ffff99"></a>
+   890) <a name="l890" style="background-color: #ffff99">       where( h2o_cond(:,:) == 0._r8 )</a>
+   891) <a name="l891" style="background-color: #ffff99">          settl_rad(:,:) = radius_strat(:,:,2)</a>
+   892) <a name="l892" style="background-color: #ffff99">       elsewhere</a>
+   893) <a name="l893" style="background-color: #ffff99">          settl_rad(:,:) = 0._r8</a>
+   894) <a name="l894" style="background-color: #ffff99">       endwhere</a>
+   895) <a name="l895" style="background-color: #ffff99">       call strat_aer_settling( invariants(1,1,indexm), pmid, delt, zmid, tfld, &amp;</a>
+   896) <a name="l896" style="background-color: #ffff99">            hno3_cond(1,1,2), settl_rad, ncol, lchnk, 2 )</a>
+   897) <a name="l897" style="background-color: #ffff99">#else</a>
+   898) <a name="l898" style="background-color: #ffff99">       call strat_aer_settling( invariants(1,1,indexm), pmid, delt, zmid, tfld, &amp;</a>
+   899) <a name="l899" style="background-color: #ffff99">            hno3_cond(1,1,2), radius_strat(1,1,2), ncol, lchnk, 2 )</a>
+   900) <a name="l900" style="background-color: #ffff99">#endif</a>
+   901) <a name="l901" style="background-color: #ffff99"></a>
+   902) <a name="l902" style="background-color: #ffff99">       !-----------------------------------------------------------------------      </a>
+   903) <a name="l903" style="background-color: #ffff99">       !	... reform total hno3 and hcl = gas + all condensed</a>
+   904) <a name="l904" style="background-color: #ffff99">       !-----------------------------------------------------------------------      </a>
+   905) <a name="l905" style="background-color: #ffff99">!      NOTE: vmr for hcl and hno3 is gas-phase at this point.</a>
+   906) <a name="l906" style="background-color: #ffff99">!            hno3_cond(:,k,1) = STS; hno3_cond(:,k,2) = NAT</a>
+   907) <a name="l907" style="background-color: #ffff99">   </a>
+   908) <a name="l908" style="background-color: #ffff99">       do k = 1,pver</a>
+   909) <a name="l909" style="background-color: #ffff99">          vmr(:,k,hno3_ndx) = vmr(:,k,hno3_ndx) + hno3_cond(:,k,1) &amp;</a>
+   910) <a name="l910" style="background-color: #ffff99">               + hno3_cond(:,k,2) </a>
+   911) <a name="l911" style="background-color: #ffff99">          vmr(:,k,hcl_ndx)  = vmr(:,k,hcl_ndx)  + hcl_cond(:,k) </a>
+   912) <a name="l912" style="background-color: #ffff99">              </a>
+   913) <a name="l913" style="background-color: #ffff99">       end do</a>
+   914) <a name="l914" style="background-color: #ffff99"></a>
+   915) <a name="l915" style="background-color: #ffff99">       wrk(:,:) = (vmr(:,:,h2o_ndx) - wrk(:,:))*delt_inverse</a>
+   916) <a name="l916" style="background-color: #ffff99">       call outfld( 'QDSETT', wrk(:,:), ncol, lchnk )</a>
+   917) <a name="l917" style="background-color: #ffff99"></a>
+   918) <a name="l918" style="background-color: #ffff99">    endif</a>
+   919) <a name="l919" style="background-color: #ffff99"></a>
+   920) <a name="l920" style="background-color: #ffff99">!</a>
+   921) <a name="l921" style="background-color: #ffff99">! LINOZ</a>
+   922) <a name="l922" style="background-color: #ffff99">!</a>
+   923) <a name="l923" style="background-color: #ffffff">    if ( do_lin_strat_chem ) then</a>
+   924) <a name="l924" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">lin_strat_chem_solve( ncol, lchnk, vmr(:,:,o3_ndx), col_dens(:,:,1), tfld, zen_angle, pmid, delt, rlats, troplev )</a>
+   925) <a name="l925" style="background-color: #ffff99">    end if</a>
+   926) <a name="l926" style="background-color: #ffff99"></a>
+   927) <a name="l927" style="background-color: #ffff99">    !-----------------------------------------------------------------------      </a>
+   928) <a name="l928" style="background-color: #ffff99">    !         ... Check for negative values and reset to zero</a>
+   929) <a name="l929" style="background-color: #ffff99">    !-----------------------------------------------------------------------      </a>
+   930) <a name="l930" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">negtrc( 'After chemistry ', vmr, ncol )</a>
+   931) <a name="l931" style="background-color: #ffffff"></a>
+   932) <a name="l932" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   933) <a name="l933" style="background-color: #ffffff">    !         ... Set upper boundary mmr values</a>
+   934) <a name="l934" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   935) <a name="l935" style="background-color: #ffffff">    call set_fstrat_vals( vmr, pmid, pint, troplev, calday, ncol,lchnk )</a>
+   936) <a name="l936" style="background-color: #ffffff"></a>
+   937) <a name="l937" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   938) <a name="l938" style="background-color: #ffffff">    !         ... Set fixed lower boundary mmr values</a>
+   939) <a name="l939" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   940) <a name="l940" style="background-color: #ffffff">    call flbc_set( vmr, ncol, lchnk, map2chm )</a>
+   941) <a name="l941" style="background-color: #ffffff"></a>
+   942) <a name="l942" style="background-color: #ffffff">    !----------------------------------------------------------------------- </a>
+   943) <a name="l943" style="background-color: #ffffff">    ! set NOy UBC     </a>
+   944) <a name="l944" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   945) <a name="l945" style="background-color: #ffffff">    call noy_ubc_set( lchnk, ncol, vmr )</a>
+   946) <a name="l946" style="background-color: #ffffff"></a>
+   947) <a name="l947" style="background-color: #ffffff">    if ( ghg_chem ) then</a>
+   948) <a name="l948" style="background-color: #ffffff">       call </a><a style="background-color: #ffff99">ghg_chem_set_flbc( vmr, ncol )</a>
+   949) <a name="l949" style="background-color: #ffff99">    endif</a>
+   950) <a name="l950" style="background-color: #ffff99"></a>
+   951) <a name="l951" style="background-color: #ffff99">    !-----------------------------------------------------------------------      </a>
+   952) <a name="l952" style="background-color: #ffff99">    !         ... Xform from vmr to mmr</a>
+   953) <a name="l953" style="background-color: #ffff99">    !-----------------------------------------------------------------------      </a>
+   954) <a name="l954" style="background-color: #ffff99">    call </a><a style="background-color: #ffffff">vmr2mmr( vmr, mmr_tend, mbar, ncol )</a>
+   955) <a name="l955" style="background-color: #ffffff"></a>
+   956) <a name="l956" style="background-color: #ffffff">    call set_short_lived_species( mmr_tend, lchnk, ncol, pbuf )</a>
+   957) <a name="l957" style="background-color: #ffffff"></a>
+   958) <a name="l958" style="background-color: #ffffff">    !-----------------------------------------------------------------------      </a>
+   959) <a name="l959" style="background-color: #ffffff">    !         ... Form the tendencies</a>
+   960) <a name="l960" style="background-color: #ffffff">    !----------------------------------------------------------------------- </a>
+   961) <a name="l961" style="background-color: #ffffff">    do m = 1,gas_pcnst </a>
+   962) <a name="l962" style="background-color: #ffffff">       mmr_new(:ncol,:,m) = mmr_tend(:ncol,:,m)</a>
+   963) <a name="l963" style="background-color: #ffffff">       mmr_tend(:ncol,:,m) = (mmr_tend(:ncol,:,m) - mmr(:ncol,:,m))*delt_inverse</a>
+   964) <a name="l964" style="background-color: #ffffff">    enddo</a>
+   965) <a name="l965" style="background-color: #ffffff"></a>
+   966) <a name="l966" style="background-color: #ffffff">    do m = 1,pcnst</a>
+   967) <a name="l967" style="background-color: #ffffff">       n = map2chm(m)</a>
+   968) <a name="l968" style="background-color: #ffffff">       if( n &gt; 0 ) then</a>
+   969) <a name="l969" style="background-color: #ffffff">          qtend(:ncol,:,m) = qtend(:ncol,:,m) + mmr_tend(:ncol,:,n) </a>
+   970) <a name="l970" style="background-color: #ffffff">       end if</a>
+   971) <a name="l971" style="background-color: #ffffff">    end do</a>
+   972) <a name="l972" style="background-color: #ffffff"></a>
+   973) <a name="l973" style="background-color: #ffffff">    tvs(:ncol) = tfld(:ncol,pver) * (1._r8 + qh2o(:ncol,pver))</a>
+   974) <a name="l974" style="background-color: #ffffff"></a>
+   975) <a name="l975" style="background-color: #ffffff">    sflx(:,:) = 0._r8</a>
+   976) <a name="l976" style="background-color: #ffffff">    call get_ref_date(yr, mon, day, sec)</a>
+   977) <a name="l977" style="background-color: #ffffff">    ncdate = yr*10000 + mon*100 + day</a>
+   978) <a name="l978" style="background-color: #ffffff">    wind_speed(:ncol) = sqrt( ufld(:ncol,pver)*ufld(:ncol,pver) + vfld(:ncol,pver)*vfld(:ncol,pver) )</a>
+   979) <a name="l979" style="background-color: #ffffff">    prect(:ncol) = precc(:ncol) + precl(:ncol)</a>
+   980) <a name="l980" style="background-color: #ffffff"></a>
+   981) <a name="l981" style="background-color: #ffffff">    if ( drydep_method == DD_XLND ) then</a>
+   982) <a name="l982" style="background-color: #ffffff">       soilw = -99</a>
+   983) <a name="l983" style="background-color: #ffffff">       call drydep( ocnfrac, icefrac, ncdate, ts, ps,  &amp;</a>
+   984) <a name="l984" style="background-color: #ffffff">            wind_speed, qh2o(:,pver), tfld(:,pver), pmid(:,pver), prect, &amp;</a>
+   985) <a name="l985" style="background-color: #ffffff">            snowhland, fsds, depvel, sflx, mmr, &amp;</a>
+   986) <a name="l986" style="background-color: #ffffff">            tvs, soilw, relhum(:,pver:pver), ncol, lonndx, latndx, lchnk )</a>
+   987) <a name="l987" style="background-color: #ffff99">    else if ( drydep_method == DD_XATM ) then</a>
+   988) <a name="l988" style="background-color: #ffff99">       table_soilw = has_drydep( 'H2' ) .or. has_drydep( 'CO' )</a>
+   989) <a name="l989" style="background-color: #ffff99">       if( .not. dyn_soilw .and. table_soilw ) then</a>
+   990) <a name="l990" style="background-color: #ffff99">          call set_soilw( soilw, lchnk, calday )</a>
+   991) <a name="l991" style="background-color: #ffff99">       end if</a>
+   992) <a name="l992" style="background-color: #ffff99">       call drydep( ncdate, ts, ps,  &amp;</a>
+   993) <a name="l993" style="background-color: #ffff99">            wind_speed, qh2o(:,pver), tfld(:,pver), pmid(:,pver), prect, &amp;</a>
+   994) <a name="l994" style="background-color: #ffff99">            snowhland, fsds, depvel, sflx, mmr, &amp;</a>
+   995) <a name="l995" style="background-color: #ffff99">            tvs, soilw, relhum(:,pver:pver), ncol, lonndx, latndx, lchnk )</a>
+   996) <a name="l996" style="background-color: #ffff99">    else if ( drydep_method == DD_TABL ) then</a>
+   997) <a name="l997" style="background-color: #ffff99">       call drydep( calday, ts, zen_angle, &amp;</a>
+   998) <a name="l998" style="background-color: #ffff99">            depvel, sflx, mmr, pmid(:,pver), &amp;</a>
+   999) <a name="l999" style="background-color: #ffff99">            tvs, ncol, icefrac, ocnfrac, lchnk )</a>
+  1000) <a name="l1000" style="background-color: #ffff99">    endif</a>
+  1001) <a name="l1001" style="background-color: #ffff99"></a>
+  1002) <a name="l1002" style="background-color: #ffffff">    drydepflx(:,:) = 0._r8</a>
+  1003) <a name="l1003" style="background-color: #ffffff">    do m = 1,pcnst</a>
+  1004) <a name="l1004" style="background-color: #ffffff">       n = map2chm( m )</a>
+  1005) <a name="l1005" style="background-color: #ffffff">       if ( n &gt; 0 ) then</a>
+  1006) <a name="l1006" style="background-color: #ffffff">         cflx(:ncol,m)      = cflx(:ncol,m) - sflx(:ncol,n)</a>
+  1007) <a name="l1007" style="background-color: #ffffff">         drydepflx(:ncol,m) = sflx(:ncol,n)</a>
+  1008) <a name="l1008" style="background-color: #ffffff">       endif</a>
+  1009) <a name="l1009" style="background-color: #ffffff">    end do</a>
+  1010) <a name="l1010" style="background-color: #ffffff"></a>
+  1011) <a name="l1011" style="background-color: #ffffff">    call </a><a style="background-color: #fafad2">chm_diags( lchnk, ncol, vmr(:ncol,:,:), mmr_new(:ncol,:,:), &amp;</a>
+  1012) <a name="l1012" style="background-color: #fafad2">                    reaction_rates(:ncol,:,:), invariants(:ncol,:,:), depvel(:ncol,:),  sflx(:ncol,:), &amp;</a>
+  1013) <a name="l1013" style="background-color: #fafad2">                    mmr_tend(:ncol,:,:), pdel(:ncol,:), pmid(:ncol,:), troplev(:ncol), pbuf  )</a>
+  1014) <a name="l1014" style="background-color: #fafad2"></a>
+  1015) <a name="l1015" style="background-color: #fafad2">    call </a><a style="background-color: #ffffff">rate_diags_calc( reaction_rates(:,:,:), vmr(:,:,:), invariants(:,:,indexm), ncol, lchnk )</a>
+  1016) <a name="l1016" style="background-color: #ffffff">!</a>
+  1017) <a name="l1017" style="background-color: #ffffff">! jfl</a>
+  1018) <a name="l1018" style="background-color: #ffffff">!</a>
+  1019) <a name="l1019" style="background-color: #ffffff">! surface vmr</a>
+  1020) <a name="l1020" style="background-color: #ffffff">!</a>
+  1021) <a name="l1021" style="background-color: #ffffff">    if ( pm25_srf_diag ) then</a>
+  1022) <a name="l1022" style="background-color: #ffff99">       pm25(:ncol) = mmr_new(:ncol,pver,cb1_ndx)   &amp;</a>
+  1023) <a name="l1023" style="background-color: #ffff99">            + mmr_new(:ncol,pver,cb2_ndx)   &amp;</a>
+  1024) <a name="l1024" style="background-color: #ffff99">            + mmr_new(:ncol,pver,oc1_ndx)   &amp;</a>
+  1025) <a name="l1025" style="background-color: #ffff99">            + mmr_new(:ncol,pver,oc2_ndx)   &amp;</a>
+  1026) <a name="l1026" style="background-color: #ffff99">            + mmr_new(:ncol,pver,dst1_ndx)  &amp;</a>
+  1027) <a name="l1027" style="background-color: #ffff99">            + mmr_new(:ncol,pver,dst2_ndx)  &amp;</a>
+  1028) <a name="l1028" style="background-color: #ffff99">            + mmr_new(:ncol,pver,sslt1_ndx) &amp;</a>
+  1029) <a name="l1029" style="background-color: #ffff99">            + mmr_new(:ncol,pver,sslt2_ndx) &amp;</a>
+  1030) <a name="l1030" style="background-color: #ffff99">            + mmr_new(:ncol,pver,soa_ndx)   &amp;</a>
+  1031) <a name="l1031" style="background-color: #ffff99">            + mmr_new(:ncol,pver,so4_ndx)</a>
+  1032) <a name="l1032" style="background-color: #ffff99">       call outfld('PM25_SRF',pm25(:ncol) , ncol, lchnk )</a>
+  1033) <a name="l1033" style="background-color: #ffff99">    endif</a>
+  1034) <a name="l1034" style="background-color: #ffffff">    if ( pm25_srf_diag_soa ) then</a>
+  1035) <a name="l1035" style="background-color: #ffff99">       pm25(:ncol) = mmr_new(:ncol,pver,cb1_ndx)   &amp;</a>
+  1036) <a name="l1036" style="background-color: #ffff99">            + mmr_new(:ncol,pver,cb2_ndx)   &amp;</a>
+  1037) <a name="l1037" style="background-color: #ffff99">            + mmr_new(:ncol,pver,oc1_ndx)   &amp;</a>
+  1038) <a name="l1038" style="background-color: #ffff99">            + mmr_new(:ncol,pver,oc2_ndx)   &amp;</a>
+  1039) <a name="l1039" style="background-color: #ffff99">            + mmr_new(:ncol,pver,dst1_ndx)  &amp;</a>
+  1040) <a name="l1040" style="background-color: #ffff99">            + mmr_new(:ncol,pver,dst2_ndx)  &amp;</a>
+  1041) <a name="l1041" style="background-color: #ffff99">            + mmr_new(:ncol,pver,sslt1_ndx) &amp;</a>
+  1042) <a name="l1042" style="background-color: #ffff99">            + mmr_new(:ncol,pver,sslt2_ndx) &amp;</a>
+  1043) <a name="l1043" style="background-color: #ffff99">            + mmr_new(:ncol,pver,soam_ndx)   &amp;</a>
+  1044) <a name="l1044" style="background-color: #ffff99">            + mmr_new(:ncol,pver,soai_ndx)   &amp;</a>
+  1045) <a name="l1045" style="background-color: #ffff99">            + mmr_new(:ncol,pver,soat_ndx)   &amp;</a>
+  1046) <a name="l1046" style="background-color: #ffff99">            + mmr_new(:ncol,pver,soab_ndx)   &amp;</a>
+  1047) <a name="l1047" style="background-color: #ffff99">            + mmr_new(:ncol,pver,soax_ndx)   &amp;</a>
+  1048) <a name="l1048" style="background-color: #ffff99">            + mmr_new(:ncol,pver,so4_ndx)</a>
+  1049) <a name="l1049" style="background-color: #ffff99">       call outfld('PM25_SRF',pm25(:ncol) , ncol, lchnk )</a>
+  1050) <a name="l1050" style="background-color: #ffff99">    endif</a>
+  1051) <a name="l1051" style="background-color: #ffff99">!</a>
+  1052) <a name="l1052" style="background-color: #ffff99">!</a>
+  1053) <a name="l1053" style="background-color: #ffff99">    call </a><a style="background-color: #fafad2">outfld('Q_SRF',qh2o(:ncol,pver) , ncol, lchnk )</a>
+  1054) <a name="l1054" style="background-color: #fafad2">    call outfld('U_SRF',ufld(:ncol,pver) , ncol, lchnk )</a>
+  1055) <a name="l1055" style="background-color: #fafad2">    call outfld('V_SRF',vfld(:ncol,pver) , ncol, lchnk )</a>
+  1056) <a name="l1056" style="background-color: #fafad2">!</a>
+  1057) <a name="l1057" style="background-color: #fafad2">    if (.not.sad_pbf_ndx&gt;0) then</a>
+  1058) <a name="l1058" style="background-color: #ffffff">       deallocate(strato_sad)</a>
+  1059) <a name="l1059" style="background-color: #ffffff">    endif</a>
+  1060) <a name="l1060" style="background-color: #ffffff"></a>
+  1061) <a name="l1061" style="background-color: #ffffff">  end subroutine gas_phase_chemdr</a>
+  1062) <a name="l1062" style="background-color: #ffffff"></a>
+  1063) <a name="l1063" style="background-color: #ffffff">end module mo_gas_phase_chemdr</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

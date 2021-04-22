@@ -1,0 +1,252 @@
+<html>
+<head>
+<title>Listing of modal_aero_deposition.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;modal_aero_deposition.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 72.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module modal_aero_deposition</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!------------------------------------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">! Purpose:</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! Partition the contributions from modal components of wet and dry </a>
+     7) <a name="l7" style="background-color: #ffffff">! deposition at the surface into the fields passed to the coupler.</a>
+     8) <a name="l8" style="background-color: #ffffff">!</a>
+     9) <a name="l9" style="background-color: #ffffff">! *** N.B. *** Currently only a simple scheme for the 3-mode version</a>
+    10) <a name="l10" style="background-color: #ffffff">!              of MAM has been implemented.</a>
+    11) <a name="l11" style="background-color: #ffffff">!</a>
+    12) <a name="l12" style="background-color: #ffffff">! Revision history:</a>
+    13) <a name="l13" style="background-color: #ffffff">! Feb 2009  M. Flanner, B. Eaton   Original version for trop_mam3.</a>
+    14) <a name="l14" style="background-color: #ffffff">! Jul 2011  F Vitt -- made avaliable to be used in a prescribed modal aerosol mode (no prognostic MAM)</a>
+    15) <a name="l15" style="background-color: #ffffff">! Mar 2012  F Vitt -- made changes for to prevent abort when 7-mode aeroslol model is used</a>
+    16) <a name="l16" style="background-color: #ffffff">!                     some of the needed consituents do not exist in 7-mode so bin_fluxes will be false</a>
+    17) <a name="l17" style="background-color: #ffffff">!------------------------------------------------------------------------------------------------</a>
+    18) <a name="l18" style="background-color: #ffffff"></a>
+    19) <a name="l19" style="background-color: #ffffff">use shr_kind_mod,     only: r8 =&gt; shr_kind_r8</a>
+    20) <a name="l20" style="background-color: #ffffff">use camsrfexch,       only: cam_out_t     </a>
+    21) <a name="l21" style="background-color: #ffffff">use constituents,     only: pcnst, cnst_get_ind</a>
+    22) <a name="l22" style="background-color: #ffffff">use ppgrid,           only: pcols</a>
+    23) <a name="l23" style="background-color: #ffffff">use abortutils,       only: endrun</a>
+    24) <a name="l24" style="background-color: #ffffff"></a>
+    25) <a name="l25" style="background-color: #ffffff">implicit none</a>
+    26) <a name="l26" style="background-color: #ffffff">private</a>
+    27) <a name="l27" style="background-color: #ffffff">save</a>
+    28) <a name="l28" style="background-color: #ffffff"></a>
+    29) <a name="l29" style="background-color: #ffffff">public :: &amp;</a>
+    30) <a name="l30" style="background-color: #ffffff">   modal_aero_deposition_init, &amp;</a>
+    31) <a name="l31" style="background-color: #ffffff">   set_srf_drydep,             &amp;</a>
+    32) <a name="l32" style="background-color: #ffffff">   set_srf_wetdep</a>
+    33) <a name="l33" style="background-color: #ffffff"></a>
+    34) <a name="l34" style="background-color: #ffffff">! Private module data</a>
+    35) <a name="l35" style="background-color: #ffffff">integer :: idx_bc1  = -1</a>
+    36) <a name="l36" style="background-color: #ffffff">integer :: idx_pom1 = -1</a>
+    37) <a name="l37" style="background-color: #ffffff">integer :: idx_soa1 = -1</a>
+    38) <a name="l38" style="background-color: #ffffff">integer :: idx_soa2 = -1</a>
+    39) <a name="l39" style="background-color: #ffffff">integer :: idx_dst1 = -1</a>
+    40) <a name="l40" style="background-color: #ffffff">integer :: idx_dst3 = -1</a>
+    41) <a name="l41" style="background-color: #ffffff">integer :: idx_ncl3 = -1</a>
+    42) <a name="l42" style="background-color: #ffffff">integer :: idx_so43 = -1</a>
+    43) <a name="l43" style="background-color: #ffffff">logical :: bin_fluxes = .false.</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">logical :: initialized = .false.</a>
+    46) <a name="l46" style="background-color: #ffffff"></a>
+    47) <a name="l47" style="background-color: #ffffff">!==============================================================================</a>
+    48) <a name="l48" style="background-color: #ffffff">contains</a>
+    49) <a name="l49" style="background-color: #ffffff">!==============================================================================</a>
+    50) <a name="l50" style="background-color: #ffffff"></a>
+    51) <a name="l51" style="background-color: #ffffff">subroutine modal_aero_deposition_init(bc1_ndx,pom1_ndx,soa1_ndx,soa2_ndx,dst1_ndx,dst3_ndx,ncl3_ndx,so43_ndx,num3_ndx)</a>
+    52) <a name="l52" style="background-color: #ffffff"></a>
+    53) <a name="l53" style="background-color: #ffffff">! set aerosol indices for re-mapping surface deposition fluxes:</a>
+    54) <a name="l54" style="background-color: #ffffff">! *_a1 = accumulation mode</a>
+    55) <a name="l55" style="background-color: #ffffff">! *_a2 = aitken mode</a>
+    56) <a name="l56" style="background-color: #ffffff">! *_a3 = coarse mode</a>
+    57) <a name="l57" style="background-color: #ffffff"></a>
+    58) <a name="l58" style="background-color: #ffffff">   ! can be initialized with user specified indices</a>
+    59) <a name="l59" style="background-color: #ffffff">   ! if called from aerodep_flx module (for prescribed modal aerosol fluxes) then these indices are specified</a>
+    60) <a name="l60" style="background-color: #ffffff"></a>
+    61) <a name="l61" style="background-color: #ffffff">   integer, optional, intent(in) :: bc1_ndx,pom1_ndx,soa1_ndx,soa2_ndx,dst1_ndx,dst3_ndx,ncl3_ndx,so43_ndx,num3_ndx</a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">   ! if already initialized abort the run</a>
+    64) <a name="l64" style="background-color: #ffffff">   if (initialized) then</a>
+    65) <a name="l65" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">endrun('modal_aero_deposition_init is already initialized')</a>
+    66) <a name="l66" style="background-color: #ffff99">   endif</a>
+    67) <a name="l67" style="background-color: #ffff99"></a>
+    68) <a name="l68" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(bc1_ndx)) then</a>
+    69) <a name="l69" style="background-color: #ffff99">      idx_bc1  = bc1_ndx</a>
+    70) <a name="l70" style="background-color: #ffff99">   else</a>
+    71) <a name="l71" style="background-color: #ffff99">      call </a><a style="background-color: #ffffff">cnst_get_ind('bc_a1',  idx_bc1)</a>
+    72) <a name="l72" style="background-color: #ffffff">   endif</a>
+    73) <a name="l73" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(pom1_ndx)) then</a>
+    74) <a name="l74" style="background-color: #ffff99">      idx_pom1 = pom1_ndx</a>
+    75) <a name="l75" style="background-color: #ffff99">   else</a>
+    76) <a name="l76" style="background-color: #ffff99">      call </a><a style="background-color: #ffffff">cnst_get_ind('pom_a1', idx_pom1)</a>
+    77) <a name="l77" style="background-color: #ffffff">   endif</a>
+    78) <a name="l78" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(soa1_ndx)) then</a>
+    79) <a name="l79" style="background-color: #ffff99">      idx_soa1 = soa1_ndx</a>
+    80) <a name="l80" style="background-color: #ffff99">   else</a>
+    81) <a name="l81" style="background-color: #ffff99">      call </a><a style="background-color: #ffffff">cnst_get_ind('soa_a1', idx_soa1)</a>
+    82) <a name="l82" style="background-color: #ffffff">   endif</a>
+    83) <a name="l83" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(soa2_ndx)) then</a>
+    84) <a name="l84" style="background-color: #ffff99">      idx_soa2 = soa2_ndx</a>
+    85) <a name="l85" style="background-color: #ffff99">   else</a>
+    86) <a name="l86" style="background-color: #ffff99">      call </a><a style="background-color: #ffffff">cnst_get_ind('soa_a2', idx_soa2)</a>
+    87) <a name="l87" style="background-color: #ffffff">   endif</a>
+    88) <a name="l88" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(dst1_ndx)) then</a>
+    89) <a name="l89" style="background-color: #ffff99">      idx_dst1 = dst1_ndx</a>
+    90) <a name="l90" style="background-color: #ffff99">   else</a>
+    91) <a name="l91" style="background-color: #ffff99">      call </a><a style="background-color: #ffffff">cnst_get_ind('dst_a1', idx_dst1,abort=.false.)</a>
+    92) <a name="l92" style="background-color: #ffffff">   endif</a>
+    93) <a name="l93" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(dst3_ndx)) then</a>
+    94) <a name="l94" style="background-color: #ffff99">      idx_dst3 = dst3_ndx</a>
+    95) <a name="l95" style="background-color: #ffff99">   else</a>
+    96) <a name="l96" style="background-color: #ffff99">      call </a><a style="background-color: #ffffff">cnst_get_ind('dst_a3', idx_dst3,abort=.false.)</a>
+    97) <a name="l97" style="background-color: #ffffff">   endif</a>
+    98) <a name="l98" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(ncl3_ndx)) then</a>
+    99) <a name="l99" style="background-color: #ffff99">      idx_ncl3 = ncl3_ndx</a>
+   100) <a name="l100" style="background-color: #ffff99">   else</a>
+   101) <a name="l101" style="background-color: #ffff99">      call </a><a style="background-color: #ffffff">cnst_get_ind('ncl_a3', idx_ncl3,abort=.false.)</a>
+   102) <a name="l102" style="background-color: #ffffff">   endif</a>
+   103) <a name="l103" style="background-color: #ffffff">   if (</a><a style="background-color: #fafad2">present(so43_ndx)) then</a>
+   104) <a name="l104" style="background-color: #ffff99">      idx_so43 = so43_ndx</a>
+   105) <a name="l105" style="background-color: #ffff99">   else</a>
+   106) <a name="l106" style="background-color: #ffff99">      call </a><a style="background-color: #ffffff">cnst_get_ind('so4_a3', idx_so43,abort=.false.)</a>
+   107) <a name="l107" style="background-color: #ffffff">   endif</a>
+   108) <a name="l108" style="background-color: #ffffff"></a>
+   109) <a name="l109" style="background-color: #ffffff">!  for 7 mode bin_fluxes will be false</a>
+   110) <a name="l110" style="background-color: #ffffff">   bin_fluxes = idx_dst1</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and. idx_dst3</a><a style="background-color: #fafad2">&gt;0 </a><a style="background-color: #ffffff">.and.idx_ncl3</a><a style="background-color: #fafad2">&gt;0 .and. idx_so43&gt;0</a>
+   111) <a name="l111" style="background-color: #fafad2">   initialized = .true.</a>
+   112) <a name="l112" style="background-color: #fafad2"></a>
+   113) <a name="l113" style="background-color: #ffffff">end subroutine modal_aero_deposition_init</a>
+   114) <a name="l114" style="background-color: #ffffff"></a>
+   115) <a name="l115" style="background-color: #ffffff">!==============================================================================</a>
+   116) <a name="l116" style="background-color: #ffffff">subroutine set_srf_wetdep(aerdepwetis, aerdepwetcw, cam_out)</a>
+   117) <a name="l117" style="background-color: #ffffff"></a>
+   118) <a name="l118" style="background-color: #ffffff">! Set surface wet deposition fluxes passed to coupler.</a>
+   119) <a name="l119" style="background-color: #ffffff"></a>
+   120) <a name="l120" style="background-color: #ffffff">   ! Arguments:</a>
+   121) <a name="l121" style="background-color: #ffffff">   real(r8), intent(in) :: aerdepwetis(:,:)  ! aerosol wet deposition (interstitial)</a>
+   122) <a name="l122" style="background-color: #ffffff">   real(r8), intent(in) :: aerdepwetcw(:,:)  ! aerosol wet deposition (cloud water)</a>
+   123) <a name="l123" style="background-color: #ffffff">   type(cam_out_t), intent(inout) :: cam_out     ! cam export state</a>
+   124) <a name="l124" style="background-color: #ffffff"></a>
+   125) <a name="l125" style="background-color: #ffffff">   ! Local variables:</a>
+   126) <a name="l126" style="background-color: #ffffff">   integer :: i</a>
+   127) <a name="l127" style="background-color: #ffffff">   integer :: ncol                      ! number of columns</a>
+   128) <a name="l128" style="background-color: #ffffff">   !----------------------------------------------------------------------------</a>
+   129) <a name="l129" style="background-color: #ffffff"></a>
+   130) <a name="l130" style="background-color: #ffffff">   if (.not.bin_fluxes) return</a>
+   131) <a name="l131" style="background-color: #ffffff"></a>
+   132) <a name="l132" style="background-color: #ffffff">   ncol = cam_out%ncol</a>
+   133) <a name="l133" style="background-color: #ffffff"></a>
+   134) <a name="l134" style="background-color: #ffffff">   ! derive cam_out variables from deposition fluxes</a>
+   135) <a name="l135" style="background-color: #ffffff">   !  note: wet deposition fluxes are negative into surface, </a>
+   136) <a name="l136" style="background-color: #ffffff">   !        dry deposition fluxes are positive into surface.</a>
+   137) <a name="l137" style="background-color: #ffffff">   !        CLM wants positive definite fluxes.</a>
+   138) <a name="l138" style="background-color: #ffffff">   do i = 1, ncol</a>
+   139) <a name="l139" style="background-color: #ffffff">      ! black carbon fluxes</a>
+   140) <a name="l140" style="background-color: #ffffff">      cam_out%bcphiwet(i) = -(aerdepwetis(i,idx_bc1)+aerdepwetcw(i,idx_bc1))</a>
+   141) <a name="l141" style="background-color: #ffffff"></a>
+   142) <a name="l142" style="background-color: #ffffff">      ! organic carbon fluxes</a>
+   143) <a name="l143" style="background-color: #ffffff">      cam_out%ocphiwet(i) = -(aerdepwetis(i,idx_pom1)+aerdepwetis(i,idx_soa1)+aerdepwetcw(i,idx_pom1)+aerdepwetcw(i,idx_soa1))</a>
+   144) <a name="l144" style="background-color: #ffffff"></a>
+   145) <a name="l145" style="background-color: #ffffff">      ! dust fluxes</a>
+   146) <a name="l146" style="background-color: #ffffff">      !</a>
+   147) <a name="l147" style="background-color: #ffffff">      ! bulk bin1 (fine) dust deposition equals accumulation mode deposition:</a>
+   148) <a name="l148" style="background-color: #ffffff">      cam_out%dstwet1(i) = -(aerdepwetis(i,idx_dst1)+aerdepwetcw(i,idx_dst1))</a>
+   149) <a name="l149" style="background-color: #ffffff">      </a>
+   150) <a name="l150" style="background-color: #ffffff">      !  A. Simple: Assign all coarse-mode dust to bulk size bin 3:</a>
+   151) <a name="l151" style="background-color: #ffffff">      cam_out%dstwet2(i) = 0._r8</a>
+   152) <a name="l152" style="background-color: #ffffff">      cam_out%dstwet3(i) = -(aerdepwetis(i,idx_dst3)+aerdepwetcw(i,idx_dst3))</a>
+   153) <a name="l153" style="background-color: #ffffff">      cam_out%dstwet4(i) = 0._r8</a>
+   154) <a name="l154" style="background-color: #ffffff"></a>
+   155) <a name="l155" style="background-color: #ffffff">      ! in rare cases, integrated deposition tendency is upward</a>
+   156) <a name="l156" style="background-color: #ffffff">      if (cam_out%bcphiwet(i) .lt. 0._r8) cam_out%bcphiwet(i) = 0._r8</a>
+   157) <a name="l157" style="background-color: #ffffff">      if (cam_out%ocphiwet(i) .lt. 0._r8) cam_out%ocphiwet(i) = 0._r8</a>
+   158) <a name="l158" style="background-color: #ffffff">      if (cam_out%dstwet1(i)  .lt. 0._r8) cam_out%dstwet1(i)  = 0._r8</a>
+   159) <a name="l159" style="background-color: #ffffff">      if (cam_out%dstwet3(i)  .lt. 0._r8) cam_out%dstwet3(i)  = 0._r8</a>
+   160) <a name="l160" style="background-color: #ffffff">   enddo</a>
+   161) <a name="l161" style="background-color: #ffffff"></a>
+   162) <a name="l162" style="background-color: #ffffff">end subroutine set_srf_wetdep</a>
+   163) <a name="l163" style="background-color: #ffffff"></a>
+   164) <a name="l164" style="background-color: #ffffff">!==============================================================================</a>
+   165) <a name="l165" style="background-color: #ffffff"></a>
+   166) <a name="l166" style="background-color: #ffffff">subroutine set_srf_drydep(aerdepdryis, aerdepdrycw, cam_out)</a>
+   167) <a name="l167" style="background-color: #ffffff"></a>
+   168) <a name="l168" style="background-color: #ffffff">! Set surface dry deposition fluxes passed to coupler.</a>
+   169) <a name="l169" style="background-color: #ffffff">   </a>
+   170) <a name="l170" style="background-color: #ffffff">   ! Arguments:</a>
+   171) <a name="l171" style="background-color: #ffffff">   real(r8), intent(in) :: aerdepdryis(:,:)  ! aerosol dry deposition (interstitial)</a>
+   172) <a name="l172" style="background-color: #ffffff">   real(r8), intent(in) :: aerdepdrycw(:,:)  ! aerosol dry deposition (cloud water)</a>
+   173) <a name="l173" style="background-color: #ffffff">   type(cam_out_t), intent(inout) :: cam_out     ! cam export state</a>
+   174) <a name="l174" style="background-color: #ffffff"></a>
+   175) <a name="l175" style="background-color: #ffffff">   ! Local variables:</a>
+   176) <a name="l176" style="background-color: #ffffff">   integer :: i</a>
+   177) <a name="l177" style="background-color: #ffffff">   integer :: ncol                      ! number of columns</a>
+   178) <a name="l178" style="background-color: #ffffff">   !----------------------------------------------------------------------------</a>
+   179) <a name="l179" style="background-color: #ffffff">   if (.not.bin_fluxes) return</a>
+   180) <a name="l180" style="background-color: #ffffff"></a>
+   181) <a name="l181" style="background-color: #ffffff">   ncol = cam_out%ncol</a>
+   182) <a name="l182" style="background-color: #ffffff"></a>
+   183) <a name="l183" style="background-color: #ffffff">   ! derive cam_out variables from deposition fluxes</a>
+   184) <a name="l184" style="background-color: #ffffff">   !  note: wet deposition fluxes are negative into surface, </a>
+   185) <a name="l185" style="background-color: #ffffff">   !        dry deposition fluxes are positive into surface.</a>
+   186) <a name="l186" style="background-color: #ffffff">   !        CLM wants positive definite fluxes.</a>
+   187) <a name="l187" style="background-color: #ffffff">   do i = 1, ncol</a>
+   188) <a name="l188" style="background-color: #ffffff">      ! black carbon fluxes</a>
+   189) <a name="l189" style="background-color: #ffffff">      cam_out%bcphidry(i) = aerdepdryis(i,idx_bc1)+aerdepdrycw(i,idx_bc1)</a>
+   190) <a name="l190" style="background-color: #ffffff">      cam_out%bcphodry(i) = 0._r8</a>
+   191) <a name="l191" style="background-color: #ffffff"></a>
+   192) <a name="l192" style="background-color: #ffffff">      ! organic carbon fluxes</a>
+   193) <a name="l193" style="background-color: #ffffff">      cam_out%ocphidry(i) = aerdepdryis(i,idx_pom1)+aerdepdryis(i,idx_soa1)+aerdepdrycw(i,idx_pom1)+aerdepdrycw(i,idx_soa1)</a>
+   194) <a name="l194" style="background-color: #ffffff">      cam_out%ocphodry(i) = aerdepdryis(i,idx_soa2)+aerdepdrycw(i,idx_soa2)</a>
+   195) <a name="l195" style="background-color: #ffffff"></a>
+   196) <a name="l196" style="background-color: #ffffff">      ! dust fluxes</a>
+   197) <a name="l197" style="background-color: #ffffff">      !</a>
+   198) <a name="l198" style="background-color: #ffffff">      ! bulk bin1 (fine) dust deposition equals accumulation mode deposition:</a>
+   199) <a name="l199" style="background-color: #ffffff">      cam_out%dstdry1(i) = aerdepdryis(i,idx_dst1)+aerdepdrycw(i,idx_dst1)</a>
+   200) <a name="l200" style="background-color: #ffffff">      </a>
+   201) <a name="l201" style="background-color: #ffffff">      ! Two options for partitioning deposition into bins 2-4:</a>
+   202) <a name="l202" style="background-color: #ffffff">      !  A. Simple: Assign all coarse-mode dust to bulk size bin 3:</a>
+   203) <a name="l203" style="background-color: #ffffff">      cam_out%dstdry2(i) = 0._r8</a>
+   204) <a name="l204" style="background-color: #ffffff">      cam_out%dstdry3(i) = aerdepdryis(i,idx_dst3)+aerdepdrycw(i,idx_dst3)</a>
+   205) <a name="l205" style="background-color: #ffffff">      cam_out%dstdry4(i) = 0._r8</a>
+   206) <a name="l206" style="background-color: #ffffff"></a>
+   207) <a name="l207" style="background-color: #ffffff">      ! in rare cases, integrated deposition tendency is upward</a>
+   208) <a name="l208" style="background-color: #ffffff">      if (cam_out%bcphidry(i) .lt. 0._r8) cam_out%bcphidry(i) = 0._r8</a>
+   209) <a name="l209" style="background-color: #ffffff">      if (cam_out%bcphodry(i) .lt. 0._r8) cam_out%bcphodry(i) = 0._r8</a>
+   210) <a name="l210" style="background-color: #ffffff">      if (cam_out%ocphidry(i) .lt. 0._r8) cam_out%ocphidry(i) = 0._r8</a>
+   211) <a name="l211" style="background-color: #ffffff">      if (cam_out%ocphodry(i) .lt. 0._r8) cam_out%ocphodry(i) = 0._r8</a>
+   212) <a name="l212" style="background-color: #ffffff">      if (cam_out%dstdry1(i)  .lt. 0._r8) cam_out%dstdry1(i)  = 0._r8</a>
+   213) <a name="l213" style="background-color: #ffffff">      if (cam_out%dstdry3(i)  .lt. 0._r8) cam_out%dstdry3(i)  = 0._r8</a>
+   214) <a name="l214" style="background-color: #ffffff">   enddo</a>
+   215) <a name="l215" style="background-color: #ffffff"></a>
+   216) <a name="l216" style="background-color: #ffffff">end subroutine set_srf_drydep</a>
+   217) <a name="l217" style="background-color: #ffffff"></a>
+   218) <a name="l218" style="background-color: #ffffff"></a>
+   219) <a name="l219" style="background-color: #ffffff">!==============================================================================</a>
+   220) <a name="l220" style="background-color: #ffffff"></a>
+   221) <a name="l221" style="background-color: #ffffff">end module modal_aero_deposition</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

@@ -1,0 +1,1194 @@
+<html>
+<head>
+<title>Listing of wetdep.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;wetdep.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 66.67&#160;%func&#160;&#160;&#160;&#160; 54.02&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module wetdep</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!----------------------------------------------------------------------- </a>
+     4) <a name="l4" style="background-color: #ffffff">!</a>
+     5) <a name="l5" style="background-color: #ffffff">! Wet deposition routines for both aerosols and gas phase constituents.</a>
+     6) <a name="l6" style="background-color: #ffffff">! </a>
+     7) <a name="l7" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     8) <a name="l8" style="background-color: #ffffff"></a>
+     9) <a name="l9" style="background-color: #ffffff">use shr_kind_mod, only: r8 =&gt; shr_kind_r8</a>
+    10) <a name="l10" style="background-color: #ffffff">use ppgrid,       only: pcols, pver</a>
+    11) <a name="l11" style="background-color: #ffffff">use physconst,    only: gravit, rair, tmelt</a>
+    12) <a name="l12" style="background-color: #ffffff">use phys_control, only: cam_physpkg_is</a>
+    13) <a name="l13" style="background-color: #ffffff">use cam_logfile,  only: iulog</a>
+    14) <a name="l14" style="background-color: #ffffff"></a>
+    15) <a name="l15" style="background-color: #ffffff">implicit none</a>
+    16) <a name="l16" style="background-color: #ffffff">save</a>
+    17) <a name="l17" style="background-color: #ffffff">private</a>
+    18) <a name="l18" style="background-color: #ffffff"></a>
+    19) <a name="l19" style="background-color: #ffffff">public :: wetdepa_v1  ! scavenging codes for very soluble aerosols -- CAM4 version</a>
+    20) <a name="l20" style="background-color: #ffffff">public :: wetdepa_v2  ! scavenging codes for very soluble aerosols -- CAM5 version</a>
+    21) <a name="l21" style="background-color: #ffffff">public :: wetdepg     ! scavenging of gas phase constituents by henry's law</a>
+    22) <a name="l22" style="background-color: #ffffff">public :: clddiag     ! calc of cloudy volume and rain mixing ratio</a>
+    23) <a name="l23" style="background-color: #ffffff"></a>
+    24) <a name="l24" style="background-color: #ffffff">public :: wetdep_inputs_t</a>
+    25) <a name="l25" style="background-color: #ffffff">public :: wetdep_init</a>
+    26) <a name="l26" style="background-color: #ffffff">public :: wetdep_inputs_set</a>
+    27) <a name="l27" style="background-color: #ffffff"></a>
+    28) <a name="l28" style="background-color: #ffffff">real(r8), parameter :: cmftau = 3600._r8</a>
+    29) <a name="l29" style="background-color: #ffffff">real(r8), parameter :: rhoh2o = 1000._r8            ! density of water</a>
+    30) <a name="l30" style="background-color: #ffffff">real(r8), parameter :: molwta = 28.97_r8            ! molecular weight dry air gm/mole</a>
+    31) <a name="l31" style="background-color: #ffffff"></a>
+    32) <a name="l32" style="background-color: #ffffff">type wetdep_inputs_t</a>
+    33) <a name="l33" style="background-color: #ffffff">   real(r8), pointer :: cldt(:,:) =&gt; null()  ! cloud fraction</a>
+    34) <a name="l34" style="background-color: #ffffff">   real(r8), pointer :: qme(:,:) =&gt; null()</a>
+    35) <a name="l35" style="background-color: #ffffff">   real(r8), pointer :: prain(:,:) =&gt; null()</a>
+    36) <a name="l36" style="background-color: #ffffff">   real(r8), pointer :: evapr(:,:) =&gt; null()</a>
+    37) <a name="l37" style="background-color: #ffffff">   real(r8) :: cldcu(pcols,pver)     ! convective cloud fraction, currently empty</a>
+    38) <a name="l38" style="background-color: #ffffff">   real(r8) :: evapc(pcols,pver)     ! Evaporation rate of convective precipitation</a>
+    39) <a name="l39" style="background-color: #ffffff">   real(r8) :: cmfdqr(pcols,pver)    ! convective production of rain</a>
+    40) <a name="l40" style="background-color: #ffffff">   real(r8) :: conicw(pcols,pver)    ! convective in-cloud water</a>
+    41) <a name="l41" style="background-color: #ffffff">   real(r8) :: totcond(pcols, pver)  ! total condensate</a>
+    42) <a name="l42" style="background-color: #ffffff">   real(r8) :: cldv(pcols,pver)      ! cloudy volume undergoing wet chem and scavenging</a>
+    43) <a name="l43" style="background-color: #ffffff">   real(r8) :: cldvcu(pcols,pver)    ! Convective precipitation area at the top interface of current layer</a>
+    44) <a name="l44" style="background-color: #ffffff">   real(r8) :: cldvst(pcols,pver)    ! Stratiform precipitation area at the top interface of current layer </a>
+    45) <a name="l45" style="background-color: #ffffff">end type wetdep_inputs_t</a>
+    46) <a name="l46" style="background-color: #ffffff"></a>
+    47) <a name="l47" style="background-color: #ffffff">integer :: cld_idx             = 0</a>
+    48) <a name="l48" style="background-color: #ffffff">integer :: qme_idx             = 0 </a>
+    49) <a name="l49" style="background-color: #ffffff">integer :: prain_idx           = 0 </a>
+    50) <a name="l50" style="background-color: #ffffff">integer :: nevapr_idx          = 0 </a>
+    51) <a name="l51" style="background-color: #ffffff"></a>
+    52) <a name="l52" style="background-color: #ffffff">integer :: icwmrdp_idx         = 0 </a>
+    53) <a name="l53" style="background-color: #ffffff">integer :: icwmrsh_idx         = 0 </a>
+    54) <a name="l54" style="background-color: #ffffff">integer :: rprddp_idx          = 0 </a>
+    55) <a name="l55" style="background-color: #ffffff">integer :: rprdsh_idx          = 0 </a>
+    56) <a name="l56" style="background-color: #ffffff">integer :: sh_frac_idx         = 0 </a>
+    57) <a name="l57" style="background-color: #ffffff">integer :: dp_frac_idx         = 0 </a>
+    58) <a name="l58" style="background-color: #ffffff">integer :: nevapr_shcu_idx     = 0 </a>
+    59) <a name="l59" style="background-color: #ffffff">integer :: nevapr_dpcu_idx     = 0 </a>
+    60) <a name="l60" style="background-color: #ffffff">integer :: ixcldice, ixcldliq</a>
+    61) <a name="l61" style="background-color: #ffffff"></a>
+    62) <a name="l62" style="background-color: #ffffff">!==============================================================================</a>
+    63) <a name="l63" style="background-color: #ffffff">contains</a>
+    64) <a name="l64" style="background-color: #ffffff">!==============================================================================</a>
+    65) <a name="l65" style="background-color: #ffffff"></a>
+    66) <a name="l66" style="background-color: #ffffff">!==============================================================================</a>
+    67) <a name="l67" style="background-color: #ffffff">!==============================================================================</a>
+    68) <a name="l68" style="background-color: #ffffff">subroutine wetdep_init()</a>
+    69) <a name="l69" style="background-color: #ffffff">  use physics_buffer, only: pbuf_get_index</a>
+    70) <a name="l70" style="background-color: #ffffff">  use constituents,   only: cnst_get_ind</a>
+    71) <a name="l71" style="background-color: #ffffff"></a>
+    72) <a name="l72" style="background-color: #ffffff">  cld_idx             = pbuf_get_index('CLD')    </a>
+    73) <a name="l73" style="background-color: #ffffff">  qme_idx             = pbuf_get_index('QME')    </a>
+    74) <a name="l74" style="background-color: #ffffff">  prain_idx           = pbuf_get_index('PRAIN')  </a>
+    75) <a name="l75" style="background-color: #ffffff">  nevapr_idx          = pbuf_get_index('NEVAPR') </a>
+    76) <a name="l76" style="background-color: #ffffff"></a>
+    77) <a name="l77" style="background-color: #ffffff">  icwmrdp_idx         = pbuf_get_index('ICWMRDP') </a>
+    78) <a name="l78" style="background-color: #ffffff">  rprddp_idx          = pbuf_get_index('RPRDDP')  </a>
+    79) <a name="l79" style="background-color: #ffffff">  icwmrsh_idx         = pbuf_get_index('ICWMRSH') </a>
+    80) <a name="l80" style="background-color: #ffffff">  rprdsh_idx          = pbuf_get_index('RPRDSH')  </a>
+    81) <a name="l81" style="background-color: #ffffff">  sh_frac_idx         = pbuf_get_index('SH_FRAC' )</a>
+    82) <a name="l82" style="background-color: #ffffff">  dp_frac_idx         = pbuf_get_index('DP_FRAC') </a>
+    83) <a name="l83" style="background-color: #ffffff">  nevapr_shcu_idx     = pbuf_get_index('NEVAPR_SHCU') </a>
+    84) <a name="l84" style="background-color: #ffffff">  nevapr_dpcu_idx     = pbuf_get_index('NEVAPR_DPCU') </a>
+    85) <a name="l85" style="background-color: #ffffff"></a>
+    86) <a name="l86" style="background-color: #ffffff">  call cnst_get_ind('CLDICE', ixcldice)</a>
+    87) <a name="l87" style="background-color: #ffffff">  call cnst_get_ind('CLDLIQ', ixcldliq)</a>
+    88) <a name="l88" style="background-color: #ffffff"></a>
+    89) <a name="l89" style="background-color: #ffffff">endsubroutine wetdep_init</a>
+    90) <a name="l90" style="background-color: #ffffff"></a>
+    91) <a name="l91" style="background-color: #ffffff">!==============================================================================</a>
+    92) <a name="l92" style="background-color: #ffffff">! gathers up the inputs needed for the wetdepa routines</a>
+    93) <a name="l93" style="background-color: #ffffff">!==============================================================================</a>
+    94) <a name="l94" style="background-color: #ffffff">subroutine wetdep_inputs_set( state, pbuf, inputs )</a>
+    95) <a name="l95" style="background-color: #ffffff">  use phys_control,   only: cam_physpkg_is</a>
+    96) <a name="l96" style="background-color: #ffffff">  use physics_types,  only: physics_state</a>
+    97) <a name="l97" style="background-color: #ffffff">  use physics_buffer, only: physics_buffer_desc, pbuf_get_field, pbuf_old_tim_idx</a>
+    98) <a name="l98" style="background-color: #ffffff"></a>
+    99) <a name="l99" style="background-color: #ffffff">  ! args</a>
+   100) <a name="l100" style="background-color: #ffffff"></a>
+   101) <a name="l101" style="background-color: #ffffff">  type(physics_state),  intent(in )  :: state           !! physics state</a>
+   102) <a name="l102" style="background-color: #ffffff">  type(physics_buffer_desc), pointer :: pbuf(:)         !! physics buffer</a>
+   103) <a name="l103" style="background-color: #ffffff">  type(wetdep_inputs_t), intent(out) :: inputs          !! collection of wetdepa inputs</a>
+   104) <a name="l104" style="background-color: #ffffff"></a>
+   105) <a name="l105" style="background-color: #ffffff">  ! local vars</a>
+   106) <a name="l106" style="background-color: #ffffff"></a>
+   107) <a name="l107" style="background-color: #ffffff">  real(r8), pointer :: icwmrdp(:,:)    ! in cloud water mixing ratio, deep convection</a>
+   108) <a name="l108" style="background-color: #ffffff">  real(r8), pointer :: rprddp(:,:)     ! rain production, deep convection</a>
+   109) <a name="l109" style="background-color: #ffffff">  real(r8), pointer :: icwmrsh(:,:)    ! in cloud water mixing ratio, deep convection</a>
+   110) <a name="l110" style="background-color: #ffffff">  real(r8), pointer :: rprdsh(:,:)     ! rain production, deep convection</a>
+   111) <a name="l111" style="background-color: #ffffff">  real(r8), pointer :: sh_frac(:,:)    ! Shallow convective cloud fraction</a>
+   112) <a name="l112" style="background-color: #ffffff">  real(r8), pointer :: dp_frac(:,:)    ! Deep convective cloud fraction</a>
+   113) <a name="l113" style="background-color: #ffffff">  real(r8), pointer :: evapcsh(:,:)    ! Evaporation rate of shallow convective precipitation &gt;=0.</a>
+   114) <a name="l114" style="background-color: #ffffff">  real(r8), pointer :: evapcdp(:,:)    ! Evaporation rate of deep    convective precipitation &gt;=0.</a>
+   115) <a name="l115" style="background-color: #ffffff"></a>
+   116) <a name="l116" style="background-color: #ffffff">  real(r8) :: rainmr(pcols,pver)       ! mixing ratio of rain within cloud volume</a>
+   117) <a name="l117" style="background-color: #ffffff">  real(r8) :: cldst(pcols,pver)        ! Stratiform cloud fraction</a>
+   118) <a name="l118" style="background-color: #ffffff"></a>
+   119) <a name="l119" style="background-color: #ffffff">  integer :: itim, ncol</a>
+   120) <a name="l120" style="background-color: #ffffff"></a>
+   121) <a name="l121" style="background-color: #ffffff">  ncol = state%ncol</a>
+   122) <a name="l122" style="background-color: #ffffff">  itim = pbuf_old_tim_idx()</a>
+   123) <a name="l123" style="background-color: #ffffff"></a>
+   124) <a name="l124" style="background-color: #ffffff">  call pbuf_get_field(pbuf, cld_idx,         inputs%cldt, start=(/1,1,itim/), kount=(/pcols,pver,1/) )</a>
+   125) <a name="l125" style="background-color: #ffffff">  call pbuf_get_field(pbuf, qme_idx,         inputs%qme     )</a>
+   126) <a name="l126" style="background-color: #ffffff">  call pbuf_get_field(pbuf, prain_idx,       inputs%prain   )</a>
+   127) <a name="l127" style="background-color: #ffffff">  call pbuf_get_field(pbuf, nevapr_idx,      inputs%evapr   )</a>
+   128) <a name="l128" style="background-color: #ffffff">  call pbuf_get_field(pbuf, icwmrdp_idx,     icwmrdp )</a>
+   129) <a name="l129" style="background-color: #ffffff">  call pbuf_get_field(pbuf, icwmrsh_idx,     icwmrsh )</a>
+   130) <a name="l130" style="background-color: #ffffff">  call pbuf_get_field(pbuf, rprddp_idx,      rprddp  )</a>
+   131) <a name="l131" style="background-color: #ffffff">  call pbuf_get_field(pbuf, rprdsh_idx,      rprdsh  )</a>
+   132) <a name="l132" style="background-color: #ffffff">  call pbuf_get_field(pbuf, sh_frac_idx,     sh_frac )</a>
+   133) <a name="l133" style="background-color: #ffffff">  call pbuf_get_field(pbuf, dp_frac_idx,     dp_frac )</a>
+   134) <a name="l134" style="background-color: #ffffff">  call pbuf_get_field(pbuf, nevapr_shcu_idx, evapcsh )</a>
+   135) <a name="l135" style="background-color: #ffffff">  call pbuf_get_field(pbuf, nevapr_dpcu_idx, evapcdp )</a>
+   136) <a name="l136" style="background-color: #ffffff"></a>
+   137) <a name="l137" style="background-color: #ffffff">  inputs%cldcu(:ncol,:)  = dp_frac(:ncol,:) + sh_frac(:ncol,:)</a>
+   138) <a name="l138" style="background-color: #ffffff">  cldst(:ncol,:)          = inputs%cldt(:ncol,:) - inputs%cldcu(:ncol,:)       ! Stratiform cloud fraction</a>
+   139) <a name="l139" style="background-color: #ffffff">  inputs%evapc(:ncol,:)  = evapcsh(:ncol,:) + evapcdp(:ncol,:)</a>
+   140) <a name="l140" style="background-color: #ffffff">  inputs%cmfdqr(:ncol,:) = rprddp(:ncol,:)  + rprdsh(:ncol,:)</a>
+   141) <a name="l141" style="background-color: #ffffff"></a>
+   142) <a name="l142" style="background-color: #ffffff">  ! sum deep and shallow convection contributions</a>
+   143) <a name="l143" style="background-color: #ffffff">  if (cam_physpkg_is('cam5')) then</a>
+   144) <a name="l144" style="background-color: #ffffff">     ! Dec.29.2009. Sungsu</a>
+   145) <a name="l145" style="background-color: #ffffff">     inputs%conicw(:ncol,:) = (icwmrdp(:ncol,:)*dp_frac(:ncol,:) + icwmrsh(:ncol,:)*sh_frac(:ncol,:))/ &amp;</a>
+   146) <a name="l146" style="background-color: #ffffff">                              max(0.01_r8, sh_frac(:ncol,:) + dp_frac(:ncol,:))</a>
+   147) <a name="l147" style="background-color: #ffffff">  else</a>
+   148) <a name="l148" style="background-color: #ffff99">     inputs%conicw(:ncol,:) = icwmrdp(:ncol,:) + icwmrsh(:ncol,:)</a>
+   149) <a name="l149" style="background-color: #ffff99">  end if</a>
+   150) <a name="l150" style="background-color: #ffff99"></a>
+   151) <a name="l151" style="background-color: #ffffff">  inputs%totcond(:ncol,:) = state%q(:ncol,:,ixcldliq) + state%q(:ncol,:,ixcldice)</a>
+   152) <a name="l152" style="background-color: #ffffff"></a>
+   153) <a name="l153" style="background-color: #ffffff">  call </a><a style="background-color: #fafad2">clddiag( state%t,     state%pmid,   state%pdel,   inputs%cmfdqr, inputs%evapc, &amp;</a>
+   154) <a name="l154" style="background-color: #fafad2">               inputs%cldt,  inputs%cldcu,       cldst,  inputs%qme,    inputs%evapr, &amp;</a>
+   155) <a name="l155" style="background-color: #fafad2">               inputs%prain, inputs%cldv, inputs%cldvcu, inputs%cldvst,       rainmr, &amp;</a>
+   156) <a name="l156" style="background-color: #fafad2">                state%ncol )</a>
+   157) <a name="l157" style="background-color: #fafad2"></a>
+   158) <a name="l158" style="background-color: #ffffff">end subroutine wetdep_inputs_set</a>
+   159) <a name="l159" style="background-color: #ffffff"></a>
+   160) <a name="l160" style="background-color: #ffffff">subroutine clddiag(t, pmid, pdel, cmfdqr, evapc, &amp;</a>
+   161) <a name="l161" style="background-color: #ffffff">                   cldt, cldcu, cldst, cme, evapr, &amp;</a>
+   162) <a name="l162" style="background-color: #ffffff">                   prain, cldv, cldvcu, cldvst, rain, &amp;</a>
+   163) <a name="l163" style="background-color: #ffffff">                   ncol)</a>
+   164) <a name="l164" style="background-color: #ffffff"></a>
+   165) <a name="l165" style="background-color: #ffffff">   ! ------------------------------------------------------------------------------------ </a>
+   166) <a name="l166" style="background-color: #ffffff">   ! Estimate the cloudy volume which is occupied by rain or cloud water as</a>
+   167) <a name="l167" style="background-color: #ffffff">   ! the max between the local cloud amount or the</a>
+   168) <a name="l168" style="background-color: #ffffff">   ! sum above of (cloud*positive precip production)      sum total precip from above</a>
+   169) <a name="l169" style="background-color: #ffffff">   !              ----------------------------------   x ------------------------</a>
+   170) <a name="l170" style="background-color: #ffffff">   ! sum above of     (positive precip           )        sum positive precip from above</a>
+   171) <a name="l171" style="background-color: #ffffff">   ! Author: P. Rasch</a>
+   172) <a name="l172" style="background-color: #ffffff">   !         Sungsu Park. Mar.2010 </a>
+   173) <a name="l173" style="background-color: #ffffff">   ! ------------------------------------------------------------------------------------</a>
+   174) <a name="l174" style="background-color: #ffffff"></a>
+   175) <a name="l175" style="background-color: #ffffff">   ! Input arguments:</a>
+   176) <a name="l176" style="background-color: #ffffff">   real(r8), intent(in) :: t(pcols,pver)        ! temperature (K)</a>
+   177) <a name="l177" style="background-color: #ffffff">   real(r8), intent(in) :: pmid(pcols,pver)     ! pressure at layer midpoints</a>
+   178) <a name="l178" style="background-color: #ffffff">   real(r8), intent(in) :: pdel(pcols,pver)     ! pressure difference across layers</a>
+   179) <a name="l179" style="background-color: #ffffff">   real(r8), intent(in) :: cmfdqr(pcols,pver)   ! dq/dt due to convective rainout </a>
+   180) <a name="l180" style="background-color: #ffffff">   real(r8), intent(in) :: evapc(pcols,pver)    ! Evaporation rate of convective precipitation ( &gt;= 0 ) </a>
+   181) <a name="l181" style="background-color: #ffffff">   real(r8), intent(in) :: cldt(pcols,pver)    ! total cloud fraction</a>
+   182) <a name="l182" style="background-color: #ffffff">   real(r8), intent(in) :: cldcu(pcols,pver)    ! Cumulus cloud fraction</a>
+   183) <a name="l183" style="background-color: #ffffff">   real(r8), intent(in) :: cldst(pcols,pver)    ! Stratus cloud fraction</a>
+   184) <a name="l184" style="background-color: #ffffff">   real(r8), intent(in) :: cme(pcols,pver)      ! rate of cond-evap within the cloud</a>
+   185) <a name="l185" style="background-color: #ffffff">   real(r8), intent(in) :: evapr(pcols,pver)    ! rate of evaporation of falling precipitation (kg/kg/s)</a>
+   186) <a name="l186" style="background-color: #ffffff">   real(r8), intent(in) :: prain(pcols,pver)    ! rate of conversion of condensate to precipitation (kg/kg/s)</a>
+   187) <a name="l187" style="background-color: #ffffff">   integer, intent(in) :: ncol</a>
+   188) <a name="l188" style="background-color: #ffffff"></a>
+   189) <a name="l189" style="background-color: #ffffff">   ! Output arguments:</a>
+   190) <a name="l190" style="background-color: #ffffff">   real(r8), intent(out) :: cldv(pcols,pver)     ! fraction occupied by rain or cloud water </a>
+   191) <a name="l191" style="background-color: #ffffff">   real(r8), intent(out) :: cldvcu(pcols,pver)   ! Convective precipitation volume</a>
+   192) <a name="l192" style="background-color: #ffffff">   real(r8), intent(out) :: cldvst(pcols,pver)   ! Stratiform precipitation volume</a>
+   193) <a name="l193" style="background-color: #ffffff">   real(r8), intent(out) :: rain(pcols,pver)     ! mixing ratio of rain (kg/kg)</a>
+   194) <a name="l194" style="background-color: #ffffff"></a>
+   195) <a name="l195" style="background-color: #ffffff">   ! Local variables:</a>
+   196) <a name="l196" style="background-color: #ffffff">   integer  i, k</a>
+   197) <a name="l197" style="background-color: #ffffff">   real(r8) convfw         ! used in fallspeed calculation; taken from findmcnew</a>
+   198) <a name="l198" style="background-color: #ffffff">   real(r8) sumppr(pcols)        ! precipitation rate (kg/m2-s)</a>
+   199) <a name="l199" style="background-color: #ffffff">   real(r8) sumpppr(pcols)       ! sum of positive precips from above</a>
+   200) <a name="l200" style="background-color: #ffffff">   real(r8) cldv1(pcols)         ! precip weighted cloud fraction from above</a>
+   201) <a name="l201" style="background-color: #ffffff">   real(r8) lprec                ! local production rate of precip (kg/m2/s)</a>
+   202) <a name="l202" style="background-color: #ffffff">   real(r8) lprecp               ! local production rate of precip (kg/m2/s) if positive</a>
+   203) <a name="l203" style="background-color: #ffffff">   real(r8) rho                  ! air density</a>
+   204) <a name="l204" style="background-color: #ffffff">   real(r8) vfall</a>
+   205) <a name="l205" style="background-color: #ffffff">   real(r8) sumppr_cu(pcols)     ! Convective precipitation rate (kg/m2-s)</a>
+   206) <a name="l206" style="background-color: #ffffff">   real(r8) sumpppr_cu(pcols)    ! Sum of positive convective precips from above</a>
+   207) <a name="l207" style="background-color: #ffffff">   real(r8) cldv1_cu(pcols)      ! Convective precip weighted convective cloud fraction from above</a>
+   208) <a name="l208" style="background-color: #ffffff">   real(r8) lprec_cu             ! Local production rate of convective precip (kg/m2/s)</a>
+   209) <a name="l209" style="background-color: #ffffff">   real(r8) lprecp_cu            ! Local production rate of convective precip (kg/m2/s) if positive</a>
+   210) <a name="l210" style="background-color: #ffffff">   real(r8) sumppr_st(pcols)     ! Stratiform precipitation rate (kg/m2-s)</a>
+   211) <a name="l211" style="background-color: #ffffff">   real(r8) sumpppr_st(pcols)    ! Sum of positive stratiform precips from above</a>
+   212) <a name="l212" style="background-color: #ffffff">   real(r8) cldv1_st(pcols)      ! Stratiform precip weighted stratiform cloud fraction from above</a>
+   213) <a name="l213" style="background-color: #ffffff">   real(r8) lprec_st             ! Local production rate of stratiform precip (kg/m2/s)</a>
+   214) <a name="l214" style="background-color: #ffffff">   real(r8) lprecp_st            ! Local production rate of stratiform precip (kg/m2/s) if positive</a>
+   215) <a name="l215" style="background-color: #ffffff">   ! -----------------------------------------------------------------------</a>
+   216) <a name="l216" style="background-color: #ffffff"></a>
+   217) <a name="l217" style="background-color: #ffffff">   convfw = 1.94_r8*2.13_r8*sqrt(rhoh2o*gravit*2.7e-4_r8)</a>
+   218) <a name="l218" style="background-color: #ffffff">   do i=1,ncol</a>
+   219) <a name="l219" style="background-color: #ffffff">      sumppr(i) = 0._r8</a>
+   220) <a name="l220" style="background-color: #ffffff">      cldv1(i) = 0._r8</a>
+   221) <a name="l221" style="background-color: #ffffff">      sumpppr(i) = 1.e-36_r8</a>
+   222) <a name="l222" style="background-color: #ffffff">      sumppr_cu(i)  = 0._r8</a>
+   223) <a name="l223" style="background-color: #ffffff">      cldv1_cu(i)   = 0._r8</a>
+   224) <a name="l224" style="background-color: #ffffff">      sumpppr_cu(i) = 1.e-36_r8</a>
+   225) <a name="l225" style="background-color: #ffffff">      sumppr_st(i)  = 0._r8</a>
+   226) <a name="l226" style="background-color: #ffffff">      cldv1_st(i)   = 0._r8</a>
+   227) <a name="l227" style="background-color: #ffffff">      sumpppr_st(i) = 1.e-36_r8</a>
+   228) <a name="l228" style="background-color: #ffffff">   end do</a>
+   229) <a name="l229" style="background-color: #ffffff"></a>
+   230) <a name="l230" style="background-color: #ffffff">   do k = 1,pver</a>
+   231) <a name="l231" style="background-color: #ffffff">      do i = 1,ncol</a>
+   232) <a name="l232" style="background-color: #ffffff">         cldv(i,k) = &amp;</a>
+   233) <a name="l233" style="background-color: #ffffff">            max(min(1._r8, &amp;</a>
+   234) <a name="l234" style="background-color: #ffffff">            cldv1(i)/sumpppr(i) &amp;</a>
+   235) <a name="l235" style="background-color: #ffffff">            )*sumppr(i)/sumpppr(i), &amp;</a>
+   236) <a name="l236" style="background-color: #ffffff">            cldt(i,k) &amp;</a>
+   237) <a name="l237" style="background-color: #ffffff">            )</a>
+   238) <a name="l238" style="background-color: #ffffff">         lprec = pdel(i,k)/gravit &amp;</a>
+   239) <a name="l239" style="background-color: #ffffff">            *(prain(i,k)+cmfdqr(i,k)-evapr(i,k))</a>
+   240) <a name="l240" style="background-color: #ffffff">         lprecp = max(lprec,1.e-30_r8)</a>
+   241) <a name="l241" style="background-color: #ffffff">         cldv1(i) = cldv1(i)  + cldt(i,k)*lprecp</a>
+   242) <a name="l242" style="background-color: #ffffff">         sumppr(i) = sumppr(i) + lprec</a>
+   243) <a name="l243" style="background-color: #ffffff">         sumpppr(i) = sumpppr(i) + lprecp</a>
+   244) <a name="l244" style="background-color: #ffffff"></a>
+   245) <a name="l245" style="background-color: #ffffff">         ! For convective precipitation volume at the top interface of each layer. Neglect the current layer.</a>
+   246) <a name="l246" style="background-color: #ffffff">         cldvcu(i,k)   = max(min(1._r8,cldv1_cu(i)/sumpppr_cu(i))*(sumppr_cu(i)/sumpppr_cu(i)),0._r8)</a>
+   247) <a name="l247" style="background-color: #ffffff">         lprec_cu      = (pdel(i,k)/gravit)*(cmfdqr(i,k)-evapc(i,k))</a>
+   248) <a name="l248" style="background-color: #ffffff">         lprecp_cu     = max(lprec_cu,1.e-30_r8)</a>
+   249) <a name="l249" style="background-color: #ffffff">         cldv1_cu(i)   = cldv1_cu(i) + cldcu(i,k)*lprecp_cu</a>
+   250) <a name="l250" style="background-color: #ffffff">         sumppr_cu(i)  = sumppr_cu(i) + lprec_cu</a>
+   251) <a name="l251" style="background-color: #ffffff">         sumpppr_cu(i) = sumpppr_cu(i) + lprecp_cu</a>
+   252) <a name="l252" style="background-color: #ffffff"></a>
+   253) <a name="l253" style="background-color: #ffffff">         ! For stratiform precipitation volume at the top interface of each layer. Neglect the current layer.</a>
+   254) <a name="l254" style="background-color: #ffffff">         cldvst(i,k)   = max(min(1._r8,cldv1_st(i)/sumpppr_st(i))*(sumppr_st(i)/sumpppr_st(i)),0._r8)</a>
+   255) <a name="l255" style="background-color: #ffffff">         lprec_st      = (pdel(i,k)/gravit)*(prain(i,k)-evapr(i,k))</a>
+   256) <a name="l256" style="background-color: #ffffff">         lprecp_st     = max(lprec_st,1.e-30_r8)</a>
+   257) <a name="l257" style="background-color: #ffffff">         cldv1_st(i)   = cldv1_st(i) + cldst(i,k)*lprecp_st</a>
+   258) <a name="l258" style="background-color: #ffffff">         sumppr_st(i)  = sumppr_st(i) + lprec_st</a>
+   259) <a name="l259" style="background-color: #ffffff">         sumpppr_st(i) = sumpppr_st(i) + lprecp_st</a>
+   260) <a name="l260" style="background-color: #ffffff"></a>
+   261) <a name="l261" style="background-color: #ffffff">         rain(i,k) = 0._r8</a>
+   262) <a name="l262" style="background-color: #ffffff">         if(t(i,k) .gt. tmelt) then</a>
+   263) <a name="l263" style="background-color: #ffffff">            rho = pmid(i,k)/(rair*t(i,k))</a>
+   264) <a name="l264" style="background-color: #ffffff">            vfall = convfw/sqrt(rho)</a>
+   265) <a name="l265" style="background-color: #ffffff">            rain(i,k) = sumppr(i)/(rho*vfall)</a>
+   266) <a name="l266" style="background-color: #ffffff">            if (rain(i,k).lt.1.e-14_r8) rain(i,k) = 0._r8</a>
+   267) <a name="l267" style="background-color: #ffffff">         endif</a>
+   268) <a name="l268" style="background-color: #ffffff">      end do</a>
+   269) <a name="l269" style="background-color: #ffffff">   end do</a>
+   270) <a name="l270" style="background-color: #ffffff"></a>
+   271) <a name="l271" style="background-color: #ffffff">end subroutine clddiag</a>
+   272) <a name="l272" style="background-color: #ffffff"></a>
+   273) <a name="l273" style="background-color: #ffffff">!==============================================================================</a>
+   274) <a name="l274" style="background-color: #ffffff"></a>
+   275) <a name="l275" style="background-color: #ffffff">! This is the CAM5 version of wetdepa.</a>
+   276) <a name="l276" style="background-color: #ffffff"></a>
+   277) <a name="l277" style="background-color: #ffffff">subroutine wetdepa_v2(                                  &amp;</a>
+   278) <a name="l278" style="background-color: #ffffff">   p, q, pdel, cldt, cldc,                              &amp;</a>
+   279) <a name="l279" style="background-color: #ffffff">   cmfdqr, evapc, conicw, precs, conds,                 &amp;</a>
+   280) <a name="l280" style="background-color: #ffffff">   evaps, cwat, tracer, deltat, scavt,                  &amp;</a>
+   281) <a name="l281" style="background-color: #ffffff">   iscavt, cldvcu, cldvst, dlf, fracis,                 &amp;</a>
+   282) <a name="l282" style="background-color: #ffffff">   sol_fact, ncol, scavcoef, is_strat_cloudborne, qqcw, &amp;</a>
+   283) <a name="l283" style="background-color: #ffffff">   f_act_conv, icscavt, isscavt, bcscavt, bsscavt,      &amp;</a>
+   284) <a name="l284" style="background-color: #ffffff">   sol_facti_in, sol_factic_in )</a>
+   285) <a name="l285" style="background-color: #ffffff"></a>
+   286) <a name="l286" style="background-color: #ffffff">   !----------------------------------------------------------------------- </a>
+   287) <a name="l287" style="background-color: #ffffff">   !</a>
+   288) <a name="l288" style="background-color: #ffffff">   ! scavenging code for very soluble aerosols</a>
+   289) <a name="l289" style="background-color: #ffffff">   ! </a>
+   290) <a name="l290" style="background-color: #ffffff">   !-----------------------------------------------------------------------</a>
+   291) <a name="l291" style="background-color: #ffffff"></a>
+   292) <a name="l292" style="background-color: #ffffff">   real(r8), intent(in) ::&amp;</a>
+   293) <a name="l293" style="background-color: #ffffff">      p(pcols,pver),        &amp;! pressure</a>
+   294) <a name="l294" style="background-color: #ffffff">      q(pcols,pver),        &amp;! moisture</a>
+   295) <a name="l295" style="background-color: #ffffff">      pdel(pcols,pver),     &amp;! pressure thikness</a>
+   296) <a name="l296" style="background-color: #ffffff">      cldt(pcols,pver),     &amp;! total cloud fraction</a>
+   297) <a name="l297" style="background-color: #ffffff">      cldc(pcols,pver),     &amp;! convective cloud fraction</a>
+   298) <a name="l298" style="background-color: #ffffff">      cmfdqr(pcols,pver),   &amp;! rate of production of convective precip</a>
+   299) <a name="l299" style="background-color: #ffffff">      evapc(pcols,pver),    &amp;! Evaporation rate of convective precipitation</a>
+   300) <a name="l300" style="background-color: #ffffff">      conicw(pcols,pver),   &amp;! convective cloud water</a>
+   301) <a name="l301" style="background-color: #ffffff">      cwat(pcols,pver),     &amp;! cloud water amount </a>
+   302) <a name="l302" style="background-color: #ffffff">      precs(pcols,pver),    &amp;! rate of production of stratiform precip</a>
+   303) <a name="l303" style="background-color: #ffffff">      conds(pcols,pver),    &amp;! rate of production of condensate</a>
+   304) <a name="l304" style="background-color: #ffffff">      evaps(pcols,pver),    &amp;! rate of evaporation of precip</a>
+   305) <a name="l305" style="background-color: #ffffff">      cldvcu(pcols,pver),   &amp;! Convective precipitation area at the top interface of each layer</a>
+   306) <a name="l306" style="background-color: #ffffff">      cldvst(pcols,pver),   &amp;! Stratiform precipitation area at the top interface of each layer</a>
+   307) <a name="l307" style="background-color: #ffffff">      dlf(pcols,pver),      &amp;! Detrainment of convective condensate [kg/kg/s]</a>
+   308) <a name="l308" style="background-color: #ffffff">      deltat,               &amp;! time step</a>
+   309) <a name="l309" style="background-color: #ffffff">      tracer(pcols,pver)     ! trace species</a>
+   310) <a name="l310" style="background-color: #ffffff"></a>
+   311) <a name="l311" style="background-color: #ffffff">   ! If subroutine is called with just sol_fact:</a>
+   312) <a name="l312" style="background-color: #ffffff">   !    sol_fact is used for both in- and below-cloud scavenging</a>
+   313) <a name="l313" style="background-color: #ffffff">   ! If subroutine is called with optional argument sol_facti_in:</a>
+   314) <a name="l314" style="background-color: #ffffff">   !    sol_fact  is used for below cloud scavenging</a>
+   315) <a name="l315" style="background-color: #ffffff">   !    sol_facti is used for in cloud scavenging</a>
+   316) <a name="l316" style="background-color: #ffffff"></a>
+   317) <a name="l317" style="background-color: #ffffff">   real(r8), intent(in)  :: sol_fact</a>
+   318) <a name="l318" style="background-color: #ffffff">   integer,  intent(in)  :: ncol</a>
+   319) <a name="l319" style="background-color: #ffffff">   real(r8), intent(in)  :: scavcoef(pcols,pver) ! Dana and Hales coefficient (/mm) (0.1 if not MODAL_AERO)</a>
+   320) <a name="l320" style="background-color: #ffffff">   real(r8), intent(out) ::&amp;</a>
+   321) <a name="l321" style="background-color: #ffffff">      scavt(pcols,pver),   &amp;! scavenging tend </a>
+   322) <a name="l322" style="background-color: #ffffff">      iscavt(pcols,pver),  &amp;! incloud scavenging tends</a>
+   323) <a name="l323" style="background-color: #ffffff">      fracis(pcols,pver)    ! fraction of species not scavenged</a>
+   324) <a name="l324" style="background-color: #ffffff"></a>
+   325) <a name="l325" style="background-color: #ffffff">   ! Setting is_strat_cloudborne=.true. indicates that tracer is stratiform-cloudborne aerosol.</a>
+   326) <a name="l326" style="background-color: #ffffff">   !   This is only used by MAM code.  The optional args qqcw and f_act_conv are not referenced</a>
+   327) <a name="l327" style="background-color: #ffffff">   !   in this case.</a>
+   328) <a name="l328" style="background-color: #ffffff">   ! Setting is_strat_cloudborne=.false. is being used to indicate that the tracers are the</a>
+   329) <a name="l329" style="background-color: #ffffff">   !   interstitial modal aerosols.  In this case the optional qqcw (the cloud borne mixing ratio</a>
+   330) <a name="l330" style="background-color: #ffffff">   !   corresponding to the interstitial aerosol) must be provided, as well as the optional f_act_conv.</a>
+   331) <a name="l331" style="background-color: #ffffff">   logical,  intent(in), optional :: is_strat_cloudborne   </a>
+   332) <a name="l332" style="background-color: #ffffff">   real(r8), intent(in), optional :: qqcw(pcols,pver)</a>
+   333) <a name="l333" style="background-color: #ffffff">   real(r8), intent(in), optional :: f_act_conv(pcols,pver)</a>
+   334) <a name="l334" style="background-color: #ffffff"></a>
+   335) <a name="l335" style="background-color: #ffffff">   real(r8), intent(in), optional :: sol_facti_in   ! solubility factor (frac of aerosol scavenged in cloud)</a>
+   336) <a name="l336" style="background-color: #ffffff">   real(r8), intent(in), optional :: sol_factic_in(pcols,pver)  ! sol_facti_in for convective clouds</a>
+   337) <a name="l337" style="background-color: #ffffff">         </a>
+   338) <a name="l338" style="background-color: #ffffff"></a>
+   339) <a name="l339" style="background-color: #ffffff">   real(r8), intent(out), optional :: icscavt(pcols,pver)     ! incloud, convective</a>
+   340) <a name="l340" style="background-color: #ffffff">   real(r8), intent(out), optional :: isscavt(pcols,pver)     ! incloud, stratiform</a>
+   341) <a name="l341" style="background-color: #ffffff">   real(r8), intent(out), optional :: bcscavt(pcols,pver)     ! below cloud, convective</a>
+   342) <a name="l342" style="background-color: #ffffff">   real(r8), intent(out), optional :: bsscavt(pcols,pver)     ! below cloud, stratiform</a>
+   343) <a name="l343" style="background-color: #ffffff"></a>
+   344) <a name="l344" style="background-color: #ffffff">   ! local variables</a>
+   345) <a name="l345" style="background-color: #ffffff"></a>
+   346) <a name="l346" style="background-color: #ffffff">   integer :: i, k</a>
+   347) <a name="l347" style="background-color: #ffffff"></a>
+   348) <a name="l348" style="background-color: #ffffff">   real(r8) :: omsm                 ! 1 - (a small number)</a>
+   349) <a name="l349" style="background-color: #ffffff">   real(r8) :: clds(pcols)          ! stratiform cloud fraction</a>
+   350) <a name="l350" style="background-color: #ffffff">   real(r8) :: fracev(pcols)        ! fraction of precip from above that is evaporating</a>
+   351) <a name="l351" style="background-color: #ffffff">   real(r8) :: fracev_cu(pcols)     ! Fraction of convective precip from above that is evaporating</a>
+   352) <a name="l352" style="background-color: #ffffff">   real(r8) :: fracp(pcols)         ! fraction of cloud water converted to precip</a>
+   353) <a name="l353" style="background-color: #ffffff">   real(r8) :: pdog(pcols)          ! work variable (pdel/gravit)</a>
+   354) <a name="l354" style="background-color: #ffffff">   real(r8) :: rpdog(pcols)         ! work variable (gravit/pdel)</a>
+   355) <a name="l355" style="background-color: #ffffff">   real(r8) :: precabc(pcols)       ! conv precip from above (work array)</a>
+   356) <a name="l356" style="background-color: #ffffff">   real(r8) :: precabs(pcols)       ! strat precip from above (work array)</a>
+   357) <a name="l357" style="background-color: #ffffff">   real(r8) :: rat(pcols)           ! ratio of amount available to amount removed</a>
+   358) <a name="l358" style="background-color: #ffffff">   real(r8) :: scavab(pcols)        ! scavenged tracer flux from above (work array)</a>
+   359) <a name="l359" style="background-color: #ffffff">   real(r8) :: scavabc(pcols)       ! scavenged tracer flux from above (work array)</a>
+   360) <a name="l360" style="background-color: #ffffff">   real(r8) :: srcc(pcols)          ! tend for convective rain</a>
+   361) <a name="l361" style="background-color: #ffffff">   real(r8) :: srcs(pcols)          ! tend for stratiform rain</a>
+   362) <a name="l362" style="background-color: #ffffff">   real(r8) :: srct(pcols)          ! work variable</a>
+   363) <a name="l363" style="background-color: #ffffff"></a>
+   364) <a name="l364" style="background-color: #ffffff">   real(r8) :: fins(pcols)          ! fraction of rem. rate by strat rain</a>
+   365) <a name="l365" style="background-color: #ffffff">   real(r8) :: finc(pcols)          ! fraction of rem. rate by conv. rain</a>
+   366) <a name="l366" style="background-color: #ffffff">   real(r8) :: conv_scav_ic(pcols)  ! convective scavenging incloud</a>
+   367) <a name="l367" style="background-color: #ffffff">   real(r8) :: conv_scav_bc(pcols)  ! convective scavenging below cloud</a>
+   368) <a name="l368" style="background-color: #ffffff">   real(r8) :: st_scav_ic(pcols)    ! stratiform scavenging incloud</a>
+   369) <a name="l369" style="background-color: #ffffff">   real(r8) :: st_scav_bc(pcols)    ! stratiform scavenging below cloud</a>
+   370) <a name="l370" style="background-color: #ffffff"></a>
+   371) <a name="l371" style="background-color: #ffffff">   real(r8) :: odds(pcols)          ! limit on removal rate (proportional to prec)</a>
+   372) <a name="l372" style="background-color: #ffffff">   real(r8) :: dblchek(pcols)</a>
+   373) <a name="l373" style="background-color: #ffffff">   logical :: found</a>
+   374) <a name="l374" style="background-color: #ffffff"></a>
+   375) <a name="l375" style="background-color: #ffffff">   real(r8) :: trac_qqcw(pcols)</a>
+   376) <a name="l376" style="background-color: #ffffff">   real(r8) :: tracer_incu(pcols)</a>
+   377) <a name="l377" style="background-color: #ffffff">   real(r8) :: tracer_mean(pcols)</a>
+   378) <a name="l378" style="background-color: #ffffff"></a>
+   379) <a name="l379" style="background-color: #ffffff">   ! For stratiform cloud, cloudborne aerosol is treated explicitly,</a>
+   380) <a name="l380" style="background-color: #ffffff">   !    and sol_facti is 1.0 for cloudborne, 0.0 for interstitial.</a>
+   381) <a name="l381" style="background-color: #ffffff">   ! For convective cloud, cloudborne aerosol is not treated explicitly,</a>
+   382) <a name="l382" style="background-color: #ffffff">   !    and sol_factic is 1.0 for both cloudborne and interstitial.</a>
+   383) <a name="l383" style="background-color: #ffffff"></a>
+   384) <a name="l384" style="background-color: #ffffff">   real(r8) :: sol_facti              ! in cloud fraction of aerosol scavenged</a>
+   385) <a name="l385" style="background-color: #ffffff">   real(r8) :: sol_factb              ! below cloud fraction of aerosol scavenged</a>
+   386) <a name="l386" style="background-color: #ffffff">   real(r8) :: sol_factic(pcols,pver) ! in cloud fraction of aerosol scavenged for convective clouds</a>
+   387) <a name="l387" style="background-color: #ffffff"></a>
+   388) <a name="l388" style="background-color: #ffffff">   real(r8) :: rdeltat</a>
+   389) <a name="l389" style="background-color: #ffffff">   ! ------------------------------------------------------------------------</a>
+   390) <a name="l390" style="background-color: #ffffff"></a>
+   391) <a name="l391" style="background-color: #ffffff">   omsm = 1._r8-2*epsilon(1._r8) ! used to prevent roundoff errors below zero</a>
+   392) <a name="l392" style="background-color: #ffffff"></a>
+   393) <a name="l393" style="background-color: #ffffff">   ! default (if other sol_facts aren't in call, set all to required sol_fact)</a>
+   394) <a name="l394" style="background-color: #ffffff">   sol_facti = sol_fact</a>
+   395) <a name="l395" style="background-color: #ffffff">   sol_factb = sol_fact</a>
+   396) <a name="l396" style="background-color: #ffffff"></a>
+   397) <a name="l397" style="background-color: #ffffff">   if ( </a><a style="background-color: #fafad2">present(sol_facti_in) )  </a><a style="background-color: #ffffff">sol_facti = sol_facti_in</a>
+   398) <a name="l398" style="background-color: #ffffff"></a>
+   399) <a name="l399" style="background-color: #ffffff">   sol_factic  = sol_facti</a>
+   400) <a name="l400" style="background-color: #ffffff">   if ( </a><a style="background-color: #fafad2">present(sol_factic_in ) )  </a><a style="background-color: #ffffff">sol_factic  = sol_factic_in</a>
+   401) <a name="l401" style="background-color: #ffffff"></a>
+   402) <a name="l402" style="background-color: #ffffff">   ! this section of code is for highly soluble aerosols,</a>
+   403) <a name="l403" style="background-color: #ffffff">   ! the assumption is that within the cloud that</a>
+   404) <a name="l404" style="background-color: #ffffff">   ! all the tracer is in the cloud water</a>
+   405) <a name="l405" style="background-color: #ffffff">   !</a>
+   406) <a name="l406" style="background-color: #ffffff">   ! for both convective and stratiform clouds, </a>
+   407) <a name="l407" style="background-color: #ffffff">   ! the fraction of cloud water converted to precip defines</a>
+   408) <a name="l408" style="background-color: #ffffff">   ! the amount of tracer which is pulled out.</a>
+   409) <a name="l409" style="background-color: #ffffff"></a>
+   410) <a name="l410" style="background-color: #ffffff">   precabs(:ncol) = 0.0_r8</a>
+   411) <a name="l411" style="background-color: #ffffff">   precabc(:ncol) = 0.0_r8</a>
+   412) <a name="l412" style="background-color: #ffffff">   scavab(:ncol)  = 0.0_r8</a>
+   413) <a name="l413" style="background-color: #ffffff">   scavabc(:ncol) = 0.0_r8</a>
+   414) <a name="l414" style="background-color: #ffffff"></a>
+   415) <a name="l415" style="background-color: #ffffff">   do k = 1, pver</a>
+   416) <a name="l416" style="background-color: #ffffff">      do i = 1, ncol</a>
+   417) <a name="l417" style="background-color: #ffffff"></a>
+   418) <a name="l418" style="background-color: #ffffff">         clds(i)  = cldt(i,k) - cldc(i,k)</a>
+   419) <a name="l419" style="background-color: #ffffff">         pdog(i)  = pdel(i,k)/gravit</a>
+   420) <a name="l420" style="background-color: #ffffff">         rpdog(i) = gravit/pdel(i,k)</a>
+   421) <a name="l421" style="background-color: #ffffff">         rdeltat  = 1.0_r8/deltat</a>
+   422) <a name="l422" style="background-color: #ffffff"></a>
+   423) <a name="l423" style="background-color: #ffffff">         ! ****************** Evaporation **************************</a>
+   424) <a name="l424" style="background-color: #ffffff">         ! calculate the fraction of strat precip from above </a>
+   425) <a name="l425" style="background-color: #ffffff">         !                 which evaporates within this layer</a>
+   426) <a name="l426" style="background-color: #ffffff">         fracev(i) = evaps(i,k)*pdog(i) &amp;</a>
+   427) <a name="l427" style="background-color: #ffffff">                     /max(1.e-12_r8,precabs(i))</a>
+   428) <a name="l428" style="background-color: #ffffff"></a>
+   429) <a name="l429" style="background-color: #ffffff">         ! trap to ensure reasonable ratio bounds</a>
+   430) <a name="l430" style="background-color: #ffffff">         fracev(i) = max(0._r8,min(1._r8,fracev(i)))</a>
+   431) <a name="l431" style="background-color: #ffffff"></a>
+   432) <a name="l432" style="background-color: #ffffff">         ! Same as above but convective precipitation part</a>
+   433) <a name="l433" style="background-color: #ffffff">         fracev_cu(i) = evapc(i,k)*pdog(i)/max(1.e-12_r8,precabc(i))</a>
+   434) <a name="l434" style="background-color: #ffffff">         fracev_cu(i) = max(0._r8,min(1._r8,fracev_cu(i)))</a>
+   435) <a name="l435" style="background-color: #ffffff"></a>
+   436) <a name="l436" style="background-color: #ffffff">         ! ****************** Convection ***************************</a>
+   437) <a name="l437" style="background-color: #ffffff">         !</a>
+   438) <a name="l438" style="background-color: #ffffff">         ! set odds proportional to fraction of the grid box that is swept by the </a>
+   439) <a name="l439" style="background-color: #ffffff">         ! precipitation =precabc/rhoh20*(area of sphere projected on plane</a>
+   440) <a name="l440" style="background-color: #ffffff">         !                                /volume of sphere)*deltat</a>
+   441) <a name="l441" style="background-color: #ffffff">         ! assume the radius of a raindrop is 1 e-3 m from Rogers and Yau,</a>
+   442) <a name="l442" style="background-color: #ffffff">         ! unless the fraction of the area that is cloud is less than odds, in which</a>
+   443) <a name="l443" style="background-color: #ffffff">         ! case use the cloud fraction (assumes precabs is in kg/m2/s)</a>
+   444) <a name="l444" style="background-color: #ffffff">         ! is really: precabs*3/4/1000./1e-3*deltat</a>
+   445) <a name="l445" style="background-color: #ffffff">         ! here I use .1 from Balkanski</a>
+   446) <a name="l446" style="background-color: #ffffff">         !</a>
+   447) <a name="l447" style="background-color: #ffffff">         ! use a local rate of convective rain production for incloud scav</a>
+   448) <a name="l448" style="background-color: #ffffff">         !</a>
+   449) <a name="l449" style="background-color: #ffffff">         ! Fraction of convective cloud water converted to rain.  This version is used</a>
+   450) <a name="l450" style="background-color: #ffffff">         ! in 2 of the 3 branches below before fracp is reused in the stratiform calc.</a>
+   451) <a name="l451" style="background-color: #ffffff">         ! NB: In below formula for fracp conicw is a LWC/IWC that has already</a>
+   452) <a name="l452" style="background-color: #ffffff">         !     precipitated out, i.e., conicw does not contain precipitation</a>
+   453) <a name="l453" style="background-color: #ffffff"></a>
+   454) <a name="l454" style="background-color: #ffffff">         fracp(i) = cmfdqr(i,k)*deltat / &amp;</a>
+   455) <a name="l455" style="background-color: #ffffff">                    max( 1.e-12_r8, cldc(i,k)*conicw(i,k) + (cmfdqr(i,k)+dlf(i,k))*deltat )</a>
+   456) <a name="l456" style="background-color: #ffffff">         fracp(i) = max( min( 1._r8, fracp(i)), 0._r8 )</a>
+   457) <a name="l457" style="background-color: #ffffff"></a>
+   458) <a name="l458" style="background-color: #ffffff">         if ( </a><a style="background-color: #fafad2">present(is_strat_cloudborne) ) then</a>
+   459) <a name="l459" style="background-color: #fafad2"></a>
+   460) <a name="l460" style="background-color: #ffffff">            if ( is_strat_cloudborne ) then</a>
+   461) <a name="l461" style="background-color: #ffffff"></a>
+   462) <a name="l462" style="background-color: #ffffff">               ! convective scavenging</a>
+   463) <a name="l463" style="background-color: #ffffff"></a>
+   464) <a name="l464" style="background-color: #ffffff">               conv_scav_ic(i) = 0._r8</a>
+   465) <a name="l465" style="background-color: #ffffff"></a>
+   466) <a name="l466" style="background-color: #ffffff">               conv_scav_bc(i) = 0._r8</a>
+   467) <a name="l467" style="background-color: #ffffff"></a>
+   468) <a name="l468" style="background-color: #ffffff">               ! stratiform scavenging</a>
+   469) <a name="l469" style="background-color: #ffffff"></a>
+   470) <a name="l470" style="background-color: #ffffff">               fracp(i) = precs(i,k)*deltat / &amp;</a>
+   471) <a name="l471" style="background-color: #ffffff">                          max( 1.e-12_r8, cwat(i,k) + precs(i,k)*deltat )</a>
+   472) <a name="l472" style="background-color: #ffffff">               fracp(i) = max( 0._r8, min(1._r8, fracp(i)) )</a>
+   473) <a name="l473" style="background-color: #ffffff">               st_scav_ic(i) = sol_facti *fracp(i)*tracer(i,k)*rdeltat</a>
+   474) <a name="l474" style="background-color: #ffffff"></a>
+   475) <a name="l475" style="background-color: #ffffff">               st_scav_bc(i) = 0._r8</a>
+   476) <a name="l476" style="background-color: #ffffff"></a>
+   477) <a name="l477" style="background-color: #ffffff">            else</a>
+   478) <a name="l478" style="background-color: #ffffff"></a>
+   479) <a name="l479" style="background-color: #ffffff">               ! convective scavenging</a>
+   480) <a name="l480" style="background-color: #ffffff"></a>
+   481) <a name="l481" style="background-color: #ffffff">               trac_qqcw(i) = min(qqcw(i,k), &amp;</a>
+   482) <a name="l482" style="background-color: #ffffff">                                  tracer(i,k)*( clds(i)/max( 0.01_r8, 1._r8-clds(i) ) ) )</a>
+   483) <a name="l483" style="background-color: #ffffff"></a>
+   484) <a name="l484" style="background-color: #ffffff">               tracer_incu(i) = f_act_conv(i,k)*(tracer(i,k) + trac_qqcw(i))</a>
+   485) <a name="l485" style="background-color: #ffffff"></a>
+   486) <a name="l486" style="background-color: #ffffff">               conv_scav_ic(i) = sol_factic(i,k)*cldc(i,k)*fracp(i)*tracer_incu(i)*rdeltat</a>
+   487) <a name="l487" style="background-color: #ffffff"></a>
+   488) <a name="l488" style="background-color: #ffffff">               tracer_mean(i) = tracer(i,k)*(1._r8 - cldc(i,k)*f_act_conv(i,k)) - &amp;</a>
+   489) <a name="l489" style="background-color: #ffffff">                                cldc(i,k)*f_act_conv(i,k)*trac_qqcw(i)</a>
+   490) <a name="l490" style="background-color: #ffffff">               tracer_mean(i) = max(0._r8,tracer_mean(i))</a>
+   491) <a name="l491" style="background-color: #ffffff"></a>
+   492) <a name="l492" style="background-color: #ffffff">               odds(i) = precabc(i)/max(cldvcu(i,k),1.e-5_r8)*scavcoef(i,k)*deltat</a>
+   493) <a name="l493" style="background-color: #ffffff">               odds(i) = max(min(1._r8,odds(i)),0._r8)</a>
+   494) <a name="l494" style="background-color: #ffffff">               conv_scav_bc(i) = sol_factb *cldvcu(i,k)*odds(i)*tracer_mean(i)*rdeltat</a>
+   495) <a name="l495" style="background-color: #ffffff"></a>
+   496) <a name="l496" style="background-color: #ffffff"></a>
+   497) <a name="l497" style="background-color: #ffffff">               ! stratiform scavenging</a>
+   498) <a name="l498" style="background-color: #ffffff"></a>
+   499) <a name="l499" style="background-color: #ffffff">               st_scav_ic(i) = 0._r8</a>
+   500) <a name="l500" style="background-color: #ffffff"></a>
+   501) <a name="l501" style="background-color: #ffffff">               odds(i) = precabs(i)/max(cldvst(i,k),1.e-5_r8)*scavcoef(i,k)*deltat</a>
+   502) <a name="l502" style="background-color: #ffffff">               odds(i) = max(min(1._r8,odds(i)),0._r8)</a>
+   503) <a name="l503" style="background-color: #ffffff">               st_scav_bc(i) = sol_factb *cldvst(i,k)*odds(i)*tracer_mean(i)*rdeltat</a>
+   504) <a name="l504" style="background-color: #ffffff"></a>
+   505) <a name="l505" style="background-color: #ffffff">            end if</a>
+   506) <a name="l506" style="background-color: #ffffff"></a>
+   507) <a name="l507" style="background-color: #ffffff">         else</a>
+   508) <a name="l508" style="background-color: #ffffff"></a>
+   509) <a name="l509" style="background-color: #ffffff">            ! convective scavenging</a>
+   510) <a name="l510" style="background-color: #ffffff"></a>
+   511) <a name="l511" style="background-color: #ffff99">            conv_scav_ic(i) = sol_factic(i,k)*cldc(i,k)*fracp(i)*tracer(i,k)*rdeltat</a>
+   512) <a name="l512" style="background-color: #ffff99"></a>
+   513) <a name="l513" style="background-color: #ffff99">            odds(i) = precabc(i)/max(cldvcu(i,k), 1.e-5_r8)*scavcoef(i,k)*deltat</a>
+   514) <a name="l514" style="background-color: #ffff99">            odds(i) = max( min(1._r8, odds(i)), 0._r8)</a>
+   515) <a name="l515" style="background-color: #ffff99">            conv_scav_bc(i) = sol_factb*cldvcu(i,k)*odds(i)*tracer(i,k)*rdeltat</a>
+   516) <a name="l516" style="background-color: #ffff99"></a>
+   517) <a name="l517" style="background-color: #ffff99">            ! stratiform scavenging</a>
+   518) <a name="l518" style="background-color: #ffff99"></a>
+   519) <a name="l519" style="background-color: #ffff99">            ! fracp is the fraction of cloud water converted to precip</a>
+   520) <a name="l520" style="background-color: #ffff99">            ! NB: In below formula for fracp cwat is a LWC/IWC that has already</a>
+   521) <a name="l521" style="background-color: #ffff99">            !     precipitated out, i.e., cwat does not contain precipitation</a>
+   522) <a name="l522" style="background-color: #ffff99">            fracp(i) = precs(i,k)*deltat / &amp;</a>
+   523) <a name="l523" style="background-color: #ffff99">                       max( 1.e-12_r8, cwat(i,k) + precs(i,k)*deltat )</a>
+   524) <a name="l524" style="background-color: #ffff99">            fracp(i) = max( 0._r8, min( 1._r8, fracp(i) ) )</a>
+   525) <a name="l525" style="background-color: #ffff99">            </a>
+   526) <a name="l526" style="background-color: #ffff99">            ! assume the corresponding amnt of tracer is removed</a>
+   527) <a name="l527" style="background-color: #ffff99">            st_scav_ic(i) = sol_facti*clds(i)*fracp(i)*tracer(i,k)*rdeltat</a>
+   528) <a name="l528" style="background-color: #ffff99"></a>
+   529) <a name="l529" style="background-color: #ffff99">            odds(i) = precabs(i)/max(cldvst(i,k),1.e-5_r8)*scavcoef(i,k)*deltat</a>
+   530) <a name="l530" style="background-color: #ffff99">            odds(i) = max(min(1._r8,odds(i)),0._r8)</a>
+   531) <a name="l531" style="background-color: #ffff99">            st_scav_bc(i) =sol_factb*(cldvst(i,k)*odds(i)) *tracer(i,k)*rdeltat</a>
+   532) <a name="l532" style="background-color: #ffff99"></a>
+   533) <a name="l533" style="background-color: #ffff99">         end if</a>
+   534) <a name="l534" style="background-color: #ffff99"></a>
+   535) <a name="l535" style="background-color: #ffff99">         ! total convective scavenging</a>
+   536) <a name="l536" style="background-color: #ffffff">         srcc(i) = conv_scav_ic(i) + conv_scav_bc(i)</a>
+   537) <a name="l537" style="background-color: #ffffff">         finc(i) = conv_scav_ic(i)/(srcc(i) + 1.e-36_r8)</a>
+   538) <a name="l538" style="background-color: #ffffff"></a>
+   539) <a name="l539" style="background-color: #ffffff">         ! total stratiform scavenging</a>
+   540) <a name="l540" style="background-color: #ffffff">         srcs(i) = st_scav_ic(i) + st_scav_bc(i)</a>
+   541) <a name="l541" style="background-color: #ffffff">         fins(i) = st_scav_ic(i)/(srcs(i) + 1.e-36_r8)</a>
+   542) <a name="l542" style="background-color: #ffffff"></a>
+   543) <a name="l543" style="background-color: #ffffff">         ! make sure we dont take out more than is there</a>
+   544) <a name="l544" style="background-color: #ffffff">         ! ratio of amount available to amount removed</a>
+   545) <a name="l545" style="background-color: #ffffff">         rat(i) = tracer(i,k)/max(deltat*(srcc(i)+srcs(i)),1.e-36_r8)</a>
+   546) <a name="l546" style="background-color: #ffffff">         if (rat(i).lt.1._r8) then</a>
+   547) <a name="l547" style="background-color: #ffffff">            srcs(i) = srcs(i)*rat(i)</a>
+   548) <a name="l548" style="background-color: #ffffff">            srcc(i) = srcc(i)*rat(i)</a>
+   549) <a name="l549" style="background-color: #ffffff">         endif</a>
+   550) <a name="l550" style="background-color: #ffffff">         srct(i) = (srcc(i)+srcs(i))*omsm</a>
+   551) <a name="l551" style="background-color: #ffffff"></a>
+   552) <a name="l552" style="background-color: #ffffff">            </a>
+   553) <a name="l553" style="background-color: #ffffff">         ! fraction that is not removed within the cloud</a>
+   554) <a name="l554" style="background-color: #ffffff">         ! (assumed to be interstitial, and subject to convective transport)</a>
+   555) <a name="l555" style="background-color: #ffffff">         fracp(i) = deltat*srct(i)/max(cldvst(i,k)*tracer(i,k),1.e-36_r8)  ! amount removed</a>
+   556) <a name="l556" style="background-color: #ffffff">         fracp(i) = max(0._r8,min(1._r8,fracp(i)))</a>
+   557) <a name="l557" style="background-color: #ffffff">         fracis(i,k) = 1._r8 - fracp(i)</a>
+   558) <a name="l558" style="background-color: #ffffff"></a>
+   559) <a name="l559" style="background-color: #ffffff">         ! tend is all tracer removed by scavenging, plus all re-appearing from evaporation above</a>
+   560) <a name="l560" style="background-color: #ffffff">         ! Sungsu added cumulus contribution in the below 3 blocks</a>
+   561) <a name="l561" style="background-color: #ffffff">         scavt(i,k) = -srct(i) + (fracev(i)*scavab(i)+fracev_cu(i)*scavabc(i))*rpdog(i)</a>
+   562) <a name="l562" style="background-color: #ffffff">         iscavt(i,k) = -(srcc(i)*finc(i) + srcs(i)*fins(i))*omsm</a>
+   563) <a name="l563" style="background-color: #ffffff"></a>
+   564) <a name="l564" style="background-color: #ffffff">         if ( </a><a style="background-color: #fafad2">present(icscavt) ) </a><a style="background-color: #ffffff">icscavt(i,k) = -(srcc(i)*finc(i)) * omsm</a>
+   565) <a name="l565" style="background-color: #ffffff">         if ( </a><a style="background-color: #fafad2">present(isscavt) ) </a><a style="background-color: #ffffff">isscavt(i,k) = -(srcs(i)*fins(i)) * omsm</a>
+   566) <a name="l566" style="background-color: #ffffff">         if ( </a><a style="background-color: #fafad2">present(bcscavt) ) </a><a style="background-color: #ffffff">bcscavt(i,k) = -(srcc(i) * (1-finc(i))) * omsm +  &amp;</a>
+   567) <a name="l567" style="background-color: #ffffff">            fracev_cu(i)*scavabc(i)*rpdog(i)</a>
+   568) <a name="l568" style="background-color: #ffffff"></a>
+   569) <a name="l569" style="background-color: #ffffff">         if ( </a><a style="background-color: #fafad2">present(bsscavt) ) </a><a style="background-color: #ffffff">bsscavt(i,k) = -(srcs(i) * (1-fins(i))) * omsm +  &amp;</a>
+   570) <a name="l570" style="background-color: #ffffff">            fracev(i)*scavab(i)*rpdog(i)</a>
+   571) <a name="l571" style="background-color: #ffffff">         dblchek(i) = tracer(i,k) + deltat*scavt(i,k)</a>
+   572) <a name="l572" style="background-color: #ffffff"></a>
+   573) <a name="l573" style="background-color: #ffffff">         ! now keep track of scavenged mass and precip</a>
+   574) <a name="l574" style="background-color: #ffffff">         scavab(i) = scavab(i)*(1-fracev(i)) + srcs(i)*pdog(i)</a>
+   575) <a name="l575" style="background-color: #ffffff">         precabs(i) = precabs(i) + (precs(i,k) - evaps(i,k))*pdog(i)</a>
+   576) <a name="l576" style="background-color: #ffffff">         scavabc(i) = scavabc(i)*(1-fracev_cu(i)) + srcc(i)*pdog(i)</a>
+   577) <a name="l577" style="background-color: #ffffff">         precabc(i) = precabc(i) + (cmfdqr(i,k) - evapc(i,k))*pdog(i)</a>
+   578) <a name="l578" style="background-color: #ffffff"></a>
+   579) <a name="l579" style="background-color: #ffffff">      end do ! End of i = 1, ncol</a>
+   580) <a name="l580" style="background-color: #ffffff"></a>
+   581) <a name="l581" style="background-color: #ffffff">      found = .false.</a>
+   582) <a name="l582" style="background-color: #ffffff">      do i = 1,ncol</a>
+   583) <a name="l583" style="background-color: #ffffff">         if ( dblchek(i) &lt; 0._r8 ) then</a>
+   584) <a name="l584" style="background-color: #ffff99">            found = .true.</a>
+   585) <a name="l585" style="background-color: #ffff99">            exit</a>
+   586) <a name="l586" style="background-color: #ffff99">         end if</a>
+   587) <a name="l587" style="background-color: #ffff99">      end do</a>
+   588) <a name="l588" style="background-color: #ffff99"></a>
+   589) <a name="l589" style="background-color: #ffffff">      if ( found ) then</a>
+   590) <a name="l590" style="background-color: #ffff99">         do i = 1,ncol</a>
+   591) <a name="l591" style="background-color: #ffff99">            if (dblchek(i) .lt. 0._r8) then</a>
+   592) <a name="l592" style="background-color: #ffff99">               write(iulog,*) ' wetdapa: negative value ', i, k, tracer(i,k), &amp;</a>
+   593) <a name="l593" style="background-color: #ffff99">                  dblchek(i), scavt(i,k), srct(i), rat(i), fracev(i)</a>
+   594) <a name="l594" style="background-color: #ffff99">            endif</a>
+   595) <a name="l595" style="background-color: #ffff99">         end do</a>
+   596) <a name="l596" style="background-color: #ffff99">      endif</a>
+   597) <a name="l597" style="background-color: #ffff99"></a>
+   598) <a name="l598" style="background-color: #ffff99">   end do ! End of k = 1, pver</a>
+   599) <a name="l599" style="background-color: #ffff99"></a>
+   600) <a name="l600" style="background-color: #ffffff">end subroutine wetdepa_v2</a>
+   601) <a name="l601" style="background-color: #ffffff"></a>
+   602) <a name="l602" style="background-color: #ffffff"></a>
+   603) <a name="l603" style="background-color: #ffffff">!==============================================================================</a>
+   604) <a name="l604" style="background-color: #ffffff"></a>
+   605) <a name="l605" style="background-color: #ffffff">! This is the frozen CAM4 version of wetdepa.</a>
+   606) <a name="l606" style="background-color: #ffffff"></a>
+   607) <a name="l607" style="background-color: #ffffff"></a>
+   608) <a name="l608" style="background-color: #ffffff">   subroutine </a><a style="background-color: #ffcccc">wetdepa_v1( t, p, q, pdel, &amp;</a>
+   609) <a name="l609" style="background-color: #ffcccc">                       cldt, cldc, cmfdqr, conicw, precs, conds, &amp;</a>
+   610) <a name="l610" style="background-color: #ffcccc">                       evaps, cwat, tracer, deltat, &amp;</a>
+   611) <a name="l611" style="background-color: #ffcccc">                       scavt, iscavt, cldv, fracis, sol_fact, ncol, &amp;</a>
+   612) <a name="l612" style="background-color: #ffcccc">                       scavcoef,icscavt, isscavt, bcscavt, bsscavt, &amp;</a>
+   613) <a name="l613" style="background-color: #ffcccc">                       sol_facti_in, sol_factbi_in, sol_factii_in, &amp;</a>
+   614) <a name="l614" style="background-color: #ffcccc">                       sol_factic_in, sol_factiic_in )</a>
+   615) <a name="l615" style="background-color: #ffcccc"></a>
+   616) <a name="l616" style="background-color: #ffcccc">      !----------------------------------------------------------------------- </a>
+   617) <a name="l617" style="background-color: #ffcccc">      ! Purpose: </a>
+   618) <a name="l618" style="background-color: #ffcccc">      ! scavenging code for very soluble aerosols</a>
+   619) <a name="l619" style="background-color: #ffcccc">      ! </a>
+   620) <a name="l620" style="background-color: #ffcccc">      ! Author: P. Rasch</a>
+   621) <a name="l621" style="background-color: #ffcccc">      ! Modified by T. Bond 3/2003 to track different removals</a>
+   622) <a name="l622" style="background-color: #ffcccc">      !-----------------------------------------------------------------------</a>
+   623) <a name="l623" style="background-color: #ffcccc"></a>
+   624) <a name="l624" style="background-color: #ffcccc">      implicit none</a>
+   625) <a name="l625" style="background-color: #ffcccc"></a>
+   626) <a name="l626" style="background-color: #ffcccc">      real(r8), intent(in) ::&amp;</a>
+   627) <a name="l627" style="background-color: #ffcccc">         t(pcols,pver),        &amp;! temperature</a>
+   628) <a name="l628" style="background-color: #ffcccc">         p(pcols,pver),        &amp;! pressure</a>
+   629) <a name="l629" style="background-color: #ffcccc">         q(pcols,pver),        &amp;! moisture</a>
+   630) <a name="l630" style="background-color: #ffcccc">         pdel(pcols,pver),     &amp;! pressure thikness</a>
+   631) <a name="l631" style="background-color: #ffcccc">         cldt(pcols,pver),    &amp;! total cloud fraction</a>
+   632) <a name="l632" style="background-color: #ffcccc">         cldc(pcols,pver),     &amp;! convective cloud fraction</a>
+   633) <a name="l633" style="background-color: #ffcccc">         cmfdqr(pcols,pver),   &amp;! rate of production of convective precip</a>
+   634) <a name="l634" style="background-color: #ffcccc">         conicw(pcols,pver),   &amp;! convective cloud water</a>
+   635) <a name="l635" style="background-color: #ffcccc">         cwat(pcols,pver),     &amp;! cloud water amount </a>
+   636) <a name="l636" style="background-color: #ffcccc">         precs(pcols,pver),    &amp;! rate of production of stratiform precip</a>
+   637) <a name="l637" style="background-color: #ffcccc">         conds(pcols,pver),    &amp;! rate of production of condensate</a>
+   638) <a name="l638" style="background-color: #ffcccc">         evaps(pcols,pver),    &amp;! rate of evaporation of precip</a>
+   639) <a name="l639" style="background-color: #ffcccc">         cldv(pcols,pver),     &amp;! total cloud fraction</a>
+   640) <a name="l640" style="background-color: #ffcccc">         deltat,               &amp;! time step</a>
+   641) <a name="l641" style="background-color: #ffcccc">         tracer(pcols,pver)     ! trace species</a>
+   642) <a name="l642" style="background-color: #ffcccc">      ! If subroutine is called with just sol_fact:</a>
+   643) <a name="l643" style="background-color: #ffcccc">            ! sol_fact is used for both in- and below-cloud scavenging</a>
+   644) <a name="l644" style="background-color: #ffcccc">      ! If subroutine is called with optional argument sol_facti_in:</a>
+   645) <a name="l645" style="background-color: #ffcccc">            ! sol_fact  is used for below cloud scavenging</a>
+   646) <a name="l646" style="background-color: #ffcccc">            ! sol_facti is used for in cloud scavenging</a>
+   647) <a name="l647" style="background-color: #ffcccc">         real(r8), intent(in) :: sol_fact ! solubility factor (fraction of aer scavenged below &amp; in, or just below or sol_facti_in is provided)</a>
+   648) <a name="l648" style="background-color: #ffcccc">         real(r8), intent(in), optional :: sol_facti_in   ! solubility factor (frac of aerosol scavenged in cloud)</a>
+   649) <a name="l649" style="background-color: #ffcccc">         real(r8), intent(in), optional :: sol_factbi_in  ! solubility factor (frac of aerosol scavenged below cloud by ice)</a>
+   650) <a name="l650" style="background-color: #ffcccc">         real(r8), intent(in), optional :: sol_factii_in  ! solubility factor (frac of aerosol scavenged in cloud by ice)</a>
+   651) <a name="l651" style="background-color: #ffcccc">         real(r8), intent(in), optional :: sol_factic_in(pcols,pver)  ! sol_facti_in for convective clouds</a>
+   652) <a name="l652" style="background-color: #ffcccc">         real(r8), intent(in), optional :: sol_factiic_in ! sol_factii_in for convective clouds</a>
+   653) <a name="l653" style="background-color: #ffcccc">         real(r8), intent(in) :: scavcoef(pcols,pver) ! Dana and Hales coefficient (/mm) (0.1 if not MODAL_AERO)</a>
+   654) <a name="l654" style="background-color: #ffcccc">         </a>
+   655) <a name="l655" style="background-color: #ffcccc">      integer, intent(in) :: ncol</a>
+   656) <a name="l656" style="background-color: #ffcccc"></a>
+   657) <a name="l657" style="background-color: #ffcccc">      real(r8), intent(out) ::&amp;</a>
+   658) <a name="l658" style="background-color: #ffcccc">         scavt(pcols,pver),    &amp;! scavenging tend </a>
+   659) <a name="l659" style="background-color: #ffcccc">         iscavt(pcols,pver),   &amp;! incloud scavenging tends</a>
+   660) <a name="l660" style="background-color: #ffcccc">         fracis(pcols,pver)     ! fraction of species not scavenged</a>
+   661) <a name="l661" style="background-color: #ffcccc"></a>
+   662) <a name="l662" style="background-color: #ffcccc">      real(r8), intent(out), optional ::    icscavt(pcols,pver)     ! incloud, convective</a>
+   663) <a name="l663" style="background-color: #ffcccc">      real(r8), intent(out), optional ::    isscavt(pcols,pver)     ! incloud, stratiform</a>
+   664) <a name="l664" style="background-color: #ffcccc">      real(r8), intent(out), optional ::    bcscavt(pcols,pver)     ! below cloud, convective</a>
+   665) <a name="l665" style="background-color: #ffcccc">      real(r8), intent(out), optional ::    bsscavt(pcols,pver)     ! below cloud, stratiform</a>
+   666) <a name="l666" style="background-color: #ffcccc"></a>
+   667) <a name="l667" style="background-color: #ffcccc">      ! local variables</a>
+   668) <a name="l668" style="background-color: #ffcccc"></a>
+   669) <a name="l669" style="background-color: #ffcccc">      integer i                 ! x index</a>
+   670) <a name="l670" style="background-color: #ffcccc">      integer k                 ! z index</a>
+   671) <a name="l671" style="background-color: #ffcccc"></a>
+   672) <a name="l672" style="background-color: #ffcccc">      real(r8) adjfac               ! factor stolen from cmfmca</a>
+   673) <a name="l673" style="background-color: #ffcccc">      real(r8) aqfrac               ! fraction of tracer in aqueous phase</a>
+   674) <a name="l674" style="background-color: #ffcccc">      real(r8) cwatc                ! local convective total water amount </a>
+   675) <a name="l675" style="background-color: #ffcccc">      real(r8) cwats                ! local stratiform total water amount </a>
+   676) <a name="l676" style="background-color: #ffcccc">      real(r8) cwatp                ! local water amount falling from above precip</a>
+   677) <a name="l677" style="background-color: #ffcccc">      real(r8) fracev(pcols)        ! fraction of precip from above that is evaporating</a>
+   678) <a name="l678" style="background-color: #ffcccc">      real(r8) fracp                ! fraction of cloud water converted to precip</a>
+   679) <a name="l679" style="background-color: #ffcccc">      real(r8) gafrac               ! fraction of tracer in gas phasea</a>
+   680) <a name="l680" style="background-color: #ffcccc">      real(r8) hconst               ! henry's law solubility constant when equation is expressed</a>
+   681) <a name="l681" style="background-color: #ffcccc">                                ! in terms of mixing ratios</a>
+   682) <a name="l682" style="background-color: #ffcccc">      real(r8) mpla                 ! moles / liter H2O entering the layer from above</a>
+   683) <a name="l683" style="background-color: #ffcccc">      real(r8) mplb                 ! moles / liter H2O leaving the layer below</a>
+   684) <a name="l684" style="background-color: #ffcccc">      real(r8) omsm                 ! 1 - (a small number)</a>
+   685) <a name="l685" style="background-color: #ffcccc">      real(r8) part                 !  partial pressure of tracer in atmospheres</a>
+   686) <a name="l686" style="background-color: #ffcccc">      real(r8) patm                 ! total pressure in atmospheres</a>
+   687) <a name="l687" style="background-color: #ffcccc">      real(r8) pdog                 ! work variable (pdel/gravit)</a>
+   688) <a name="l688" style="background-color: #ffcccc">      real(r8) precabc(pcols)       ! conv precip from above (work array)</a>
+   689) <a name="l689" style="background-color: #ffcccc">      real(r8) precabs(pcols)       ! strat precip from above (work array)</a>
+   690) <a name="l690" style="background-color: #ffcccc">      real(r8) precbl               ! precip falling out of level (work array)</a>
+   691) <a name="l691" style="background-color: #ffcccc">      real(r8) precmin              ! minimum convective precip causing scavenging</a>
+   692) <a name="l692" style="background-color: #ffcccc">      real(r8) rat(pcols)           ! ratio of amount available to amount removed</a>
+   693) <a name="l693" style="background-color: #ffcccc">      real(r8) scavab(pcols)        ! scavenged tracer flux from above (work array)</a>
+   694) <a name="l694" style="background-color: #ffcccc">      real(r8) scavabc(pcols)       ! scavenged tracer flux from above (work array)</a>
+   695) <a name="l695" style="background-color: #ffcccc">      real(r8) srcc                 ! tend for convective rain</a>
+   696) <a name="l696" style="background-color: #ffcccc">      real(r8) srcs                 ! tend for stratiform rain</a>
+   697) <a name="l697" style="background-color: #ffcccc">      real(r8) srct(pcols)          ! work variable</a>
+   698) <a name="l698" style="background-color: #ffcccc">      real(r8) tracab(pcols)        ! column integrated tracer amount</a>
+   699) <a name="l699" style="background-color: #ffcccc"></a>
+   700) <a name="l700" style="background-color: #ffcccc">      real(r8) fins                 ! fraction of rem. rate by strat rain</a>
+   701) <a name="l701" style="background-color: #ffcccc">      real(r8) finc                 ! fraction of rem. rate by conv. rain</a>
+   702) <a name="l702" style="background-color: #ffcccc">      real(r8) srcs1                ! work variable</a>
+   703) <a name="l703" style="background-color: #ffcccc">      real(r8) srcs2                ! work variable</a>
+   704) <a name="l704" style="background-color: #ffcccc">      real(r8) tc                   ! temp in celcius</a>
+   705) <a name="l705" style="background-color: #ffcccc">      real(r8) weight               ! fraction of condensate which is ice</a>
+   706) <a name="l706" style="background-color: #ffcccc">      real(r8) cldmabs(pcols)       ! maximum cloud at or above this level</a>
+   707) <a name="l707" style="background-color: #ffcccc">      real(r8) cldmabc(pcols)       ! maximum cloud at or above this level</a>
+   708) <a name="l708" style="background-color: #ffcccc">      real(r8) odds                 ! limit on removal rate (proportional to prec)</a>
+   709) <a name="l709" style="background-color: #ffcccc">      real(r8) dblchek(pcols)</a>
+   710) <a name="l710" style="background-color: #ffcccc">      logical :: found</a>
+   711) <a name="l711" style="background-color: #ffcccc"></a>
+   712) <a name="l712" style="background-color: #ffcccc">      real(r8) sol_facti,  sol_factb  ! in cloud and below cloud fraction of aerosol scavenged</a>
+   713) <a name="l713" style="background-color: #ffcccc">      real(r8) sol_factii, sol_factbi ! in cloud and below cloud fraction of aerosol scavenged by ice</a>
+   714) <a name="l714" style="background-color: #ffcccc">      real(r8) sol_factic(pcols,pver)             ! sol_facti for convective clouds</a>
+   715) <a name="l715" style="background-color: #ffcccc">      real(r8) sol_factiic            ! sol_factii for convective clouds</a>
+   716) <a name="l716" style="background-color: #ffcccc">      ! sol_factic &amp; solfact_iic added for MODAL_AERO.  </a>
+   717) <a name="l717" style="background-color: #ffcccc">      ! For stratiform cloud, cloudborne aerosol is treated explicitly,</a>
+   718) <a name="l718" style="background-color: #ffcccc">      !    and sol_facti is 1.0 for cloudborne, 0.0 for interstitial.</a>
+   719) <a name="l719" style="background-color: #ffcccc">      ! For convective cloud, cloudborne aerosol is not treated explicitly,</a>
+   720) <a name="l720" style="background-color: #ffcccc">      !    and sol_factic is 1.0 for both cloudborne and interstitial.</a>
+   721) <a name="l721" style="background-color: #ffcccc"></a>
+   722) <a name="l722" style="background-color: #ffcccc">      ! ------------------------------------------------------------------------</a>
+   723) <a name="l723" style="background-color: #ffcccc">!      omsm = 1.-1.e-10          ! used to prevent roundoff errors below zero</a>
+   724) <a name="l724" style="background-color: #ffcccc">      omsm = 1._r8-2*epsilon(1._r8) ! used to prevent roundoff errors below zero</a>
+   725) <a name="l725" style="background-color: #ffcccc">      precmin =  0.1_r8/8.64e4_r8      ! set critical value to 0.1 mm/day in kg/m2/s</a>
+   726) <a name="l726" style="background-color: #ffcccc"></a>
+   727) <a name="l727" style="background-color: #ffcccc">      adjfac = deltat/(max(deltat,cmftau)) ! adjustment factor from hack scheme</a>
+   728) <a name="l728" style="background-color: #ffcccc"></a>
+   729) <a name="l729" style="background-color: #ffcccc">      ! default (if other sol_facts aren't in call, set all to required sol_fact</a>
+   730) <a name="l730" style="background-color: #ffcccc">      sol_facti = sol_fact</a>
+   731) <a name="l731" style="background-color: #ffcccc">      sol_factb = sol_fact</a>
+   732) <a name="l732" style="background-color: #ffcccc">      sol_factii = sol_fact</a>
+   733) <a name="l733" style="background-color: #ffcccc">      sol_factbi = sol_fact</a>
+   734) <a name="l734" style="background-color: #ffcccc"></a>
+   735) <a name="l735" style="background-color: #ffcccc">      if ( present(sol_facti_in) )  sol_facti = sol_facti_in</a>
+   736) <a name="l736" style="background-color: #ffcccc">      if ( present(sol_factii_in) )  sol_factii = sol_factii_in</a>
+   737) <a name="l737" style="background-color: #ffcccc">      if ( present(sol_factbi_in) )  sol_factbi = sol_factbi_in</a>
+   738) <a name="l738" style="background-color: #ffcccc"></a>
+   739) <a name="l739" style="background-color: #ffcccc">      sol_factic  = sol_facti</a>
+   740) <a name="l740" style="background-color: #ffcccc">      sol_factiic = sol_factii</a>
+   741) <a name="l741" style="background-color: #ffcccc">      if ( present(sol_factic_in ) )  sol_factic  = sol_factic_in</a>
+   742) <a name="l742" style="background-color: #ffcccc">      if ( present(sol_factiic_in) )  sol_factiic = sol_factiic_in</a>
+   743) <a name="l743" style="background-color: #ffcccc"></a>
+   744) <a name="l744" style="background-color: #ffcccc">      ! this section of code is for highly soluble aerosols,</a>
+   745) <a name="l745" style="background-color: #ffcccc">      ! the assumption is that within the cloud that</a>
+   746) <a name="l746" style="background-color: #ffcccc">      ! all the tracer is in the cloud water</a>
+   747) <a name="l747" style="background-color: #ffcccc">      !</a>
+   748) <a name="l748" style="background-color: #ffcccc">      ! for both convective and stratiform clouds, </a>
+   749) <a name="l749" style="background-color: #ffcccc">      ! the fraction of cloud water converted to precip defines</a>
+   750) <a name="l750" style="background-color: #ffcccc">      ! the amount of tracer which is pulled out.</a>
+   751) <a name="l751" style="background-color: #ffcccc">      !</a>
+   752) <a name="l752" style="background-color: #ffcccc"></a>
+   753) <a name="l753" style="background-color: #ffcccc">      do i = 1,pcols</a>
+   754) <a name="l754" style="background-color: #ffcccc">         precabs(i) = 0</a>
+   755) <a name="l755" style="background-color: #ffcccc">         precabc(i) = 0</a>
+   756) <a name="l756" style="background-color: #ffcccc">         scavab(i) = 0</a>
+   757) <a name="l757" style="background-color: #ffcccc">         scavabc(i) = 0</a>
+   758) <a name="l758" style="background-color: #ffcccc">         tracab(i) = 0</a>
+   759) <a name="l759" style="background-color: #ffcccc">         cldmabs(i) = 0</a>
+   760) <a name="l760" style="background-color: #ffcccc">         cldmabc(i) = 0</a>
+   761) <a name="l761" style="background-color: #ffcccc">      end do</a>
+   762) <a name="l762" style="background-color: #ffcccc"></a>
+   763) <a name="l763" style="background-color: #ffcccc">      do k = 1,pver</a>
+   764) <a name="l764" style="background-color: #ffcccc">         do i = 1,ncol</a>
+   765) <a name="l765" style="background-color: #ffcccc">            tc     = t(i,k) - tmelt</a>
+   766) <a name="l766" style="background-color: #ffcccc">            weight = max(0._r8,min(-tc*0.05_r8,1.0_r8)) ! fraction of condensate that is ice</a>
+   767) <a name="l767" style="background-color: #ffcccc">            weight = 0._r8                                 ! assume no ice</a>
+   768) <a name="l768" style="background-color: #ffcccc"></a>
+   769) <a name="l769" style="background-color: #ffcccc">            pdog = pdel(i,k)/gravit</a>
+   770) <a name="l770" style="background-color: #ffcccc"></a>
+   771) <a name="l771" style="background-color: #ffcccc">            ! ****************** Evaporation **************************</a>
+   772) <a name="l772" style="background-color: #ffcccc">            ! calculate the fraction of strat precip from above </a>
+   773) <a name="l773" style="background-color: #ffcccc">            !                 which evaporates within this layer</a>
+   774) <a name="l774" style="background-color: #ffcccc">            fracev(i) = evaps(i,k)*pdel(i,k)/gravit &amp;</a>
+   775) <a name="l775" style="background-color: #ffcccc">                     /max(1.e-12_r8,precabs(i))</a>
+   776) <a name="l776" style="background-color: #ffcccc"></a>
+   777) <a name="l777" style="background-color: #ffcccc">            ! trap to ensure reasonable ratio bounds</a>
+   778) <a name="l778" style="background-color: #ffcccc">            fracev(i) = max(0._r8,min(1._r8,fracev(i)))</a>
+   779) <a name="l779" style="background-color: #ffcccc"></a>
+   780) <a name="l780" style="background-color: #ffcccc">            ! ****************** Convection ***************************</a>
+   781) <a name="l781" style="background-color: #ffcccc">            ! now do the convective scavenging</a>
+   782) <a name="l782" style="background-color: #ffcccc"></a>
+   783) <a name="l783" style="background-color: #ffcccc">            ! set odds proportional to fraction of the grid box that is swept by the </a>
+   784) <a name="l784" style="background-color: #ffcccc">            ! precipitation =precabc/rhoh20*(area of sphere projected on plane</a>
+   785) <a name="l785" style="background-color: #ffcccc">            !                                /volume of sphere)*deltat</a>
+   786) <a name="l786" style="background-color: #ffcccc">            ! assume the radius of a raindrop is 1 e-3 m from Rogers and Yau,</a>
+   787) <a name="l787" style="background-color: #ffcccc">            ! unless the fraction of the area that is cloud is less than odds, in which</a>
+   788) <a name="l788" style="background-color: #ffcccc">            ! case use the cloud fraction (assumes precabs is in kg/m2/s)</a>
+   789) <a name="l789" style="background-color: #ffcccc">            ! is really: precabs*3/4/1000./1e-3*deltat</a>
+   790) <a name="l790" style="background-color: #ffcccc">            ! here I use .1 from Balkanski</a>
+   791) <a name="l791" style="background-color: #ffcccc">            !</a>
+   792) <a name="l792" style="background-color: #ffcccc">            ! use a local rate of convective rain production for incloud scav</a>
+   793) <a name="l793" style="background-color: #ffcccc">            !odds=max(min(1._r8, &amp;</a>
+   794) <a name="l794" style="background-color: #ffcccc">            !     cmfdqr(i,k)*pdel(i,k)/gravit*0.1_r8*deltat),0._r8)</a>
+   795) <a name="l795" style="background-color: #ffcccc">            !++mcb -- change cldc to cldt; change cldt to cldv (9/17/96)</a>
+   796) <a name="l796" style="background-color: #ffcccc">            !            srcs1 =  cldt(i,k)*odds*tracer(i,k)*(1.-weight) &amp;</a>
+   797) <a name="l797" style="background-color: #ffcccc">            ! srcs1 =  cldv(i,k)*odds*tracer(i,k)*(1.-weight) &amp;</a>
+   798) <a name="l798" style="background-color: #ffcccc">            !srcs1 =  cldc(i,k)*odds*tracer(i,k)*(1.-weight) &amp;</a>
+   799) <a name="l799" style="background-color: #ffcccc">            !         /deltat </a>
+   800) <a name="l800" style="background-color: #ffcccc"></a>
+   801) <a name="l801" style="background-color: #ffcccc">            ! fraction of convective cloud water converted to rain</a>
+   802) <a name="l802" style="background-color: #ffcccc">            fracp = cmfdqr(i,k)*deltat/max(1.e-8_r8,conicw(i,k))</a>
+   803) <a name="l803" style="background-color: #ffcccc">            ! note cmfdrq can be negative from evap of rain, so constrain it</a>
+   804) <a name="l804" style="background-color: #ffcccc">            fracp = max(min(1._r8,fracp),0._r8)</a>
+   805) <a name="l805" style="background-color: #ffcccc">            ! remove that amount from within the convective area</a>
+   806) <a name="l806" style="background-color: #ffcccc">!           srcs1 = cldc(i,k)*fracp*tracer(i,k)*(1._r8-weight)/deltat ! liquid only</a>
+   807) <a name="l807" style="background-color: #ffcccc">!           srcs1 = cldc(i,k)*fracp*tracer(i,k)/deltat             ! any condensation</a>
+   808) <a name="l808" style="background-color: #ffcccc">!           srcs1 = 0.</a>
+   809) <a name="l809" style="background-color: #ffcccc">            srcs1 = sol_factic(i,k)*cldt(i,k)*fracp*tracer(i,k)*(1._r8-weight)/deltat &amp;  ! liquid</a>
+   810) <a name="l810" style="background-color: #ffcccc">                 +  sol_factiic*cldt(i,k)*fracp*tracer(i,k)*(weight)/deltat      ! ice</a>
+   811) <a name="l811" style="background-color: #ffcccc"></a>
+   812) <a name="l812" style="background-color: #ffcccc"></a>
+   813) <a name="l813" style="background-color: #ffcccc">            !--mcb</a>
+   814) <a name="l814" style="background-color: #ffcccc"></a>
+   815) <a name="l815" style="background-color: #ffcccc">            ! scavenge below cloud</a>
+   816) <a name="l816" style="background-color: #ffcccc"></a>
+   817) <a name="l817" style="background-color: #ffcccc">            !            cldmabc(i) = max(cldc(i,k),cldmabc(i))</a>
+   818) <a name="l818" style="background-color: #ffcccc">            !            cldmabc(i) = max(cldt(i,k),cldmabc(i))</a>
+   819) <a name="l819" style="background-color: #ffcccc">            cldmabc(i) = max(cldv(i,k),cldmabc(i))</a>
+   820) <a name="l820" style="background-color: #ffcccc">            cldmabc(i) = cldv(i,k)</a>
+   821) <a name="l821" style="background-color: #ffcccc"></a>
+   822) <a name="l822" style="background-color: #ffcccc">            odds=max( &amp;</a>
+   823) <a name="l823" style="background-color: #ffcccc">                 min(1._r8,precabc(i)/max(cldmabc(i),1.e-5_r8) &amp;</a>
+   824) <a name="l824" style="background-color: #ffcccc">                 *scavcoef(i,k)*deltat),0._r8) ! Dana and Hales coefficient (/mm)</a>
+   825) <a name="l825" style="background-color: #ffcccc">            srcs2 = sol_factb*cldmabc(i)*odds*tracer(i,k)*(1._r8-weight)/deltat &amp; ! liquid</a>
+   826) <a name="l826" style="background-color: #ffcccc">                 +  sol_factbi*cldmabc(i)*odds*tracer(i,k)*(weight)/deltat    !ice</a>
+   827) <a name="l827" style="background-color: #ffcccc">            !Note that using the temperature-determined weight doesn't make much sense here</a>
+   828) <a name="l828" style="background-color: #ffcccc"></a>
+   829) <a name="l829" style="background-color: #ffcccc"></a>
+   830) <a name="l830" style="background-color: #ffcccc">            srcc = srcs1 + srcs2  ! convective tend by both processes</a>
+   831) <a name="l831" style="background-color: #ffcccc">            finc = srcs1/(srcc + 1.e-36_r8) ! fraction in-cloud</a>
+   832) <a name="l832" style="background-color: #ffcccc"></a>
+   833) <a name="l833" style="background-color: #ffcccc">            ! ****************** Stratiform ***********************</a>
+   834) <a name="l834" style="background-color: #ffcccc">            ! now do the stratiform scavenging</a>
+   835) <a name="l835" style="background-color: #ffcccc"></a>
+   836) <a name="l836" style="background-color: #ffcccc">            ! incloud scavenging</a>
+   837) <a name="l837" style="background-color: #ffcccc"></a>
+   838) <a name="l838" style="background-color: #ffcccc">            ! fracp is the fraction of cloud water converted to precip</a>
+   839) <a name="l839" style="background-color: #ffcccc">            fracp =  precs(i,k)*deltat/max(cwat(i,k),1.e-12_r8)</a>
+   840) <a name="l840" style="background-color: #ffcccc">            fracp = max(0._r8,min(1._r8,fracp))</a>
+   841) <a name="l841" style="background-color: #ffcccc">!           fracp = 0.     ! for debug</a>
+   842) <a name="l842" style="background-color: #ffcccc"></a>
+   843) <a name="l843" style="background-color: #ffcccc">            ! assume the corresponding amnt of tracer is removed</a>
+   844) <a name="l844" style="background-color: #ffcccc">            !++mcb -- remove cldc; change cldt to cldv </a>
+   845) <a name="l845" style="background-color: #ffcccc">            !            srcs1 = (cldt(i,k)-cldc(i,k))*fracp*tracer(i,k)/deltat</a>
+   846) <a name="l846" style="background-color: #ffcccc">            !            srcs1 = cldv(i,k)*fracp*tracer(i,k)/deltat &amp;</a>
+   847) <a name="l847" style="background-color: #ffcccc">!           srcs1 = cldt(i,k)*fracp*tracer(i,k)/deltat            ! all condensate</a>
+   848) <a name="l848" style="background-color: #ffcccc">            srcs1 = sol_facti*cldt(i,k)*fracp*tracer(i,k)/deltat*(1._r8-weight) &amp;  ! liquid</a>
+   849) <a name="l849" style="background-color: #ffcccc">                 + sol_factii*cldt(i,k)*fracp*tracer(i,k)/deltat*(weight)       ! ice</a>
+   850) <a name="l850" style="background-color: #ffcccc"></a>
+   851) <a name="l851" style="background-color: #ffcccc"></a>
+   852) <a name="l852" style="background-color: #ffcccc">            ! below cloud scavenging</a>
+   853) <a name="l853" style="background-color: #ffcccc"></a>
+   854) <a name="l854" style="background-color: #ffcccc">!           volume undergoing below cloud scavenging</a>
+   855) <a name="l855" style="background-color: #ffcccc">            cldmabs(i) = cldv(i,k)   ! precipitating volume</a>
+   856) <a name="l856" style="background-color: #ffcccc">!           cldmabs(i) = cldt(i,k)   ! local cloud volume</a>
+   857) <a name="l857" style="background-color: #ffcccc"></a>
+   858) <a name="l858" style="background-color: #ffcccc">            odds = precabs(i)/max(cldmabs(i),1.e-5_r8)*scavcoef(i,k)*deltat</a>
+   859) <a name="l859" style="background-color: #ffcccc">            odds = max(min(1._r8,odds),0._r8)</a>
+   860) <a name="l860" style="background-color: #ffcccc">            srcs2 =sol_factb*(cldmabs(i)*odds) *tracer(i,k)*(1._r8-weight)/deltat &amp; ! liquid</a>
+   861) <a name="l861" style="background-color: #ffcccc">                 + sol_factbi*(cldmabs(i)*odds) *tracer(i,k)*(weight)/deltat       ! ice</a>
+   862) <a name="l862" style="background-color: #ffcccc">            !Note that using the temperature-determined weight doesn't make much sense here</a>
+   863) <a name="l863" style="background-color: #ffcccc"></a>
+   864) <a name="l864" style="background-color: #ffcccc"></a>
+   865) <a name="l865" style="background-color: #ffcccc">            srcs = srcs1 + srcs2             ! total stratiform scavenging</a>
+   866) <a name="l866" style="background-color: #ffcccc">            fins=srcs1/(srcs + 1.e-36_r8)    ! fraction taken by incloud processes</a>
+   867) <a name="l867" style="background-color: #ffcccc"></a>
+   868) <a name="l868" style="background-color: #ffcccc">            ! make sure we dont take out more than is there</a>
+   869) <a name="l869" style="background-color: #ffcccc">            ! ratio of amount available to amount removed</a>
+   870) <a name="l870" style="background-color: #ffcccc">            rat(i) = tracer(i,k)/max(deltat*(srcc+srcs),1.e-36_r8)</a>
+   871) <a name="l871" style="background-color: #ffcccc">            if (rat(i).lt.1._r8) then</a>
+   872) <a name="l872" style="background-color: #ffcccc">               srcs = srcs*rat(i)</a>
+   873) <a name="l873" style="background-color: #ffcccc">               srcc = srcc*rat(i)</a>
+   874) <a name="l874" style="background-color: #ffcccc">            endif</a>
+   875) <a name="l875" style="background-color: #ffcccc">            srct(i) = (srcc+srcs)*omsm</a>
+   876) <a name="l876" style="background-color: #ffcccc"></a>
+   877) <a name="l877" style="background-color: #ffcccc">            </a>
+   878) <a name="l878" style="background-color: #ffcccc">            ! fraction that is not removed within the cloud</a>
+   879) <a name="l879" style="background-color: #ffcccc">            ! (assumed to be interstitial, and subject to convective transport)</a>
+   880) <a name="l880" style="background-color: #ffcccc">            fracp = deltat*srct(i)/max(cldmabs(i)*tracer(i,k),1.e-36_r8)  ! amount removed</a>
+   881) <a name="l881" style="background-color: #ffcccc">            fracp = max(0._r8,min(1._r8,fracp))</a>
+   882) <a name="l882" style="background-color: #ffcccc">            fracis(i,k) = 1._r8 - fracp</a>
+   883) <a name="l883" style="background-color: #ffcccc"></a>
+   884) <a name="l884" style="background-color: #ffcccc">            ! tend is all tracer removed by scavenging, plus all re-appearing from evaporation above</a>
+   885) <a name="l885" style="background-color: #ffcccc">            scavt(i,k) = -srct(i) + fracev(i)*scavab(i)*gravit/pdel(i,k)</a>
+   886) <a name="l886" style="background-color: #ffcccc">            iscavt(i,k) = -(srcc*finc + srcs*fins)*omsm</a>
+   887) <a name="l887" style="background-color: #ffcccc"></a>
+   888) <a name="l888" style="background-color: #ffcccc">            if ( present(icscavt) ) icscavt(i,k) = -(srcc*finc) * omsm</a>
+   889) <a name="l889" style="background-color: #ffcccc">            if ( present(isscavt) ) isscavt(i,k) = -(srcs*fins) * omsm</a>
+   890) <a name="l890" style="background-color: #ffcccc">            if ( present(bcscavt) ) bcscavt(i,k) = -(srcc * (1-finc)) * omsm</a>
+   891) <a name="l891" style="background-color: #ffcccc">            if ( present(bsscavt) ) bsscavt(i,k) = -(srcs * (1-fins)) * omsm +  &amp;</a>
+   892) <a name="l892" style="background-color: #ffcccc">                 fracev(i)*scavab(i)*gravit/pdel(i,k)</a>
+   893) <a name="l893" style="background-color: #ffcccc"></a>
+   894) <a name="l894" style="background-color: #ffcccc">            dblchek(i) = tracer(i,k) + deltat*scavt(i,k)</a>
+   895) <a name="l895" style="background-color: #ffcccc"></a>
+   896) <a name="l896" style="background-color: #ffcccc">            ! now keep track of scavenged mass and precip</a>
+   897) <a name="l897" style="background-color: #ffcccc">            scavab(i) = scavab(i)*(1-fracev(i)) + srcs*pdel(i,k)/gravit</a>
+   898) <a name="l898" style="background-color: #ffcccc">            precabs(i) = precabs(i) + (precs(i,k) - evaps(i,k))*pdel(i,k)/gravit</a>
+   899) <a name="l899" style="background-color: #ffcccc">            scavabc(i) = scavabc(i) + srcc*pdel(i,k)/gravit</a>
+   900) <a name="l900" style="background-color: #ffcccc">            precabc(i) = precabc(i) + (cmfdqr(i,k))*pdel(i,k)/gravit</a>
+   901) <a name="l901" style="background-color: #ffcccc">            tracab(i) = tracab(i) + tracer(i,k)*pdel(i,k)/gravit</a>
+   902) <a name="l902" style="background-color: #ffcccc"></a>
+   903) <a name="l903" style="background-color: #ffcccc">         end do</a>
+   904) <a name="l904" style="background-color: #ffcccc"></a>
+   905) <a name="l905" style="background-color: #ffcccc">         found = .false.</a>
+   906) <a name="l906" style="background-color: #ffcccc">         do i = 1,ncol</a>
+   907) <a name="l907" style="background-color: #ffcccc">            if ( dblchek(i) &lt; 0._r8 ) then</a>
+   908) <a name="l908" style="background-color: #ffcccc">               found = .true.</a>
+   909) <a name="l909" style="background-color: #ffcccc">               exit</a>
+   910) <a name="l910" style="background-color: #ffcccc">            end if</a>
+   911) <a name="l911" style="background-color: #ffcccc">         end do</a>
+   912) <a name="l912" style="background-color: #ffcccc"></a>
+   913) <a name="l913" style="background-color: #ffcccc">         if ( found ) then</a>
+   914) <a name="l914" style="background-color: #ffcccc">            do i = 1,ncol</a>
+   915) <a name="l915" style="background-color: #ffcccc">               if (dblchek(i) .lt. 0._r8) then</a>
+   916) <a name="l916" style="background-color: #ffcccc">                  write(iulog,*) ' wetdapa: negative value ', i, k, tracer(i,k), &amp;</a>
+   917) <a name="l917" style="background-color: #ffcccc">                       dblchek(i), scavt(i,k), srct(i), rat(i), fracev(i)</a>
+   918) <a name="l918" style="background-color: #ffcccc">               endif</a>
+   919) <a name="l919" style="background-color: #ffcccc">            end do</a>
+   920) <a name="l920" style="background-color: #ffcccc">         endif</a>
+   921) <a name="l921" style="background-color: #ffcccc"></a>
+   922) <a name="l922" style="background-color: #ffcccc">      end do</a>
+   923) <a name="l923" style="background-color: #ffcccc"></a>
+   924) <a name="l924" style="background-color: #ffcccc">   end subroutine wetdepa_v1</a>
+   925) <a name="l925" style="background-color: #ffffff"></a>
+   926) <a name="l926" style="background-color: #ffffff">!==============================================================================</a>
+   927) <a name="l927" style="background-color: #ffffff"></a>
+   928) <a name="l928" style="background-color: #ffffff">! wetdepg is currently being used for both CAM4 and CAM5 by making use of the</a>
+   929) <a name="l929" style="background-color: #ffffff">! cam_physpkg_is method.</a>
+   930) <a name="l930" style="background-color: #ffffff"></a>
+   931) <a name="l931" style="background-color: #ffffff">   subroutine </a><a style="background-color: #ffcccc">wetdepg( t, p, q, pdel, &amp;</a>
+   932) <a name="l932" style="background-color: #ffcccc">                       cldt, cldc, cmfdqr, evapc, precs, evaps, &amp;</a>
+   933) <a name="l933" style="background-color: #ffcccc">                       rain, cwat, tracer, deltat, molwt, &amp;</a>
+   934) <a name="l934" style="background-color: #ffcccc">                       solconst, scavt, iscavt, cldv, icwmr1, &amp;</a>
+   935) <a name="l935" style="background-color: #ffcccc">                       icwmr2, fracis, ncol )</a>
+   936) <a name="l936" style="background-color: #ffcccc"></a>
+   937) <a name="l937" style="background-color: #ffcccc">      !----------------------------------------------------------------------- </a>
+   938) <a name="l938" style="background-color: #ffcccc">      ! Purpose: </a>
+   939) <a name="l939" style="background-color: #ffcccc">      ! scavenging of gas phase constituents by henry's law</a>
+   940) <a name="l940" style="background-color: #ffcccc">      ! </a>
+   941) <a name="l941" style="background-color: #ffcccc">      ! Author: P. Rasch</a>
+   942) <a name="l942" style="background-color: #ffcccc">      !-----------------------------------------------------------------------</a>
+   943) <a name="l943" style="background-color: #ffcccc"></a>
+   944) <a name="l944" style="background-color: #ffcccc">      real(r8), intent(in) ::&amp;</a>
+   945) <a name="l945" style="background-color: #ffcccc">         t(pcols,pver),        &amp;! temperature</a>
+   946) <a name="l946" style="background-color: #ffcccc">         p(pcols,pver),        &amp;! pressure</a>
+   947) <a name="l947" style="background-color: #ffcccc">         q(pcols,pver),        &amp;! moisture</a>
+   948) <a name="l948" style="background-color: #ffcccc">         pdel(pcols,pver),     &amp;! pressure thikness</a>
+   949) <a name="l949" style="background-color: #ffcccc">         cldt(pcols,pver),     &amp;! total cloud fraction</a>
+   950) <a name="l950" style="background-color: #ffcccc">         cldc(pcols,pver),     &amp;! convective cloud fraction</a>
+   951) <a name="l951" style="background-color: #ffcccc">         cmfdqr(pcols,pver),   &amp;! rate of production of convective precip</a>
+   952) <a name="l952" style="background-color: #ffcccc">         rain (pcols,pver),    &amp;! total rainwater mixing ratio</a>
+   953) <a name="l953" style="background-color: #ffcccc">         cwat(pcols,pver),     &amp;! cloud water amount </a>
+   954) <a name="l954" style="background-color: #ffcccc">         precs(pcols,pver),    &amp;! rate of production of stratiform precip</a>
+   955) <a name="l955" style="background-color: #ffcccc">         evaps(pcols,pver),    &amp;! rate of evaporation of precip</a>
+   956) <a name="l956" style="background-color: #ffcccc">! Sungsu</a>
+   957) <a name="l957" style="background-color: #ffcccc">         evapc(pcols,pver),    &amp;! Rate of evaporation of convective precipitation</a>
+   958) <a name="l958" style="background-color: #ffcccc">! Sungsu </a>
+   959) <a name="l959" style="background-color: #ffcccc">         cldv(pcols,pver),     &amp;! estimate of local volume occupied by clouds</a>
+   960) <a name="l960" style="background-color: #ffcccc">         icwmr1 (pcols,pver),  &amp;! in cloud water mixing ration for zhang scheme</a>
+   961) <a name="l961" style="background-color: #ffcccc">         icwmr2 (pcols,pver),  &amp;! in cloud water mixing ration for hack  scheme</a>
+   962) <a name="l962" style="background-color: #ffcccc">         deltat,               &amp;! time step</a>
+   963) <a name="l963" style="background-color: #ffcccc">         tracer(pcols,pver),   &amp;! trace species</a>
+   964) <a name="l964" style="background-color: #ffcccc">         molwt                  ! molecular weights</a>
+   965) <a name="l965" style="background-color: #ffcccc"></a>
+   966) <a name="l966" style="background-color: #ffcccc">      integer, intent(in) :: ncol</a>
+   967) <a name="l967" style="background-color: #ffcccc"></a>
+   968) <a name="l968" style="background-color: #ffcccc">      real(r8) &amp;</a>
+   969) <a name="l969" style="background-color: #ffcccc">         solconst(pcols,pver)   ! Henry's law coefficient</a>
+   970) <a name="l970" style="background-color: #ffcccc"></a>
+   971) <a name="l971" style="background-color: #ffcccc">      real(r8), intent(out) ::&amp;</a>
+   972) <a name="l972" style="background-color: #ffcccc">         scavt(pcols,pver),    &amp;! scavenging tend </a>
+   973) <a name="l973" style="background-color: #ffcccc">         iscavt(pcols,pver),   &amp;! incloud scavenging tends</a>
+   974) <a name="l974" style="background-color: #ffcccc">         fracis(pcols, pver)    ! fraction of constituent that is insoluble</a>
+   975) <a name="l975" style="background-color: #ffcccc"></a>
+   976) <a name="l976" style="background-color: #ffcccc">      ! local variables</a>
+   977) <a name="l977" style="background-color: #ffcccc"></a>
+   978) <a name="l978" style="background-color: #ffcccc">      integer i                 ! x index</a>
+   979) <a name="l979" style="background-color: #ffcccc">      integer k                 ! z index</a>
+   980) <a name="l980" style="background-color: #ffcccc"></a>
+   981) <a name="l981" style="background-color: #ffcccc">      real(r8) adjfac               ! factor stolen from cmfmca</a>
+   982) <a name="l982" style="background-color: #ffcccc">      real(r8) aqfrac               ! fraction of tracer in aqueous phase</a>
+   983) <a name="l983" style="background-color: #ffcccc">      real(r8) cwatc                ! local convective total water amount </a>
+   984) <a name="l984" style="background-color: #ffcccc">      real(r8) cwats                ! local stratiform total water amount </a>
+   985) <a name="l985" style="background-color: #ffcccc">      real(r8) cwatl                ! local cloud liq water amount </a>
+   986) <a name="l986" style="background-color: #ffcccc">      real(r8) cwatp                ! local water amount falling from above precip</a>
+   987) <a name="l987" style="background-color: #ffcccc">      real(r8) cwatpl               ! local water amount falling from above precip (liq)</a>
+   988) <a name="l988" style="background-color: #ffcccc">      real(r8) cwatt                ! local sum of strat + conv total water amount </a>
+   989) <a name="l989" style="background-color: #ffcccc">      real(r8) cwatti               ! cwatt/cldv = cloudy grid volume mixing ratio</a>
+   990) <a name="l990" style="background-color: #ffcccc">      real(r8) fracev               ! fraction of precip from above that is evaporating</a>
+   991) <a name="l991" style="background-color: #ffcccc">      real(r8) fracp                ! fraction of cloud water converted to precip</a>
+   992) <a name="l992" style="background-color: #ffcccc">      real(r8) gafrac               ! fraction of tracer in gas phasea</a>
+   993) <a name="l993" style="background-color: #ffcccc">      real(r8) hconst               ! henry's law solubility constant when equation is expressed</a>
+   994) <a name="l994" style="background-color: #ffcccc">                                ! in terms of mixing ratios</a>
+   995) <a name="l995" style="background-color: #ffcccc">      real(r8) mpla                 ! moles / liter H2O entering the layer from above</a>
+   996) <a name="l996" style="background-color: #ffcccc">      real(r8) mplb                 ! moles / liter H2O leaving the layer below</a>
+   997) <a name="l997" style="background-color: #ffcccc">      real(r8) omsm                 ! 1 - (a small number)</a>
+   998) <a name="l998" style="background-color: #ffcccc">      real(r8) part                 !  partial pressure of tracer in atmospheres</a>
+   999) <a name="l999" style="background-color: #ffcccc">      real(r8) patm                 ! total pressure in atmospheres</a>
+  1000) <a name="l1000" style="background-color: #ffcccc">      real(r8) pdog                 ! work variable (pdel/gravit)</a>
+  1001) <a name="l1001" style="background-color: #ffcccc">      real(r8) precab(pcols)        ! precip from above (work array)</a>
+  1002) <a name="l1002" style="background-color: #ffcccc">      real(r8) precbl               ! precip work variable</a>
+  1003) <a name="l1003" style="background-color: #ffcccc">      real(r8) precxx               ! precip work variable</a>
+  1004) <a name="l1004" style="background-color: #ffcccc">      real(r8) precxx2               !</a>
+  1005) <a name="l1005" style="background-color: #ffcccc">      real(r8) precic               ! precip work variable</a>
+  1006) <a name="l1006" style="background-color: #ffcccc">      real(r8) rat                  ! ratio of amount available to amount removed</a>
+  1007) <a name="l1007" style="background-color: #ffcccc">      real(r8) scavab(pcols)        ! scavenged tracer flux from above (work array)</a>
+  1008) <a name="l1008" style="background-color: #ffcccc">      real(r8) scavabc(pcols)       ! scavenged tracer flux from above (work array)</a>
+  1009) <a name="l1009" style="background-color: #ffcccc"></a>
+  1010) <a name="l1010" style="background-color: #ffcccc">      real(r8) scavmax              ! an estimate of the max tracer avail for removal</a>
+  1011) <a name="l1011" style="background-color: #ffcccc">      real(r8) scavbl               ! flux removed at bottom of layer</a>
+  1012) <a name="l1012" style="background-color: #ffcccc">      real(r8) fins                 ! in cloud fraction removed by strat rain</a>
+  1013) <a name="l1013" style="background-color: #ffcccc">      real(r8) finc                 ! in cloud fraction removed by conv rain</a>
+  1014) <a name="l1014" style="background-color: #ffcccc">      real(r8) rate                 ! max removal rate estimate</a>
+  1015) <a name="l1015" style="background-color: #ffcccc">      real(r8) scavlimt             ! limiting value 1</a>
+  1016) <a name="l1016" style="background-color: #ffcccc">      real(r8) scavt1               ! limiting value 2</a>
+  1017) <a name="l1017" style="background-color: #ffcccc">      real(r8) scavin               ! scavenging by incloud processes</a>
+  1018) <a name="l1018" style="background-color: #ffcccc">      real(r8) scavbc               ! scavenging by below cloud processes</a>
+  1019) <a name="l1019" style="background-color: #ffcccc">      real(r8) tc</a>
+  1020) <a name="l1020" style="background-color: #ffcccc">      real(r8) weight               ! ice fraction</a>
+  1021) <a name="l1021" style="background-color: #ffcccc">      real(r8) wtpl                 ! work variable</a>
+  1022) <a name="l1022" style="background-color: #ffcccc">      real(r8) cldmabs(pcols)       ! maximum cloud at or above this level</a>
+  1023) <a name="l1023" style="background-color: #ffcccc">      real(r8) cldmabc(pcols)       ! maximum cloud at or above this level</a>
+  1024) <a name="l1024" style="background-color: #ffcccc">      !-----------------------------------------------------------</a>
+  1025) <a name="l1025" style="background-color: #ffcccc"></a>
+  1026) <a name="l1026" style="background-color: #ffcccc">      omsm = 1._r8-2*epsilon(1._r8)   ! used to prevent roundoff errors below zero</a>
+  1027) <a name="l1027" style="background-color: #ffcccc"></a>
+  1028) <a name="l1028" style="background-color: #ffcccc">      adjfac = deltat/(max(deltat,cmftau)) ! adjustment factor from hack scheme</a>
+  1029) <a name="l1029" style="background-color: #ffcccc"></a>
+  1030) <a name="l1030" style="background-color: #ffcccc">      ! zero accumulators</a>
+  1031) <a name="l1031" style="background-color: #ffcccc">      do i = 1,pcols</a>
+  1032) <a name="l1032" style="background-color: #ffcccc">         precab(i) = 1.e-36_r8</a>
+  1033) <a name="l1033" style="background-color: #ffcccc">         scavab(i) = 0._r8</a>
+  1034) <a name="l1034" style="background-color: #ffcccc">         cldmabs(i) = 0._r8</a>
+  1035) <a name="l1035" style="background-color: #ffcccc">      end do</a>
+  1036) <a name="l1036" style="background-color: #ffcccc"></a>
+  1037) <a name="l1037" style="background-color: #ffcccc">      do k = 1,pver</a>
+  1038) <a name="l1038" style="background-color: #ffcccc">         do i = 1,ncol</a>
+  1039) <a name="l1039" style="background-color: #ffcccc"></a>
+  1040) <a name="l1040" style="background-color: #ffcccc">            tc     = t(i,k) - tmelt</a>
+  1041) <a name="l1041" style="background-color: #ffcccc">            weight = max(0._r8,min(-tc*0.05_r8,1.0_r8)) ! fraction of condensate that is ice</a>
+  1042) <a name="l1042" style="background-color: #ffcccc"></a>
+  1043) <a name="l1043" style="background-color: #ffcccc">            cldmabs(i) = max(cldmabs(i),cldt(i,k))</a>
+  1044) <a name="l1044" style="background-color: #ffcccc"></a>
+  1045) <a name="l1045" style="background-color: #ffcccc">            ! partitioning coefs for gas and aqueous phase</a>
+  1046) <a name="l1046" style="background-color: #ffcccc">            !              take as a cloud water amount, the sum of the stratiform amount</a>
+  1047) <a name="l1047" style="background-color: #ffcccc">            !              plus the convective rain water amount </a>
+  1048) <a name="l1048" style="background-color: #ffcccc"></a>
+  1049) <a name="l1049" style="background-color: #ffcccc">            ! convective amnt is just the local precip rate from the hack scheme</a>
+  1050) <a name="l1050" style="background-color: #ffcccc">            !              since there is no storage of water, this ignores that falling from above</a>
+  1051) <a name="l1051" style="background-color: #ffcccc">            !            cwatc = cmfdqr(i,k)*deltat/adjfac</a>
+  1052) <a name="l1052" style="background-color: #ffcccc">            !++mcb -- test cwatc</a>
+  1053) <a name="l1053" style="background-color: #ffcccc">            cwatc = (icwmr1(i,k) + icwmr2(i,k)) * (1._r8-weight)</a>
+  1054) <a name="l1054" style="background-color: #ffcccc">            !--mcb </a>
+  1055) <a name="l1055" style="background-color: #ffcccc"></a>
+  1056) <a name="l1056" style="background-color: #ffcccc">            ! strat cloud water amount and also ignore the part falling from above</a>
+  1057) <a name="l1057" style="background-color: #ffcccc">            cwats = cwat(i,k) </a>
+  1058) <a name="l1058" style="background-color: #ffcccc"></a>
+  1059) <a name="l1059" style="background-color: #ffcccc">            ! cloud water as liq</a>
+  1060) <a name="l1060" style="background-color: #ffcccc">            !++mcb -- add cwatc later (in cwatti)</a>
+  1061) <a name="l1061" style="background-color: #ffcccc">            !            cwatl = (1.-weight)*(cwatc+cwats)</a>
+  1062) <a name="l1062" style="background-color: #ffcccc">            cwatl = (1._r8-weight)*cwats</a>
+  1063) <a name="l1063" style="background-color: #ffcccc">            ! cloud water as ice</a>
+  1064) <a name="l1064" style="background-color: #ffcccc">            !*not used        cwati = weight*(cwatc+cwats)</a>
+  1065) <a name="l1065" style="background-color: #ffcccc"></a>
+  1066) <a name="l1066" style="background-color: #ffcccc">            ! total suspended condensate as liquid</a>
+  1067) <a name="l1067" style="background-color: #ffcccc">            cwatt = cwatl + rain(i,k)</a>
+  1068) <a name="l1068" style="background-color: #ffcccc"></a>
+  1069) <a name="l1069" style="background-color: #ffcccc">            ! incloud version </a>
+  1070) <a name="l1070" style="background-color: #ffcccc">            !++mcb -- add cwatc here</a>
+  1071) <a name="l1071" style="background-color: #ffcccc">            cwatti = cwatt/max(cldv(i,k), 0.00001_r8) + cwatc</a>
+  1072) <a name="l1072" style="background-color: #ffcccc"></a>
+  1073) <a name="l1073" style="background-color: #ffcccc">            ! partitioning terms</a>
+  1074) <a name="l1074" style="background-color: #ffcccc">            patm = p(i,k)/1.013e5_r8 ! pressure in atmospheres</a>
+  1075) <a name="l1075" style="background-color: #ffcccc">            hconst = molwta*patm*solconst(i,k)*cwatti/rhoh2o</a>
+  1076) <a name="l1076" style="background-color: #ffcccc">            aqfrac = hconst/(1._r8+hconst)</a>
+  1077) <a name="l1077" style="background-color: #ffcccc">            gafrac = 1/(1._r8+hconst)</a>
+  1078) <a name="l1078" style="background-color: #ffcccc">            fracis(i,k) = gafrac</a>
+  1079) <a name="l1079" style="background-color: #ffcccc"></a>
+  1080) <a name="l1080" style="background-color: #ffcccc"></a>
+  1081) <a name="l1081" style="background-color: #ffcccc">            ! partial pressure of the tracer in the gridbox in atmospheres</a>
+  1082) <a name="l1082" style="background-color: #ffcccc">            part = patm*gafrac*tracer(i,k)*molwta/molwt</a>
+  1083) <a name="l1083" style="background-color: #ffcccc"></a>
+  1084) <a name="l1084" style="background-color: #ffcccc">            ! use henrys law to give moles tracer /liter of water</a>
+  1085) <a name="l1085" style="background-color: #ffcccc">            ! in this volume </a>
+  1086) <a name="l1086" style="background-color: #ffcccc">            ! then convert to kg tracer /liter of water (kg tracer / kg water)</a>
+  1087) <a name="l1087" style="background-color: #ffcccc">            mplb = solconst(i,k)*part*molwt/1000._r8</a>
+  1088) <a name="l1088" style="background-color: #ffcccc"></a>
+  1089) <a name="l1089" style="background-color: #ffcccc"></a>
+  1090) <a name="l1090" style="background-color: #ffcccc">            pdog = pdel(i,k)/gravit</a>
+  1091) <a name="l1091" style="background-color: #ffcccc"></a>
+  1092) <a name="l1092" style="background-color: #ffcccc">            ! this part of precip will be carried downward but at a new molarity of mpl </a>
+  1093) <a name="l1093" style="background-color: #ffcccc">            precic = pdog*(precs(i,k) + cmfdqr(i,k))</a>
+  1094) <a name="l1094" style="background-color: #ffcccc"></a>
+  1095) <a name="l1095" style="background-color: #ffcccc">            ! we cant take out more than entered, plus that available in the cloud</a>
+  1096) <a name="l1096" style="background-color: #ffcccc">            !                  scavmax = scavab(i)+tracer(i,k)*cldt(i,k)/deltat*pdog</a>
+  1097) <a name="l1097" style="background-color: #ffcccc">            scavmax = scavab(i)+tracer(i,k)*cldv(i,k)/deltat*pdog</a>
+  1098) <a name="l1098" style="background-color: #ffcccc"></a>
+  1099) <a name="l1099" style="background-color: #ffcccc">            ! flux of tracer by incloud processes</a>
+  1100) <a name="l1100" style="background-color: #ffcccc">            scavin = precic*(1._r8-weight)*mplb</a>
+  1101) <a name="l1101" style="background-color: #ffcccc"></a>
+  1102) <a name="l1102" style="background-color: #ffcccc">            ! fraction of precip which entered above that leaves below</a>
+  1103) <a name="l1103" style="background-color: #ffcccc">            if (cam_physpkg_is('cam5')) then</a>
+  1104) <a name="l1104" style="background-color: #ffcccc">               ! Sungsu added evaporation of convective precipitation below.</a>
+  1105) <a name="l1105" style="background-color: #ffcccc">               precxx = precab(i)-pdog*(evaps(i,k)+evapc(i,k))</a>
+  1106) <a name="l1106" style="background-color: #ffcccc">            else</a>
+  1107) <a name="l1107" style="background-color: #ffcccc">               precxx = precab(i)-pdog*evaps(i,k)</a>
+  1108) <a name="l1108" style="background-color: #ffcccc">            end if</a>
+  1109) <a name="l1109" style="background-color: #ffcccc">            precxx = max (precxx,0.0_r8)</a>
+  1110) <a name="l1110" style="background-color: #ffcccc"></a>
+  1111) <a name="l1111" style="background-color: #ffcccc">            ! flux of tracer by below cloud processes</a>
+  1112) <a name="l1112" style="background-color: #ffcccc">            !++mcb -- removed wtpl because it is now not assigned and previously</a>
+  1113) <a name="l1113" style="background-color: #ffcccc">            !          when it was assigned it was unnecessary:  if(tc.gt.0)wtpl=1</a>
+  1114) <a name="l1114" style="background-color: #ffcccc">            if (tc.gt.0) then</a>
+  1115) <a name="l1115" style="background-color: #ffcccc">               !               scavbc = precxx*wtpl*mplb ! if liquid</a>
+  1116) <a name="l1116" style="background-color: #ffcccc">               scavbc = precxx*mplb ! if liquid</a>
+  1117) <a name="l1117" style="background-color: #ffcccc">            else</a>
+  1118) <a name="l1118" style="background-color: #ffcccc">               precxx2=max(precxx,1.e-36_r8)</a>
+  1119) <a name="l1119" style="background-color: #ffcccc">               scavbc = scavab(i)*precxx2/(precab(i)) ! if ice</a>
+  1120) <a name="l1120" style="background-color: #ffcccc">            endif</a>
+  1121) <a name="l1121" style="background-color: #ffcccc"></a>
+  1122) <a name="l1122" style="background-color: #ffcccc">            scavbl = min(scavbc + scavin, scavmax)</a>
+  1123) <a name="l1123" style="background-color: #ffcccc"></a>
+  1124) <a name="l1124" style="background-color: #ffcccc">            ! first guess assuming that henries law works</a>
+  1125) <a name="l1125" style="background-color: #ffcccc">            scavt1 = (scavab(i)-scavbl)/pdog*omsm</a>
+  1126) <a name="l1126" style="background-color: #ffcccc"></a>
+  1127) <a name="l1127" style="background-color: #ffcccc">            ! pjr this should not be required, but we put it in to make sure we cant remove too much</a>
+  1128) <a name="l1128" style="background-color: #ffcccc">            ! remember, scavt1 is generally negative (indicating removal)</a>
+  1129) <a name="l1129" style="background-color: #ffcccc">            scavt1 = max(scavt1,-tracer(i,k)*cldv(i,k)/deltat)</a>
+  1130) <a name="l1130" style="background-color: #ffcccc"></a>
+  1131) <a name="l1131" style="background-color: #ffcccc">            !++mcb -- remove this limitation for gas species</a>
+  1132) <a name="l1132" style="background-color: #ffcccc">            !c use the dana and hales or balkanski limit on scavenging</a>
+  1133) <a name="l1133" style="background-color: #ffcccc">            !c            rate = precab(i)*0.1</a>
+  1134) <a name="l1134" style="background-color: #ffcccc">            !            rate = (precic + precxx)*0.1</a>
+  1135) <a name="l1135" style="background-color: #ffcccc">            !            scavlimt = -tracer(i,k)*cldv(i,k)</a>
+  1136) <a name="l1136" style="background-color: #ffcccc">            !     $           *rate/(1.+rate*deltat)</a>
+  1137) <a name="l1137" style="background-color: #ffcccc"></a>
+  1138) <a name="l1138" style="background-color: #ffcccc">            !            scavt(i,k) = max(scavt1, scavlimt)</a>
+  1139) <a name="l1139" style="background-color: #ffcccc"></a>
+  1140) <a name="l1140" style="background-color: #ffcccc">            ! instead just set scavt to scavt1</a>
+  1141) <a name="l1141" style="background-color: #ffcccc">            scavt(i,k) = scavt1</a>
+  1142) <a name="l1142" style="background-color: #ffcccc">            !--mcb</a>
+  1143) <a name="l1143" style="background-color: #ffcccc"></a>
+  1144) <a name="l1144" style="background-color: #ffcccc">            ! now update the amount leaving the layer</a>
+  1145) <a name="l1145" style="background-color: #ffcccc">            scavbl = scavab(i) - scavt(i,k)*pdog </a>
+  1146) <a name="l1146" style="background-color: #ffcccc"></a>
+  1147) <a name="l1147" style="background-color: #ffcccc">            ! in cloud amount is that formed locally over the total flux out bottom</a>
+  1148) <a name="l1148" style="background-color: #ffcccc">            fins = scavin/(scavin + scavbc + 1.e-36_r8)</a>
+  1149) <a name="l1149" style="background-color: #ffcccc">            iscavt(i,k) = scavt(i,k)*fins</a>
+  1150) <a name="l1150" style="background-color: #ffcccc"></a>
+  1151) <a name="l1151" style="background-color: #ffcccc">            scavab(i) = scavbl</a>
+  1152) <a name="l1152" style="background-color: #ffcccc">            precab(i) = max(precxx + precic,1.e-36_r8)</a>
+  1153) <a name="l1153" style="background-color: #ffcccc"></a>
+  1154) <a name="l1154" style="background-color: #ffcccc">        </a>
+  1155) <a name="l1155" style="background-color: #ffcccc">            </a>
+  1156) <a name="l1156" style="background-color: #ffcccc">         end do</a>
+  1157) <a name="l1157" style="background-color: #ffcccc">      end do</a>
+  1158) <a name="l1158" style="background-color: #ffcccc">      </a>
+  1159) <a name="l1159" style="background-color: #ffcccc">   end subroutine wetdepg</a>
+  1160) <a name="l1160" style="background-color: #ffffff"></a>
+  1161) <a name="l1161" style="background-color: #ffffff">!##############################################################################</a>
+  1162) <a name="l1162" style="background-color: #ffffff"></a>
+  1163) <a name="l1163" style="background-color: #ffffff">end module wetdep</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

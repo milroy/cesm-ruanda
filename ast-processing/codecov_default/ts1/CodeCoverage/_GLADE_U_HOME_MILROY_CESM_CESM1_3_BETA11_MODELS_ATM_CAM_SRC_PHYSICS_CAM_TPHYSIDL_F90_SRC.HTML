@@ -1,0 +1,461 @@
+<html>
+<head>
+<title>Listing of tphysidl.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;tphysidl.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160  0.00&#160;%func&#160;&#160;&#160;&#160;  0.00&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">#define MODHS 1</a>
+     2) <a name="l2" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">tphysidl(ztodt, state, tend)</a>
+     3) <a name="l3" style="background-color: #ffcccc">!----------------------------------------------------------------------- </a>
+     4) <a name="l4" style="background-color: #ffcccc">! </a>
+     5) <a name="l5" style="background-color: #ffcccc">! Purpose: </a>
+     6) <a name="l6" style="background-color: #ffcccc">!  algorithm 1: Held/Suarez IDEALIZED physics</a>
+     7) <a name="l7" style="background-color: #ffcccc">!  algorithm 2: Held/Suarez IDEALIZED physics (Williamson modified stratosphere</a>
+     8) <a name="l8" style="background-color: #ffcccc">!  algorithm 3: Held/Suarez IDEALIZED physics (Lin/Williamson modified strato/meso-sphere</a>
+     9) <a name="l9" style="background-color: #ffcccc">!  algorithm 4: Boer/Denis  IDEALIZED physics</a>
+    10) <a name="l10" style="background-color: #ffcccc">!</a>
+    11) <a name="l11" style="background-color: #ffcccc">! Author: J. Olson</a>
+    12) <a name="l12" style="background-color: #ffcccc">! </a>
+    13) <a name="l13" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+    14) <a name="l14" style="background-color: #ffcccc">   use shr_kind_mod,       only: r8 =&gt; shr_kind_r8</a>
+    15) <a name="l15" style="background-color: #ffcccc">   use ppgrid,             only: pcols, pver</a>
+    16) <a name="l16" style="background-color: #ffcccc">   use phys_grid,          only: get_rlat_all_p</a>
+    17) <a name="l17" style="background-color: #ffcccc">   use physics_types,      only: physics_state, physics_tend, physics_ptend, &amp;</a>
+    18) <a name="l18" style="background-color: #ffcccc">                                 physics_ptend_init, physics_update</a>
+    19) <a name="l19" style="background-color: #ffcccc">   use physconst,          only: gravit, cappa, rair, cpair</a>
+    20) <a name="l20" style="background-color: #ffcccc">   use abortutils,         only: endrun</a>
+    21) <a name="l21" style="background-color: #ffcccc">   use ref_pres,           only: pref_mid_norm, psurf_ref</a>
+    22) <a name="l22" style="background-color: #ffcccc">   use cam_history,        only: outfld</a>
+    23) <a name="l23" style="background-color: #ffcccc">   use cam_logfile,        only: iulog</a>
+    24) <a name="l24" style="background-color: #ffcccc">   use time_manager,       only: get_nstep</a>
+    25) <a name="l25" style="background-color: #ffcccc">   use check_energy,       only: check_energy_chng</a>
+    26) <a name="l26" style="background-color: #ffcccc"></a>
+    27) <a name="l27" style="background-color: #ffcccc">   implicit none</a>
+    28) <a name="l28" style="background-color: #ffcccc"></a>
+    29) <a name="l29" style="background-color: #ffcccc">!</a>
+    30) <a name="l30" style="background-color: #ffcccc">! Input arguments</a>
+    31) <a name="l31" style="background-color: #ffcccc">!</a>
+    32) <a name="l32" style="background-color: #ffcccc">   real(r8), intent(in) :: ztodt                   ! Two times model timestep (2 delta-t)</a>
+    33) <a name="l33" style="background-color: #ffcccc"></a>
+    34) <a name="l34" style="background-color: #ffcccc">   type(physics_state),  intent(inout) :: state</a>
+    35) <a name="l35" style="background-color: #ffcccc">!</a>
+    36) <a name="l36" style="background-color: #ffcccc">! Output arguments</a>
+    37) <a name="l37" style="background-color: #ffcccc">!</a>
+    38) <a name="l38" style="background-color: #ffcccc">   type(physics_tend ), intent(inout) :: tend</a>
+    39) <a name="l39" style="background-color: #ffcccc">!</a>
+    40) <a name="l40" style="background-color: #ffcccc">!---------------------------Local workspace-----------------------------</a>
+    41) <a name="l41" style="background-color: #ffcccc">!</a>
+    42) <a name="l42" style="background-color: #ffcccc">   type(physics_ptend) :: ptend</a>
+    43) <a name="l43" style="background-color: #ffcccc"></a>
+    44) <a name="l44" style="background-color: #ffcccc">   integer :: lchnk                                ! chunk identifier</a>
+    45) <a name="l45" style="background-color: #ffcccc">   integer :: ncol                                 ! number of atmospheric columns</a>
+    46) <a name="l46" style="background-color: #ffcccc">   integer :: nstep                                ! timestep number</a>
+    47) <a name="l47" style="background-color: #ffcccc"></a>
+    48) <a name="l48" style="background-color: #ffcccc">   real(r8) clat(pcols)                        ! latitudes(radians) for columns</a>
+    49) <a name="l49" style="background-color: #ffcccc">   real(r8) pmid(pcols,pver)                   ! mid-point pressure</a>
+    50) <a name="l50" style="background-color: #ffcccc">   integer  i,k                                ! Longitude, level indices</a>
+    51) <a name="l51" style="background-color: #ffcccc"></a>
+    52) <a name="l52" style="background-color: #ffcccc">   real(r8) tmp                                ! temporary</a>
+    53) <a name="l53" style="background-color: #ffcccc">   real(r8) kf                                 ! 1./efolding_time for wind dissipation</a>
+    54) <a name="l54" style="background-color: #ffcccc">   real(r8) ka                                 ! 1./efolding_time for temperature diss.</a>
+    55) <a name="l55" style="background-color: #ffcccc">   real(r8) kaa                                ! 1./efolding_time for temperature diss.</a>
+    56) <a name="l56" style="background-color: #ffcccc">   real(r8) ks                                 ! 1./efolding_time for temperature diss.</a>
+    57) <a name="l57" style="background-color: #ffcccc">   real(r8) kv                                 ! 1./efolding_time (normalized) for wind</a>
+    58) <a name="l58" style="background-color: #ffcccc">   real(r8) kt                                 ! 1./efolding_time for temperature diss.</a>
+    59) <a name="l59" style="background-color: #ffcccc">   real(r8) trefa                              ! &quot;radiative equilibrium&quot; T</a>
+    60) <a name="l60" style="background-color: #ffcccc">   real(r8) trefc                              ! used in calc of &quot;radiative equilibrium&quot; T</a>
+    61) <a name="l61" style="background-color: #ffcccc">   real(r8) cossq(pcols)                       ! coslat**2</a>
+    62) <a name="l62" style="background-color: #ffcccc">   real(r8) cossqsq(pcols)                     ! coslat**4</a>
+    63) <a name="l63" style="background-color: #ffcccc">   real(r8) sinsq(pcols)                       ! sinlat**2</a>
+    64) <a name="l64" style="background-color: #ffcccc">   real(r8) onemsig                            ! 1. - sigma_reference</a>
+    65) <a name="l65" style="background-color: #ffcccc">   real(r8) efoldf                             ! efolding time for wind dissipation</a>
+    66) <a name="l66" style="background-color: #ffcccc">   real(r8) efolda                             ! efolding time for T dissipation</a>
+    67) <a name="l67" style="background-color: #ffcccc">   real(r8) efoldaa                            ! efolding time for T dissipation</a>
+    68) <a name="l68" style="background-color: #ffcccc">   real(r8) efolds                             ! efolding time for T dissipation</a>
+    69) <a name="l69" style="background-color: #ffcccc">   real(r8) efold_strat                        ! efolding time for T dissipation in Strat</a>
+    70) <a name="l70" style="background-color: #ffcccc">   real(r8) efold_meso                         ! efolding time for T dissipation in Meso</a>
+    71) <a name="l71" style="background-color: #ffcccc">   real(r8) efoldv                             ! efolding time for wind dissipation</a>
+    72) <a name="l72" style="background-color: #ffcccc">   real(r8) p_infint                           ! effective top of model</a>
+    73) <a name="l73" style="background-color: #ffcccc">   real(r8) constw                             ! constant</a>
+    74) <a name="l74" style="background-color: #ffcccc">   real(r8) lapsew                             ! lapse rate</a>
+    75) <a name="l75" style="background-color: #ffcccc">   real(r8) p0strat                            ! threshold pressure</a>
+    76) <a name="l76" style="background-color: #ffcccc">   real(r8) phi0                               ! threshold latitude</a>
+    77) <a name="l77" style="background-color: #ffcccc">   real(r8) dphi0                              ! del-latitude</a>
+    78) <a name="l78" style="background-color: #ffcccc">   real(r8) a0                                 ! coefficient</a>
+    79) <a name="l79" style="background-color: #ffcccc">   real(r8) aeq                                ! 100 mb</a>
+    80) <a name="l80" style="background-color: #ffcccc">   real(r8) apole                              ! 2   mb</a>
+    81) <a name="l81" style="background-color: #ffcccc">   real(r8) pi                                 ! 3.14159...</a>
+    82) <a name="l82" style="background-color: #ffcccc">   real(r8) coslat(pcols)                      ! cosine(latitude)</a>
+    83) <a name="l83" style="background-color: #ffcccc">   real(r8) acoslat                            ! abs(acos(coslat))</a>
+    84) <a name="l84" style="background-color: #ffcccc">   real(r8) constc                             ! constant</a>
+    85) <a name="l85" style="background-color: #ffcccc">   real(r8) lapsec                             ! lapse rate</a>
+    86) <a name="l86" style="background-color: #ffcccc">   real(r8) lapse                              ! lapse rate</a>
+    87) <a name="l87" style="background-color: #ffcccc">   real(r8) h0                                 ! scale height (7 km)</a>
+    88) <a name="l88" style="background-color: #ffcccc">   real(r8) sigmab                             ! threshold sigma level</a>
+    89) <a name="l89" style="background-color: #ffcccc">   real(r8) pressmb                            ! model pressure in mb</a>
+    90) <a name="l90" style="background-color: #ffcccc">   real(r8) t00                                ! minimum reference temperature</a>
+    91) <a name="l91" style="background-color: #ffcccc">   integer  idlflag                            ! Flag to choose which idealized physics</a>
+    92) <a name="l92" style="background-color: #ffcccc">   real(r8) :: zero(pcols)</a>
+    93) <a name="l93" style="background-color: #ffcccc">!</a>
+    94) <a name="l94" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+    95) <a name="l95" style="background-color: #ffcccc">!</a>
+    96) <a name="l96" style="background-color: #ffcccc">   idlflag = 1</a>
+    97) <a name="l97" style="background-color: #ffcccc"></a>
+    98) <a name="l98" style="background-color: #ffcccc">   lchnk = state%lchnk</a>
+    99) <a name="l99" style="background-color: #ffcccc">   ncol  = state%ncol</a>
+   100) <a name="l100" style="background-color: #ffcccc"></a>
+   101) <a name="l101" style="background-color: #ffcccc">   nstep   = get_nstep()</a>
+   102) <a name="l102" style="background-color: #ffcccc">   zero    = 0._r8</a>
+   103) <a name="l103" style="background-color: #ffcccc"></a>
+   104) <a name="l104" style="background-color: #ffcccc">   call get_rlat_all_p(lchnk, ncol, clat)</a>
+   105) <a name="l105" style="background-color: #ffcccc">   do i=1,ncol</a>
+   106) <a name="l106" style="background-color: #ffcccc">      coslat (i) = cos(clat(i))</a>
+   107) <a name="l107" style="background-color: #ffcccc">      sinsq  (i) = sin(clat(i))*sin(clat(i))</a>
+   108) <a name="l108" style="background-color: #ffcccc">      cossq  (i) = coslat(i)*coslat(i)</a>
+   109) <a name="l109" style="background-color: #ffcccc">      cossqsq(i) = cossq (i)*cossq (i)</a>
+   110) <a name="l110" style="background-color: #ffcccc">   end do</a>
+   111) <a name="l111" style="background-color: #ffcccc">   do k = 1, pver</a>
+   112) <a name="l112" style="background-color: #ffcccc">      do i = 1, ncol</a>
+   113) <a name="l113" style="background-color: #ffcccc">         pmid(i,k) = state%pmid(i,k)</a>
+   114) <a name="l114" style="background-color: #ffcccc">      end do</a>
+   115) <a name="l115" style="background-color: #ffcccc">   end do</a>
+   116) <a name="l116" style="background-color: #ffcccc"></a>
+   117) <a name="l117" style="background-color: #ffcccc">   ! initialize individual parameterization tendencies</a>
+   118) <a name="l118" style="background-color: #ffcccc">   call physics_ptend_init(ptend, state%psetcols, 'tphysidl', ls=.true., lu=.true., lv=.true.)</a>
+   119) <a name="l119" style="background-color: #ffcccc"></a>
+   120) <a name="l120" style="background-color: #ffcccc">   if (idlflag == 1) then</a>
+   121) <a name="l121" style="background-color: #ffcccc">!</a>
+   122) <a name="l122" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   123) <a name="l123" style="background-color: #ffcccc">!</a>
+   124) <a name="l124" style="background-color: #ffcccc">! Held/Suarez IDEALIZED physics algorithm:</a>
+   125) <a name="l125" style="background-color: #ffcccc">!</a>
+   126) <a name="l126" style="background-color: #ffcccc">!   Held, I. M., and M. J. Suarez, 1994: A proposal for the</a>
+   127) <a name="l127" style="background-color: #ffcccc">!   intercomparison of the dynamical cores of atmospheric general</a>
+   128) <a name="l128" style="background-color: #ffcccc">!   circulation models.</a>
+   129) <a name="l129" style="background-color: #ffcccc">!   Bulletin of the Amer. Meteor. Soc., vol. 75, pp. 1825-1830.</a>
+   130) <a name="l130" style="background-color: #ffcccc">!</a>
+   131) <a name="l131" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   132) <a name="l132" style="background-color: #ffcccc">!</a>
+   133) <a name="l133" style="background-color: #ffcccc">! Compute idealized radiative heating rates (as dry static energy)</a>
+   134) <a name="l134" style="background-color: #ffcccc">!</a>
+   135) <a name="l135" style="background-color: #ffcccc">      efoldf =  1._r8</a>
+   136) <a name="l136" style="background-color: #ffcccc">      efolda = 40._r8</a>
+   137) <a name="l137" style="background-color: #ffcccc">      efolds =  4._r8</a>
+   138) <a name="l138" style="background-color: #ffcccc">      sigmab =  0.7_r8</a>
+   139) <a name="l139" style="background-color: #ffcccc">      t00    = 200._r8</a>
+   140) <a name="l140" style="background-color: #ffcccc">!</a>
+   141) <a name="l141" style="background-color: #ffcccc">      onemsig = 1._r8 - sigmab</a>
+   142) <a name="l142" style="background-color: #ffcccc">!</a>
+   143) <a name="l143" style="background-color: #ffcccc">      ka = 1._r8/(86400._r8*efolda)</a>
+   144) <a name="l144" style="background-color: #ffcccc">      ks = 1._r8/(86400._r8*efolds)</a>
+   145) <a name="l145" style="background-color: #ffcccc">!</a>
+   146) <a name="l146" style="background-color: #ffcccc">      do k=1,pver</a>
+   147) <a name="l147" style="background-color: #ffcccc">         if (pref_mid_norm(k) &gt; sigmab) then</a>
+   148) <a name="l148" style="background-color: #ffcccc">            do i=1,ncol</a>
+   149) <a name="l149" style="background-color: #ffcccc">               kt = ka + (ks - ka)*cossqsq(i)*(pref_mid_norm(k) - sigmab)/onemsig</a>
+   150) <a name="l150" style="background-color: #ffcccc">#ifdef MODHS</a>
+   151) <a name="l151" style="background-color: #ffcccc">               tmp   = kt/(1._r8+ ztodt*kt)</a>
+   152) <a name="l152" style="background-color: #ffcccc">#else</a>
+   153) <a name="l153" style="background-color: #ffcccc">	       tmp = kt</a>
+   154) <a name="l154" style="background-color: #ffcccc">#endif</a>
+   155) <a name="l155" style="background-color: #ffcccc">               trefc   = 315._r8 - 60._r8*sinsq(i)</a>
+   156) <a name="l156" style="background-color: #ffcccc">               trefa = (trefc - 10._r8*cossq(i)*log((pmid(i,k)/psurf_ref)))*(pmid(i,k)/psurf_ref)**cappa</a>
+   157) <a name="l157" style="background-color: #ffcccc">               trefa    = max(t00,trefa)</a>
+   158) <a name="l158" style="background-color: #ffcccc">               ptend%s(i,k) = (trefa - state%t(i,k))*tmp*cpair</a>
+   159) <a name="l159" style="background-color: #ffcccc">            end do</a>
+   160) <a name="l160" style="background-color: #ffcccc">         else</a>
+   161) <a name="l161" style="background-color: #ffcccc">#ifdef MODHS</a>
+   162) <a name="l162" style="background-color: #ffcccc">            tmp   = ka/(1._r8+ ztodt*ka)</a>
+   163) <a name="l163" style="background-color: #ffcccc">#else</a>
+   164) <a name="l164" style="background-color: #ffcccc">	    tmp = ka</a>
+   165) <a name="l165" style="background-color: #ffcccc">#endif</a>
+   166) <a name="l166" style="background-color: #ffcccc">            do i=1,ncol</a>
+   167) <a name="l167" style="background-color: #ffcccc">               trefc   = 315._r8 - 60._r8*sinsq(i)</a>
+   168) <a name="l168" style="background-color: #ffcccc">               trefa = (trefc - 10._r8*cossq(i)*log((pmid(i,k)/psurf_ref)))*(pmid(i,k)/psurf_ref)**cappa</a>
+   169) <a name="l169" style="background-color: #ffcccc">               trefa    = max(t00,trefa)</a>
+   170) <a name="l170" style="background-color: #ffcccc">               ptend%s(i,k) = (trefa - state%t(i,k))*tmp*cpair</a>
+   171) <a name="l171" style="background-color: #ffcccc">            end do</a>
+   172) <a name="l172" style="background-color: #ffcccc">         endif</a>
+   173) <a name="l173" style="background-color: #ffcccc">      end do</a>
+   174) <a name="l174" style="background-color: #ffcccc">!</a>
+   175) <a name="l175" style="background-color: #ffcccc">! Add diffusion near the surface for the wind fields</a>
+   176) <a name="l176" style="background-color: #ffcccc">!</a>
+   177) <a name="l177" style="background-color: #ffcccc">      do k=1,pver</a>
+   178) <a name="l178" style="background-color: #ffcccc">         do i=1,pcols</a>
+   179) <a name="l179" style="background-color: #ffcccc">            ptend%u(i,k) = 0._r8</a>
+   180) <a name="l180" style="background-color: #ffcccc">            ptend%v(i,k) = 0._r8</a>
+   181) <a name="l181" style="background-color: #ffcccc">         end do</a>
+   182) <a name="l182" style="background-color: #ffcccc">      end do</a>
+   183) <a name="l183" style="background-color: #ffcccc"></a>
+   184) <a name="l184" style="background-color: #ffcccc">      kf = 1._r8/(86400._r8*efoldf)</a>
+   185) <a name="l185" style="background-color: #ffcccc">!</a>
+   186) <a name="l186" style="background-color: #ffcccc">      do k=1,pver</a>
+   187) <a name="l187" style="background-color: #ffcccc">         if (pref_mid_norm(k) &gt; sigmab) then</a>
+   188) <a name="l188" style="background-color: #ffcccc">            kv  = kf*(pref_mid_norm(k) - sigmab)/onemsig</a>
+   189) <a name="l189" style="background-color: #ffcccc">#ifdef MODHS</a>
+   190) <a name="l190" style="background-color: #ffcccc">            tmp = -kv/(1._r8+ ztodt*kv)</a>
+   191) <a name="l191" style="background-color: #ffcccc">#else</a>
+   192) <a name="l192" style="background-color: #ffcccc">            tmp = -kv</a>
+   193) <a name="l193" style="background-color: #ffcccc">#endif</a>
+   194) <a name="l194" style="background-color: #ffcccc">            do i=1,ncol</a>
+   195) <a name="l195" style="background-color: #ffcccc">               ptend%u(i,k) = tmp*state%u(i,k)</a>
+   196) <a name="l196" style="background-color: #ffcccc">               ptend%v(i,k) = tmp*state%v(i,k)</a>
+   197) <a name="l197" style="background-color: #ffcccc">            end do</a>
+   198) <a name="l198" style="background-color: #ffcccc">         endif</a>
+   199) <a name="l199" style="background-color: #ffcccc">      end do</a>
+   200) <a name="l200" style="background-color: #ffcccc"></a>
+   201) <a name="l201" style="background-color: #ffcccc">   elseif (idlflag == 2) then</a>
+   202) <a name="l202" style="background-color: #ffcccc">!</a>
+   203) <a name="l203" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   204) <a name="l204" style="background-color: #ffcccc">!</a>
+   205) <a name="l205" style="background-color: #ffcccc">! Modified Held/Suarez IDEALIZED physics algorithm</a>
+   206) <a name="l206" style="background-color: #ffcccc">! (modified with Williamson stratosphere):</a>
+   207) <a name="l207" style="background-color: #ffcccc">!</a>
+   208) <a name="l208" style="background-color: #ffcccc">!   Williamson, D. L., J. G. Olson and B. A. Boville, 1998: A comparison</a>
+   209) <a name="l209" style="background-color: #ffcccc">!   of semi--Lagrangian and Eulerian tropical climate simulations.</a>
+   210) <a name="l210" style="background-color: #ffcccc">!   Mon. Wea. Rev., vol 126, pp. 1001-1012.</a>
+   211) <a name="l211" style="background-color: #ffcccc">!</a>
+   212) <a name="l212" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   213) <a name="l213" style="background-color: #ffcccc">!</a>
+   214) <a name="l214" style="background-color: #ffcccc">! Compute idealized radiative heating rates (as dry static energy)</a>
+   215) <a name="l215" style="background-color: #ffcccc">!</a>
+   216) <a name="l216" style="background-color: #ffcccc">      efoldf  =  1._r8</a>
+   217) <a name="l217" style="background-color: #ffcccc">      efolda  = 40._r8</a>
+   218) <a name="l218" style="background-color: #ffcccc">      efoldaa = 40._r8</a>
+   219) <a name="l219" style="background-color: #ffcccc">      efolds  =  4._r8</a>
+   220) <a name="l220" style="background-color: #ffcccc">      sigmab  =  0.7_r8</a>
+   221) <a name="l221" style="background-color: #ffcccc">      t00     = 200._r8</a>
+   222) <a name="l222" style="background-color: #ffcccc">!</a>
+   223) <a name="l223" style="background-color: #ffcccc">      onemsig = 1._r8 - sigmab</a>
+   224) <a name="l224" style="background-color: #ffcccc">!</a>
+   225) <a name="l225" style="background-color: #ffcccc">      ka  = 1._r8/(86400._r8*efolda)</a>
+   226) <a name="l226" style="background-color: #ffcccc">      kaa = 1._r8/(86400._r8*efoldaa)</a>
+   227) <a name="l227" style="background-color: #ffcccc">      ks  = 1._r8/(86400._r8*efolds)</a>
+   228) <a name="l228" style="background-color: #ffcccc">!</a>
+   229) <a name="l229" style="background-color: #ffcccc">      pi     = 4._r8*atan(1._r8)</a>
+   230) <a name="l230" style="background-color: #ffcccc">      phi0   = 60._r8*pi/180._r8</a>
+   231) <a name="l231" style="background-color: #ffcccc">      dphi0  = 15._r8*pi/180._r8</a>
+   232) <a name="l232" style="background-color: #ffcccc">      a0     = 2.65_r8/dphi0</a>
+   233) <a name="l233" style="background-color: #ffcccc">      aeq    = 10000._r8</a>
+   234) <a name="l234" style="background-color: #ffcccc">      apole  = 200._r8</a>
+   235) <a name="l235" style="background-color: #ffcccc">      lapsew = -3.345e-03_r8</a>
+   236) <a name="l236" style="background-color: #ffcccc">      constw = rair*lapsew/gravit</a>
+   237) <a name="l237" style="background-color: #ffcccc">      lapsec =  2.00e-03_r8</a>
+   238) <a name="l238" style="background-color: #ffcccc">      constc = rair*lapsec/gravit</a>
+   239) <a name="l239" style="background-color: #ffcccc">      do k=1,pver</a>
+   240) <a name="l240" style="background-color: #ffcccc">         if (pref_mid_norm(k) &gt; sigmab) then</a>
+   241) <a name="l241" style="background-color: #ffcccc">            do i=1,ncol</a>
+   242) <a name="l242" style="background-color: #ffcccc">               kt = ka + (ks - ka)*cossqsq(i)*(pref_mid_norm(k) - sigmab)/onemsig</a>
+   243) <a name="l243" style="background-color: #ffcccc">               acoslat = abs(acos(coslat(i)))</a>
+   244) <a name="l244" style="background-color: #ffcccc">               p0strat = aeq - (aeq - apole)*0.5_r8*(1._r8 + tanh(a0*(acoslat - phi0)))</a>
+   245) <a name="l245" style="background-color: #ffcccc">               tmp     = kt/(1._r8+ ztodt*kt)</a>
+   246) <a name="l246" style="background-color: #ffcccc">               trefc   = 315._r8 - 60._r8*sinsq(i)</a>
+   247) <a name="l247" style="background-color: #ffcccc">               trefa   = (trefc - 10._r8*cossq(i)*log((pmid(i,k)/psurf_ref)))*(pmid(i,k)/psurf_ref)** &amp;</a>
+   248) <a name="l248" style="background-color: #ffcccc">                                                                                     cappa</a>
+   249) <a name="l249" style="background-color: #ffcccc">               trefa   = max(t00,trefa)</a>
+   250) <a name="l250" style="background-color: #ffcccc">               if (pmid(i,k) &lt; 10000._r8) then</a>
+   251) <a name="l251" style="background-color: #ffcccc">                  trefa = t00*((pmid(i,k)/10000._r8))**constc</a>
+   252) <a name="l252" style="background-color: #ffcccc">                  tmp   = kaa/(1._r8+ ztodt*kaa)</a>
+   253) <a name="l253" style="background-color: #ffcccc">               endif</a>
+   254) <a name="l254" style="background-color: #ffcccc">               if (pmid(i,k) &lt; p0strat) then</a>
+   255) <a name="l255" style="background-color: #ffcccc">                  trefa = trefa + t00*( ((pmid(i,k)/p0strat))**constw - 1._r8 )</a>
+   256) <a name="l256" style="background-color: #ffcccc">                  tmp   = kaa/(1._r8+ ztodt*kaa)</a>
+   257) <a name="l257" style="background-color: #ffcccc">               endif</a>
+   258) <a name="l258" style="background-color: #ffcccc">               ptend%s(i,k) = (trefa - state%t(i,k))*tmp*cpair</a>
+   259) <a name="l259" style="background-color: #ffcccc">            end do</a>
+   260) <a name="l260" style="background-color: #ffcccc">         else</a>
+   261) <a name="l261" style="background-color: #ffcccc">            do i=1,ncol</a>
+   262) <a name="l262" style="background-color: #ffcccc">               acoslat = abs(acos(coslat(i)))</a>
+   263) <a name="l263" style="background-color: #ffcccc">               p0strat = aeq - (aeq - apole)*0.5_r8*(1._r8 + tanh(a0*(acoslat - phi0)))</a>
+   264) <a name="l264" style="background-color: #ffcccc">               tmp     = ka/(1._r8+ ztodt*ka)</a>
+   265) <a name="l265" style="background-color: #ffcccc">               trefc   = 315._r8 - 60._r8*sinsq(i)</a>
+   266) <a name="l266" style="background-color: #ffcccc">               trefa   = (trefc - 10._r8*cossq(i)*log((pmid(i,k)/psurf_ref)))*(pmid(i,k)/psurf_ref)** &amp;</a>
+   267) <a name="l267" style="background-color: #ffcccc">                                                                                     cappa</a>
+   268) <a name="l268" style="background-color: #ffcccc">               trefa   = max(t00,trefa)</a>
+   269) <a name="l269" style="background-color: #ffcccc">               if (pmid(i,k) &lt; 10000._r8) then</a>
+   270) <a name="l270" style="background-color: #ffcccc">                  trefa = t00*((pmid(i,k)/10000._r8))**constc</a>
+   271) <a name="l271" style="background-color: #ffcccc">                  tmp   = kaa/(1._r8+ ztodt*kaa)</a>
+   272) <a name="l272" style="background-color: #ffcccc">               endif</a>
+   273) <a name="l273" style="background-color: #ffcccc">               if (pmid(i,k) &lt; p0strat) then</a>
+   274) <a name="l274" style="background-color: #ffcccc">                  trefa = trefa + t00*( ((pmid(i,k)/p0strat))**constw - 1._r8 )</a>
+   275) <a name="l275" style="background-color: #ffcccc">                  tmp   = kaa/(1._r8+ ztodt*kaa)</a>
+   276) <a name="l276" style="background-color: #ffcccc">               endif</a>
+   277) <a name="l277" style="background-color: #ffcccc">               ptend%s(i,k) = (trefa - state%t(i,k))*tmp*cpair</a>
+   278) <a name="l278" style="background-color: #ffcccc">            end do</a>
+   279) <a name="l279" style="background-color: #ffcccc">         endif</a>
+   280) <a name="l280" style="background-color: #ffcccc">      end do</a>
+   281) <a name="l281" style="background-color: #ffcccc">!</a>
+   282) <a name="l282" style="background-color: #ffcccc">! Add diffusion near the surface for the wind fields</a>
+   283) <a name="l283" style="background-color: #ffcccc">!</a>
+   284) <a name="l284" style="background-color: #ffcccc">      do k=1,pver</a>
+   285) <a name="l285" style="background-color: #ffcccc">         do i=1,pcols</a>
+   286) <a name="l286" style="background-color: #ffcccc">            ptend%u(i,k) = 0._r8</a>
+   287) <a name="l287" style="background-color: #ffcccc">            ptend%v(i,k) = 0._r8</a>
+   288) <a name="l288" style="background-color: #ffcccc">         end do</a>
+   289) <a name="l289" style="background-color: #ffcccc">      end do</a>
+   290) <a name="l290" style="background-color: #ffcccc"></a>
+   291) <a name="l291" style="background-color: #ffcccc">      kf = 1._r8/(86400._r8*efoldf)</a>
+   292) <a name="l292" style="background-color: #ffcccc">!</a>
+   293) <a name="l293" style="background-color: #ffcccc">      do k=1,pver</a>
+   294) <a name="l294" style="background-color: #ffcccc">         if (pref_mid_norm(k) &gt; sigmab) then</a>
+   295) <a name="l295" style="background-color: #ffcccc">            kv  = kf*(pref_mid_norm(k) - sigmab)/onemsig</a>
+   296) <a name="l296" style="background-color: #ffcccc">            tmp = -kv/(1._r8+ ztodt*kv)</a>
+   297) <a name="l297" style="background-color: #ffcccc">            do i=1,ncol</a>
+   298) <a name="l298" style="background-color: #ffcccc">               ptend%u(i,k) = tmp*state%u(i,k)</a>
+   299) <a name="l299" style="background-color: #ffcccc">               ptend%v(i,k) = tmp*state%v(i,k)</a>
+   300) <a name="l300" style="background-color: #ffcccc">            end do</a>
+   301) <a name="l301" style="background-color: #ffcccc">         endif</a>
+   302) <a name="l302" style="background-color: #ffcccc">      end do</a>
+   303) <a name="l303" style="background-color: #ffcccc"></a>
+   304) <a name="l304" style="background-color: #ffcccc">   elseif (idlflag == 3) then</a>
+   305) <a name="l305" style="background-color: #ffcccc">!</a>
+   306) <a name="l306" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   307) <a name="l307" style="background-color: #ffcccc">!</a>
+   308) <a name="l308" style="background-color: #ffcccc">! Held/Suarez IDEALIZED physics algorithm:</a>
+   309) <a name="l309" style="background-color: #ffcccc">! (modified with Lin/Williamson stratosphere/mesosphere):</a>
+   310) <a name="l310" style="background-color: #ffcccc">!</a>
+   311) <a name="l311" style="background-color: #ffcccc">!   Held, I. M., and M. J. Suarez, 1994: A proposal for the</a>
+   312) <a name="l312" style="background-color: #ffcccc">!   intercomparison of the dynamical cores of atmospheric general</a>
+   313) <a name="l313" style="background-color: #ffcccc">!   circulation models.</a>
+   314) <a name="l314" style="background-color: #ffcccc">!   Bulletin of the Amer. Meteor. Soc., vol. 75, pp. 1825-1830.</a>
+   315) <a name="l315" style="background-color: #ffcccc">!</a>
+   316) <a name="l316" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   317) <a name="l317" style="background-color: #ffcccc">!</a>
+   318) <a name="l318" style="background-color: #ffcccc">! Compute idealized radiative heating rates (as dry static energy)</a>
+   319) <a name="l319" style="background-color: #ffcccc">!</a>
+   320) <a name="l320" style="background-color: #ffcccc">      efoldf      =  1._r8</a>
+   321) <a name="l321" style="background-color: #ffcccc">      efolda      = 40._r8</a>
+   322) <a name="l322" style="background-color: #ffcccc">      efolds      =  4._r8</a>
+   323) <a name="l323" style="background-color: #ffcccc">      efold_strat = 40._r8</a>
+   324) <a name="l324" style="background-color: #ffcccc">      efold_meso  = 10._r8</a>
+   325) <a name="l325" style="background-color: #ffcccc">      efoldv      = 0.5_r8</a>
+   326) <a name="l326" style="background-color: #ffcccc">      sigmab      = 0.7_r8</a>
+   327) <a name="l327" style="background-color: #ffcccc">      lapse       = 0.00225_r8</a>
+   328) <a name="l328" style="background-color: #ffcccc">      h0          = 7000._r8</a>
+   329) <a name="l329" style="background-color: #ffcccc">      t00         = 200._r8</a>
+   330) <a name="l330" style="background-color: #ffcccc">      p_infint    = 0.01_r8</a>
+   331) <a name="l331" style="background-color: #ffcccc">!</a>
+   332) <a name="l332" style="background-color: #ffcccc">      onemsig = 1._r8 - sigmab</a>
+   333) <a name="l333" style="background-color: #ffcccc">!</a>
+   334) <a name="l334" style="background-color: #ffcccc">      ka = 1._r8/(86400._r8*efolda)</a>
+   335) <a name="l335" style="background-color: #ffcccc">      ks = 1._r8/(86400._r8*efolds)</a>
+   336) <a name="l336" style="background-color: #ffcccc">!</a>
+   337) <a name="l337" style="background-color: #ffcccc">      do k=1,pver</a>
+   338) <a name="l338" style="background-color: #ffcccc">         if (pref_mid_norm(k) &gt; sigmab) then</a>
+   339) <a name="l339" style="background-color: #ffcccc">            do i=1,ncol</a>
+   340) <a name="l340" style="background-color: #ffcccc">               kt    = ka + (ks - ka)*cossqsq(i)*(pref_mid_norm(k) - sigmab)/onemsig</a>
+   341) <a name="l341" style="background-color: #ffcccc">               tmp   = kt/(1._r8+ ztodt*kt)</a>
+   342) <a name="l342" style="background-color: #ffcccc">               trefc = 315._r8 - 60._r8*sinsq(i)</a>
+   343) <a name="l343" style="background-color: #ffcccc">               trefa = (trefc - 10._r8*cossq(i)*log((pmid(i,k)/psurf_ref)))*(pmid(i,k)/psurf_ref)**cappa</a>
+   344) <a name="l344" style="background-color: #ffcccc">               trefa = max(t00,trefa)</a>
+   345) <a name="l345" style="background-color: #ffcccc">               ptend%s(i,k) = (trefa - state%t(i,k))*tmp*cpair</a>
+   346) <a name="l346" style="background-color: #ffcccc">            end do</a>
+   347) <a name="l347" style="background-color: #ffcccc">         else</a>
+   348) <a name="l348" style="background-color: #ffcccc">            do i=1,ncol</a>
+   349) <a name="l349" style="background-color: #ffcccc">               tmp     = ka/(1._r8+ ztodt*ka)</a>
+   350) <a name="l350" style="background-color: #ffcccc">               pressmb = pmid(i,k)*0.01_r8</a>
+   351) <a name="l351" style="background-color: #ffcccc">               trefc   = 315._r8 - 60._r8*sinsq(i)</a>
+   352) <a name="l352" style="background-color: #ffcccc">               trefa   = (trefc - 10._r8*cossq(i)*log((pmid(i,k)/psurf_ref)))*(pmid(i,k)/psurf_ref)** &amp;</a>
+   353) <a name="l353" style="background-color: #ffcccc">                                                                                     cappa</a>
+   354) <a name="l354" style="background-color: #ffcccc">               trefa   = max(t00,trefa)</a>
+   355) <a name="l355" style="background-color: #ffcccc">               if (pressmb &lt;= 100._r8 .and. pressmb &gt; 1._r8) then</a>
+   356) <a name="l356" style="background-color: #ffcccc">                  trefa = t00 + lapse*h0*coslat(i)*log(100._r8/pressmb)</a>
+   357) <a name="l357" style="background-color: #ffcccc">                  tmp   = (efold_strat-efold_meso)*log(pressmb)/log(100._r8)</a>
+   358) <a name="l358" style="background-color: #ffcccc">                  tmp   = efold_meso + tmp</a>
+   359) <a name="l359" style="background-color: #ffcccc">                  tmp   = 1._r8/(86400._r8*tmp)</a>
+   360) <a name="l360" style="background-color: #ffcccc">                  tmp   = tmp/(1._r8+ ztodt*tmp)</a>
+   361) <a name="l361" style="background-color: #ffcccc">               endif</a>
+   362) <a name="l362" style="background-color: #ffcccc">               if (pressmb &lt;= 1._r8 .and. pressmb &gt; 0.01_r8) then</a>
+   363) <a name="l363" style="background-color: #ffcccc">                  trefa = t00 + lapse*h0*coslat(i)*log(100._r8*pressmb)</a>
+   364) <a name="l364" style="background-color: #ffcccc">                  tmp   = 1._r8/(86400._r8*efold_meso)</a>
+   365) <a name="l365" style="background-color: #ffcccc">                  tmp   = tmp/(1._r8+ ztodt*tmp)</a>
+   366) <a name="l366" style="background-color: #ffcccc">               endif</a>
+   367) <a name="l367" style="background-color: #ffcccc">               if (pressmb &lt;= 0.01_r8) then</a>
+   368) <a name="l368" style="background-color: #ffcccc">                  tmp   = 1._r8/(86400._r8*efold_meso)</a>
+   369) <a name="l369" style="background-color: #ffcccc">                  tmp   = tmp/(1._r8+ ztodt*tmp)</a>
+   370) <a name="l370" style="background-color: #ffcccc">               endif</a>
+   371) <a name="l371" style="background-color: #ffcccc">               ptend%s(i,k) = (trefa - state%t(i,k))*tmp*cpair</a>
+   372) <a name="l372" style="background-color: #ffcccc">            end do</a>
+   373) <a name="l373" style="background-color: #ffcccc">         endif</a>
+   374) <a name="l374" style="background-color: #ffcccc">      end do</a>
+   375) <a name="l375" style="background-color: #ffcccc">!</a>
+   376) <a name="l376" style="background-color: #ffcccc">! Add diffusion near the surface for the wind fields</a>
+   377) <a name="l377" style="background-color: #ffcccc">!</a>
+   378) <a name="l378" style="background-color: #ffcccc">      do k=1,pver</a>
+   379) <a name="l379" style="background-color: #ffcccc">         do i=1,pcols</a>
+   380) <a name="l380" style="background-color: #ffcccc">            ptend%u(i,k) = 0._r8</a>
+   381) <a name="l381" style="background-color: #ffcccc">            ptend%v(i,k) = 0._r8</a>
+   382) <a name="l382" style="background-color: #ffcccc">         end do</a>
+   383) <a name="l383" style="background-color: #ffcccc">      end do</a>
+   384) <a name="l384" style="background-color: #ffcccc"></a>
+   385) <a name="l385" style="background-color: #ffcccc">      kf = 1._r8/(86400._r8*efoldf)</a>
+   386) <a name="l386" style="background-color: #ffcccc">!</a>
+   387) <a name="l387" style="background-color: #ffcccc">      do k=1,pver</a>
+   388) <a name="l388" style="background-color: #ffcccc">         if (pref_mid_norm(k) &gt; sigmab) then</a>
+   389) <a name="l389" style="background-color: #ffcccc">            kv  = kf*(pref_mid_norm(k) - sigmab)/onemsig</a>
+   390) <a name="l390" style="background-color: #ffcccc">            tmp = -kv/(1._r8+ ztodt*kv)</a>
+   391) <a name="l391" style="background-color: #ffcccc">            do i=1,ncol</a>
+   392) <a name="l392" style="background-color: #ffcccc">               ptend%u(i,k) = tmp*state%u(i,k)</a>
+   393) <a name="l393" style="background-color: #ffcccc">               ptend%v(i,k) = tmp*state%v(i,k)</a>
+   394) <a name="l394" style="background-color: #ffcccc">            end do</a>
+   395) <a name="l395" style="background-color: #ffcccc">         else</a>
+   396) <a name="l396" style="background-color: #ffcccc">            do i=1,ncol</a>
+   397) <a name="l397" style="background-color: #ffcccc">               pressmb  = pmid(i,k)*0.01_r8</a>
+   398) <a name="l398" style="background-color: #ffcccc">               if (pressmb &lt;= 100._r8) then</a>
+   399) <a name="l399" style="background-color: #ffcccc">                  kv       = 1._r8/(86400._r8*efoldv)</a>
+   400) <a name="l400" style="background-color: #ffcccc">                  tmp      = 1._r8 + tanh(1.5_r8*log10(p_infint/pressmb))</a>
+   401) <a name="l401" style="background-color: #ffcccc">                  kv       = kv*tmp</a>
+   402) <a name="l402" style="background-color: #ffcccc">                  tmp      = -kv/(1._r8+ ztodt*kv)</a>
+   403) <a name="l403" style="background-color: #ffcccc">                  ptend%u(i,k) = tmp*state%u(i,k)</a>
+   404) <a name="l404" style="background-color: #ffcccc">                  ptend%v(i,k) = tmp*state%v(i,k)</a>
+   405) <a name="l405" style="background-color: #ffcccc">               endif</a>
+   406) <a name="l406" style="background-color: #ffcccc">            end do</a>
+   407) <a name="l407" style="background-color: #ffcccc">         endif</a>
+   408) <a name="l408" style="background-color: #ffcccc">      end do</a>
+   409) <a name="l409" style="background-color: #ffcccc"></a>
+   410) <a name="l410" style="background-color: #ffcccc">   else</a>
+   411) <a name="l411" style="background-color: #ffcccc">      write(iulog,*) 'TPHYSIDL: flag for choosing desired type of idealized ', &amp;</a>
+   412) <a name="l412" style="background-color: #ffcccc">                 'physics (&quot;idlflag&quot;) is set incorrectly.'</a>
+   413) <a name="l413" style="background-color: #ffcccc">      write(iulog,*) 'The valid options are 1, 2, or 3.'</a>
+   414) <a name="l414" style="background-color: #ffcccc">      write(iulog,*) 'idlflag is currently set to: ',idlflag</a>
+   415) <a name="l415" style="background-color: #ffcccc">      call endrun('tphysidl: invalid option')</a>
+   416) <a name="l416" style="background-color: #ffcccc">   endif</a>
+   417) <a name="l417" style="background-color: #ffcccc"></a>
+   418) <a name="l418" style="background-color: #ffcccc">   ! update the state and total physics tendency</a>
+   419) <a name="l419" style="background-color: #ffcccc">   call physics_update(state, ptend, ztodt, tend)</a>
+   420) <a name="l420" style="background-color: #ffcccc"></a>
+   421) <a name="l421" style="background-color: #ffcccc">   ! Can't turn on conservation error messages unless the appropriate heat</a>
+   422) <a name="l422" style="background-color: #ffcccc">   ! surface flux is computed and supplied as an argument to</a>
+   423) <a name="l423" style="background-color: #ffcccc">   ! check_energy_chng to account for how the ideal physics forcings are</a>
+   424) <a name="l424" style="background-color: #ffcccc">   ! changing the total energy.</a>
+   425) <a name="l425" style="background-color: #ffcccc">   call check_energy_chng(state, tend, &quot;tphysidl&quot;, nstep, ztodt, zero, zero, zero, zero)</a>
+   426) <a name="l426" style="background-color: #ffcccc"></a>
+   427) <a name="l427" style="background-color: #ffcccc">   call outfld('QRS', tend%dtdt, pcols, lchnk)</a>
+   428) <a name="l428" style="background-color: #ffcccc"></a>
+   429) <a name="l429" style="background-color: #ffcccc">end subroutine tphysidl</a>
+   430) <a name="l430" style="background-color: #ffffff"></a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

@@ -1,0 +1,251 @@
+<html>
+<head>
+<title>Listing of cam3_ozone_data.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;cam3_ozone_data.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 20.00&#160;%func&#160;&#160;&#160;&#160; 14.75&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module cam3_ozone_data</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!----------------------------------------------------------------------- </a>
+     4) <a name="l4" style="background-color: #ffffff">! Purpose:</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! Interpolates zonal ozone datasets used by CAM3 and puts the field 'O3' into</a>
+     7) <a name="l7" style="background-color: #ffffff">! the physics buffer.</a>
+     8) <a name="l8" style="background-color: #ffffff">! </a>
+     9) <a name="l9" style="background-color: #ffffff">! Revision history:</a>
+    10) <a name="l10" style="background-color: #ffffff">! 2004-07-31  B. Eaton       Assemble module from comozp.F90, oznini.F90, oznint.F90, radozn.F90</a>
+    11) <a name="l11" style="background-color: #ffffff">! 2004-08-19  B. Eaton       Modify ozone_data_vert_interp to return mass mixing ratio.</a>
+    12) <a name="l12" style="background-color: #ffffff">! 2004-08-30  B. Eaton       Add ozone_data_get_cnst method.</a>
+    13) <a name="l13" style="background-color: #ffffff">! 2008 June   B. Eaton       Change name to cam3_ozone_data to support backwards compatibility</a>
+    14) <a name="l14" style="background-color: #ffffff">!                            for reading the CAM3 ozone data.  Add *_readnl method so module</a>
+    15) <a name="l15" style="background-color: #ffffff">!                            reads its own namelist.  Add cam3_ozone_data_on variable to</a>
+    16) <a name="l16" style="background-color: #ffffff">!                            turn the module on from the namelist.  By default it's off.</a>
+    17) <a name="l17" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    18) <a name="l18" style="background-color: #ffffff"></a>
+    19) <a name="l19" style="background-color: #ffffff">use shr_kind_mod,   only: r8 =&gt; shr_kind_r8</a>
+    20) <a name="l20" style="background-color: #ffffff">use spmd_utils,     only: masterproc</a>
+    21) <a name="l21" style="background-color: #ffffff">use ppgrid,         only: begchunk, endchunk, pcols, pver</a>
+    22) <a name="l22" style="background-color: #ffffff">use abortutils,     only: endrun</a>
+    23) <a name="l23" style="background-color: #ffffff">use cam_logfile,    only: iulog</a>
+    24) <a name="l24" style="background-color: #ffffff">use physics_types,  only: physics_state</a>
+    25) <a name="l25" style="background-color: #ffffff">use boundarydata,   only: boundarydata_type, boundarydata_init, boundarydata_update, &amp;</a>
+    26) <a name="l26" style="background-color: #ffffff">                          boundarydata_vert_interp</a>
+    27) <a name="l27" style="background-color: #ffffff">use mpishorthand</a>
+    28) <a name="l28" style="background-color: #ffffff"></a>
+    29) <a name="l29" style="background-color: #ffffff">implicit none</a>
+    30) <a name="l30" style="background-color: #ffffff">private</a>
+    31) <a name="l31" style="background-color: #ffffff">save</a>
+    32) <a name="l32" style="background-color: #ffffff"></a>
+    33) <a name="l33" style="background-color: #ffffff">! Public methods</a>
+    34) <a name="l34" style="background-color: #ffffff">public ::&amp;</a>
+    35) <a name="l35" style="background-color: #ffffff">   cam3_ozone_data_readnl,        &amp;! get namelist input</a>
+    36) <a name="l36" style="background-color: #ffffff">   cam3_ozone_data_register,      &amp;! register ozone with physics buffer</a>
+    37) <a name="l37" style="background-color: #ffffff">   cam3_ozone_data_init,          &amp;! open dataset and spatially interpolate data bounding initial time</a>
+    38) <a name="l38" style="background-color: #ffffff">   cam3_ozone_data_timestep_init   ! interpolate to current time</a>
+    39) <a name="l39" style="background-color: #ffffff"></a>
+    40) <a name="l40" style="background-color: #ffffff">! Namelist variables</a>
+    41) <a name="l41" style="background-color: #ffffff">logical, public    :: cam3_ozone_data_on = .false. ! switch to turn module on/off</a>
+    42) <a name="l42" style="background-color: #ffffff">logical            :: ozncyc = .true.  ! .true. =&gt; assume annual cycle ozone data</a>
+    43) <a name="l43" style="background-color: #ffffff">character(len=256) :: bndtvo = ' '     ! full pathname for time-variant ozone dataset</a>
+    44) <a name="l44" style="background-color: #ffffff"></a>
+    45) <a name="l45" style="background-color: #ffffff">! Local</a>
+    46) <a name="l46" style="background-color: #ffffff">integer            :: oz_idx           ! index into phys_buffer for ozone</a>
+    47) <a name="l47" style="background-color: #ffffff"></a>
+    48) <a name="l48" style="background-color: #ffffff">type(boundarydata_type) :: ozonedata</a>
+    49) <a name="l49" style="background-color: #ffffff">character(len=6), parameter, dimension(1) :: nc_name = (/'OZONE '/) ! constituent names</a>
+    50) <a name="l50" style="background-color: #ffffff"></a>
+    51) <a name="l51" style="background-color: #ffffff">!================================================================================================</a>
+    52) <a name="l52" style="background-color: #ffffff">contains</a>
+    53) <a name="l53" style="background-color: #ffffff">!================================================================================================</a>
+    54) <a name="l54" style="background-color: #ffffff"></a>
+    55) <a name="l55" style="background-color: #ffffff">subroutine cam3_ozone_data_readnl(nlfile)</a>
+    56) <a name="l56" style="background-color: #ffffff"></a>
+    57) <a name="l57" style="background-color: #ffffff">   use namelist_utils,  only: find_group_name</a>
+    58) <a name="l58" style="background-color: #ffffff">   use units,           only: getunit, freeunit</a>
+    59) <a name="l59" style="background-color: #ffffff">   use mpishorthand</a>
+    60) <a name="l60" style="background-color: #ffffff"></a>
+    61) <a name="l61" style="background-color: #ffffff">   character(len=*), intent(in) :: nlfile  ! filepath for file containing namelist input</a>
+    62) <a name="l62" style="background-color: #ffffff"></a>
+    63) <a name="l63" style="background-color: #ffffff">   ! Local variables</a>
+    64) <a name="l64" style="background-color: #ffffff">   integer :: unitn, ierr</a>
+    65) <a name="l65" style="background-color: #ffffff">   character(len=*), parameter :: subname = 'cam3_ozone_data_readnl'</a>
+    66) <a name="l66" style="background-color: #ffffff"></a>
+    67) <a name="l67" style="background-color: #ffffff">   namelist /cam3_ozone_data_nl/ </a><a style="background-color: #ffff99">cam3_ozone_data_on, bndtvo, ozncyc</a>
+    68) <a name="l68" style="background-color: #ffff99">   !-----------------------------------------------------------------------------</a>
+    69) <a name="l69" style="background-color: #ffff99"></a>
+    70) <a name="l70" style="background-color: #ffffff">   if (masterproc) then</a>
+    71) <a name="l71" style="background-color: #ffffff">      unitn = getunit()</a>
+    72) <a name="l72" style="background-color: #ffffff">      open( unitn, file=trim(nlfile), status='old' )</a>
+    73) <a name="l73" style="background-color: #ffffff">      call find_group_name(unitn, 'cam3_ozone_data_nl', status=ierr)</a>
+    74) <a name="l74" style="background-color: #ffffff">      if (ierr == 0) then</a>
+    75) <a name="l75" style="background-color: #ffff99">         read(unitn, cam3_ozone_data_nl, iostat=ierr)</a>
+    76) <a name="l76" style="background-color: #ffff99">         if (ierr /= 0) then</a>
+    77) <a name="l77" style="background-color: #ffff99">            call endrun(subname // ':: ERROR reading namelist')</a>
+    78) <a name="l78" style="background-color: #ffff99">         end if</a>
+    79) <a name="l79" style="background-color: #ffff99">      end if</a>
+    80) <a name="l80" style="background-color: #ffff99">      close(</a><a style="background-color: #ffffff">unitn)</a>
+    81) <a name="l81" style="background-color: #ffffff">      call freeunit(unitn)</a>
+    82) <a name="l82" style="background-color: #ffffff">   end if</a>
+    83) <a name="l83" style="background-color: #ffffff"></a>
+    84) <a name="l84" style="background-color: #ffffff">#ifdef SPMD</a>
+    85) <a name="l85" style="background-color: #ffffff">   ! Broadcast namelist variables</a>
+    86) <a name="l86" style="background-color: #ffffff">   call mpibcast(cam3_ozone_data_on, 1, mpilog, 0, mpicom)</a>
+    87) <a name="l87" style="background-color: #ffffff">   call mpibcast(bndtvo, len(bndtvo), mpichar, 0, mpicom)</a>
+    88) <a name="l88" style="background-color: #ffffff">   call mpibcast(ozncyc, 1, mpilog, 0, mpicom)</a>
+    89) <a name="l89" style="background-color: #ffffff">#endif</a>
+    90) <a name="l90" style="background-color: #ffffff"></a>
+    91) <a name="l91" style="background-color: #ffffff">end subroutine cam3_ozone_data_readnl</a>
+    92) <a name="l92" style="background-color: #ffffff"></a>
+    93) <a name="l93" style="background-color: #ffffff">!================================================================================================</a>
+    94) <a name="l94" style="background-color: #ffffff"></a>
+    95) <a name="l95" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">cam3_ozone_data_register()</a>
+    96) <a name="l96" style="background-color: #ffcccc">   use physics_buffer, only : pbuf_add_field, dtype_r8</a>
+    97) <a name="l97" style="background-color: #ffcccc"></a>
+    98) <a name="l98" style="background-color: #ffcccc">   call pbuf_add_field('O3','physpkg',dtype_r8,(/pcols,pver/),oz_idx)</a>
+    99) <a name="l99" style="background-color: #ffcccc"></a>
+   100) <a name="l100" style="background-color: #ffcccc">end subroutine cam3_ozone_data_register</a>
+   101) <a name="l101" style="background-color: #ffffff"></a>
+   102) <a name="l102" style="background-color: #ffffff">!================================================================================================</a>
+   103) <a name="l103" style="background-color: #ffffff"></a>
+   104) <a name="l104" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">cam3_ozone_data_init(phys_state)</a>
+   105) <a name="l105" style="background-color: #ffcccc">!----------------------------------------------------------------------- </a>
+   106) <a name="l106" style="background-color: #ffcccc">! </a>
+   107) <a name="l107" style="background-color: #ffcccc">! Purpose: Do initial read of time-variant ozone boundary dataset, containing</a>
+   108) <a name="l108" style="background-color: #ffcccc">!          ozone mixing ratios as a function of latitude and pressure.  Read two</a>
+   109) <a name="l109" style="background-color: #ffcccc">!          consecutive months between which the current date lies.  Routine</a>
+   110) <a name="l110" style="background-color: #ffcccc">!          RADOZ2 then evaluates the two path length integrals (with and without</a>
+   111) <a name="l111" style="background-color: #ffcccc">!          pressure weighting) from zero to the interfaces between the input</a>
+   112) <a name="l112" style="background-color: #ffcccc">!          levels.  It also stores the contribution to the integral from each</a>
+   113) <a name="l113" style="background-color: #ffcccc">!          layer.</a>
+   114) <a name="l114" style="background-color: #ffcccc">! </a>
+   115) <a name="l115" style="background-color: #ffcccc">! Method: Call appropriate netcdf wrapper routines and interpolate to model grid</a>
+   116) <a name="l116" style="background-color: #ffcccc">! </a>
+   117) <a name="l117" style="background-color: #ffcccc">! Author: CCM Core Group</a>
+   118) <a name="l118" style="background-color: #ffcccc">! Modified: P. Worley, August 2003, for chunking and performance optimization</a>
+   119) <a name="l119" style="background-color: #ffcccc">!           J. Edwards, Dec 2005, functionality now performed by zonalbndrydata</a>
+   120) <a name="l120" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   121) <a name="l121" style="background-color: #ffcccc"></a>
+   122) <a name="l122" style="background-color: #ffcccc">   use cam_history,      only: addfld, phys_decomp</a>
+   123) <a name="l123" style="background-color: #ffcccc"></a>
+   124) <a name="l124" style="background-color: #ffcccc">   type(physics_state), intent(in) :: phys_state(begchunk:endchunk) </a>
+   125) <a name="l125" style="background-color: #ffcccc">   !-----------------------------------------------------------------------</a>
+   126) <a name="l126" style="background-color: #ffcccc">    </a>
+   127) <a name="l127" style="background-color: #ffcccc">   call addfld ('O3VMR', 'm3/m3', pver, 'A', 'Ozone volume mixing ratio', phys_decomp, sampling_seq='rad_lwsw')</a>
+   128) <a name="l128" style="background-color: #ffcccc"></a>
+   129) <a name="l129" style="background-color: #ffcccc"></a>
+   130) <a name="l130" style="background-color: #ffcccc">   ! Initialize for one field (arg_4=1) and do not vertically interpolate (arg_6=3)</a>
+   131) <a name="l131" style="background-color: #ffcccc">   call boundarydata_init(bndtvo, phys_state, nc_name, 1, ozonedata, 3)</a>
+   132) <a name="l132" style="background-color: #ffcccc"></a>
+   133) <a name="l133" style="background-color: #ffcccc">   if (masterproc) then</a>
+   134) <a name="l134" style="background-color: #ffcccc">      write(iulog,*)'cam3_ozone_data_init: Initializing CAM3 prescribed ozone'</a>
+   135) <a name="l135" style="background-color: #ffcccc">      write(iulog,*)'Time-variant boundary dataset (ozone) is: ', trim(bndtvo)</a>
+   136) <a name="l136" style="background-color: #ffcccc">      if (ozncyc) then</a>
+   137) <a name="l137" style="background-color: #ffcccc">         write(iulog,*)'OZONE dataset will be reused for each model year'</a>
+   138) <a name="l138" style="background-color: #ffcccc">      else</a>
+   139) <a name="l139" style="background-color: #ffcccc">         write(iulog,*)'OZONE dataset will not be cycled'</a>
+   140) <a name="l140" style="background-color: #ffcccc">      end if</a>
+   141) <a name="l141" style="background-color: #ffcccc">   end if</a>
+   142) <a name="l142" style="background-color: #ffcccc"></a>
+   143) <a name="l143" style="background-color: #ffcccc">end subroutine cam3_ozone_data_init</a>
+   144) <a name="l144" style="background-color: #ffffff"></a>
+   145) <a name="l145" style="background-color: #ffffff">!================================================================================================</a>
+   146) <a name="l146" style="background-color: #ffffff"></a>
+   147) <a name="l147" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">cam3_ozone_data_timestep_init(pbuf2d,  phys_state)</a>
+   148) <a name="l148" style="background-color: #ffcccc">!----------------------------------------------------------------------- </a>
+   149) <a name="l149" style="background-color: #ffcccc">! </a>
+   150) <a name="l150" style="background-color: #ffcccc">! Purpose: Interpolate ozone mixing ratios to current time, reading in new monthly</a>
+   151) <a name="l151" style="background-color: #ffcccc">!          data if necessary, and spatially interpolating it.</a>
+   152) <a name="l152" style="background-color: #ffcccc">! </a>
+   153) <a name="l153" style="background-color: #ffcccc">! Method: Find next month of ozone data to interpolate.  Linearly interpolate </a>
+   154) <a name="l154" style="background-color: #ffcccc">!         vertically and horizontally</a>
+   155) <a name="l155" style="background-color: #ffcccc">! </a>
+   156) <a name="l156" style="background-color: #ffcccc">!-----------------------------------------------------------------------</a>
+   157) <a name="l157" style="background-color: #ffcccc"></a>
+   158) <a name="l158" style="background-color: #ffcccc">   </a>
+   159) <a name="l159" style="background-color: #ffcccc">   use physics_buffer, only : physics_buffer_desc, pbuf_get_field, pbuf_get_chunk</a>
+   160) <a name="l160" style="background-color: #ffcccc"></a>
+   161) <a name="l161" style="background-color: #ffcccc">   </a>
+   162) <a name="l162" style="background-color: #ffcccc">   type(physics_state), intent(in) :: phys_state(begchunk:endchunk) </a>
+   163) <a name="l163" style="background-color: #ffcccc">   type(physics_buffer_desc), pointer :: pbuf2d(:,:)</a>
+   164) <a name="l164" style="background-color: #ffcccc">   real(r8),pointer :: tmpptr(:,:)</a>
+   165) <a name="l165" style="background-color: #ffcccc"></a>
+   166) <a name="l166" style="background-color: #ffcccc">   integer lchnk</a>
+   167) <a name="l167" style="background-color: #ffcccc">    </a>
+   168) <a name="l168" style="background-color: #ffcccc">   call boundarydata_update(phys_state, ozonedata)</a>
+   169) <a name="l169" style="background-color: #ffcccc"></a>
+   170) <a name="l170" style="background-color: #ffcccc">   do lchnk = begchunk, endchunk</a>
+   171) <a name="l171" style="background-color: #ffcccc">      call pbuf_get_field(pbuf_get_chunk(pbuf2d, lchnk), oz_idx, tmpptr)</a>
+   172) <a name="l172" style="background-color: #ffcccc">      call ozone_data_get_cnst(phys_state(lchnk), tmpptr)</a>
+   173) <a name="l173" style="background-color: #ffcccc">   enddo</a>
+   174) <a name="l174" style="background-color: #ffcccc"></a>
+   175) <a name="l175" style="background-color: #ffcccc">end subroutine cam3_ozone_data_timestep_init</a>
+   176) <a name="l176" style="background-color: #ffffff"></a>
+   177) <a name="l177" style="background-color: #ffffff">!================================================================================================</a>
+   178) <a name="l178" style="background-color: #ffffff"></a>
+   179) <a name="l179" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">ozone_data_get_cnst(state, q)</a>
+   180) <a name="l180" style="background-color: #ffcccc"></a>
+   181) <a name="l181" style="background-color: #ffcccc">   use cam_history, only: outfld</a>
+   182) <a name="l182" style="background-color: #ffcccc">   use physconst,   only: mwo3</a>
+   183) <a name="l183" style="background-color: #ffcccc"></a>
+   184) <a name="l184" style="background-color: #ffcccc">   type(physics_state),  intent(in) :: state</a>
+   185) <a name="l185" style="background-color: #ffcccc">   real(r8)                         :: q(:,:)     ! constituent mass mixing ratio</a>
+   186) <a name="l186" style="background-color: #ffcccc"></a>
+   187) <a name="l187" style="background-color: #ffcccc">   ! local variables</a>
+   188) <a name="l188" style="background-color: #ffcccc">   integer :: lchnk            ! chunk identifier</a>
+   189) <a name="l189" style="background-color: #ffcccc">   integer :: i, k</a>
+   190) <a name="l190" style="background-color: #ffcccc">   real(r8) :: ozmixin(pcols,ozonedata%levsiz)</a>
+   191) <a name="l191" style="background-color: #ffcccc">   ! *** N.B. this hardwired mw of dry air needs to be changed to the share value</a>
+   192) <a name="l192" style="background-color: #ffcccc">   real(r8), parameter :: mwdry = 28.9644_r8  ! Effective molecular weight of dry air (g/mol)</a>
+   193) <a name="l193" style="background-color: #ffcccc">   real(r8), parameter :: mwr =  mwo3/mwdry   ! convert from the dataset values of vmr to mmr</a>
+   194) <a name="l194" style="background-color: #ffcccc">   !-------------------------------------------------------------------------------</a>
+   195) <a name="l195" style="background-color: #ffcccc"></a>
+   196) <a name="l196" style="background-color: #ffcccc">   lchnk = state%lchnk</a>
+   197) <a name="l197" style="background-color: #ffcccc"></a>
+   198) <a name="l198" style="background-color: #ffcccc">   ozmixin=0._r8</a>
+   199) <a name="l199" style="background-color: #ffcccc">   do k=1,ozonedata%levsiz</a>
+   200) <a name="l200" style="background-color: #ffcccc">      do i=1,state%ncol</a>
+   201) <a name="l201" style="background-color: #ffcccc">         ozmixin(i,k) = ozonedata%datainst(state%latmapback(i),k,lchnk,1)</a>
+   202) <a name="l202" style="background-color: #ffcccc">      end do</a>
+   203) <a name="l203" style="background-color: #ffcccc">   end do</a>
+   204) <a name="l204" style="background-color: #ffcccc">   call boundarydata_vert_interp(lchnk, state%ncol, ozonedata%levsiz, &amp;</a>
+   205) <a name="l205" style="background-color: #ffcccc">                                 1, ozonedata%pin, state%pmid, ozmixin , q)</a>
+   206) <a name="l206" style="background-color: #ffcccc"></a>
+   207) <a name="l207" style="background-color: #ffcccc">   call outfld('O3VMR', q, pcols, lchnk)</a>
+   208) <a name="l208" style="background-color: #ffcccc"></a>
+   209) <a name="l209" style="background-color: #ffcccc">   do k=1,pver</a>
+   210) <a name="l210" style="background-color: #ffcccc">      do i=1,state%ncol</a>
+   211) <a name="l211" style="background-color: #ffcccc">         q(i,k) = mwr*q(i,k)</a>
+   212) <a name="l212" style="background-color: #ffcccc">      end do</a>
+   213) <a name="l213" style="background-color: #ffcccc">   end do</a>
+   214) <a name="l214" style="background-color: #ffcccc">    </a>
+   215) <a name="l215" style="background-color: #ffcccc">end subroutine ozone_data_get_cnst</a>
+   216) <a name="l216" style="background-color: #ffffff"></a>
+   217) <a name="l217" style="background-color: #ffffff">!================================================================================================</a>
+   218) <a name="l218" style="background-color: #ffffff"></a>
+   219) <a name="l219" style="background-color: #ffffff">end module cam3_ozone_data</a>
+   220) <a name="l220" style="background-color: #ffffff"></a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

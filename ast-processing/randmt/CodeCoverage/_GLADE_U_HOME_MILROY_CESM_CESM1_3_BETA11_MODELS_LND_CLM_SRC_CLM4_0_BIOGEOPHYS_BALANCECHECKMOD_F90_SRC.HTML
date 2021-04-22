@@ -1,0 +1,766 @@
+<html>
+<head>
+<title>Listing of BalanceCheckMod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;BalanceCheckMod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 100.00&#160;%func&#160;&#160;&#160;&#160; 30.65&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module BalanceCheckMod</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     4) <a name="l4" style="background-color: #ffffff">!BOP</a>
+     5) <a name="l5" style="background-color: #ffffff">!</a>
+     6) <a name="l6" style="background-color: #ffffff">! !MODULE: BalanceCheckMod</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     9) <a name="l9" style="background-color: #ffffff">! Water and energy balance check.</a>
+    10) <a name="l10" style="background-color: #ffffff">!</a>
+    11) <a name="l11" style="background-color: #ffffff">! !USES:</a>
+    12) <a name="l12" style="background-color: #ffffff">  use shr_kind_mod, only: r8 =&gt; shr_kind_r8</a>
+    13) <a name="l13" style="background-color: #ffffff">  use abortutils,   only: endrun</a>
+    14) <a name="l14" style="background-color: #ffffff">  use clm_varctl,   only: iulog</a>
+    15) <a name="l15" style="background-color: #ffffff">!</a>
+    16) <a name="l16" style="background-color: #ffffff">! !PUBLIC TYPES:</a>
+    17) <a name="l17" style="background-color: #ffffff">  implicit none</a>
+    18) <a name="l18" style="background-color: #ffffff">  save</a>
+    19) <a name="l19" style="background-color: #ffffff">!</a>
+    20) <a name="l20" style="background-color: #ffffff">! !PUBLIC MEMBER FUNCTIONS:</a>
+    21) <a name="l21" style="background-color: #ffffff">  public :: BeginWaterBalance  ! Initialize water balance check</a>
+    22) <a name="l22" style="background-color: #ffffff">  public :: BalanceCheck       ! Water and energy balance check</a>
+    23) <a name="l23" style="background-color: #ffffff">!</a>
+    24) <a name="l24" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    25) <a name="l25" style="background-color: #ffffff">! Created by Mariana Vertenstein</a>
+    26) <a name="l26" style="background-color: #ffffff">!</a>
+    27) <a name="l27" style="background-color: #ffffff">!EOP</a>
+    28) <a name="l28" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    29) <a name="l29" style="background-color: #ffffff"></a>
+    30) <a name="l30" style="background-color: #ffffff">contains</a>
+    31) <a name="l31" style="background-color: #ffffff"></a>
+    32) <a name="l32" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    33) <a name="l33" style="background-color: #ffffff">!BOP</a>
+    34) <a name="l34" style="background-color: #ffffff">!</a>
+    35) <a name="l35" style="background-color: #ffffff">! !IROUTINE: BeginWaterBalance</a>
+    36) <a name="l36" style="background-color: #ffffff">!</a>
+    37) <a name="l37" style="background-color: #ffffff">! !INTERFACE:</a>
+    38) <a name="l38" style="background-color: #ffffff">  subroutine BeginWaterBalance(lbc, ubc, lbp, ubp, &amp;</a>
+    39) <a name="l39" style="background-color: #ffffff">             num_nolakec, filter_nolakec, num_lakec, filter_lakec, &amp;</a>
+    40) <a name="l40" style="background-color: #ffffff">             num_hydrologyc, filter_hydrologyc)</a>
+    41) <a name="l41" style="background-color: #ffffff">!</a>
+    42) <a name="l42" style="background-color: #ffffff">! !DESCRIPTION:</a>
+    43) <a name="l43" style="background-color: #ffffff">! Initialize column-level water balance at beginning of time step</a>
+    44) <a name="l44" style="background-color: #ffffff">!</a>
+    45) <a name="l45" style="background-color: #ffffff">! !USES:</a>
+    46) <a name="l46" style="background-color: #ffffff">    use shr_kind_mod , only : r8 =&gt; shr_kind_r8</a>
+    47) <a name="l47" style="background-color: #ffffff">    use clmtype</a>
+    48) <a name="l48" style="background-color: #ffffff">    use clm_varpar   , only : nlevgrnd, nlevsoi</a>
+    49) <a name="l49" style="background-color: #ffffff">    use subgridAveMod, only : p2c</a>
+    50) <a name="l50" style="background-color: #ffffff">    use clm_varcon   , only : icol_roof, icol_sunwall, icol_shadewall, icol_road_perv, &amp;</a>
+    51) <a name="l51" style="background-color: #ffffff">                              icol_road_imperv</a>
+    52) <a name="l52" style="background-color: #ffffff">!</a>
+    53) <a name="l53" style="background-color: #ffffff">! !ARGUMENTS:</a>
+    54) <a name="l54" style="background-color: #ffffff">    implicit none</a>
+    55) <a name="l55" style="background-color: #ffffff">    integer, intent(in) :: lbc, ubc                    ! column-index bounds</a>
+    56) <a name="l56" style="background-color: #ffffff">    integer, intent(in) :: lbp, ubp                    ! pft-index bounds</a>
+    57) <a name="l57" style="background-color: #ffffff">    integer, intent(in) :: num_nolakec                 ! number of column non-lake points in column filter</a>
+    58) <a name="l58" style="background-color: #ffffff">    integer, intent(in) :: filter_nolakec(ubc-lbc+1)   ! column filter for non-lake points</a>
+    59) <a name="l59" style="background-color: #ffffff">    integer, intent(in) :: num_lakec                   ! number of column non-lake points in column filter</a>
+    60) <a name="l60" style="background-color: #ffffff">    integer, intent(in) :: filter_lakec(ubc-lbc+1)     ! column filter for non-lake points</a>
+    61) <a name="l61" style="background-color: #ffffff">    integer , intent(in)  :: num_hydrologyc               ! number of column soil points in column filter</a>
+    62) <a name="l62" style="background-color: #ffffff">    integer , intent(in)  :: filter_hydrologyc(ubc-lbc+1) ! column filter for soil points</a>
+    63) <a name="l63" style="background-color: #ffffff">!</a>
+    64) <a name="l64" style="background-color: #ffffff">! !CALLED FROM:</a>
+    65) <a name="l65" style="background-color: #ffffff">! subroutine clm_driver1</a>
+    66) <a name="l66" style="background-color: #ffffff">!</a>
+    67) <a name="l67" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    68) <a name="l68" style="background-color: #ffffff">! Created by Peter Thornton</a>
+    69) <a name="l69" style="background-color: #ffffff">!</a>
+    70) <a name="l70" style="background-color: #ffffff">!EOP</a>
+    71) <a name="l71" style="background-color: #ffffff">!</a>
+    72) <a name="l72" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+    73) <a name="l73" style="background-color: #ffffff">!</a>
+    74) <a name="l74" style="background-color: #ffffff">! local pointers to original implicit in variables</a>
+    75) <a name="l75" style="background-color: #ffffff">!</a>
+    76) <a name="l76" style="background-color: #ffffff">    real(r8), pointer :: h2osno(:)             ! snow water (mm H2O)</a>
+    77) <a name="l77" style="background-color: #ffffff">    real(r8), pointer :: h2osoi_ice(:,:)       ! ice lens (kg/m2)</a>
+    78) <a name="l78" style="background-color: #ffffff">    real(r8), pointer :: h2osoi_liq(:,:)       ! liquid water (kg/m2)</a>
+    79) <a name="l79" style="background-color: #ffffff">    real(r8), pointer :: h2ocan_pft(:)         ! canopy water (mm H2O) (pft-level) </a>
+    80) <a name="l80" style="background-color: #ffffff">    real(r8), pointer :: wa(:)                 ! water in the unconfined aquifer (mm)</a>
+    81) <a name="l81" style="background-color: #ffffff">    integer , pointer :: ctype(:)              ! column type </a>
+    82) <a name="l82" style="background-color: #ffffff">    real(r8), pointer :: zwt(:)                ! water table depth (m)</a>
+    83) <a name="l83" style="background-color: #ffffff">    real(r8), pointer :: zi(:,:)               ! interface level below a &quot;z&quot; level (m)</a>
+    84) <a name="l84" style="background-color: #ffffff">!</a>
+    85) <a name="l85" style="background-color: #ffffff">! local pointers to original implicit out variables</a>
+    86) <a name="l86" style="background-color: #ffffff">!</a>
+    87) <a name="l87" style="background-color: #ffffff">    real(r8), pointer :: h2ocan_col(:)         ! canopy water (mm H2O) (column level)</a>
+    88) <a name="l88" style="background-color: #ffffff">    real(r8), pointer :: begwb(:)              ! water mass begining of the time step</a>
+    89) <a name="l89" style="background-color: #ffffff">!</a>
+    90) <a name="l90" style="background-color: #ffffff">! !OTHER LOCAL VARIABLES:</a>
+    91) <a name="l91" style="background-color: #ffffff">!</a>
+    92) <a name="l92" style="background-color: #ffffff">    integer :: c, p, f, j, fc            ! indices</a>
+    93) <a name="l93" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+    94) <a name="l94" style="background-color: #ffffff"></a>
+    95) <a name="l95" style="background-color: #ffffff">    ! Assign local pointers to derived type members (column-level)</a>
+    96) <a name="l96" style="background-color: #ffffff"></a>
+    97) <a name="l97" style="background-color: #ffffff">    h2osno             =&gt; cws%h2osno</a>
+    98) <a name="l98" style="background-color: #ffffff">    h2osoi_ice         =&gt; cws%h2osoi_ice</a>
+    99) <a name="l99" style="background-color: #ffffff">    h2osoi_liq         =&gt; cws%h2osoi_liq</a>
+   100) <a name="l100" style="background-color: #ffffff">    begwb              =&gt; cwbal%begwb</a>
+   101) <a name="l101" style="background-color: #ffffff">    h2ocan_col         =&gt; pws_a%h2ocan</a>
+   102) <a name="l102" style="background-color: #ffffff">    wa                 =&gt; cws%wa</a>
+   103) <a name="l103" style="background-color: #ffffff">    ctype              =&gt; col%itype</a>
+   104) <a name="l104" style="background-color: #ffffff">    zwt                =&gt; cws%zwt</a>
+   105) <a name="l105" style="background-color: #ffffff">    zi                 =&gt; cps%zi</a>
+   106) <a name="l106" style="background-color: #ffffff"></a>
+   107) <a name="l107" style="background-color: #ffffff">    ! Assign local pointers to derived type members (pft-level)</a>
+   108) <a name="l108" style="background-color: #ffffff"></a>
+   109) <a name="l109" style="background-color: #ffffff">    h2ocan_pft         =&gt; pws%h2ocan</a>
+   110) <a name="l110" style="background-color: #ffffff"></a>
+   111) <a name="l111" style="background-color: #ffffff">    ! Determine beginning water balance for time step</a>
+   112) <a name="l112" style="background-color: #ffffff">    ! pft-level canopy water averaged to column</a>
+   113) <a name="l113" style="background-color: #ffffff">    call p2c(num_nolakec, filter_nolakec, h2ocan_pft, h2ocan_col)</a>
+   114) <a name="l114" style="background-color: #ffffff"></a>
+   115) <a name="l115" style="background-color: #ffffff">    do f = 1, num_hydrologyc</a>
+   116) <a name="l116" style="background-color: #ffffff">       c = filter_hydrologyc(f)</a>
+   117) <a name="l117" style="background-color: #ffffff">       if(zwt(c) &lt;= zi(c,nlevsoi)) then</a>
+   118) <a name="l118" style="background-color: #ffffff">          wa(c) = 5000._r8</a>
+   119) <a name="l119" style="background-color: #ffffff">       end if</a>
+   120) <a name="l120" style="background-color: #ffffff">    end do</a>
+   121) <a name="l121" style="background-color: #ffffff"></a>
+   122) <a name="l122" style="background-color: #ffffff">    do f = 1, num_nolakec</a>
+   123) <a name="l123" style="background-color: #ffffff">       c = filter_nolakec(f)</a>
+   124) <a name="l124" style="background-color: #ffffff">       if (ctype(c) == icol_roof .or. ctype(c) == icol_sunwall &amp;</a>
+   125) <a name="l125" style="background-color: #ffffff">          .or. ctype(c) == icol_shadewall .or. ctype(c) == icol_road_imperv) then</a>
+   126) <a name="l126" style="background-color: #ffffff">         begwb(c) = h2ocan_col(c) + h2osno(c)</a>
+   127) <a name="l127" style="background-color: #ffffff">       else</a>
+   128) <a name="l128" style="background-color: #ffffff">         begwb(c) = h2ocan_col(c) + h2osno(c) + wa(c)</a>
+   129) <a name="l129" style="background-color: #ffffff">       end if</a>
+   130) <a name="l130" style="background-color: #ffffff">    end do</a>
+   131) <a name="l131" style="background-color: #ffffff">    do j = 1, nlevgrnd</a>
+   132) <a name="l132" style="background-color: #ffffff">      do f = 1, num_nolakec</a>
+   133) <a name="l133" style="background-color: #ffffff">         c = filter_nolakec(f)</a>
+   134) <a name="l134" style="background-color: #ffffff">         begwb(c) = begwb(c) + h2osoi_ice(c,j) + h2osoi_liq(c,j)</a>
+   135) <a name="l135" style="background-color: #ffffff">      end do</a>
+   136) <a name="l136" style="background-color: #ffffff">    end do</a>
+   137) <a name="l137" style="background-color: #ffffff"></a>
+   138) <a name="l138" style="background-color: #ffffff">    do f = 1, num_lakec</a>
+   139) <a name="l139" style="background-color: #ffffff">       c = filter_lakec(f)</a>
+   140) <a name="l140" style="background-color: #ffffff">       begwb(c) = h2osno(c)</a>
+   141) <a name="l141" style="background-color: #ffffff">    end do</a>
+   142) <a name="l142" style="background-color: #ffffff"></a>
+   143) <a name="l143" style="background-color: #ffffff">  end subroutine BeginWaterBalance</a>
+   144) <a name="l144" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   145) <a name="l145" style="background-color: #ffffff"></a>
+   146) <a name="l146" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   147) <a name="l147" style="background-color: #ffffff">!BOP</a>
+   148) <a name="l148" style="background-color: #ffffff">!</a>
+   149) <a name="l149" style="background-color: #ffffff">! !IROUTINE: BalanceCheck</a>
+   150) <a name="l150" style="background-color: #ffffff">!</a>
+   151) <a name="l151" style="background-color: #ffffff">! !INTERFACE:</a>
+   152) <a name="l152" style="background-color: #ffffff">  subroutine BalanceCheck(lbp, ubp, lbc, ubc, lbl, ubl, lbg, ubg)</a>
+   153) <a name="l153" style="background-color: #ffffff">!</a>
+   154) <a name="l154" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   155) <a name="l155" style="background-color: #ffffff">! This subroutine accumulates the numerical truncation errors of the water</a>
+   156) <a name="l156" style="background-color: #ffffff">! and energy balance calculation. It is helpful to see the performance of</a>
+   157) <a name="l157" style="background-color: #ffffff">! the process of integration.</a>
+   158) <a name="l158" style="background-color: #ffffff">!</a>
+   159) <a name="l159" style="background-color: #ffffff">! The error for energy balance:</a>
+   160) <a name="l160" style="background-color: #ffffff">!</a>
+   161) <a name="l161" style="background-color: #ffffff">! error = abs(Net radiation - change of internal energy - Sensible heat</a>
+   162) <a name="l162" style="background-color: #ffffff">!             - Latent heat)</a>
+   163) <a name="l163" style="background-color: #ffffff">!</a>
+   164) <a name="l164" style="background-color: #ffffff">! The error for water balance:</a>
+   165) <a name="l165" style="background-color: #ffffff">!</a>
+   166) <a name="l166" style="background-color: #ffffff">! error = abs(precipitation - change of water storage - evaporation - runoff)</a>
+   167) <a name="l167" style="background-color: #ffffff">!</a>
+   168) <a name="l168" style="background-color: #ffffff">! !USES:</a>
+   169) <a name="l169" style="background-color: #ffffff">    use clmtype</a>
+   170) <a name="l170" style="background-color: #ffffff">    use clm_atmlnd   , only : clm_a2l</a>
+   171) <a name="l171" style="background-color: #ffffff">    use subgridAveMod</a>
+   172) <a name="l172" style="background-color: #ffffff">    use clm_time_manager , only : get_step_size, get_nstep</a>
+   173) <a name="l173" style="background-color: #ffffff">    use clm_varcon   , only : isturb, icol_roof, icol_sunwall, icol_shadewall, &amp;</a>
+   174) <a name="l174" style="background-color: #ffffff">                              spval, icol_road_perv, icol_road_imperv, istice_mec, &amp;</a>
+   175) <a name="l175" style="background-color: #ffffff">                              istdlak, istslak, istwet, istcrop, istsoil</a>
+   176) <a name="l176" style="background-color: #ffffff">    use clm_varctl   , only : glc_dyntopo</a>
+   177) <a name="l177" style="background-color: #ffffff">!</a>
+   178) <a name="l178" style="background-color: #ffffff">! !ARGUMENTS:</a>
+   179) <a name="l179" style="background-color: #ffffff">    implicit none</a>
+   180) <a name="l180" style="background-color: #ffffff">    integer :: lbp, ubp ! pft-index bounds</a>
+   181) <a name="l181" style="background-color: #ffffff">    integer :: lbc, ubc ! column-index bounds</a>
+   182) <a name="l182" style="background-color: #ffffff">    integer :: lbl, ubl ! landunit-index bounds</a>
+   183) <a name="l183" style="background-color: #ffffff">    integer :: lbg, ubg ! grid-index bounds</a>
+   184) <a name="l184" style="background-color: #ffffff">!</a>
+   185) <a name="l185" style="background-color: #ffffff">! !CALLED FROM:</a>
+   186) <a name="l186" style="background-color: #ffffff">! subroutine clm_driver</a>
+   187) <a name="l187" style="background-color: #ffffff">!</a>
+   188) <a name="l188" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   189) <a name="l189" style="background-color: #ffffff">! 15 September 1999: Yongjiu Dai; Initial code</a>
+   190) <a name="l190" style="background-color: #ffffff">! 15 December 1999:  Paul Houser and Jon Radakovich; F90 Revision</a>
+   191) <a name="l191" style="background-color: #ffffff">! 10 November 2000: Mariana Vertenstein</a>
+   192) <a name="l192" style="background-color: #ffffff">! Migrated to new data structures by Mariana Vertenstein and</a>
+   193) <a name="l193" style="background-color: #ffffff">! Peter Thornton</a>
+   194) <a name="l194" style="background-color: #ffffff">!</a>
+   195) <a name="l195" style="background-color: #ffffff">! !LOCAL VARIABLES:</a>
+   196) <a name="l196" style="background-color: #ffffff">!</a>
+   197) <a name="l197" style="background-color: #ffffff">! local pointers to original implicit in arguments</a>
+   198) <a name="l198" style="background-color: #ffffff">!</a>
+   199) <a name="l199" style="background-color: #ffffff">    logical , pointer :: do_capsnow(:)         ! true =&gt; do snow capping</a>
+   200) <a name="l200" style="background-color: #ffffff">    real(r8), pointer :: qflx_floodc(:)     ! total runoff due to flooding</a>
+   201) <a name="l201" style="background-color: #ffffff">    real(r8), pointer :: qflx_snow_melt(:)  ! snow melt (net)</a>
+   202) <a name="l202" style="background-color: #ffffff">    real(r8), pointer :: qflx_rain_grnd_col(:) ! rain on ground after interception (mm H2O/s) [+]</a>
+   203) <a name="l203" style="background-color: #ffffff">    real(r8), pointer :: qflx_snow_grnd_col(:) ! snow on ground after interception (mm H2O/s) [+]</a>
+   204) <a name="l204" style="background-color: #ffffff">    integer , pointer :: pgridcell(:)       ! pft's gridcell index</a>
+   205) <a name="l205" style="background-color: #ffffff">    integer , pointer :: plandunit(:)       ! pft's landunit index</a>
+   206) <a name="l206" style="background-color: #ffffff">    integer , pointer :: cgridcell(:)       ! column's gridcell index</a>
+   207) <a name="l207" style="background-color: #ffffff">    integer , pointer :: clandunit(:)       ! column's landunit index</a>
+   208) <a name="l208" style="background-color: #ffffff">    integer , pointer :: ltype(:)           ! landunit type </a>
+   209) <a name="l209" style="background-color: #ffffff">    integer , pointer :: ctype(:)           ! column type </a>
+   210) <a name="l210" style="background-color: #ffffff">    real(r8), pointer :: pwtgcell(:)        ! pft's weight relative to corresponding gridcell</a>
+   211) <a name="l211" style="background-color: #ffffff">    real(r8), pointer :: cwtgcell(:)        ! column's weight relative to corresponding gridcell</a>
+   212) <a name="l212" style="background-color: #ffffff">    real(r8), pointer :: forc_rain(:)       ! rain rate [mm/s]</a>
+   213) <a name="l213" style="background-color: #ffffff">    real(r8), pointer :: forc_snow(:)       ! snow rate [mm/s]</a>
+   214) <a name="l214" style="background-color: #ffffff">    real(r8), pointer :: forc_lwrad(:)      ! downward infrared (longwave) radiation (W/m**2)</a>
+   215) <a name="l215" style="background-color: #ffffff">    real(r8), pointer :: endwb(:)           ! water mass end of the time step</a>
+   216) <a name="l216" style="background-color: #ffffff">    real(r8), pointer :: begwb(:)           ! water mass begining of the time step</a>
+   217) <a name="l217" style="background-color: #ffffff">    real(r8), pointer :: fsa(:)             ! solar radiation absorbed (total) (W/m**2)</a>
+   218) <a name="l218" style="background-color: #ffffff">    real(r8), pointer :: fsr(:)             ! solar radiation reflected (W/m**2)</a>
+   219) <a name="l219" style="background-color: #ffffff">    real(r8), pointer :: eflx_lwrad_out(:)  ! emitted infrared (longwave) radiation (W/m**2)</a>
+   220) <a name="l220" style="background-color: #ffffff">    real(r8), pointer :: eflx_lwrad_net(:)  ! net infrared (longwave) rad (W/m**2) [+ = to atm]</a>
+   221) <a name="l221" style="background-color: #ffffff">    real(r8), pointer :: sabv(:)            ! solar radiation absorbed by vegetation (W/m**2)</a>
+   222) <a name="l222" style="background-color: #ffffff">    real(r8), pointer :: sabg(:)            ! solar radiation absorbed by ground (W/m**2)</a>
+   223) <a name="l223" style="background-color: #ffffff">    real(r8), pointer :: eflx_sh_tot(:)     ! total sensible heat flux (W/m**2) [+ to atm]</a>
+   224) <a name="l224" style="background-color: #ffffff">    real(r8), pointer :: eflx_sh_totg(:)    ! total sensible heat flux at grid level (W/m**2) [+ to atm]</a>
+   225) <a name="l225" style="background-color: #ffffff">    real(r8), pointer :: eflx_dynbal(:)     ! energy conversion flux due to dynamic land cover change(W/m**2) [+ to atm]</a>
+   226) <a name="l226" style="background-color: #ffffff">    real(r8), pointer :: eflx_lh_tot(:)     ! total latent heat flux (W/m8*2)  [+ to atm]</a>
+   227) <a name="l227" style="background-color: #ffffff">    real(r8), pointer :: eflx_soil_grnd(:)  ! soil heat flux (W/m**2) [+ = into soil]</a>
+   228) <a name="l228" style="background-color: #ffffff">    real(r8), pointer :: qflx_evap_tot(:)   ! qflx_evap_soi + qflx_evap_can + qflx_tran_veg</a>
+   229) <a name="l229" style="background-color: #ffffff">    real(r8), pointer :: qflx_irrig(:)      ! irrigation flux (mm H2O /s)</a>
+   230) <a name="l230" style="background-color: #ffffff">    real(r8), pointer :: qflx_surf(:)       ! surface runoff (mm H2O /s)</a>
+   231) <a name="l231" style="background-color: #ffffff">    real(r8), pointer :: qflx_qrgwl(:)      ! qflx_surf at glaciers, wetlands, lakes</a>
+   232) <a name="l232" style="background-color: #ffffff">    real(r8), pointer :: qflx_drain(:)      ! sub-surface runoff (mm H2O /s)</a>
+   233) <a name="l233" style="background-color: #ffffff">    real(r8), pointer :: qflx_runoff(:)     ! total runoff (mm H2O /s)</a>
+   234) <a name="l234" style="background-color: #ffffff">    real(r8), pointer :: qflx_runoffg(:)    ! total runoff at gridcell level inc land cover change flux (mm H2O /s)</a>
+   235) <a name="l235" style="background-color: #ffffff">    real(r8), pointer :: qflx_liq_dynbal(:) ! liq runoff due to dynamic land cover change (mm H2O /s)</a>
+   236) <a name="l236" style="background-color: #ffffff">    real(r8), pointer :: qflx_snwcp_ice(:)  ! excess snowfall due to snow capping (mm H2O /s) [+]`</a>
+   237) <a name="l237" style="background-color: #ffffff">    real(r8), pointer :: qflx_glcice(:)     ! flux of new glacier ice (mm H2O /s) [+ if ice grows]</a>
+   238) <a name="l238" style="background-color: #ffffff">    real(r8), pointer :: qflx_glcice_frz(:) ! ice growth (mm H2O/s) [+]</a>
+   239) <a name="l239" style="background-color: #ffffff">    real(r8), pointer :: qflx_snwcp_iceg(:) ! excess snowfall due to snow cap inc land cover change flux (mm H20/s)</a>
+   240) <a name="l240" style="background-color: #ffffff">    real(r8), pointer :: qflx_ice_dynbal(:) ! ice runoff due to dynamic land cover change (mm H2O /s)</a>
+   241) <a name="l241" style="background-color: #ffffff">    real(r8), pointer :: forc_solad(:,:)    ! direct beam radiation (vis=forc_sols , nir=forc_soll )</a>
+   242) <a name="l242" style="background-color: #ffffff">    real(r8), pointer :: forc_solai(:,:)    ! diffuse radiation     (vis=forc_solsd, nir=forc_solld)</a>
+   243) <a name="l243" style="background-color: #ffffff">    real(r8), pointer :: eflx_traffic_pft(:)    ! traffic sensible heat flux (W/m**2)</a>
+   244) <a name="l244" style="background-color: #ffffff">    real(r8), pointer :: eflx_wasteheat_pft(:)  ! sensible heat flux from urban heating/cooling sources of waste heat (W/m**2)</a>
+   245) <a name="l245" style="background-color: #ffffff">    real(r8), pointer :: canyon_hwr(:)      ! ratio of building height to street width</a>
+   246) <a name="l246" style="background-color: #ffffff">    real(r8), pointer :: eflx_heat_from_ac_pft(:) !sensible heat flux put back into canyon due to removal by AC (W/m**2)</a>
+   247) <a name="l247" style="background-color: #ffffff">    real(r8), pointer :: h2osno(:)             ! snow water (mm H2O)</a>
+   248) <a name="l248" style="background-color: #ffffff">    real(r8), pointer :: h2osno_old(:)         ! snow water (mm H2O) at previous time step</a>
+   249) <a name="l249" style="background-color: #ffffff">    real(r8), pointer :: qflx_dew_snow(:)      ! surface dew added to snow pack (mm H2O /s) [+]</a>
+   250) <a name="l250" style="background-color: #ffffff">    real(r8), pointer :: qflx_sub_snow(:)      ! sublimation rate from snow pack (mm H2O /s) [+]</a>
+   251) <a name="l251" style="background-color: #ffffff">    real(r8), pointer :: qflx_top_soil(:)      ! net water input into soil from top (mm/s)</a>
+   252) <a name="l252" style="background-color: #ffffff">    real(r8), pointer :: qflx_dew_grnd(:)      ! ground surface dew formation (mm H2O /s) [+]</a>
+   253) <a name="l253" style="background-color: #ffffff">    real(r8), pointer :: qflx_evap_grnd(:)     ! ground surface evaporation rate (mm H2O/s) [+]</a>
+   254) <a name="l254" style="background-color: #ffffff">    real(r8), pointer :: qflx_prec_grnd(:)     ! water onto ground including canopy runoff [kg/(m2 s)]</a>
+   255) <a name="l255" style="background-color: #ffffff">    real(r8), pointer :: qflx_snwcp_liq(:)     ! excess liquid water due to snow capping (mm H2O /s) [+]`</a>
+   256) <a name="l256" style="background-color: #ffffff">    real(r8), pointer :: qflx_sl_top_soil(:)   ! liquid water + ice from layer above soil to top soil layer or sent to qflx_qrgwl (mm H2O/s)</a>
+   257) <a name="l257" style="background-color: #ffffff">    integer , pointer :: snl(:)                ! number of snow layers</a>
+   258) <a name="l258" style="background-color: #ffffff">!</a>
+   259) <a name="l259" style="background-color: #ffffff">! local pointers to original implicit out arguments</a>
+   260) <a name="l260" style="background-color: #ffffff">!</a>
+   261) <a name="l261" style="background-color: #ffffff">    real(r8), pointer :: errh2o(:)          ! water conservation error (mm H2O)</a>
+   262) <a name="l262" style="background-color: #ffffff">    real(r8), pointer :: errsol(:)          ! solar radiation conservation error (W/m**2)</a>
+   263) <a name="l263" style="background-color: #ffffff">    real(r8), pointer :: errlon(:)          ! longwave radiation conservation error (W/m**2)</a>
+   264) <a name="l264" style="background-color: #ffffff">    real(r8), pointer :: errseb(:)          ! surface energy conservation error (W/m**2)</a>
+   265) <a name="l265" style="background-color: #ffffff">    real(r8), pointer :: netrad(:)          ! net radiation (positive downward) (W/m**2)</a>
+   266) <a name="l266" style="background-color: #ffffff">    real(r8), pointer :: errsoi_col(:)      ! column-level soil/lake energy conservation error (W/m**2)</a>
+   267) <a name="l267" style="background-color: #ffffff">    real(r8), pointer :: snow_sources(:)    ! snow sources (mm H2O /s)</a>
+   268) <a name="l268" style="background-color: #ffffff">    real(r8), pointer :: snow_sinks(:)      ! snow sinks (mm H2O /s)</a>
+   269) <a name="l269" style="background-color: #ffffff">    real(r8), pointer :: errh2osno(:)       ! error in h2osno (kg m-2)</a>
+   270) <a name="l270" style="background-color: #ffffff">!</a>
+   271) <a name="l271" style="background-color: #ffffff">!EOP</a>
+   272) <a name="l272" style="background-color: #ffffff">!</a>
+   273) <a name="l273" style="background-color: #ffffff">! !OTHER LOCAL VARIABLES:</a>
+   274) <a name="l274" style="background-color: #ffffff">    integer  :: p,c,l,g                     ! indices</a>
+   275) <a name="l275" style="background-color: #ffffff">    real(r8) :: dtime                       ! land model time step (sec)</a>
+   276) <a name="l276" style="background-color: #ffffff">    integer  :: nstep                       ! time step number</a>
+   277) <a name="l277" style="background-color: #ffffff">    logical  :: found                       ! flag in search loop</a>
+   278) <a name="l278" style="background-color: #ffffff">    integer  :: indexp,indexc,indexl,indexg ! index of first found in search loop</a>
+   279) <a name="l279" style="background-color: #ffffff">    real(r8) :: forc_rain_col(lbc:ubc)      ! column level rain rate [mm/s]</a>
+   280) <a name="l280" style="background-color: #ffffff">    real(r8) :: forc_snow_col(lbc:ubc)      ! column level snow rate [mm/s]</a>
+   281) <a name="l281" style="background-color: #ffffff"></a>
+   282) <a name="l282" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   283) <a name="l283" style="background-color: #ffffff"></a>
+   284) <a name="l284" style="background-color: #ffffff">    ! Assign local pointers to derived type scalar members (gridcell-level)</a>
+   285) <a name="l285" style="background-color: #ffffff"></a>
+   286) <a name="l286" style="background-color: #ffffff">    do_capsnow          =&gt; cps%do_capsnow</a>
+   287) <a name="l287" style="background-color: #ffffff">    qflx_floodc         =&gt; cwf%qflx_floodc</a>
+   288) <a name="l288" style="background-color: #ffffff">    qflx_snow_melt      =&gt; cwf%qflx_snow_melt</a>
+   289) <a name="l289" style="background-color: #ffffff">    qflx_rain_grnd_col  =&gt; pwf_a%qflx_rain_grnd</a>
+   290) <a name="l290" style="background-color: #ffffff">    qflx_snow_grnd_col  =&gt; pwf_a%qflx_snow_grnd</a>
+   291) <a name="l291" style="background-color: #ffffff">    clandunit           =&gt; col%landunit</a>
+   292) <a name="l292" style="background-color: #ffffff">    forc_rain           =&gt; clm_a2l%forc_rain</a>
+   293) <a name="l293" style="background-color: #ffffff">    forc_snow           =&gt; clm_a2l%forc_snow</a>
+   294) <a name="l294" style="background-color: #ffffff">    forc_lwrad          =&gt; clm_a2l%forc_lwrad</a>
+   295) <a name="l295" style="background-color: #ffffff">    forc_solad          =&gt; clm_a2l%forc_solad</a>
+   296) <a name="l296" style="background-color: #ffffff">    forc_solai          =&gt; clm_a2l%forc_solai</a>
+   297) <a name="l297" style="background-color: #ffffff"></a>
+   298) <a name="l298" style="background-color: #ffffff">    ! Assign local pointers to derived type scalar members (landunit-level)</a>
+   299) <a name="l299" style="background-color: #ffffff"></a>
+   300) <a name="l300" style="background-color: #ffffff">    ltype             =&gt; lun%itype</a>
+   301) <a name="l301" style="background-color: #ffffff">    canyon_hwr        =&gt; lun%canyon_hwr</a>
+   302) <a name="l302" style="background-color: #ffffff"></a>
+   303) <a name="l303" style="background-color: #ffffff">    ! Assign local pointers to derived type scalar members (column-level)</a>
+   304) <a name="l304" style="background-color: #ffffff"></a>
+   305) <a name="l305" style="background-color: #ffffff">    ctype             =&gt; col%itype</a>
+   306) <a name="l306" style="background-color: #ffffff">    cgridcell         =&gt; col%gridcell</a>
+   307) <a name="l307" style="background-color: #ffffff">    cwtgcell          =&gt; col%wtgcell</a>
+   308) <a name="l308" style="background-color: #ffffff">    endwb             =&gt; cwbal%endwb</a>
+   309) <a name="l309" style="background-color: #ffffff">    begwb             =&gt; cwbal%begwb</a>
+   310) <a name="l310" style="background-color: #ffffff">    qflx_irrig        =&gt; cwf%qflx_irrig</a>
+   311) <a name="l311" style="background-color: #ffffff">    qflx_surf         =&gt; cwf%qflx_surf</a>
+   312) <a name="l312" style="background-color: #ffffff">    qflx_qrgwl        =&gt; cwf%qflx_qrgwl</a>
+   313) <a name="l313" style="background-color: #ffffff">    qflx_drain        =&gt; cwf%qflx_drain</a>
+   314) <a name="l314" style="background-color: #ffffff">    qflx_runoff       =&gt; cwf%qflx_runoff</a>
+   315) <a name="l315" style="background-color: #ffffff">    qflx_snwcp_ice    =&gt; pwf_a%qflx_snwcp_ice</a>
+   316) <a name="l316" style="background-color: #ffffff">    qflx_evap_tot     =&gt; pwf_a%qflx_evap_tot</a>
+   317) <a name="l317" style="background-color: #ffffff">    qflx_glcice       =&gt; cwf%qflx_glcice</a>
+   318) <a name="l318" style="background-color: #ffffff">    qflx_glcice_frz   =&gt; cwf%qflx_glcice_frz</a>
+   319) <a name="l319" style="background-color: #ffffff">    errh2o            =&gt; cwbal%errh2o</a>
+   320) <a name="l320" style="background-color: #ffffff">    errsoi_col        =&gt; cebal%errsoi</a>
+   321) <a name="l321" style="background-color: #ffffff">    h2osno             =&gt; cws%h2osno</a>
+   322) <a name="l322" style="background-color: #ffffff">    h2osno_old         =&gt; cws%h2osno_old</a>
+   323) <a name="l323" style="background-color: #ffffff">    qflx_dew_snow      =&gt; pwf_a%qflx_dew_snow</a>
+   324) <a name="l324" style="background-color: #ffffff">    qflx_sub_snow      =&gt; pwf_a%qflx_sub_snow</a>
+   325) <a name="l325" style="background-color: #ffffff">    qflx_top_soil      =&gt; cwf%qflx_top_soil</a>
+   326) <a name="l326" style="background-color: #ffffff">    qflx_evap_grnd     =&gt; pwf_a%qflx_evap_grnd</a>
+   327) <a name="l327" style="background-color: #ffffff">    qflx_dew_grnd      =&gt; pwf_a%qflx_dew_grnd</a>
+   328) <a name="l328" style="background-color: #ffffff">    qflx_prec_grnd     =&gt; pwf_a%qflx_prec_grnd</a>
+   329) <a name="l329" style="background-color: #ffffff">    qflx_snwcp_liq     =&gt; pwf_a%qflx_snwcp_liq</a>
+   330) <a name="l330" style="background-color: #ffffff">    qflx_sl_top_soil   =&gt; cwf%qflx_sl_top_soil</a>
+   331) <a name="l331" style="background-color: #ffffff">    snow_sources       =&gt; cws%snow_sources</a>
+   332) <a name="l332" style="background-color: #ffffff">    snow_sinks         =&gt; cws%snow_sinks</a>
+   333) <a name="l333" style="background-color: #ffffff">    errh2osno          =&gt; cws%errh2osno</a>
+   334) <a name="l334" style="background-color: #ffffff">    snl                =&gt; cps%snl</a>
+   335) <a name="l335" style="background-color: #ffffff"></a>
+   336) <a name="l336" style="background-color: #ffffff">    ! Assign local pointers to derived type scalar members (pft-level)</a>
+   337) <a name="l337" style="background-color: #ffffff"></a>
+   338) <a name="l338" style="background-color: #ffffff">    pgridcell         =&gt; pft%gridcell</a>
+   339) <a name="l339" style="background-color: #ffffff">    plandunit         =&gt; pft%landunit</a>
+   340) <a name="l340" style="background-color: #ffffff">    pwtgcell          =&gt; pft%wtgcell</a>
+   341) <a name="l341" style="background-color: #ffffff">    fsa               =&gt; pef%fsa</a>
+   342) <a name="l342" style="background-color: #ffffff">    fsr               =&gt; pef%fsr</a>
+   343) <a name="l343" style="background-color: #ffffff">    eflx_lwrad_out    =&gt; pef%eflx_lwrad_out</a>
+   344) <a name="l344" style="background-color: #ffffff">    eflx_lwrad_net    =&gt; pef%eflx_lwrad_net</a>
+   345) <a name="l345" style="background-color: #ffffff">    sabv              =&gt; pef%sabv</a>
+   346) <a name="l346" style="background-color: #ffffff">    sabg              =&gt; pef%sabg</a>
+   347) <a name="l347" style="background-color: #ffffff">    eflx_sh_tot       =&gt; pef%eflx_sh_tot</a>
+   348) <a name="l348" style="background-color: #ffffff">    eflx_lh_tot       =&gt; pef%eflx_lh_tot</a>
+   349) <a name="l349" style="background-color: #ffffff">    eflx_soil_grnd    =&gt; pef%eflx_soil_grnd</a>
+   350) <a name="l350" style="background-color: #ffffff">    errsol            =&gt; pebal%errsol</a>
+   351) <a name="l351" style="background-color: #ffffff">    errseb            =&gt; pebal%errseb</a>
+   352) <a name="l352" style="background-color: #ffffff">    errlon            =&gt; pebal%errlon</a>
+   353) <a name="l353" style="background-color: #ffffff">    netrad            =&gt; pef%netrad</a>
+   354) <a name="l354" style="background-color: #ffffff">    eflx_wasteheat_pft =&gt; pef%eflx_wasteheat_pft</a>
+   355) <a name="l355" style="background-color: #ffffff">    eflx_heat_from_ac_pft =&gt; pef%eflx_heat_from_ac_pft</a>
+   356) <a name="l356" style="background-color: #ffffff">    eflx_traffic_pft  =&gt; pef%eflx_traffic_pft</a>
+   357) <a name="l357" style="background-color: #ffffff"></a>
+   358) <a name="l358" style="background-color: #ffffff">    ! Assign local pointers to derived type scalar members (gridcell-level)</a>
+   359) <a name="l359" style="background-color: #ffffff"></a>
+   360) <a name="l360" style="background-color: #ffffff">    qflx_runoffg       =&gt; gwf%qflx_runoffg</a>
+   361) <a name="l361" style="background-color: #ffffff">    qflx_liq_dynbal    =&gt; gwf%qflx_liq_dynbal</a>
+   362) <a name="l362" style="background-color: #ffffff">    qflx_snwcp_iceg    =&gt; gwf%qflx_snwcp_iceg</a>
+   363) <a name="l363" style="background-color: #ffffff">    qflx_ice_dynbal    =&gt; gwf%qflx_ice_dynbal</a>
+   364) <a name="l364" style="background-color: #ffffff">    eflx_sh_totg       =&gt; gef%eflx_sh_totg</a>
+   365) <a name="l365" style="background-color: #ffffff">    eflx_dynbal        =&gt; gef%eflx_dynbal</a>
+   366) <a name="l366" style="background-color: #ffffff"></a>
+   367) <a name="l367" style="background-color: #ffffff">    ! Get step size and time step</a>
+   368) <a name="l368" style="background-color: #ffffff"></a>
+   369) <a name="l369" style="background-color: #ffffff">    nstep = get_nstep()</a>
+   370) <a name="l370" style="background-color: #ffffff">    dtime = get_step_size()</a>
+   371) <a name="l371" style="background-color: #ffffff"></a>
+   372) <a name="l372" style="background-color: #ffffff">    ! Determine column level incoming snow and rain</a>
+   373) <a name="l373" style="background-color: #ffffff">    ! Assume no incident precipitation on urban wall columns (as in Hydrology1Mod.F90).</a>
+   374) <a name="l374" style="background-color: #ffffff"></a>
+   375) <a name="l375" style="background-color: #ffffff">    do c = lbc,ubc</a>
+   376) <a name="l376" style="background-color: #ffffff">       g = cgridcell(c)</a>
+   377) <a name="l377" style="background-color: #ffffff">       if (ctype(c) == icol_sunwall .or.  ctype(c) == icol_shadewall) then</a>
+   378) <a name="l378" style="background-color: #ffffff">          forc_rain_col(c) = 0.</a>
+   379) <a name="l379" style="background-color: #ffffff">          forc_snow_col(c) = 0.</a>
+   380) <a name="l380" style="background-color: #ffffff">       else</a>
+   381) <a name="l381" style="background-color: #ffffff">          forc_rain_col(c) = forc_rain(g)</a>
+   382) <a name="l382" style="background-color: #ffffff">          forc_snow_col(c) = forc_snow(g)</a>
+   383) <a name="l383" style="background-color: #ffffff">       end if</a>
+   384) <a name="l384" style="background-color: #ffffff">    end do</a>
+   385) <a name="l385" style="background-color: #ffffff"></a>
+   386) <a name="l386" style="background-color: #ffffff">    ! Water balance check</a>
+   387) <a name="l387" style="background-color: #ffffff"></a>
+   388) <a name="l388" style="background-color: #ffffff">    do c = lbc, ubc</a>
+   389) <a name="l389" style="background-color: #ffffff">       g = cgridcell(c)</a>
+   390) <a name="l390" style="background-color: #ffffff">       l = clandunit(c)</a>
+   391) <a name="l391" style="background-color: #ffffff"></a>
+   392) <a name="l392" style="background-color: #ffffff">       ! Note: Some glacier_mec cols may have zero weight</a>
+   393) <a name="l393" style="background-color: #ffffff">       if (cwtgcell(c) </a><a style="background-color: #ffff99">&gt; 0._r8 .or. ltype(l)==istice_mec)then</a>
+   394) <a name="l394" style="background-color: #ffffff">          errh2o(c) = endwb(c) - begwb(c) &amp;</a>
+   395) <a name="l395" style="background-color: #ffffff">               - (forc_rain_col(c) + forc_snow_col(c) + qflx_irrig(c) + qflx_floodc(c) &amp;</a>
+   396) <a name="l396" style="background-color: #ffffff">               - qflx_evap_tot(c) - qflx_surf(c) &amp;</a>
+   397) <a name="l397" style="background-color: #ffffff">               - qflx_qrgwl(c) - qflx_drain(c) - qflx_snwcp_ice(c)) * dtime</a>
+   398) <a name="l398" style="background-color: #ffffff"></a>
+   399) <a name="l399" style="background-color: #ffffff">          ! Suppose glc_dyntopo = T:   </a>
+   400) <a name="l400" style="background-color: #ffffff">          ! (1) We have qflx_snwcp_ice = 0, and excess snow has been incorporated in qflx_glcice.  </a>
+   401) <a name="l401" style="background-color: #ffffff">          !     This flux must be included here to complete the water balance.</a>
+   402) <a name="l402" style="background-color: #ffffff">          ! (2) Meltwater from ice is allowed to run off and is included in qflx_qrgwl,</a>
+   403) <a name="l403" style="background-color: #ffffff">          !     but the water content of the ice column has not changed (at least for now) because</a>
+   404) <a name="l404" style="background-color: #ffffff">          !     an equivalent ice mass has been &quot;borrowed&quot; from the base of the column.  That</a>
+   405) <a name="l405" style="background-color: #ffffff">          !     meltwater is included in qflx_glcice.</a>
+   406) <a name="l406" style="background-color: #ffffff">          !</a>
+   407) <a name="l407" style="background-color: #ffffff">          ! Note that qflx_glcice is only valid over ice_mec landunits; elsewhere it is spval</a>
+   408) <a name="l408" style="background-color: #ffffff"></a>
+   409) <a name="l409" style="background-color: #ffffff">          if (</a><a style="background-color: #ffff99">glc_dyntopo .and. ltype(l)==istice_mec) then</a>
+   410) <a name="l410" style="background-color: #ffff99">             errh2o(c) = errh2o(c) + qflx_glcice(c)*dtime</a>
+   411) <a name="l411" style="background-color: #ffff99">          end if</a>
+   412) <a name="l412" style="background-color: #ffff99"></a>
+   413) <a name="l413" style="background-color: #ffff99">       else</a>
+   414) <a name="l414" style="background-color: #ffff99"></a>
+   415) <a name="l415" style="background-color: #ffff99">          errh2o(c) = 0.0_r8</a>
+   416) <a name="l416" style="background-color: #ffff99"></a>
+   417) <a name="l417" style="background-color: #ffff99">       end if</a>
+   418) <a name="l418" style="background-color: #ffff99"></a>
+   419) <a name="l419" style="background-color: #ffff99">    end do</a>
+   420) <a name="l420" style="background-color: #ffff99"></a>
+   421) <a name="l421" style="background-color: #ffffff">    found = .false.</a>
+   422) <a name="l422" style="background-color: #ffffff">    do c = lbc, ubc</a>
+   423) <a name="l423" style="background-color: #ffffff">       if (abs(errh2o(c)) &gt; 1e-7_r8) then</a>
+   424) <a name="l424" style="background-color: #ffff99">          found = .true.</a>
+   425) <a name="l425" style="background-color: #ffff99">          indexc = c</a>
+   426) <a name="l426" style="background-color: #ffff99">       end if</a>
+   427) <a name="l427" style="background-color: #ffff99">    end do</a>
+   428) <a name="l428" style="background-color: #ffffff">    if ( found ) then</a>
+   429) <a name="l429" style="background-color: #ffff99">       write(iulog,*)'WARNING:  water balance error ',&amp;</a>
+   430) <a name="l430" style="background-color: #ffff99">            ' nstep = ',nstep,' indexc= ',indexc,' errh2o= ',errh2o(indexc),' landunit type= ',ltype(clandunit(indexc))</a>
+   431) <a name="l431" style="background-color: #ffff99">       if ((ctype(indexc) .eq. icol_roof .or. ctype(indexc) .eq. icol_road_imperv .or. &amp;</a>
+   432) <a name="l432" style="background-color: #ffff99">            ctype(indexc) .eq. icol_road_perv) .and. abs(errh2o(indexc)) &gt; 1.e-1 .and. (nstep &gt; 2) ) then</a>
+   433) <a name="l433" style="background-color: #ffff99">          write(iulog,*)'clm urban model is stopping - error is greater than 1.e-1'</a>
+   434) <a name="l434" style="background-color: #ffff99">          write(iulog,*)'nstep = ',nstep,' indexc= ',indexc,' errh2o= ',errh2o(indexc)</a>
+   435) <a name="l435" style="background-color: #ffff99">          write(iulog,*)'ctype(indexc): ',ctype(indexc)</a>
+   436) <a name="l436" style="background-color: #ffff99">          write(iulog,*)'forc_rain    = ',forc_rain_col(indexc)</a>
+   437) <a name="l437" style="background-color: #ffff99">          write(iulog,*)'forc_snow    = ',forc_snow_col(indexc)</a>
+   438) <a name="l438" style="background-color: #ffff99">          write(iulog,*)'endwb        = ',endwb(indexc)</a>
+   439) <a name="l439" style="background-color: #ffff99">          write(iulog,*)'begwb        = ',begwb(indexc)</a>
+   440) <a name="l440" style="background-color: #ffff99">          write(iulog,*)'qflx_evap_tot= ',qflx_evap_tot(indexc)</a>
+   441) <a name="l441" style="background-color: #ffff99">          write(iulog,*)'qflx_irrig   = ',qflx_irrig(indexc)</a>
+   442) <a name="l442" style="background-color: #ffff99">          write(iulog,*)'qflx_surf    = ',qflx_surf(indexc)</a>
+   443) <a name="l443" style="background-color: #ffff99">          write(iulog,*)'qflx_qrgwl   = ',qflx_qrgwl(indexc)</a>
+   444) <a name="l444" style="background-color: #ffff99">          write(iulog,*)'qflx_drain   = ',qflx_drain(indexc)</a>
+   445) <a name="l445" style="background-color: #ffff99">          write(iulog,*)'qflx_flood   = ',qflx_floodc(indexc)</a>
+   446) <a name="l446" style="background-color: #ffff99">          write(iulog,*)'qflx_snwcp_ice   = ',qflx_snwcp_ice(indexc)</a>
+   447) <a name="l447" style="background-color: #ffff99">          write(iulog,*)'clm model is stopping'</a>
+   448) <a name="l448" style="background-color: #ffff99">          call endrun()</a>
+   449) <a name="l449" style="background-color: #ffff99">       else if (abs(errh2o(indexc)) &gt; .10_r8 .and. (nstep &gt; 2) ) then</a>
+   450) <a name="l450" style="background-color: #ffff99">          write(iulog,*)'clm model is stopping - error is greater than .10'</a>
+   451) <a name="l451" style="background-color: #ffff99">          write(iulog,*)'nstep = ',nstep,' indexc= ',indexc,' errh2o= ',errh2o(indexc)</a>
+   452) <a name="l452" style="background-color: #ffff99">          write(iulog,*)'ctype(indexc): ',ctype(indexc)</a>
+   453) <a name="l453" style="background-color: #ffff99">          write(iulog,*)'forc_rain    = ',forc_rain_col(indexc)</a>
+   454) <a name="l454" style="background-color: #ffff99">          write(iulog,*)'forc_snow    = ',forc_snow_col(indexc)</a>
+   455) <a name="l455" style="background-color: #ffff99">          write(iulog,*)'endwb        = ',endwb(indexc)</a>
+   456) <a name="l456" style="background-color: #ffff99">          write(iulog,*)'begwb        = ',begwb(indexc)</a>
+   457) <a name="l457" style="background-color: #ffff99">          write(iulog,*)'qflx_evap_tot= ',qflx_evap_tot(indexc)</a>
+   458) <a name="l458" style="background-color: #ffff99">          write(iulog,*)'qflx_irrig   = ',qflx_irrig(indexc)</a>
+   459) <a name="l459" style="background-color: #ffff99">          write(iulog,*)'qflx_surf    = ',qflx_surf(indexc)</a>
+   460) <a name="l460" style="background-color: #ffff99">          write(iulog,*)'qflx_qrgwl   = ',qflx_qrgwl(indexc)</a>
+   461) <a name="l461" style="background-color: #ffff99">          write(iulog,*)'qflx_drain   = ',qflx_drain(indexc)</a>
+   462) <a name="l462" style="background-color: #ffff99">          write(iulog,*)'qflx_flood   = ',qflx_floodc(indexc)</a>
+   463) <a name="l463" style="background-color: #ffff99">          write(iulog,*)'qflx_snwcp_ice   = ',qflx_snwcp_ice(indexc)</a>
+   464) <a name="l464" style="background-color: #ffff99">          write(iulog,*)'clm model is stopping'</a>
+   465) <a name="l465" style="background-color: #ffff99">          call endrun()</a>
+   466) <a name="l466" style="background-color: #ffff99">       end if</a>
+   467) <a name="l467" style="background-color: #ffff99">    end if</a>
+   468) <a name="l468" style="background-color: #ffff99"></a>
+   469) <a name="l469" style="background-color: #ffff99">    ! Snow balance check</a>
+   470) <a name="l470" style="background-color: #ffffff">    do c = lbc, ubc</a>
+   471) <a name="l471" style="background-color: #ffffff">       g = cgridcell(c)</a>
+   472) <a name="l472" style="background-color: #ffffff">       l = clandunit(c)</a>
+   473) <a name="l473" style="background-color: #ffffff">       ! As defined here, snow_sources - snow_sinks will equal the change in h2osno at </a>
+   474) <a name="l474" style="background-color: #ffffff">       ! any given time step but only if there is at least one snow layer.  h2osno </a>
+   475) <a name="l475" style="background-color: #ffffff">       ! also includes snow that is part of the soil column (an initial snow layer is </a>
+   476) <a name="l476" style="background-color: #ffffff">       ! only created if h2osno &gt; 10mm).</a>
+   477) <a name="l477" style="background-color: #ffffff"></a>
+   478) <a name="l478" style="background-color: #ffffff">       ! --------------------------------------------------------------------- !</a>
+   479) <a name="l479" style="background-color: #ffffff">       ! SPM - brought in qflx_snow_melt to get snow </a>
+   480) <a name="l480" style="background-color: #ffffff">       ! balance working after the flooding modifications were in place.</a>
+   481) <a name="l481" style="background-color: #ffffff">       ! This new check is based on a perfrostsims branch of S. Swenson.</a>
+   482) <a name="l482" style="background-color: #ffffff">       ! --------------------------------------------------------------------- !</a>
+   483) <a name="l483" style="background-color: #ffffff"></a>
+   484) <a name="l484" style="background-color: #ffffff">       if (snl(c) .lt. 0) then</a>
+   485) <a name="l485" style="background-color: #ffffff">          snow_sources(c) = qflx_prec_grnd(c) + qflx_dew_snow(c) + qflx_dew_grnd(c)</a>
+   486) <a name="l486" style="background-color: #ffffff">          snow_sinks(c)   = qflx_sub_snow(c) + qflx_evap_grnd(c) + qflx_snow_melt(c) &amp;</a>
+   487) <a name="l487" style="background-color: #ffffff">                          + qflx_snwcp_ice(c) + qflx_snwcp_liq(c) + qflx_sl_top_soil(c)</a>
+   488) <a name="l488" style="background-color: #ffffff"></a>
+   489) <a name="l489" style="background-color: #ffffff">          if (ltype(l) == istdlak) then </a>
+   490) <a name="l490" style="background-color: #ffff99">             if ( do_capsnow(c) ) then</a>
+   491) <a name="l491" style="background-color: #ffff99">                snow_sources(c) = qflx_snow_grnd_col(c) &amp;</a>
+   492) <a name="l492" style="background-color: #ffff99">                     + qflx_dew_snow(c) + qflx_dew_grnd(c)  </a>
+   493) <a name="l493" style="background-color: #ffff99">                </a>
+   494) <a name="l494" style="background-color: #ffff99">                snow_sinks(c)   = qflx_sub_snow(c) + qflx_evap_grnd(c)  &amp;</a>
+   495) <a name="l495" style="background-color: #ffff99">                     + (qflx_snwcp_ice(c) + qflx_snwcp_liq(c) - qflx_prec_grnd(c))  &amp;</a>
+   496) <a name="l496" style="background-color: #ffff99">                     + qflx_snow_melt(c)  + qflx_sl_top_soil(c)</a>
+   497) <a name="l497" style="background-color: #ffff99">             else</a>
+   498) <a name="l498" style="background-color: #ffff99">                snow_sources(c) = qflx_snow_grnd_col(c) &amp;</a>
+   499) <a name="l499" style="background-color: #ffff99">                     + qflx_rain_grnd_col(c) &amp;</a>
+   500) <a name="l500" style="background-color: #ffff99">                     + qflx_dew_snow(c) + qflx_dew_grnd(c) </a>
+   501) <a name="l501" style="background-color: #ffff99">                   </a>
+   502) <a name="l502" style="background-color: #ffff99">                snow_sinks(c)   = qflx_sub_snow(c) + qflx_evap_grnd(c)  &amp;</a>
+   503) <a name="l503" style="background-color: #ffff99">                     + qflx_snow_melt(c)  + qflx_sl_top_soil(c)</a>
+   504) <a name="l504" style="background-color: #ffff99">             endif</a>
+   505) <a name="l505" style="background-color: #ffff99">          endif</a>
+   506) <a name="l506" style="background-color: #ffff99"></a>
+   507) <a name="l507" style="background-color: #ffffff">          if (ltype(l) == istsoil .or. ltype(l) == istcrop .or. ltype(l) == istwet ) then</a>
+   508) <a name="l508" style="background-color: #ffffff">              if ( do_capsnow(c) ) then</a>
+   509) <a name="l509" style="background-color: #ffffff">                 snow_sources(c) = qflx_dew_snow(c) + qflx_dew_grnd(c)  &amp;</a>
+   510) <a name="l510" style="background-color: #ffffff">                     + qflx_prec_grnd(c)</a>
+   511) <a name="l511" style="background-color: #ffffff"></a>
+   512) <a name="l512" style="background-color: #ffffff">                 snow_sinks(c)   = qflx_sub_snow(c) + qflx_evap_grnd(c) &amp;</a>
+   513) <a name="l513" style="background-color: #ffffff">                     + qflx_snwcp_ice(c) + qflx_snwcp_liq(c) &amp;</a>
+   514) <a name="l514" style="background-color: #ffffff">                     + qflx_snow_melt(c) + qflx_sl_top_soil(c)</a>
+   515) <a name="l515" style="background-color: #ffffff">              else</a>
+   516) <a name="l516" style="background-color: #ffffff">                 snow_sources(c) = qflx_snow_grnd_col(c)  &amp;</a>
+   517) <a name="l517" style="background-color: #ffffff">                     + qflx_rain_grnd_col(c) &amp;</a>
+   518) <a name="l518" style="background-color: #ffffff">                     +  qflx_dew_snow(c) + qflx_dew_grnd(c)</a>
+   519) <a name="l519" style="background-color: #ffffff"></a>
+   520) <a name="l520" style="background-color: #ffffff">                 snow_sinks(c)   = qflx_sub_snow(c) + qflx_evap_grnd(c) &amp;</a>
+   521) <a name="l521" style="background-color: #ffffff">                     + qflx_snow_melt(c) + qflx_sl_top_soil(c)</a>
+   522) <a name="l522" style="background-color: #ffffff">             endif</a>
+   523) <a name="l523" style="background-color: #ffffff">          endif</a>
+   524) <a name="l524" style="background-color: #ffffff"></a>
+   525) <a name="l525" style="background-color: #ffffff">          if (ltype(l) </a><a style="background-color: #ffff99">== istice_mec .and. glc_dyntopo) then</a>
+   526) <a name="l526" style="background-color: #ffff99">             snow_sinks(c) = snow_sinks(c) + qflx_glcice_frz(c)</a>
+   527) <a name="l527" style="background-color: #ffff99">          end if</a>
+   528) <a name="l528" style="background-color: #ffff99"></a>
+   529) <a name="l529" style="background-color: #ffffff">          errh2osno(c) = (h2osno(c) - h2osno_old(c)) - (snow_sources(c) - snow_sinks(c)) * dtime</a>
+   530) <a name="l530" style="background-color: #ffffff">       else</a>
+   531) <a name="l531" style="background-color: #ffffff">          snow_sources(c) = 0._r8</a>
+   532) <a name="l532" style="background-color: #ffffff">          snow_sinks(c) = 0._r8</a>
+   533) <a name="l533" style="background-color: #ffffff">          errh2osno(c) = 0._r8</a>
+   534) <a name="l534" style="background-color: #ffffff">       end if</a>
+   535) <a name="l535" style="background-color: #ffffff">    end do</a>
+   536) <a name="l536" style="background-color: #ffffff"></a>
+   537) <a name="l537" style="background-color: #ffffff">    found = .false.</a>
+   538) <a name="l538" style="background-color: #ffffff">    do c = lbc, ubc</a>
+   539) <a name="l539" style="background-color: #ffffff">       if (cwtgcell(c) &gt; 0._r8 .and. abs(errh2osno(c)) &gt; 1.0e-7_r8) then</a>
+   540) <a name="l540" style="background-color: #ffff99">          found = .true.</a>
+   541) <a name="l541" style="background-color: #ffff99">          indexc = c</a>
+   542) <a name="l542" style="background-color: #ffff99">       end if</a>
+   543) <a name="l543" style="background-color: #ffff99">    end do</a>
+   544) <a name="l544" style="background-color: #ffff99"></a>
+   545) <a name="l545" style="background-color: #ffffff">    if ( found ) then</a>
+   546) <a name="l546" style="background-color: #ffff99">       write(iulog,*)'WARNING:  snow balance error ',&amp;</a>
+   547) <a name="l547" style="background-color: #ffff99">            ' nstep = ',nstep,' indexc= ',indexc,' errh2osno= ',errh2osno(indexc)</a>
+   548) <a name="l548" style="background-color: #ffff99">       if (abs(errh2osno(indexc)) &gt; 0.1_r8 .and. (nstep &gt; 2) ) then</a>
+   549) <a name="l549" style="background-color: #ffff99">          write(iulog,*)'clm model is stopping - error is greater than .10'</a>
+   550) <a name="l550" style="background-color: #ffff99">          write(iulog,*)'nstep = ',nstep,' indexc= ',indexc,' errh2osno= ',errh2osno(indexc)</a>
+   551) <a name="l551" style="background-color: #ffff99">          write(iulog,*)'ltype: ', ltype(clandunit(indexc))</a>
+   552) <a name="l552" style="background-color: #ffff99">          write(iulog,*)'ctype(indexc): ',ctype(indexc)</a>
+   553) <a name="l553" style="background-color: #ffff99">          write(iulog,*)'snl: ',snl(indexc)</a>
+   554) <a name="l554" style="background-color: #ffff99">          write(iulog,*)'h2osno: ',h2osno(indexc)</a>
+   555) <a name="l555" style="background-color: #ffff99">          write(iulog,*)'h2osno_old: ',h2osno_old(indexc)</a>
+   556) <a name="l556" style="background-color: #ffff99">          write(iulog,*)'snow_sources: ', snow_sources(indexc)</a>
+   557) <a name="l557" style="background-color: #ffff99">          write(iulog,*)'snow_sinks: ', snow_sinks(indexc)</a>
+   558) <a name="l558" style="background-color: #ffff99">          write(iulog,*)'qflx_prec_grnd: ',qflx_prec_grnd(indexc)*dtime</a>
+   559) <a name="l559" style="background-color: #ffff99">          write(iulog,*)'qflx_sub_snow: ',qflx_sub_snow(indexc)*dtime</a>
+   560) <a name="l560" style="background-color: #ffff99">          write(iulog,*)'qflx_evap_grnd: ',qflx_evap_grnd(indexc)*dtime</a>
+   561) <a name="l561" style="background-color: #ffff99">          write(iulog,*)'qflx_top_soil: ',qflx_top_soil(indexc)*dtime</a>
+   562) <a name="l562" style="background-color: #ffff99">          write(iulog,*)'qflx_dew_snow: ',qflx_dew_snow(indexc)*dtime</a>
+   563) <a name="l563" style="background-color: #ffff99">          write(iulog,*)'qflx_dew_grnd: ',qflx_dew_grnd(indexc)*dtime</a>
+   564) <a name="l564" style="background-color: #ffff99">          write(iulog,*)'qflx_snwcp_ice: ',qflx_snwcp_ice(indexc)*dtime</a>
+   565) <a name="l565" style="background-color: #ffff99">          write(iulog,*)'qflx_snow_melt: ',qflx_snow_melt(indexc)*dtime</a>
+   566) <a name="l566" style="background-color: #ffff99">          write(iulog,*)'qflx_snwcp_liq: ',qflx_snwcp_liq(indexc)*dtime</a>
+   567) <a name="l567" style="background-color: #ffff99">          write(iulog,*)'qflx_sl_top_soil: ',qflx_sl_top_soil(indexc)*dtime</a>
+   568) <a name="l568" style="background-color: #ffff99">          write(iulog,*)'qflx_glcice_frz: ',qflx_glcice_frz(indexc)*dtime</a>
+   569) <a name="l569" style="background-color: #ffff99">          write(iulog,*)'clm model is stopping'</a>
+   570) <a name="l570" style="background-color: #ffff99">          call endrun()</a>
+   571) <a name="l571" style="background-color: #ffff99">       end if</a>
+   572) <a name="l572" style="background-color: #ffff99">    end if</a>
+   573) <a name="l573" style="background-color: #ffff99"></a>
+   574) <a name="l574" style="background-color: #ffff99">    ! Energy balance checks</a>
+   575) <a name="l575" style="background-color: #ffff99"></a>
+   576) <a name="l576" style="background-color: #ffffff">    do p = lbp, ubp</a>
+   577) <a name="l577" style="background-color: #ffffff">       l = plandunit(p)</a>
+   578) <a name="l578" style="background-color: #ffffff">       ! Note: Some glacier_mec pfts may have zero weight</a>
+   579) <a name="l579" style="background-color: #ffffff">       if (pwtgcell(p)&gt;0._r8 .or. ltype(l)==istice_mec) then</a>
+   580) <a name="l580" style="background-color: #ffffff">          g = pgridcell(p)</a>
+   581) <a name="l581" style="background-color: #ffffff"></a>
+   582) <a name="l582" style="background-color: #ffffff">          ! Solar radiation energy balance</a>
+   583) <a name="l583" style="background-color: #ffffff">          ! Do not do this check for an urban pft since it will not balance on a per-column</a>
+   584) <a name="l584" style="background-color: #ffffff">          ! level because of interactions between columns and since a separate check is done</a>
+   585) <a name="l585" style="background-color: #ffffff">          ! in the urban radiation module</a>
+   586) <a name="l586" style="background-color: #ffffff">          if (ltype(l) /= isturb) then</a>
+   587) <a name="l587" style="background-color: #ffffff">             errsol(p) = fsa(p) + fsr(p) &amp;</a>
+   588) <a name="l588" style="background-color: #ffffff">                  - (forc_solad(g,1) + forc_solad(g,2) + forc_solai(g,1) + forc_solai(g,2))</a>
+   589) <a name="l589" style="background-color: #ffffff">          else</a>
+   590) <a name="l590" style="background-color: #ffffff">             errsol(p) = spval</a>
+   591) <a name="l591" style="background-color: #ffffff">          end if</a>
+   592) <a name="l592" style="background-color: #ffffff">          </a>
+   593) <a name="l593" style="background-color: #ffffff">          ! Longwave radiation energy balance</a>
+   594) <a name="l594" style="background-color: #ffffff">          ! Do not do this check for an urban pft since it will not balance on a per-column</a>
+   595) <a name="l595" style="background-color: #ffffff">          ! level because of interactions between columns and since a separate check is done</a>
+   596) <a name="l596" style="background-color: #ffffff">          ! in the urban radiation module</a>
+   597) <a name="l597" style="background-color: #ffffff">          if (ltype(l) /= isturb) then</a>
+   598) <a name="l598" style="background-color: #ffffff">             errlon(p) = eflx_lwrad_out(p) - eflx_lwrad_net(p) - forc_lwrad(g)</a>
+   599) <a name="l599" style="background-color: #ffffff">          else</a>
+   600) <a name="l600" style="background-color: #ffffff">             errlon(p) = spval</a>
+   601) <a name="l601" style="background-color: #ffffff">          end if</a>
+   602) <a name="l602" style="background-color: #ffffff">          </a>
+   603) <a name="l603" style="background-color: #ffffff">          ! Surface energy balance</a>
+   604) <a name="l604" style="background-color: #ffffff">          ! Changed to using (eflx_lwrad_net) here instead of (forc_lwrad - eflx_lwrad_out) because</a>
+   605) <a name="l605" style="background-color: #ffffff">          ! there are longwave interactions between urban columns (and therefore pfts). </a>
+   606) <a name="l606" style="background-color: #ffffff">          ! For surfaces other than urban, (eflx_lwrad_net) equals (forc_lwrad - eflx_lwrad_out),</a>
+   607) <a name="l607" style="background-color: #ffffff">          ! and a separate check is done above for these terms.</a>
+   608) <a name="l608" style="background-color: #ffffff">          </a>
+   609) <a name="l609" style="background-color: #ffffff">          if (ltype(l) /= isturb) then</a>
+   610) <a name="l610" style="background-color: #ffffff">             errseb(p) = sabv(p) + sabg(p) + forc_lwrad(g) - eflx_lwrad_out(p) &amp;</a>
+   611) <a name="l611" style="background-color: #ffffff">                         - eflx_sh_tot(p) - eflx_lh_tot(p) - eflx_soil_grnd(p)</a>
+   612) <a name="l612" style="background-color: #ffffff">          else</a>
+   613) <a name="l613" style="background-color: #ffffff">             errseb(p) = sabv(p) + sabg(p) &amp;</a>
+   614) <a name="l614" style="background-color: #ffffff">                         - eflx_lwrad_net(p) &amp;</a>
+   615) <a name="l615" style="background-color: #ffffff">                         - eflx_sh_tot(p) - eflx_lh_tot(p) - eflx_soil_grnd(p) &amp;</a>
+   616) <a name="l616" style="background-color: #ffffff">                         + eflx_wasteheat_pft(p) + eflx_heat_from_ac_pft(p) + eflx_traffic_pft(p)</a>
+   617) <a name="l617" style="background-color: #ffffff">          end if</a>
+   618) <a name="l618" style="background-color: #ffffff">          netrad(p) = fsa(p) - eflx_lwrad_net(p)</a>
+   619) <a name="l619" style="background-color: #ffffff">       end if</a>
+   620) <a name="l620" style="background-color: #ffffff">    end do</a>
+   621) <a name="l621" style="background-color: #ffffff"></a>
+   622) <a name="l622" style="background-color: #ffffff">    ! Solar radiation energy balance check</a>
+   623) <a name="l623" style="background-color: #ffffff"></a>
+   624) <a name="l624" style="background-color: #ffffff">    found = .false.</a>
+   625) <a name="l625" style="background-color: #ffffff">    do p = lbp, ubp</a>
+   626) <a name="l626" style="background-color: #ffffff">       l = plandunit(p)</a>
+   627) <a name="l627" style="background-color: #ffffff">       if (pwtgcell(p)&gt;0._r8 .or. ltype(l)==istice_mec) then</a>
+   628) <a name="l628" style="background-color: #ffffff">          if ( (errsol(p) /= spval) .and. (abs(errsol(p)) &gt; .10_r8) ) then</a>
+   629) <a name="l629" style="background-color: #ffff99">             found = .true.</a>
+   630) <a name="l630" style="background-color: #ffff99">             indexp = p</a>
+   631) <a name="l631" style="background-color: #ffff99">             indexg = pgridcell(p)</a>
+   632) <a name="l632" style="background-color: #ffff99">          end if</a>
+   633) <a name="l633" style="background-color: #ffff99">       end if</a>
+   634) <a name="l634" style="background-color: #ffff99">    end do</a>
+   635) <a name="l635" style="background-color: #ffffff">    if ( </a><a style="background-color: #ffff99">found  .and. (nstep &gt; 2) ) then</a>
+   636) <a name="l636" style="background-color: #ffff99">       write(iulog,100)'BalanceCheck: solar radiation balance error', nstep, indexp, errsol(indexp)</a>
+   637) <a name="l637" style="background-color: #ffff99">       write(iulog,*)'fsa          = ',fsa(indexp)</a>
+   638) <a name="l638" style="background-color: #ffff99">       write(iulog,*)'fsr          = ',fsr(indexp)</a>
+   639) <a name="l639" style="background-color: #ffff99">       write(iulog,*)'forc_solad(1)= ',forc_solad(indexg,1)</a>
+   640) <a name="l640" style="background-color: #ffff99">       write(iulog,*)'forc_solad(2)= ',forc_solad(indexg,2)</a>
+   641) <a name="l641" style="background-color: #ffff99">       write(iulog,*)'forc_solai(1)= ',forc_solai(indexg,1)</a>
+   642) <a name="l642" style="background-color: #ffff99">       write(iulog,*)'forc_solai(2)= ',forc_solai(indexg,2)</a>
+   643) <a name="l643" style="background-color: #ffff99">       write(iulog,*)'forc_tot     = ',forc_solad(indexg,1)+forc_solad(indexg,2)&amp;</a>
+   644) <a name="l644" style="background-color: #ffff99">                                  +forc_solai(indexg,1)+forc_solai(indexg,2)</a>
+   645) <a name="l645" style="background-color: #ffff99">       write(iulog,*)'clm model is stopping'</a>
+   646) <a name="l646" style="background-color: #ffff99">       call endrun()</a>
+   647) <a name="l647" style="background-color: #ffff99">    end if</a>
+   648) <a name="l648" style="background-color: #ffff99"></a>
+   649) <a name="l649" style="background-color: #ffff99">    ! Longwave radiation energy balance check</a>
+   650) <a name="l650" style="background-color: #ffff99"></a>
+   651) <a name="l651" style="background-color: #ffffff">    found = .false.</a>
+   652) <a name="l652" style="background-color: #ffffff">    do p = lbp, ubp</a>
+   653) <a name="l653" style="background-color: #ffffff">       l = plandunit(p)</a>
+   654) <a name="l654" style="background-color: #ffffff">       if (pwtgcell(p)&gt;0._r8 .or. ltype(l)==istice_mec) then</a>
+   655) <a name="l655" style="background-color: #ffffff">          if ( (errlon(p) /= spval) .and. (abs(errlon(p)) &gt; .10_r8) ) then</a>
+   656) <a name="l656" style="background-color: #ffff99">             found = .true.</a>
+   657) <a name="l657" style="background-color: #ffff99">             indexp = p</a>
+   658) <a name="l658" style="background-color: #ffff99">          end if</a>
+   659) <a name="l659" style="background-color: #ffff99">       end if</a>
+   660) <a name="l660" style="background-color: #ffff99">    end do</a>
+   661) <a name="l661" style="background-color: #ffffff">    if ( </a><a style="background-color: #ffff99">found  .and. (nstep &gt; 2) ) then</a>
+   662) <a name="l662" style="background-color: #ffff99">       write(iulog,100)'BalanceCheck: longwave enery balance error',nstep,indexp,errlon(indexp)</a>
+   663) <a name="l663" style="background-color: #ffff99">       write(iulog,*)'clm model is stopping'</a>
+   664) <a name="l664" style="background-color: #ffff99">       call endrun()</a>
+   665) <a name="l665" style="background-color: #ffff99">    end if</a>
+   666) <a name="l666" style="background-color: #ffff99"></a>
+   667) <a name="l667" style="background-color: #ffff99">    ! Surface energy balance check</a>
+   668) <a name="l668" style="background-color: #ffff99"></a>
+   669) <a name="l669" style="background-color: #ffffff">    found = .false.</a>
+   670) <a name="l670" style="background-color: #ffffff">    do p = lbp, ubp</a>
+   671) <a name="l671" style="background-color: #ffffff">       l = plandunit(p)</a>
+   672) <a name="l672" style="background-color: #ffffff">       if (pwtgcell(p)&gt;0._r8 .or. ltype(l)==istice_mec) then</a>
+   673) <a name="l673" style="background-color: #ffffff">          if (abs(errseb(p)) &gt; .10_r8 ) then</a>
+   674) <a name="l674" style="background-color: #ffff99">             found = .true.</a>
+   675) <a name="l675" style="background-color: #ffff99">             indexp = p</a>
+   676) <a name="l676" style="background-color: #ffff99">          end if</a>
+   677) <a name="l677" style="background-color: #ffff99">       end if</a>
+   678) <a name="l678" style="background-color: #ffff99">    end do</a>
+   679) <a name="l679" style="background-color: #ffffff">    if ( </a><a style="background-color: #ffff99">found  .and. (nstep &gt; 2) ) then</a>
+   680) <a name="l680" style="background-color: #ffff99">       write(iulog,100)'BalanceCheck: surface flux energy balance error',nstep,indexp,errseb(indexp)</a>
+   681) <a name="l681" style="background-color: #ffff99">       write(iulog,*)' sabv           = ',sabv(indexp)</a>
+   682) <a name="l682" style="background-color: #ffff99">       write(iulog,*)' sabg           = ',sabg(indexp)</a>
+   683) <a name="l683" style="background-color: #ffff99">       write(iulog,*)' eflx_lwrad_net = ',eflx_lwrad_net(indexp)</a>
+   684) <a name="l684" style="background-color: #ffff99">       write(iulog,*)' eflx_sh_tot    = ',eflx_sh_tot(indexp)</a>
+   685) <a name="l685" style="background-color: #ffff99">       write(iulog,*)' eflx_lh_tot    = ',eflx_lh_tot(indexp)</a>
+   686) <a name="l686" style="background-color: #ffff99">       write(iulog,*)' eflx_soil_grnd = ',eflx_soil_grnd(indexp)</a>
+   687) <a name="l687" style="background-color: #ffff99">       write(iulog,*)'clm model is stopping'</a>
+   688) <a name="l688" style="background-color: #ffff99">       call endrun()</a>
+   689) <a name="l689" style="background-color: #ffff99">    end if</a>
+   690) <a name="l690" style="background-color: #ffff99"></a>
+   691) <a name="l691" style="background-color: #ffff99">    ! Soil energy balance check</a>
+   692) <a name="l692" style="background-color: #ffff99"></a>
+   693) <a name="l693" style="background-color: #ffffff">    found = .false.</a>
+   694) <a name="l694" style="background-color: #ffffff">    do c = lbc, ubc</a>
+   695) <a name="l695" style="background-color: #ffffff">       if (abs(errsoi_col(c)) &gt; 1.0e-7_r8 ) then</a>
+   696) <a name="l696" style="background-color: #ffff99">          found = .true.</a>
+   697) <a name="l697" style="background-color: #ffff99">          indexc = c</a>
+   698) <a name="l698" style="background-color: #ffff99">       end if</a>
+   699) <a name="l699" style="background-color: #ffff99">    end do</a>
+   700) <a name="l700" style="background-color: #ffffff">    if ( found ) then</a>
+   701) <a name="l701" style="background-color: #ffff99">       write(iulog,100)'BalanceCheck: soil balance error',nstep,indexc,errsoi_col(indexc)</a>
+   702) <a name="l702" style="background-color: #ffff99">       if (abs(errsoi_col(indexc)) &gt; .10_r8 .and. (nstep &gt; 2) ) then</a>
+   703) <a name="l703" style="background-color: #ffff99">          write(iulog,*)'clm model is stopping'</a>
+   704) <a name="l704" style="background-color: #ffff99">          call endrun()</a>
+   705) <a name="l705" style="background-color: #ffff99">       end if</a>
+   706) <a name="l706" style="background-color: #ffff99">    end if</a>
+   707) <a name="l707" style="background-color: #ffff99"></a>
+   708) <a name="l708" style="background-color: #ffff99">    ! Update SH and RUNOFF for dynamic land cover change energy and water fluxes</a>
+   709) <a name="l709" style="background-color: #ffff99">    call </a><a style="background-color: #fafad2">c2g( lbc, ubc, lbl, ubl, lbg, ubg,                &amp;</a>
+   710) <a name="l710" style="background-color: #fafad2">              qflx_runoff(lbc:ubc), </a><a style="background-color: #ffff99">qflx_runoffg(lbg:ubg), &amp;</a>
+   711) <a name="l711" style="background-color: #ffff99">              c2l_scale_type= 'urbanf', l2g_scale_type='unity' )</a>
+   712) <a name="l712" style="background-color: #ffffff">    do g = lbg, ubg</a>
+   713) <a name="l713" style="background-color: #ffffff">       qflx_runoffg(g) = qflx_runoffg(g) - qflx_liq_dynbal(g)</a>
+   714) <a name="l714" style="background-color: #ffffff">    enddo</a>
+   715) <a name="l715" style="background-color: #ffffff"></a>
+   716) <a name="l716" style="background-color: #ffffff">    call </a><a style="background-color: #fafad2">c2g( lbc, ubc, lbl, ubl, lbg, ubg,                      &amp;</a>
+   717) <a name="l717" style="background-color: #fafad2">              qflx_snwcp_ice(lbc:ubc), </a><a style="background-color: #ffff99">qflx_snwcp_iceg(lbg:ubg), &amp;</a>
+   718) <a name="l718" style="background-color: #ffff99">              c2l_scale_type= 'urbanf', l2g_scale_type='unity' )</a>
+   719) <a name="l719" style="background-color: #ffffff">    do g = lbg, ubg</a>
+   720) <a name="l720" style="background-color: #ffffff">       qflx_snwcp_iceg(g) = qflx_snwcp_iceg(g) - qflx_ice_dynbal(g)</a>
+   721) <a name="l721" style="background-color: #ffffff">    enddo</a>
+   722) <a name="l722" style="background-color: #ffffff"></a>
+   723) <a name="l723" style="background-color: #ffffff">    call </a><a style="background-color: #fafad2">p2g( lbp, ubp, lbc, ubc, lbl, ubl, lbg, ubg,      &amp;</a>
+   724) <a name="l724" style="background-color: #fafad2">              eflx_sh_tot(lbp:ubp), </a><a style="background-color: #ffff99">eflx_sh_totg(lbg:ubg), &amp;</a>
+   725) <a name="l725" style="background-color: #ffff99">              p2c_scale_type='unity',c2l_scale_type='urbanf',l2g_scale_type='unity')</a>
+   726) <a name="l726" style="background-color: #ffffff">    do g = lbg, ubg</a>
+   727) <a name="l727" style="background-color: #ffffff">       eflx_sh_totg(g) =  eflx_sh_totg(g) - eflx_dynbal(g)</a>
+   728) <a name="l728" style="background-color: #ffffff">    enddo</a>
+   729) <a name="l729" style="background-color: #ffffff"></a>
+   730) <a name="l730" style="background-color: #ffffff">100 format (1x,a,' nstep =',i10,' point =',i6,' imbalance =',f12.6,' W/m2')</a>
+   731) <a name="l731" style="background-color: #ffffff">200 format (1x,a,' nstep =',i10,' point =',i6,' imbalance =',f12.6,' mm')</a>
+   732) <a name="l732" style="background-color: #ffffff"></a>
+   733) <a name="l733" style="background-color: #ffffff">  end subroutine BalanceCheck</a>
+   734) <a name="l734" style="background-color: #ffffff"></a>
+   735) <a name="l735" style="background-color: #ffffff">end module BalanceCheckMod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

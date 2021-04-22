@@ -1,0 +1,1797 @@
+<html>
+<head>
+<title>Listing of RtmHistFile.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;RtmHistFile.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 64.71&#160;%func&#160;&#160;&#160;&#160; 26.19&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module RtmHistFile</a>
+     2) <a name="l2" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+     3) <a name="l3" style="background-color: #ffffff">! !MODULE: RtmHistFileMod</a>
+     4) <a name="l4" style="background-color: #ffffff">!</a>
+     5) <a name="l5" style="background-color: #ffffff">! !DESCRIPTION:</a>
+     6) <a name="l6" style="background-color: #ffffff">! Module containing methods to for RTM history file handling.</a>
+     7) <a name="l7" style="background-color: #ffffff">!</a>
+     8) <a name="l8" style="background-color: #ffffff">! !USES:</a>
+     9) <a name="l9" style="background-color: #ffffff">  use shr_kind_mod  , only : r8 =&gt; shr_kind_r8</a>
+    10) <a name="l10" style="background-color: #ffffff">  use shr_sys_mod   , only : shr_sys_flush, shr_sys_abort</a>
+    11) <a name="l11" style="background-color: #ffffff">  use RunoffMod     , only : runoff</a>
+    12) <a name="l12" style="background-color: #ffffff">  use RtmVar        , only : rtmlon, rtmlat, spval, ispval, secspday, frivinp_rtm, &amp;   </a>
+    13) <a name="l13" style="background-color: #ffffff">                             iulog, nsrest, caseid, inst_suffix, nsrStartup, nsrBranch, &amp; </a>
+    14) <a name="l14" style="background-color: #ffffff">                             ctitle, version, hostname, username, conventions, source</a>
+    15) <a name="l15" style="background-color: #ffffff">  use RtmFileUtils  , only : get_filename, getfil</a>
+    16) <a name="l16" style="background-color: #ffffff">  use RtmTimeManager, only : get_nstep, get_curr_date, get_curr_time, get_ref_date, &amp;</a>
+    17) <a name="l17" style="background-color: #ffffff">                             get_prev_time, get_prev_date, is_last_step</a>
+    18) <a name="l18" style="background-color: #ffffff">  use RtmSpmd       , only : masterproc</a>
+    19) <a name="l19" style="background-color: #ffffff">  use RtmIO</a>
+    20) <a name="l20" style="background-color: #ffffff">  use RtmDateTime</a>
+    21) <a name="l21" style="background-color: #ffffff"></a>
+    22) <a name="l22" style="background-color: #ffffff">  implicit none</a>
+    23) <a name="l23" style="background-color: #ffffff">  save</a>
+    24) <a name="l24" style="background-color: #ffffff">  private</a>
+    25) <a name="l25" style="background-color: #ffffff"></a>
+    26) <a name="l26" style="background-color: #ffffff">!</a>
+    27) <a name="l27" style="background-color: #ffffff">! !PUBLIC TYPES:</a>
+    28) <a name="l28" style="background-color: #ffffff">!</a>
+    29) <a name="l29" style="background-color: #ffffff">! Constants</a>
+    30) <a name="l30" style="background-color: #ffffff">!</a>
+    31) <a name="l31" style="background-color: #ffffff">  integer , public, parameter :: max_tapes  = 3     ! max number of history tapes</a>
+    32) <a name="l32" style="background-color: #ffffff">  integer , public, parameter :: max_flds   = 1500  ! max number of history fields</a>
+    33) <a name="l33" style="background-color: #ffffff">  integer , public, parameter :: max_namlen = 32    ! maximum number of characters for field name</a>
+    34) <a name="l34" style="background-color: #ffffff">!</a>
+    35) <a name="l35" style="background-color: #ffffff">! Counters</a>
+    36) <a name="l36" style="background-color: #ffffff">!</a>
+    37) <a name="l37" style="background-color: #ffffff">  integer , public :: ntapes = 0         ! index of max history file requested</a>
+    38) <a name="l38" style="background-color: #ffffff">!</a>
+    39) <a name="l39" style="background-color: #ffffff">! Namelist</a>
+    40) <a name="l40" style="background-color: #ffffff">!</a>
+    41) <a name="l41" style="background-color: #ffffff">  integer :: ni</a>
+    42) <a name="l42" style="background-color: #ffffff">  integer, public :: &amp;</a>
+    43) <a name="l43" style="background-color: #ffffff">       rtmhist_ndens(max_tapes) = 2         ! namelist: output density of netcdf history files</a>
+    44) <a name="l44" style="background-color: #ffffff">  integer, public :: &amp;</a>
+    45) <a name="l45" style="background-color: #ffffff">       rtmhist_mfilt(max_tapes) = 30        ! namelist: number of time samples per tape</a>
+    46) <a name="l46" style="background-color: #ffffff">  integer, public :: &amp;</a>
+    47) <a name="l47" style="background-color: #ffffff">       rtmhist_nhtfrq(max_tapes) = (/0, -24, -24/)  ! namelist: history write freq(0=monthly)</a>
+    48) <a name="l48" style="background-color: #ffffff">  character(len=1), public :: &amp;</a>
+    49) <a name="l49" style="background-color: #ffffff">       rtmhist_avgflag_pertape(max_tapes) = (/(' ',ni=1,max_tapes)/)   ! namelist: per tape averaging flag</a>
+    50) <a name="l50" style="background-color: #ffffff">  </a>
+    51) <a name="l51" style="background-color: #ffffff">  ! list of fields to add</a>
+    52) <a name="l52" style="background-color: #ffffff">  character(len=max_namlen+2), public :: rtmhist_fincl1(max_flds) = ' '       </a>
+    53) <a name="l53" style="background-color: #ffffff">  character(len=max_namlen+2), public :: rtmhist_fincl2(max_flds) = ' '</a>
+    54) <a name="l54" style="background-color: #ffffff">  character(len=max_namlen+2), public :: rtmhist_fincl3(max_flds) = ' '</a>
+    55) <a name="l55" style="background-color: #ffffff"></a>
+    56) <a name="l56" style="background-color: #ffffff">  ! list of fields to remove</a>
+    57) <a name="l57" style="background-color: #ffffff">  character(len=max_namlen+2), public :: rtmhist_fexcl1(max_flds) = ' ' </a>
+    58) <a name="l58" style="background-color: #ffffff">  character(len=max_namlen+2), public :: rtmhist_fexcl2(max_flds) = ' ' </a>
+    59) <a name="l59" style="background-color: #ffffff">  character(len=max_namlen+2), public :: rtmhist_fexcl3(max_flds) = ' ' </a>
+    60) <a name="l60" style="background-color: #ffffff"></a>
+    61) <a name="l61" style="background-color: #ffffff">  ! equivalence list of fields to add/remove</a>
+    62) <a name="l62" style="background-color: #ffffff">  character(len=max_namlen+2), public :: fexcl(max_flds,max_tapes)         </a>
+    63) <a name="l63" style="background-color: #ffffff">  character(len=max_namlen+2), public :: fincl(max_flds,max_tapes)         </a>
+    64) <a name="l64" style="background-color: #ffffff"></a>
+    65) <a name="l65" style="background-color: #ffffff">!! Restart</a>
+    66) <a name="l66" style="background-color: #ffffff">!</a>
+    67) <a name="l67" style="background-color: #ffffff">  logical, private :: if_close(max_tapes)   ! true =&gt; save history file</a>
+    68) <a name="l68" style="background-color: #ffffff">!</a>
+    69) <a name="l69" style="background-color: #ffffff">! !PUBLIC MEMBER FUNCTIONS:</a>
+    70) <a name="l70" style="background-color: #ffffff">  public :: RtmHistAddfld        ! Add a field to the master field list</a>
+    71) <a name="l71" style="background-color: #ffffff">  public :: RtmHistPrintflds     ! Print summary of master field list</a>
+    72) <a name="l72" style="background-color: #ffffff">  public :: RtmHistHtapesBuild   ! Initialize history file handler for initial or continue run</a>
+    73) <a name="l73" style="background-color: #ffffff">  public :: RtmHistUpdateHbuf    ! Updates history buffer for all fields and tapes</a>
+    74) <a name="l74" style="background-color: #ffffff">  public :: RtmHistHtapesWrapup  ! Write history tape(s)</a>
+    75) <a name="l75" style="background-color: #ffffff">  public :: RtmHistRestart       ! Read/write history file restart data</a>
+    76) <a name="l76" style="background-color: #ffffff">  public :: RtmHistFileFinalize  ! Clean up memory</a>
+    77) <a name="l77" style="background-color: #ffffff">!</a>
+    78) <a name="l78" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+    79) <a name="l79" style="background-color: #ffffff">! Created by Mariana Vertenstein</a>
+    80) <a name="l80" style="background-color: #ffffff">!</a>
+    81) <a name="l81" style="background-color: #ffffff">! !PRIVATE MEMBER FUNCTIONS:</a>
+    82) <a name="l82" style="background-color: #ffffff">  private :: htapes_fieldlist          ! Define the contents of each history file based on namelist</a>
+    83) <a name="l83" style="background-color: #ffffff">  private :: htape_addfld              ! Add a field to the active list for a history tape</a>
+    84) <a name="l84" style="background-color: #ffffff">  private :: htape_create              ! Define contents of history file t</a>
+    85) <a name="l85" style="background-color: #ffffff">  private :: htape_timeconst           ! Write time constant values to history tape</a>
+    86) <a name="l86" style="background-color: #ffffff">  private :: set_hist_filename         ! Determine history dataset filenames</a>
+    87) <a name="l87" style="background-color: #ffffff">  private :: list_index                ! Find index of field in exclude list</a>
+    88) <a name="l88" style="background-color: #ffffff">  private :: getname                   ! Retrieve name portion of input &quot;inname&quot;</a>
+    89) <a name="l89" style="background-color: #ffffff">  private :: getflag                   ! Retrieve flag</a>
+    90) <a name="l90" style="background-color: #ffffff">  private :: max_nFields               ! The max number of fields on any tape</a>
+    91) <a name="l91" style="background-color: #ffffff"></a>
+    92) <a name="l92" style="background-color: #ffffff">! !PRIVATE TYPES:</a>
+    93) <a name="l93" style="background-color: #ffffff">! Constants</a>
+    94) <a name="l94" style="background-color: #ffffff">!</a>
+    95) <a name="l95" style="background-color: #ffffff">  integer, parameter :: max_chars = 128        ! max chars for char variables</a>
+    96) <a name="l96" style="background-color: #ffffff">!</a>
+    97) <a name="l97" style="background-color: #ffffff">! Subscript dimensions</a>
+    98) <a name="l98" style="background-color: #ffffff">!</a>
+    99) <a name="l99" style="background-color: #ffffff">  integer, parameter :: max_subs = 100         ! max number of subscripts</a>
+   100) <a name="l100" style="background-color: #ffffff">  character(len=32)  :: subs_name(max_subs)    ! name of subscript</a>
+   101) <a name="l101" style="background-color: #ffffff">  integer            :: subs_dim(max_subs)     ! dimension of subscript</a>
+   102) <a name="l102" style="background-color: #ffffff">!</a>
+   103) <a name="l103" style="background-color: #ffffff">! Derived types</a>
+   104) <a name="l104" style="background-color: #ffffff">!</a>
+   105) <a name="l105" style="background-color: #ffffff">  type field_info</a>
+   106) <a name="l106" style="background-color: #ffffff">     character(len=max_namlen) :: name         ! field name</a>
+   107) <a name="l107" style="background-color: #ffffff">     character(len=max_chars)  :: long_name    ! long name</a>
+   108) <a name="l108" style="background-color: #ffffff">     character(len=max_chars)  :: units        ! units</a>
+   109) <a name="l109" style="background-color: #ffffff">     integer :: hpindex                        ! history pointer index </a>
+   110) <a name="l110" style="background-color: #ffffff">  end type field_info</a>
+   111) <a name="l111" style="background-color: #ffffff"></a>
+   112) <a name="l112" style="background-color: #ffffff">  type master_entry</a>
+   113) <a name="l113" style="background-color: #ffffff">     type (field_info)  :: field               ! field information</a>
+   114) <a name="l114" style="background-color: #ffffff">     logical            :: actflag(max_tapes)  ! active/inactive flag</a>
+   115) <a name="l115" style="background-color: #ffffff">     character(len=1)   :: avgflag(max_tapes)  ! time averaging flag (&quot;X&quot;,&quot;A&quot;,&quot;M&quot; or &quot;I&quot;,)</a>
+   116) <a name="l116" style="background-color: #ffffff">  end type master_entry</a>
+   117) <a name="l117" style="background-color: #ffffff"></a>
+   118) <a name="l118" style="background-color: #ffffff">  type history_entry</a>
+   119) <a name="l119" style="background-color: #ffffff">     type (field_info) :: field                ! field information</a>
+   120) <a name="l120" style="background-color: #ffffff">     character(len=1)  :: avgflag              ! time averaging flag</a>
+   121) <a name="l121" style="background-color: #ffffff">     real(r8), pointer :: hbuf(:)              ! history buffer (dimensions: dim1d x 1)</a>
+   122) <a name="l122" style="background-color: #ffffff">     integer , pointer :: nacs(:)              ! accumulation counter (dimensions: dim1d x 1)</a>
+   123) <a name="l123" style="background-color: #ffffff">  end type history_entry</a>
+   124) <a name="l124" style="background-color: #ffffff"></a>
+   125) <a name="l125" style="background-color: #ffffff">  type history_tape</a>
+   126) <a name="l126" style="background-color: #ffffff">     integer  :: nflds                         ! number of active fields on tape</a>
+   127) <a name="l127" style="background-color: #ffffff">     integer  :: ntimes                        ! current number of time samples on tape</a>
+   128) <a name="l128" style="background-color: #ffffff">     integer  :: mfilt                         ! maximum number of time samples per tape</a>
+   129) <a name="l129" style="background-color: #ffffff">     integer  :: nhtfrq                        ! number of time samples per tape</a>
+   130) <a name="l130" style="background-color: #ffffff">     integer  :: ncprec                        ! netcdf output precision</a>
+   131) <a name="l131" style="background-color: #ffffff">     logical  :: is_endhist                    ! true =&gt; current time step is end of history interval</a>
+   132) <a name="l132" style="background-color: #ffffff">     real(r8) :: begtime                       ! time at beginning of history averaging interval</a>
+   133) <a name="l133" style="background-color: #ffffff">     type (history_entry) :: hlist(max_flds)   ! array of active history tape entries</a>
+   134) <a name="l134" style="background-color: #ffffff">  end type history_tape</a>
+   135) <a name="l135" style="background-color: #ffffff"></a>
+   136) <a name="l136" style="background-color: #ffffff">  type rtmpoint                             ! Pointer to real scalar data (1D)</a>
+   137) <a name="l137" style="background-color: #ffffff">     real(r8), pointer :: ptr(:)</a>
+   138) <a name="l138" style="background-color: #ffffff">  end type rtmpoint</a>
+   139) <a name="l139" style="background-color: #ffffff">!EOP</a>
+   140) <a name="l140" style="background-color: #ffffff">!</a>
+   141) <a name="l141" style="background-color: #ffffff">! Pointers</a>
+   142) <a name="l142" style="background-color: #ffffff">!</a>
+   143) <a name="l143" style="background-color: #ffffff">  integer, parameter :: max_mapflds = 1500     ! Maximum number of fields to track</a>
+   144) <a name="l144" style="background-color: #ffffff">  type (rtmpoint)    :: rtmptr(max_mapflds) ! Real scalar data (1D)</a>
+   145) <a name="l145" style="background-color: #ffffff">!</a>
+   146) <a name="l146" style="background-color: #ffffff">! Master list: an array of master_entry entities</a>
+   147) <a name="l147" style="background-color: #ffffff">!</a>
+   148) <a name="l148" style="background-color: #ffffff">  type (master_entry) :: masterlist(max_flds)  ! master field list</a>
+   149) <a name="l149" style="background-color: #ffffff">!</a>
+   150) <a name="l150" style="background-color: #ffffff">! History tape: an array of history_tape entities (only active fields)</a>
+   151) <a name="l151" style="background-color: #ffffff">!</a>
+   152) <a name="l152" style="background-color: #ffffff">  type (history_tape) :: tape(max_tapes)       ! array history tapes</a>
+   153) <a name="l153" style="background-color: #ffffff">!</a>
+   154) <a name="l154" style="background-color: #ffffff">! Namelist input</a>
+   155) <a name="l155" style="background-color: #ffffff">!</a>
+   156) <a name="l156" style="background-color: #ffffff">! Counters</a>
+   157) <a name="l157" style="background-color: #ffffff">!</a>
+   158) <a name="l158" style="background-color: #ffffff">  integer :: nfmaster = 0                        ! number of fields in master field list</a>
+   159) <a name="l159" style="background-color: #ffffff">!</a>
+   160) <a name="l160" style="background-color: #ffffff">! Other variables</a>
+   161) <a name="l161" style="background-color: #ffffff">!</a>
+   162) <a name="l162" style="background-color: #ffffff">  character(len=max_chars) :: locfnh(max_tapes)  ! local history file names</a>
+   163) <a name="l163" style="background-color: #ffffff">  character(len=max_chars) :: locfnhr(max_tapes) ! local history restart file names</a>
+   164) <a name="l164" style="background-color: #ffffff">  logical :: htapes_defined = .false.            ! flag indicates history contents have been defined</a>
+   165) <a name="l165" style="background-color: #ffffff">!</a>
+   166) <a name="l166" style="background-color: #ffffff">! NetCDF  Id's</a>
+   167) <a name="l167" style="background-color: #ffffff">!</a>
+   168) <a name="l168" style="background-color: #ffffff">  type(file_desc_t) :: nfid(max_tapes)       ! file ids</a>
+   169) <a name="l169" style="background-color: #ffffff">  type(file_desc_t) :: ncid_hist(max_tapes)  ! file ids for history restart files</a>
+   170) <a name="l170" style="background-color: #ffffff">  integer :: time_dimid                      ! time dimension id</a>
+   171) <a name="l171" style="background-color: #ffffff">  integer :: hist_interval_dimid             ! time bounds dimension id</a>
+   172) <a name="l172" style="background-color: #ffffff">  integer :: strlen_dimid                    ! string dimension id</a>
+   173) <a name="l173" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   174) <a name="l174" style="background-color: #ffffff"></a>
+   175) <a name="l175" style="background-color: #ffffff">contains</a>
+   176) <a name="l176" style="background-color: #ffffff"></a>
+   177) <a name="l177" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   178) <a name="l178" style="background-color: #ffffff">  subroutine RtmHistFileFinalize()</a>
+   179) <a name="l179" style="background-color: #ffffff"></a>
+   180) <a name="l180" style="background-color: #ffffff">    ! DESCRIPTION:</a>
+   181) <a name="l181" style="background-color: #ffffff">    !</a>
+   182) <a name="l182" style="background-color: #ffffff">    ! Finalize and clean up memory,  Called from rof_final_mct</a>
+   183) <a name="l183" style="background-color: #ffffff">    !</a>
+   184) <a name="l184" style="background-color: #ffffff"></a>
+   185) <a name="l185" style="background-color: #ffffff">    ! !ARGUMENTS:</a>
+   186) <a name="l186" style="background-color: #ffffff"></a>
+   187) <a name="l187" style="background-color: #ffffff">    implicit none</a>
+   188) <a name="l188" style="background-color: #ffffff"></a>
+   189) <a name="l189" style="background-color: #ffffff">    ! !LOCAL VARIABLES:</a>
+   190) <a name="l190" style="background-color: #ffffff"></a>
+   191) <a name="l191" style="background-color: #ffffff">    integer :: t,f     ! indices</a>
+   192) <a name="l192" style="background-color: #ffffff"></a>
+   193) <a name="l193" style="background-color: #ffffff">    do t = 1,ntapes</a>
+   194) <a name="l194" style="background-color: #ffffff">       do f = 1,tape(t)%nflds</a>
+   195) <a name="l195" style="background-color: #ffffff">          deallocate (tape(t)%hlist(f)%hbuf)</a>
+   196) <a name="l196" style="background-color: #ffffff">          deallocate (tape(t)%hlist(f)%nacs)</a>
+   197) <a name="l197" style="background-color: #ffffff">       end do</a>
+   198) <a name="l198" style="background-color: #ffffff">    end do</a>
+   199) <a name="l199" style="background-color: #ffffff"></a>
+   200) <a name="l200" style="background-color: #ffffff">  end subroutine RtmHistFileFinalize</a>
+   201) <a name="l201" style="background-color: #ffffff"></a>
+   202) <a name="l202" style="background-color: #ffffff">  subroutine RtmHistPrintflds()</a>
+   203) <a name="l203" style="background-color: #ffffff"></a>
+   204) <a name="l204" style="background-color: #ffffff">    ! DESCRIPTION:</a>
+   205) <a name="l205" style="background-color: #ffffff">    ! Print summary of master field list.</a>
+   206) <a name="l206" style="background-color: #ffffff"></a>
+   207) <a name="l207" style="background-color: #ffffff">    ! !ARGUMENTS:</a>
+   208) <a name="l208" style="background-color: #ffffff">    implicit none</a>
+   209) <a name="l209" style="background-color: #ffffff"></a>
+   210) <a name="l210" style="background-color: #ffffff">    ! !LOCAL VARIABLES:</a>
+   211) <a name="l211" style="background-color: #ffffff">    integer nf</a>
+   212) <a name="l212" style="background-color: #ffffff">    character(len=*),parameter :: subname = 'RTM_hist_printflds'</a>
+   213) <a name="l213" style="background-color: #ffffff"></a>
+   214) <a name="l214" style="background-color: #ffffff">    if (masterproc) then</a>
+   215) <a name="l215" style="background-color: #ffffff">       write(iulog,*) trim(subname),' : number of master fields = ',nfmaster</a>
+   216) <a name="l216" style="background-color: #ffffff">       write(iulog,*)' ******* MASTER FIELD LIST *******'</a>
+   217) <a name="l217" style="background-color: #ffffff">       do nf = 1,nfmaster</a>
+   218) <a name="l218" style="background-color: #ffffff">          write(iulog,9000)nf, masterlist(nf)%field%name, masterlist(nf)%field%units</a>
+   219) <a name="l219" style="background-color: #ffffff">9000      format (i5,1x,a32,1x,a16)</a>
+   220) <a name="l220" style="background-color: #ffffff">       end do</a>
+   221) <a name="l221" style="background-color: #ffffff">       call shr_sys_flush(iulog)</a>
+   222) <a name="l222" style="background-color: #ffffff">    end if</a>
+   223) <a name="l223" style="background-color: #ffffff"></a>
+   224) <a name="l224" style="background-color: #ffffff">  end subroutine RtmHistPrintflds</a>
+   225) <a name="l225" style="background-color: #ffffff"></a>
+   226) <a name="l226" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   227) <a name="l227" style="background-color: #ffffff"></a>
+   228) <a name="l228" style="background-color: #ffffff">  subroutine RtmHistHtapesBuild ()</a>
+   229) <a name="l229" style="background-color: #ffffff"></a>
+   230) <a name="l230" style="background-color: #ffffff">    ! !DESCRIPTION:</a>
+   231) <a name="l231" style="background-color: #ffffff">    ! Initialize ntapes history file for initial or branch run.  </a>
+   232) <a name="l232" style="background-color: #ffffff"></a>
+   233) <a name="l233" style="background-color: #ffffff">    ! !ARGUMENTS:</a>
+   234) <a name="l234" style="background-color: #ffffff">    implicit none</a>
+   235) <a name="l235" style="background-color: #ffffff"></a>
+   236) <a name="l236" style="background-color: #ffffff">    ! !LOCAL VARIABLES:</a>
+   237) <a name="l237" style="background-color: #ffffff">    integer :: i                   ! index</a>
+   238) <a name="l238" style="background-color: #ffffff">    integer :: ier                 ! error code</a>
+   239) <a name="l239" style="background-color: #ffffff">    integer :: t, f                ! tape, field indices</a>
+   240) <a name="l240" style="background-color: #ffffff">    integer :: day, sec            ! day and seconds from base date</a>
+   241) <a name="l241" style="background-color: #ffffff">    character(len=1) :: avgflag    ! lcl equiv of rtmhist_avgflag_pertape(t)</a>
+   242) <a name="l242" style="background-color: #ffffff">    character(len=*),parameter :: subname = 'hist_htapes_build'</a>
+   243) <a name="l243" style="background-color: #ffffff">    !----------------------------------------------------------</a>
+   244) <a name="l244" style="background-color: #ffffff"></a>
+   245) <a name="l245" style="background-color: #ffffff">    if (masterproc) then</a>
+   246) <a name="l246" style="background-color: #ffffff">       write(iulog,*)  trim(subname),' Initializing RTM history files'</a>
+   247) <a name="l247" style="background-color: #ffffff">       write(iulog,'(72a1)') (&quot;-&quot;,i=1,60)</a>
+   248) <a name="l248" style="background-color: #ffffff">       call shr_sys_flush(iulog)</a>
+   249) <a name="l249" style="background-color: #ffffff">    endif</a>
+   250) <a name="l250" style="background-color: #ffffff"></a>
+   251) <a name="l251" style="background-color: #ffffff">    ! Override averaging flag for all fields on a particular tape</a>
+   252) <a name="l252" style="background-color: #ffffff">    ! if namelist input so specifies</a>
+   253) <a name="l253" style="background-color: #ffffff"></a>
+   254) <a name="l254" style="background-color: #ffffff">    do t=1,max_tapes</a>
+   255) <a name="l255" style="background-color: #ffffff">       if (rtmhist_avgflag_pertape(t) /= ' ') then</a>
+   256) <a name="l256" style="background-color: #ffff99">          avgflag = rtmhist_avgflag_pertape(t)</a>
+   257) <a name="l257" style="background-color: #ffff99">          do f = 1,nfmaster</a>
+   258) <a name="l258" style="background-color: #ffff99">             select case (avgflag)</a>
+   259) <a name="l259" style="background-color: #ffff99">             case ('A')</a>
+   260) <a name="l260" style="background-color: #ffff99">                masterlist(f)%avgflag(t) = avgflag</a>
+   261) <a name="l261" style="background-color: #ffff99">             case ('I')</a>
+   262) <a name="l262" style="background-color: #ffff99">                masterlist(f)%avgflag(t) = avgflag</a>
+   263) <a name="l263" style="background-color: #ffff99">             case ('X')</a>
+   264) <a name="l264" style="background-color: #ffff99">                masterlist(f)%avgflag(t) = avgflag</a>
+   265) <a name="l265" style="background-color: #ffff99">             case ('M')</a>
+   266) <a name="l266" style="background-color: #ffff99">                masterlist(f)%avgflag(t) = avgflag</a>
+   267) <a name="l267" style="background-color: #ffff99">             case default</a>
+   268) <a name="l268" style="background-color: #ffff99">                write(iulog,*) trim(subname),' ERROR: unknown avgflag=',avgflag</a>
+   269) <a name="l269" style="background-color: #ffff99">                call shr_sys_abort ()</a>
+   270) <a name="l270" style="background-color: #ffff99">             end select</a>
+   271) <a name="l271" style="background-color: #ffff99">          end do</a>
+   272) <a name="l272" style="background-color: #ffff99">       end if</a>
+   273) <a name="l273" style="background-color: #ffff99">    end do</a>
+   274) <a name="l274" style="background-color: #ffff99"></a>
+   275) <a name="l275" style="background-color: #ffffff">    fincl(:,1) = rtmhist_fincl1(:)</a>
+   276) <a name="l276" style="background-color: #ffffff">    fincl(:,2) = rtmhist_fincl2(:)</a>
+   277) <a name="l277" style="background-color: #ffffff">    fincl(:,3) = rtmhist_fincl3(:)</a>
+   278) <a name="l278" style="background-color: #ffffff"></a>
+   279) <a name="l279" style="background-color: #ffffff">    fexcl(:,1) = rtmhist_fexcl1(:)</a>
+   280) <a name="l280" style="background-color: #ffffff">    fexcl(:,2) = rtmhist_fexcl2(:)</a>
+   281) <a name="l281" style="background-color: #ffffff">    fexcl(:,3) = rtmhist_fexcl3(:)</a>
+   282) <a name="l282" style="background-color: #ffffff"></a>
+   283) <a name="l283" style="background-color: #ffffff">    ! Define field list information for all history files.</a>
+   284) <a name="l284" style="background-color: #ffffff">    ! Update ntapes to reflect number of active history files</a>
+   285) <a name="l285" style="background-color: #ffffff">    ! Note - branch runs can have additional auxiliary history files declared</a>
+   286) <a name="l286" style="background-color: #ffffff"></a>
+   287) <a name="l287" style="background-color: #ffffff">    call htapes_fieldlist()</a>
+   288) <a name="l288" style="background-color: #ffffff"></a>
+   289) <a name="l289" style="background-color: #ffffff">    ! Set number of time samples in each history file and</a>
+   290) <a name="l290" style="background-color: #ffffff">    ! Note - the following entries will be overwritten by history restart</a>
+   291) <a name="l291" style="background-color: #ffffff">    ! Note - with netcdf, only 1 (ncd_double) and 2 (ncd_float) are allowed</a>
+   292) <a name="l292" style="background-color: #ffffff"></a>
+   293) <a name="l293" style="background-color: #ffffff">    do t=1,ntapes</a>
+   294) <a name="l294" style="background-color: #ffffff">       tape(t)%ntimes = 0</a>
+   295) <a name="l295" style="background-color: #ffffff">       tape(t)%nhtfrq = rtmhist_nhtfrq(t)</a>
+   296) <a name="l296" style="background-color: #ffffff">       tape(t)%mfilt = rtmhist_mfilt(t)</a>
+   297) <a name="l297" style="background-color: #ffffff">       if (rtmhist_ndens(t) == 1) then</a>
+   298) <a name="l298" style="background-color: #ffff99">          tape(t)%ncprec = ncd_double</a>
+   299) <a name="l299" style="background-color: #ffff99">       else</a>
+   300) <a name="l300" style="background-color: #ffffff">          tape(t)%ncprec = ncd_float</a>
+   301) <a name="l301" style="background-color: #ffffff">       endif</a>
+   302) <a name="l302" style="background-color: #ffffff">    end do</a>
+   303) <a name="l303" style="background-color: #ffffff"></a>
+   304) <a name="l304" style="background-color: #ffffff">    ! Set time of beginning of current averaging interval</a>
+   305) <a name="l305" style="background-color: #ffffff">    ! First etermine elapased time since reference date</a>
+   306) <a name="l306" style="background-color: #ffffff">    call get_prev_time(day, sec)</a>
+   307) <a name="l307" style="background-color: #ffffff">    do t=1,ntapes</a>
+   308) <a name="l308" style="background-color: #ffffff">       tape(t)%begtime = day + sec/secspday</a>
+   309) <a name="l309" style="background-color: #ffffff">    end do</a>
+   310) <a name="l310" style="background-color: #ffffff"></a>
+   311) <a name="l311" style="background-color: #ffffff">    if (masterproc) then</a>
+   312) <a name="l312" style="background-color: #ffffff">       write(iulog,*)  trim(subname),' Successfully initialized RTM history files'</a>
+   313) <a name="l313" style="background-color: #ffffff">       write(iulog,'(72a1)') (&quot;-&quot;,i=1,60)</a>
+   314) <a name="l314" style="background-color: #ffffff">       call shr_sys_flush(iulog)</a>
+   315) <a name="l315" style="background-color: #ffffff">    endif</a>
+   316) <a name="l316" style="background-color: #ffffff"></a>
+   317) <a name="l317" style="background-color: #ffffff">  end subroutine RtmHistHtapesBuild</a>
+   318) <a name="l318" style="background-color: #ffffff"></a>
+   319) <a name="l319" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   320) <a name="l320" style="background-color: #ffffff"></a>
+   321) <a name="l321" style="background-color: #ffffff">  subroutine htapes_fieldlist()</a>
+   322) <a name="l322" style="background-color: #ffffff"></a>
+   323) <a name="l323" style="background-color: #ffffff">    ! !DESCRIPTION:</a>
+   324) <a name="l324" style="background-color: #ffffff">    ! Define the contents of each history file based on namelist</a>
+   325) <a name="l325" style="background-color: #ffffff">    ! input for initial or branch run, and restart data if a restart run.</a>
+   326) <a name="l326" style="background-color: #ffffff">    ! Use arrays fincl and fexcl to modify default history tape contents.</a>
+   327) <a name="l327" style="background-color: #ffffff">    ! Then sort the result alphanumerically.</a>
+   328) <a name="l328" style="background-color: #ffffff"></a>
+   329) <a name="l329" style="background-color: #ffffff">    ! !ARGUMENTS:</a>
+   330) <a name="l330" style="background-color: #ffffff">    implicit none</a>
+   331) <a name="l331" style="background-color: #ffffff">    !</a>
+   332) <a name="l332" style="background-color: #ffffff">    ! !LOCAL VARIABLES:</a>
+   333) <a name="l333" style="background-color: #ffffff">    integer :: t, f                ! tape, field indices</a>
+   334) <a name="l334" style="background-color: #ffffff">    integer :: ff                  ! index into include, exclude and fprec list</a>
+   335) <a name="l335" style="background-color: #ffffff">    character(len=max_namlen) :: name ! field name portion of fincl (i.e. no avgflag separator)</a>
+   336) <a name="l336" style="background-color: #ffffff">    character(len=max_namlen) :: mastername ! name from masterlist field</a>
+   337) <a name="l337" style="background-color: #ffffff">    character(len=1)  :: avgflag    ! averaging flag</a>
+   338) <a name="l338" style="background-color: #ffffff">    character(len=1)  :: prec_acc   ! history buffer precision flag</a>
+   339) <a name="l339" style="background-color: #ffffff">    character(len=1)  :: prec_wrt   ! history buffer write precision flag</a>
+   340) <a name="l340" style="background-color: #ffffff">    type (history_entry) :: tmp     ! temporary used for swapping</a>
+   341) <a name="l341" style="background-color: #ffffff">    character(len=*),parameter :: subname = 'htapes_fieldlist'</a>
+   342) <a name="l342" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+   343) <a name="l343" style="background-color: #ffffff"></a>
+   344) <a name="l344" style="background-color: #ffffff">    ! First ensure contents of fincl and fexcl are valid names</a>
+   345) <a name="l345" style="background-color: #ffffff">    do t = 1,max_tapes</a>
+   346) <a name="l346" style="background-color: #ffffff">       f = 1</a>
+   347) <a name="l347" style="background-color: #fafad2">       do while (f &lt; max_flds .and. fincl(f,t) </a><a style="background-color: #ffffff">/= ' ')</a>
+   348) <a name="l348" style="background-color: #ffff99">          name = getname (fincl(f,t)) !namelist</a>
+   349) <a name="l349" style="background-color: #ffff99">          do ff = 1,nfmaster</a>
+   350) <a name="l350" style="background-color: #ffff99">             mastername = masterlist(ff)%field%name</a>
+   351) <a name="l351" style="background-color: #ffff99">             if (name == mastername) exit</a>
+   352) <a name="l352" style="background-color: #ffff99">          end do</a>
+   353) <a name="l353" style="background-color: #ffff99">          if (name /= mastername) then</a>
+   354) <a name="l354" style="background-color: #ffff99">             write(iulog,*) trim(subname),' ERROR: ', trim(name), ' in fincl(', f, ') ',&amp;</a>
+   355) <a name="l355" style="background-color: #ffff99">                  'for history tape ',t,' not found'</a>
+   356) <a name="l356" style="background-color: #ffff99">             call shr_sys_abort()</a>
+   357) <a name="l357" style="background-color: #ffff99">          end if</a>
+   358) <a name="l358" style="background-color: #ffff99">          f = f + 1</a>
+   359) <a name="l359" style="background-color: #ffff99">       end do</a>
+   360) <a name="l360" style="background-color: #ffff99"></a>
+   361) <a name="l361" style="background-color: #ffffff">       f = 1</a>
+   362) <a name="l362" style="background-color: #fafad2">       do while (f &lt; max_flds .and. fexcl(f,t) </a><a style="background-color: #ffffff">/= ' ')</a>
+   363) <a name="l363" style="background-color: #ffff99">          do ff = 1,nfmaster</a>
+   364) <a name="l364" style="background-color: #ffff99">             mastername = masterlist(ff)%field%name</a>
+   365) <a name="l365" style="background-color: #ffff99">             if (fexcl(f,t) == mastername) exit</a>
+   366) <a name="l366" style="background-color: #ffff99">          end do</a>
+   367) <a name="l367" style="background-color: #ffff99">          if (fexcl(f,t) /= mastername) then</a>
+   368) <a name="l368" style="background-color: #ffff99">             write(iulog,*) trim(subname),' ERROR: ', fexcl(f,t), ' in fexcl(', f, ') ', &amp;</a>
+   369) <a name="l369" style="background-color: #ffff99">                  'for history tape ',t,' not found'</a>
+   370) <a name="l370" style="background-color: #ffff99">             call shr_sys_abort()</a>
+   371) <a name="l371" style="background-color: #ffff99">          end if</a>
+   372) <a name="l372" style="background-color: #ffff99">          f = f + 1</a>
+   373) <a name="l373" style="background-color: #ffff99">       end do</a>
+   374) <a name="l374" style="background-color: #ffff99">    end do</a>
+   375) <a name="l375" style="background-color: #ffff99"></a>
+   376) <a name="l376" style="background-color: #ffffff">    tape(:)%nflds = 0</a>
+   377) <a name="l377" style="background-color: #ffffff">    do t = 1,max_tapes</a>
+   378) <a name="l378" style="background-color: #ffffff"></a>
+   379) <a name="l379" style="background-color: #ffffff">       ! Loop through the masterlist set of field names and determine if any of those</a>
+   380) <a name="l380" style="background-color: #ffffff">       ! are in the FINCL or FEXCL arrays</a>
+   381) <a name="l381" style="background-color: #ffffff">       ! The call to list_index determines the index in the FINCL or FEXCL arrays</a>
+   382) <a name="l382" style="background-color: #ffffff">       ! that the masterlist field corresponds to</a>
+   383) <a name="l383" style="background-color: #ffffff">       ! Add the field to the tape if specified via namelist (FINCL[1-max_tapes]),</a>
+   384) <a name="l384" style="background-color: #ffffff">       ! or if it is on by default and was not excluded via namelist (FEXCL[1-max_tapes]).</a>
+   385) <a name="l385" style="background-color: #ffffff"></a>
+   386) <a name="l386" style="background-color: #ffffff">       do f = 1,nfmaster</a>
+   387) <a name="l387" style="background-color: #ffffff">          mastername = masterlist(f)%field%name</a>
+   388) <a name="l388" style="background-color: #ffffff">          call list_index (fincl(1,t), mastername, ff)</a>
+   389) <a name="l389" style="background-color: #ffffff">          if (ff &gt; 0) then</a>
+   390) <a name="l390" style="background-color: #ffffff">             ! if field is in include list, ff &gt; 0 and htape_addfld</a>
+   391) <a name="l391" style="background-color: #ffffff">             ! will not be called for field</a>
+   392) <a name="l392" style="background-color: #ffff99">             avgflag = getflag (fincl(ff,t))</a>
+   393) <a name="l393" style="background-color: #ffff99">             call htape_addfld (t, f, avgflag)</a>
+   394) <a name="l394" style="background-color: #ffff99">          else </a>
+   395) <a name="l395" style="background-color: #ffff99">             ! find index of field in exclude list</a>
+   396) <a name="l396" style="background-color: #ffff99">             call </a><a style="background-color: #ffffff">list_index (fexcl(1,t), mastername, ff)</a>
+   397) <a name="l397" style="background-color: #ffffff"></a>
+   398) <a name="l398" style="background-color: #ffffff">             ! if field is in exclude list, ff &gt; 0 and htape_addfld</a>
+   399) <a name="l399" style="background-color: #ffffff">             ! will not be called for field</a>
+   400) <a name="l400" style="background-color: #ffffff">             ! if field is not in exclude list, ff =0 and htape_addfld</a>
+   401) <a name="l401" style="background-color: #ffffff">             ! will be called for field (note that htape_addfld will be</a>
+   402) <a name="l402" style="background-color: #ffffff">             ! called below only if field is not in exclude list OR in</a>
+   403) <a name="l403" style="background-color: #ffffff">             ! include list</a>
+   404) <a name="l404" style="background-color: #ffffff">             if (ff == 0 .and. masterlist(f)%actflag(t)) then</a>
+   405) <a name="l405" style="background-color: #ffffff">                call htape_addfld (t, f, ' ')</a>
+   406) <a name="l406" style="background-color: #ffffff">             end if</a>
+   407) <a name="l407" style="background-color: #ffffff">          end if</a>
+   408) <a name="l408" style="background-color: #ffffff">       end do</a>
+   409) <a name="l409" style="background-color: #ffffff"></a>
+   410) <a name="l410" style="background-color: #ffffff">       ! Specification of tape contents now complete.</a>
+   411) <a name="l411" style="background-color: #ffffff">       ! Sort each list of active entries</a>
+   412) <a name="l412" style="background-color: #ffffff"></a>
+   413) <a name="l413" style="background-color: #ffffff">       do f = tape(t)%nflds-1,1,-1</a>
+   414) <a name="l414" style="background-color: #ffffff">          do ff = 1,f</a>
+   415) <a name="l415" style="background-color: #ffffff">             if (tape(t)%hlist(ff)%field%name &gt; tape(t)%hlist(ff+1)%field%name) then</a>
+   416) <a name="l416" style="background-color: #ffff99">                tmp = tape(t)%hlist(ff)</a>
+   417) <a name="l417" style="background-color: #ffff99">                tape(t)%hlist(ff  ) = tape(t)%hlist(ff+1)</a>
+   418) <a name="l418" style="background-color: #ffff99">                tape(t)%hlist(ff+1) = tmp</a>
+   419) <a name="l419" style="background-color: #ffffff">             else if (tape(t)%hlist(ff)%field%name == tape(t)%hlist(ff+1)%field%name) then</a>
+   420) <a name="l420" style="background-color: #ffff99">                write(iulog,*) trim(subname),' ERROR: Duplicate field ', &amp;</a>
+   421) <a name="l421" style="background-color: #ffff99">                   tape(t)%hlist(ff)%field%name, &amp;</a>
+   422) <a name="l422" style="background-color: #ffff99">                   't,ff,name=',t,ff,tape(t)%hlist(ff+1)%field%name</a>
+   423) <a name="l423" style="background-color: #ffff99">                call shr_sys_abort()</a>
+   424) <a name="l424" style="background-color: #ffff99">             end if</a>
+   425) <a name="l425" style="background-color: #ffff99">          end do</a>
+   426) <a name="l426" style="background-color: #ffff99">       end do</a>
+   427) <a name="l427" style="background-color: #ffff99"></a>
+   428) <a name="l428" style="background-color: #ffffff">       if (masterproc) then</a>
+   429) <a name="l429" style="background-color: #ffffff">          if (tape(t)%nflds &gt; 0) then</a>
+   430) <a name="l430" style="background-color: #ffffff">             write(iulog,*) trim(subname),' : Included fields tape ',t,'=',tape(t)%nflds</a>
+   431) <a name="l431" style="background-color: #ffffff">          end if</a>
+   432) <a name="l432" style="background-color: #ffffff">          do f = 1,tape(t)%nflds</a>
+   433) <a name="l433" style="background-color: #ffffff">             write(iulog,*) f,' ',tape(t)%hlist(f)%field%name,' ',tape(t)%hlist(f)%avgflag</a>
+   434) <a name="l434" style="background-color: #ffffff">          end do</a>
+   435) <a name="l435" style="background-color: #ffffff">          call shr_sys_flush(iulog)</a>
+   436) <a name="l436" style="background-color: #ffffff">       end if</a>
+   437) <a name="l437" style="background-color: #ffffff">    end do</a>
+   438) <a name="l438" style="background-color: #ffffff"></a>
+   439) <a name="l439" style="background-color: #ffffff">    ! Determine total number of active history tapes</a>
+   440) <a name="l440" style="background-color: #ffffff"></a>
+   441) <a name="l441" style="background-color: #ffffff">    ntapes = 0</a>
+   442) <a name="l442" style="background-color: #ffffff">    do t = max_tapes,1,-1</a>
+   443) <a name="l443" style="background-color: #ffffff">       if (tape(t)%nflds &gt; 0) then</a>
+   444) <a name="l444" style="background-color: #ffffff">          ntapes = t</a>
+   445) <a name="l445" style="background-color: #ffffff">          exit</a>
+   446) <a name="l446" style="background-color: #ffffff">       end if</a>
+   447) <a name="l447" style="background-color: #ffffff">    end do</a>
+   448) <a name="l448" style="background-color: #ffffff"></a>
+   449) <a name="l449" style="background-color: #ffffff">    ! Ensure there are no &quot;holes&quot; in tape specification, i.e. empty tapes.</a>
+   450) <a name="l450" style="background-color: #ffffff">    ! Enabling holes should not be difficult if necessary.</a>
+   451) <a name="l451" style="background-color: #ffffff"></a>
+   452) <a name="l452" style="background-color: #ffffff">    do t = 1,ntapes</a>
+   453) <a name="l453" style="background-color: #ffffff">       if (tape(t)%nflds  ==  0) then</a>
+   454) <a name="l454" style="background-color: #ffff99">          write(iulog,*) trim(subname),' ERROR: Tape ',t,' is empty'</a>
+   455) <a name="l455" style="background-color: #ffff99">          call shr_sys_abort()</a>
+   456) <a name="l456" style="background-color: #ffff99">       end if</a>
+   457) <a name="l457" style="background-color: #ffff99">    end do</a>
+   458) <a name="l458" style="background-color: #ffff99"></a>
+   459) <a name="l459" style="background-color: #ffff99">    ! Check that the number of history files declared does not exceed</a>
+   460) <a name="l460" style="background-color: #ffff99">    ! the maximum allowed.</a>
+   461) <a name="l461" style="background-color: #ffff99"></a>
+   462) <a name="l462" style="background-color: #ffffff">    if (ntapes &gt; max_tapes) then</a>
+   463) <a name="l463" style="background-color: #ffff99">       write(iulog,*) trim(subname),' ERROR: Too many history files declared, max_tapes=',max_tapes</a>
+   464) <a name="l464" style="background-color: #ffff99">       call shr_sys_abort()</a>
+   465) <a name="l465" style="background-color: #ffff99">    end if</a>
+   466) <a name="l466" style="background-color: #ffff99"></a>
+   467) <a name="l467" style="background-color: #ffffff">    if (masterproc) then</a>
+   468) <a name="l468" style="background-color: #ffffff">       write(iulog,*) 'There will be a total of ',ntapes,'RTM  history tapes'</a>
+   469) <a name="l469" style="background-color: #ffffff">       do t=1,ntapes</a>
+   470) <a name="l470" style="background-color: #ffffff">          write(iulog,*)</a>
+   471) <a name="l471" style="background-color: #ffffff">          if (rtmhist_nhtfrq(t) == 0) then</a>
+   472) <a name="l472" style="background-color: #ffffff">             write(iulog,*)'RTM History tape ',t,' write frequency is MONTHLY'</a>
+   473) <a name="l473" style="background-color: #ffffff">          else</a>
+   474) <a name="l474" style="background-color: #ffff99">             write(iulog,*)'RTM History tape ',t,' write frequency = ',rtmhist_nhtfrq(t)</a>
+   475) <a name="l475" style="background-color: #ffff99">          endif</a>
+   476) <a name="l476" style="background-color: #ffffff">          write(iulog,*)'Number of time samples on RTM history tape ',t,' is ',rtmhist_mfilt(t)</a>
+   477) <a name="l477" style="background-color: #ffffff">          write(iulog,*)'Output precision on RTM history tape ',t,'=',rtmhist_ndens(t)</a>
+   478) <a name="l478" style="background-color: #ffffff">          write(iulog,*)</a>
+   479) <a name="l479" style="background-color: #ffffff">       end do</a>
+   480) <a name="l480" style="background-color: #ffffff">       call shr_sys_flush(iulog)</a>
+   481) <a name="l481" style="background-color: #ffffff">    end if</a>
+   482) <a name="l482" style="background-color: #ffffff"></a>
+   483) <a name="l483" style="background-color: #ffffff">    ! Set flag indicating h-tape contents are now defined </a>
+   484) <a name="l484" style="background-color: #ffffff"></a>
+   485) <a name="l485" style="background-color: #ffffff">    htapes_defined = .true.</a>
+   486) <a name="l486" style="background-color: #ffffff"></a>
+   487) <a name="l487" style="background-color: #ffffff">  end subroutine htapes_fieldlist</a>
+   488) <a name="l488" style="background-color: #ffffff"></a>
+   489) <a name="l489" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   490) <a name="l490" style="background-color: #ffffff"></a>
+   491) <a name="l491" style="background-color: #ffffff">  subroutine htape_addfld (t, f, avgflag)</a>
+   492) <a name="l492" style="background-color: #ffffff"></a>
+   493) <a name="l493" style="background-color: #ffffff">    ! !DESCRIPTION:</a>
+   494) <a name="l494" style="background-color: #ffffff">    ! Add a field to the active list for a history tape. Copy the data from</a>
+   495) <a name="l495" style="background-color: #ffffff">    ! the master field list to the active list for the tape.</a>
+   496) <a name="l496" style="background-color: #ffffff"></a>
+   497) <a name="l497" style="background-color: #ffffff">    ! !ARGUMENTS:</a>
+   498) <a name="l498" style="background-color: #ffffff">    implicit none</a>
+   499) <a name="l499" style="background-color: #ffffff">    integer, intent(in) :: t                 ! history tape index</a>
+   500) <a name="l500" style="background-color: #ffffff">    integer, intent(in) :: f                 ! field index from master field list</a>
+   501) <a name="l501" style="background-color: #ffffff">    character(len=1), intent(in) :: avgflag  ! time averaging flag</a>
+   502) <a name="l502" style="background-color: #ffffff"></a>
+   503) <a name="l503" style="background-color: #ffffff">    ! !LOCAL VARIABLES:</a>
+   504) <a name="l504" style="background-color: #ffffff">    integer :: n               ! field index on defined tape</a>
+   505) <a name="l505" style="background-color: #ffffff">    integer :: begrof          ! per-proc beginning land runoff index</a>
+   506) <a name="l506" style="background-color: #ffffff">    integer :: endrof          ! per-proc ending land runoff index</a>
+   507) <a name="l507" style="background-color: #ffffff">    integer :: numrtm          ! total number of rtm cells on all procs</a>
+   508) <a name="l508" style="background-color: #ffffff">    character(len=*),parameter :: subname = 'htape_addfld'</a>
+   509) <a name="l509" style="background-color: #ffffff">    !-------------------------------------------------------</a>
+   510) <a name="l510" style="background-color: #ffffff"></a>
+   511) <a name="l511" style="background-color: #ffffff">    ! Ensure that it is not to late to add a field to the history tape</a>
+   512) <a name="l512" style="background-color: #ffffff">    if (htapes_defined) then</a>
+   513) <a name="l513" style="background-color: #ffff99">       write(iulog,*) trim(subname),' ERROR: attempt to add field ', &amp;</a>
+   514) <a name="l514" style="background-color: #ffff99">            masterlist(f)%field%name, ' after history files are set'</a>
+   515) <a name="l515" style="background-color: #ffff99">       call shr_sys_abort()</a>
+   516) <a name="l516" style="background-color: #ffff99">    end if</a>
+   517) <a name="l517" style="background-color: #ffff99"></a>
+   518) <a name="l518" style="background-color: #ffff99">    ! Determine bounds</a>
+   519) <a name="l519" style="background-color: #ffffff">    begrof = runoff%begr</a>
+   520) <a name="l520" style="background-color: #ffffff">    endrof = runoff%endr</a>
+   521) <a name="l521" style="background-color: #ffffff">    numrtm = runoff%numr</a>
+   522) <a name="l522" style="background-color: #ffffff"></a>
+   523) <a name="l523" style="background-color: #ffffff">    tape(t)%nflds = tape(t)%nflds + 1</a>
+   524) <a name="l524" style="background-color: #ffffff">    n = tape(t)%nflds</a>
+   525) <a name="l525" style="background-color: #ffffff">    tape(t)%hlist(n)%field = masterlist(f)%field</a>
+   526) <a name="l526" style="background-color: #ffffff"></a>
+   527) <a name="l527" style="background-color: #fafad2">    allocate (tape(t)%hlist(n)%hbuf(begrof:endrof))</a>
+   528) <a name="l528" style="background-color: #fafad2">    allocate (tape(t)%hlist(n)%nacs(begrof:endrof))</a>
+   529) <a name="l529" style="background-color: #fafad2">     </a>
+   530) <a name="l530" style="background-color: #ffffff">    tape(t)%hlist(n)%hbuf(:) = 0._r8</a>
+   531) <a name="l531" style="background-color: #ffffff">    tape(t)%hlist(n)%nacs(:) = 0</a>
+   532) <a name="l532" style="background-color: #ffffff"></a>
+   533) <a name="l533" style="background-color: #ffffff">    ! Set time averaging flag based on masterlist setting or</a>
+   534) <a name="l534" style="background-color: #ffffff">    ! override the default averaging flag with namelist setting</a>
+   535) <a name="l535" style="background-color: #ffffff">    select case (avgflag)</a>
+   536) <a name="l536" style="background-color: #ffffff">    case (' ')</a>
+   537) <a name="l537" style="background-color: #ffffff">       tape(t)%hlist(n)%avgflag = masterlist(f)%avgflag(t)</a>
+   538) <a name="l538" style="background-color: #ffffff">    case (</a><a style="background-color: #ffff99">'A','I','X','M')</a>
+   539) <a name="l539" style="background-color: #ffff99">       tape(t)%hlist(n)%avgflag = avgflag</a>
+   540) <a name="l540" style="background-color: #ffff99">    case default</a>
+   541) <a name="l541" style="background-color: #ffff99">       write(iulog,*) trim(subname),' ERROR: unknown avgflag=', avgflag</a>
+   542) <a name="l542" style="background-color: #ffff99">       call shr_sys_abort()</a>
+   543) <a name="l543" style="background-color: #ffff99">    end select</a>
+   544) <a name="l544" style="background-color: #ffff99"></a>
+   545) <a name="l545" style="background-color: #ffff99"></a>
+   546) <a name="l546" style="background-color: #ffffff">  end subroutine htape_addfld</a>
+   547) <a name="l547" style="background-color: #ffffff"></a>
+   548) <a name="l548" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   549) <a name="l549" style="background-color: #ffffff"></a>
+   550) <a name="l550" style="background-color: #ffffff">  subroutine RtmHistUpdateHbuf()</a>
+   551) <a name="l551" style="background-color: #ffffff"></a>
+   552) <a name="l552" style="background-color: #ffffff">    ! !DESCRIPTION:</a>
+   553) <a name="l553" style="background-color: #ffffff">    ! Accumulate (or take min, max, etc. as appropriate) input field</a>
+   554) <a name="l554" style="background-color: #ffffff">    ! into its history buffer for appropriate tapes.</a>
+   555) <a name="l555" style="background-color: #ffffff"></a>
+   556) <a name="l556" style="background-color: #ffffff">    ! !ARGUMENTS:</a>
+   557) <a name="l557" style="background-color: #ffffff">    implicit none</a>
+   558) <a name="l558" style="background-color: #ffffff"></a>
+   559) <a name="l559" style="background-color: #ffffff">    ! !LOCAL VARIABLES:</a>
+   560) <a name="l560" style="background-color: #ffffff">    integer :: t                   ! tape index</a>
+   561) <a name="l561" style="background-color: #ffffff">    integer :: f                   ! field index</a>
+   562) <a name="l562" style="background-color: #ffffff">    integer :: k                   ! index</a>
+   563) <a name="l563" style="background-color: #ffffff">    integer :: hpindex             ! history pointer index</a>
+   564) <a name="l564" style="background-color: #ffffff">    integer :: begrof,endrof       ! beginning and ending indices</a>
+   565) <a name="l565" style="background-color: #ffffff">    character(len=1)  :: avgflag   ! time averaging flag</a>
+   566) <a name="l566" style="background-color: #ffffff">    real(r8), pointer :: hbuf(:)   ! history buffer</a>
+   567) <a name="l567" style="background-color: #ffffff">    integer , pointer :: nacs(:)   ! accumulation counter</a>
+   568) <a name="l568" style="background-color: #ffffff">    real(r8), pointer :: field(:)  ! 1d pointer field</a>
+   569) <a name="l569" style="background-color: #ffffff">    integer j</a>
+   570) <a name="l570" style="background-color: #ffffff">    character(len=*),parameter :: subname = 'RtmHistUpdateHbuf'</a>
+   571) <a name="l571" style="background-color: #ffffff">    !----------------------------------------------------------</a>
+   572) <a name="l572" style="background-color: #ffffff"></a>
+   573) <a name="l573" style="background-color: #ffffff">    begrof = runoff%begr</a>
+   574) <a name="l574" style="background-color: #ffffff">    endrof = runoff%endr</a>
+   575) <a name="l575" style="background-color: #ffffff"></a>
+   576) <a name="l576" style="background-color: #ffffff">    do t = 1,ntapes</a>
+   577) <a name="l577" style="background-color: #ffffff">       do f = 1,tape(t)%nflds</a>
+   578) <a name="l578" style="background-color: #ffffff">          avgflag  =  tape(t)%hlist(f)%avgflag</a>
+   579) <a name="l579" style="background-color: #ffffff">          nacs     =&gt; tape(t)%hlist(f)%nacs</a>
+   580) <a name="l580" style="background-color: #ffffff">          hbuf     =&gt; tape(t)%hlist(f)%hbuf</a>
+   581) <a name="l581" style="background-color: #ffffff">          hpindex  =  tape(t)%hlist(f)%field%hpindex</a>
+   582) <a name="l582" style="background-color: #ffffff">          field    =&gt; rtmptr(hpindex)%ptr</a>
+   583) <a name="l583" style="background-color: #ffffff"></a>
+   584) <a name="l584" style="background-color: #fafad2">          select case (avgflag)</a>
+   585) <a name="l585" style="background-color: #fafad2">          case ('I') ! Instantaneous</a>
+   586) <a name="l586" style="background-color: #ffff99">             do k = begrof,endrof</a>
+   587) <a name="l587" style="background-color: #ffff99">                if (field(k) /= spval) then</a>
+   588) <a name="l588" style="background-color: #ffff99">                   hbuf(k) = field(k)</a>
+   589) <a name="l589" style="background-color: #ffff99">                else</a>
+   590) <a name="l590" style="background-color: #ffff99">                   hbuf(k) = spval</a>
+   591) <a name="l591" style="background-color: #ffff99">                end if</a>
+   592) <a name="l592" style="background-color: #ffff99">                nacs(k) = 1</a>
+   593) <a name="l593" style="background-color: #ffff99">             end do</a>
+   594) <a name="l594" style="background-color: #ffff99">          case ('A') ! Time average</a>
+   595) <a name="l595" style="background-color: #ffffff">             do k = begrof,endrof</a>
+   596) <a name="l596" style="background-color: #ffffff">                if (field(k) /= spval) then</a>
+   597) <a name="l597" style="background-color: #ffffff">                   if (nacs(k) == 0) hbuf(k) = 0._r8</a>
+   598) <a name="l598" style="background-color: #ffffff">                   hbuf(k) = hbuf(k) + field(k)</a>
+   599) <a name="l599" style="background-color: #ffffff">                   nacs(k) = nacs(k) + 1</a>
+   600) <a name="l600" style="background-color: #ffffff">                else</a>
+   601) <a name="l601" style="background-color: #ffffff">                   if (nacs(k) == 0) hbuf(k) = spval</a>
+   602) <a name="l602" style="background-color: #ffffff">                end if</a>
+   603) <a name="l603" style="background-color: #ffffff">             end do</a>
+   604) <a name="l604" style="background-color: #ffffff">          case ('X') ! Maximum over time</a>
+   605) <a name="l605" style="background-color: #ffff99">             do k = begrof,endrof</a>
+   606) <a name="l606" style="background-color: #ffff99">                if (field(k) /= spval) then</a>
+   607) <a name="l607" style="background-color: #ffff99">                   if (nacs(k) == 0) hbuf(k) = -1.e50_r8</a>
+   608) <a name="l608" style="background-color: #ffff99">                   hbuf(k) = max( hbuf(k), field(k) )</a>
+   609) <a name="l609" style="background-color: #ffff99">                else</a>
+   610) <a name="l610" style="background-color: #ffff99">                   if (nacs(k) == 0) hbuf(k) = spval</a>
+   611) <a name="l611" style="background-color: #ffff99">                end if</a>
+   612) <a name="l612" style="background-color: #ffff99">                nacs(k) = 1</a>
+   613) <a name="l613" style="background-color: #ffff99">             end do</a>
+   614) <a name="l614" style="background-color: #ffff99">          case ('M') ! Minimum over time</a>
+   615) <a name="l615" style="background-color: #ffff99">             do k = begrof,endrof</a>
+   616) <a name="l616" style="background-color: #ffff99">                if (field(k) /= spval) then</a>
+   617) <a name="l617" style="background-color: #ffff99">                   if (nacs(k) == 0) hbuf(k) = +1.e50_r8</a>
+   618) <a name="l618" style="background-color: #ffff99">                   hbuf(k) = min( hbuf(k), field(k) )</a>
+   619) <a name="l619" style="background-color: #ffff99">                else</a>
+   620) <a name="l620" style="background-color: #ffff99">                   if (nacs(k) == 0) hbuf(k) = spval</a>
+   621) <a name="l621" style="background-color: #ffff99">                end if</a>
+   622) <a name="l622" style="background-color: #ffff99">                nacs(k) = 1</a>
+   623) <a name="l623" style="background-color: #ffff99">             end do</a>
+   624) <a name="l624" style="background-color: #ffff99">          case default</a>
+   625) <a name="l625" style="background-color: #ffff99">             write(iulog,*) trim(subname),' ERROR: invalid time averaging flag ', avgflag</a>
+   626) <a name="l626" style="background-color: #ffff99">             call shr_sys_abort()</a>
+   627) <a name="l627" style="background-color: #ffff99">          end select</a>
+   628) <a name="l628" style="background-color: #ffff99">       end do</a>
+   629) <a name="l629" style="background-color: #ffff99">    end do</a>
+   630) <a name="l630" style="background-color: #ffff99"></a>
+   631) <a name="l631" style="background-color: #ffffff">  end subroutine RtmHistUpdateHbuf</a>
+   632) <a name="l632" style="background-color: #ffffff"></a>
+   633) <a name="l633" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   634) <a name="l634" style="background-color: #ffffff"></a>
+   635) <a name="l635" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">htape_create (t, histrest)</a>
+   636) <a name="l636" style="background-color: #ffcccc"></a>
+   637) <a name="l637" style="background-color: #ffcccc">    ! !DESCRIPTION:</a>
+   638) <a name="l638" style="background-color: #ffcccc">    ! Define contents of history file t. Issue the required netcdf</a>
+   639) <a name="l639" style="background-color: #ffcccc">    ! wrapper calls to define the history file contents.</a>
+   640) <a name="l640" style="background-color: #ffcccc">    !</a>
+   641) <a name="l641" style="background-color: #ffcccc"></a>
+   642) <a name="l642" style="background-color: #ffcccc">    ! !ARGUMENTS:</a>
+   643) <a name="l643" style="background-color: #ffcccc">    implicit none</a>
+   644) <a name="l644" style="background-color: #ffcccc">    integer, intent(in) :: t                   ! tape index</a>
+   645) <a name="l645" style="background-color: #ffcccc">    logical, intent(in), optional :: histrest  ! if creating the history restart file</a>
+   646) <a name="l646" style="background-color: #ffcccc"></a>
+   647) <a name="l647" style="background-color: #ffcccc">    ! !LOCAL VARIABLES:</a>
+   648) <a name="l648" style="background-color: #ffcccc">    integer :: f                   ! field index</a>
+   649) <a name="l649" style="background-color: #ffcccc">    integer :: p,c,l,n             ! indices</a>
+   650) <a name="l650" style="background-color: #ffcccc">    integer :: ier                 ! error code</a>
+   651) <a name="l651" style="background-color: #ffcccc">    integer :: dimid               ! dimension id temporary</a>
+   652) <a name="l652" style="background-color: #ffcccc">    integer :: dim1id(1)           ! netCDF dimension id</a>
+   653) <a name="l653" style="background-color: #ffcccc">    integer :: dim2id(2)           ! netCDF dimension id</a>
+   654) <a name="l654" style="background-color: #ffcccc">    integer :: ndims               ! dimension counter</a>
+   655) <a name="l655" style="background-color: #ffcccc">    integer :: omode               ! returned mode from netCDF call</a>
+   656) <a name="l656" style="background-color: #ffcccc">    integer :: ncprec              ! output netCDF write precision</a>
+   657) <a name="l657" style="background-color: #ffcccc">    integer :: ret                 ! netCDF error status</a>
+   658) <a name="l658" style="background-color: #ffcccc">    integer :: num_lndrof          ! total number of land runoff across all procs</a>
+   659) <a name="l659" style="background-color: #ffcccc">    integer :: num_ocnrof          ! total number of ocean runoff across all procs</a>
+   660) <a name="l660" style="background-color: #ffcccc">    integer :: numrtm              ! total number of rtm cells on all procs</a>
+   661) <a name="l661" style="background-color: #ffcccc">    logical :: lhistrest           ! local history restart flag</a>
+   662) <a name="l662" style="background-color: #ffcccc">    type(file_desc_t) :: lnfid     ! local file id</a>
+   663) <a name="l663" style="background-color: #ffcccc">    character(len=  8) :: curdate  ! current date</a>
+   664) <a name="l664" style="background-color: #ffcccc">    character(len=  8) :: curtime  ! current time</a>
+   665) <a name="l665" style="background-color: #ffcccc">    character(len=256) :: name     ! name of attribute</a>
+   666) <a name="l666" style="background-color: #ffcccc">    character(len=256) :: units    ! units of attribute</a>
+   667) <a name="l667" style="background-color: #ffcccc">    character(len=256) :: str      ! global attribute string</a>
+   668) <a name="l668" style="background-color: #ffcccc">    character(len=  1) :: avgflag  ! time averaging flag</a>
+   669) <a name="l669" style="background-color: #ffcccc">    character(len=*),parameter :: subname = 'htape_create'</a>
+   670) <a name="l670" style="background-color: #ffcccc">    !-----------------------------------------------------</a>
+   671) <a name="l671" style="background-color: #ffcccc"></a>
+   672) <a name="l672" style="background-color: #ffcccc">    if ( present(histrest) )then</a>
+   673) <a name="l673" style="background-color: #ffcccc">       lhistrest = histrest</a>
+   674) <a name="l674" style="background-color: #ffcccc">    else</a>
+   675) <a name="l675" style="background-color: #ffcccc">       lhistrest = .false.</a>
+   676) <a name="l676" style="background-color: #ffcccc">    end if</a>
+   677) <a name="l677" style="background-color: #ffcccc"></a>
+   678) <a name="l678" style="background-color: #ffcccc">    ! Define output write precsion for tape</a>
+   679) <a name="l679" style="background-color: #ffcccc">    ncprec = tape(t)%ncprec</a>
+   680) <a name="l680" style="background-color: #ffcccc"></a>
+   681) <a name="l681" style="background-color: #ffcccc">    ! Create new netCDF file. It will be in define mode</a>
+   682) <a name="l682" style="background-color: #ffcccc">    if ( .not. lhistrest )then</a>
+   683) <a name="l683" style="background-color: #ffcccc">       if (masterproc) then</a>
+   684) <a name="l684" style="background-color: #ffcccc">          write(iulog,*) trim(subname),' : Opening netcdf htape ', &amp;</a>
+   685) <a name="l685" style="background-color: #ffcccc">                                      trim(locfnh(t))</a>
+   686) <a name="l686" style="background-color: #ffcccc">          call shr_sys_flush(iulog)</a>
+   687) <a name="l687" style="background-color: #ffcccc">       end if</a>
+   688) <a name="l688" style="background-color: #ffcccc">       call ncd_pio_createfile(lnfid, trim(locfnh(t)))</a>
+   689) <a name="l689" style="background-color: #ffcccc">       call ncd_putatt(lnfid, ncd_global, 'title', 'RTM History file information' )</a>
+   690) <a name="l690" style="background-color: #ffcccc">       call ncd_putatt(lnfid, ncd_global, 'comment', &amp;</a>
+   691) <a name="l691" style="background-color: #ffcccc">          &quot;NOTE: None of the variables are weighted by land fraction!&quot; )</a>
+   692) <a name="l692" style="background-color: #ffcccc">    else</a>
+   693) <a name="l693" style="background-color: #ffcccc">       if (masterproc) then</a>
+   694) <a name="l694" style="background-color: #ffcccc">          write(iulog,*) trim(subname),' : Opening netcdf rhtape ', &amp;</a>
+   695) <a name="l695" style="background-color: #ffcccc">                                      trim(locfnhr(t))</a>
+   696) <a name="l696" style="background-color: #ffcccc">          call shr_sys_flush(iulog)</a>
+   697) <a name="l697" style="background-color: #ffcccc">       end if</a>
+   698) <a name="l698" style="background-color: #ffcccc">       call ncd_pio_createfile(lnfid, trim(locfnhr(t)))</a>
+   699) <a name="l699" style="background-color: #ffcccc">       call ncd_putatt(lnfid, ncd_global, 'title', &amp;</a>
+   700) <a name="l700" style="background-color: #ffcccc">            'RTM Restart History information, required to continue a simulation' )</a>
+   701) <a name="l701" style="background-color: #ffcccc">       call ncd_putatt(lnfid, ncd_global, 'comment', &amp;</a>
+   702) <a name="l702" style="background-color: #ffcccc">            &quot;This entire file NOT needed for startup or branch simulations&quot;)</a>
+   703) <a name="l703" style="background-color: #ffcccc">    end if</a>
+   704) <a name="l704" style="background-color: #ffcccc"></a>
+   705) <a name="l705" style="background-color: #ffcccc">    ! Create global attributes. Attributes are used to store information</a>
+   706) <a name="l706" style="background-color: #ffcccc">    ! about the data set. Global attributes are information about the</a>
+   707) <a name="l707" style="background-color: #ffcccc">    ! data set as a whole, as opposed to a single variable</a>
+   708) <a name="l708" style="background-color: #ffcccc"></a>
+   709) <a name="l709" style="background-color: #ffcccc">    call ncd_putatt(lnfid, ncd_global, 'Conventions', trim(conventions))</a>
+   710) <a name="l710" style="background-color: #ffcccc">    call getdatetime(curdate, curtime)</a>
+   711) <a name="l711" style="background-color: #ffcccc">    str = 'created on ' // curdate // ' ' // curtime</a>
+   712) <a name="l712" style="background-color: #ffcccc">    call ncd_putatt(lnfid, ncd_global, 'history' , trim(str))</a>
+   713) <a name="l713" style="background-color: #ffcccc">    call ncd_putatt(lnfid, ncd_global, 'source'  , trim(source))</a>
+   714) <a name="l714" style="background-color: #ffcccc">    call ncd_putatt(lnfid, ncd_global, 'hostname', trim(hostname))</a>
+   715) <a name="l715" style="background-color: #ffcccc">    call ncd_putatt(lnfid, ncd_global, 'username', trim(username))</a>
+   716) <a name="l716" style="background-color: #ffcccc">    call ncd_putatt(lnfid, ncd_global, 'version' , trim(version))</a>
+   717) <a name="l717" style="background-color: #ffcccc"></a>
+   718) <a name="l718" style="background-color: #ffcccc">    str = &amp;</a>
+   719) <a name="l719" style="background-color: #ffcccc">    '$Id: histFileMod.F90 36692 2012-04-27 18:39:55Z tcraig $'</a>
+   720) <a name="l720" style="background-color: #ffcccc">    call ncd_putatt(lnfid, ncd_global, 'revision_id', trim(str))</a>
+   721) <a name="l721" style="background-color: #ffcccc">    call ncd_putatt(lnfid, ncd_global, 'case_title', trim(ctitle))</a>
+   722) <a name="l722" style="background-color: #ffcccc">    call ncd_putatt(lnfid, ncd_global, 'case_id', trim(caseid))</a>
+   723) <a name="l723" style="background-color: #ffcccc"></a>
+   724) <a name="l724" style="background-color: #ffcccc">    str = get_filename(frivinp_rtm)</a>
+   725) <a name="l725" style="background-color: #ffcccc">    call ncd_putatt(lnfid, ncd_global, 'RTM_input_dataset', trim(str))</a>
+   726) <a name="l726" style="background-color: #ffcccc"></a>
+   727) <a name="l727" style="background-color: #ffcccc">    ! Define dimensions.</a>
+   728) <a name="l728" style="background-color: #ffcccc">    ! Time is an unlimited dimension. Character string is treated as an array of characters.</a>
+   729) <a name="l729" style="background-color: #ffcccc"></a>
+   730) <a name="l730" style="background-color: #ffcccc">    ! Global uncompressed dimensions (including non-land points)</a>
+   731) <a name="l731" style="background-color: #ffcccc">    numrtm     = runoff%numr</a>
+   732) <a name="l732" style="background-color: #ffcccc">    num_lndrof = runoff%numrl</a>
+   733) <a name="l733" style="background-color: #ffcccc">    num_ocnrof = runoff%numro</a>
+   734) <a name="l734" style="background-color: #ffcccc">    call ncd_defdim( lnfid, 'lon', rtmlon    , dimid)</a>
+   735) <a name="l735" style="background-color: #ffcccc">    call ncd_defdim( lnfid, 'lat', rtmlat    , dimid)</a>
+   736) <a name="l736" style="background-color: #ffcccc">    call ncd_defdim( lnfid, 'ocnrof', num_ocnrof, dimid)</a>
+   737) <a name="l737" style="background-color: #ffcccc">    call ncd_defdim( lnfid, 'lndrof', num_lndrof, dimid)</a>
+   738) <a name="l738" style="background-color: #ffcccc">    call ncd_defdim( lnfid, 'allrof', numrtm    , dimid)</a>
+   739) <a name="l739" style="background-color: #ffcccc"></a>
+   740) <a name="l740" style="background-color: #ffcccc">    call ncd_defdim(lnfid, 'string_length', 8, strlen_dimid)</a>
+   741) <a name="l741" style="background-color: #ffcccc"></a>
+   742) <a name="l742" style="background-color: #ffcccc">    if ( .not. lhistrest )then</a>
+   743) <a name="l743" style="background-color: #ffcccc">       call ncd_defdim(lnfid, 'hist_interval', 2, hist_interval_dimid)</a>
+   744) <a name="l744" style="background-color: #ffcccc">       call ncd_defdim(lnfid, 'time', ncd_unlimited, time_dimid)</a>
+   745) <a name="l745" style="background-color: #ffcccc">       nfid(t) = lnfid</a>
+   746) <a name="l746" style="background-color: #ffcccc">       if (masterproc)then</a>
+   747) <a name="l747" style="background-color: #ffcccc">          write(iulog,*) trim(subname), &amp;</a>
+   748) <a name="l748" style="background-color: #ffcccc">                          ' : Successfully defined netcdf history file ',t</a>
+   749) <a name="l749" style="background-color: #ffcccc">          call shr_sys_flush(iulog)</a>
+   750) <a name="l750" style="background-color: #ffcccc">       end if</a>
+   751) <a name="l751" style="background-color: #ffcccc">    else</a>
+   752) <a name="l752" style="background-color: #ffcccc">       ncid_hist(t) = lnfid</a>
+   753) <a name="l753" style="background-color: #ffcccc">       if (masterproc)then</a>
+   754) <a name="l754" style="background-color: #ffcccc">          write(iulog,*) trim(subname), &amp;</a>
+   755) <a name="l755" style="background-color: #ffcccc">                          ' : Successfully defined netcdf restart history file ',t</a>
+   756) <a name="l756" style="background-color: #ffcccc">          call shr_sys_flush(iulog)</a>
+   757) <a name="l757" style="background-color: #ffcccc">       end if</a>
+   758) <a name="l758" style="background-color: #ffcccc">    end if</a>
+   759) <a name="l759" style="background-color: #ffcccc"></a>
+   760) <a name="l760" style="background-color: #ffcccc">  end subroutine htape_create</a>
+   761) <a name="l761" style="background-color: #ffffff"></a>
+   762) <a name="l762" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   763) <a name="l763" style="background-color: #ffffff"></a>
+   764) <a name="l764" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">htape_timeconst(t, mode)</a>
+   765) <a name="l765" style="background-color: #ffcccc"></a>
+   766) <a name="l766" style="background-color: #ffcccc">    ! !DESCRIPTION:</a>
+   767) <a name="l767" style="background-color: #ffcccc">    ! Write time constant values to primary history tape.</a>
+   768) <a name="l768" style="background-color: #ffcccc"></a>
+   769) <a name="l769" style="background-color: #ffcccc">    ! !ARGUMENTS:</a>
+   770) <a name="l770" style="background-color: #ffcccc">    implicit none</a>
+   771) <a name="l771" style="background-color: #ffcccc">    integer, intent(in) :: t              ! tape index</a>
+   772) <a name="l772" style="background-color: #ffcccc">    character(len=*), intent(in) :: mode  ! 'define' or 'write'</a>
+   773) <a name="l773" style="background-color: #ffcccc"></a>
+   774) <a name="l774" style="background-color: #ffcccc">    ! !LOCAL VARIABLES:</a>
+   775) <a name="l775" style="background-color: #ffcccc">    integer :: vid,n,i,j,m                ! indices</a>
+   776) <a name="l776" style="background-color: #ffcccc">    integer :: nstep                      ! current step</a>
+   777) <a name="l777" style="background-color: #ffcccc">    integer :: mcsec                      ! seconds of current date</a>
+   778) <a name="l778" style="background-color: #ffcccc">    integer :: mdcur                      ! current day</a>
+   779) <a name="l779" style="background-color: #ffcccc">    integer :: mscur                      ! seconds of current day</a>
+   780) <a name="l780" style="background-color: #ffcccc">    integer :: mcdate                     ! current date</a>
+   781) <a name="l781" style="background-color: #ffcccc">    integer :: yr,mon,day,nbsec           ! year,month,day,seconds components of a date</a>
+   782) <a name="l782" style="background-color: #ffcccc">    integer :: hours,minutes,secs         ! hours,minutes,seconds of hh:mm:ss</a>
+   783) <a name="l783" style="background-color: #ffcccc">    character(len= 10) :: basedate        ! base date (yyyymmdd)</a>
+   784) <a name="l784" style="background-color: #ffcccc">    character(len=  8) :: basesec         ! base seconds</a>
+   785) <a name="l785" style="background-color: #ffcccc">    character(len=  8) :: cdate           ! system date</a>
+   786) <a name="l786" style="background-color: #ffcccc">    character(len=  8) :: ctime           ! system time</a>
+   787) <a name="l787" style="background-color: #ffcccc">    real(r8):: time                       ! current time</a>
+   788) <a name="l788" style="background-color: #ffcccc">    real(r8):: timedata(2)                ! time interval boundaries</a>
+   789) <a name="l789" style="background-color: #ffcccc">    integer :: dim1id(1)                  ! netCDF dimension id</a>
+   790) <a name="l790" style="background-color: #ffcccc">    integer :: dim2id(2)                  ! netCDF dimension id</a>
+   791) <a name="l791" style="background-color: #ffcccc">    integer :: varid                      ! netCDF variable id</a>
+   792) <a name="l792" style="background-color: #ffcccc">    type(Var_desc_t) :: vardesc           ! netCDF variable description</a>
+   793) <a name="l793" style="background-color: #ffcccc">    character(len=max_chars) :: long_name ! variable long name</a>
+   794) <a name="l794" style="background-color: #ffcccc">    character(len=max_namlen):: varname   ! variable name</a>
+   795) <a name="l795" style="background-color: #ffcccc">    character(len=max_namlen):: units     ! variable units</a>
+   796) <a name="l796" style="background-color: #ffcccc">    character(len=256):: str              ! global attribute string</a>
+   797) <a name="l797" style="background-color: #ffcccc">    integer :: status</a>
+   798) <a name="l798" style="background-color: #ffcccc">    logical, save :: writeTC = .true. ! true =&gt; write out time-constant data</a>
+   799) <a name="l799" style="background-color: #ffcccc">    character(len=*),parameter :: subname = 'htape_timeconst'</a>
+   800) <a name="l800" style="background-color: #ffcccc">    !--------------------------------------------------------</a>
+   801) <a name="l801" style="background-color: #ffcccc"></a>
+   802) <a name="l802" style="background-color: #ffcccc">    ! For define mode -- only do this for first time-sample</a>
+   803) <a name="l803" style="background-color: #ffcccc">    if (mode == 'define' .and. tape(t)%ntimes == 1) then</a>
+   804) <a name="l804" style="background-color: #ffcccc"></a>
+   805) <a name="l805" style="background-color: #ffcccc">       call get_ref_date(yr, mon, day, nbsec)</a>
+   806) <a name="l806" style="background-color: #ffcccc">       nstep = get_nstep()</a>
+   807) <a name="l807" style="background-color: #ffcccc">       hours   = nbsec / 3600</a>
+   808) <a name="l808" style="background-color: #ffcccc">       minutes = (nbsec - hours*3600) / 60</a>
+   809) <a name="l809" style="background-color: #ffcccc">       secs    = (nbsec - hours*3600 - minutes*60)</a>
+   810) <a name="l810" style="background-color: #ffcccc">       write(basedate,80) yr,mon,day</a>
+   811) <a name="l811" style="background-color: #ffcccc">80     format(i4.4,'-',i2.2,'-',i2.2)</a>
+   812) <a name="l812" style="background-color: #ffcccc">       write(basesec ,90) hours, minutes, secs</a>
+   813) <a name="l813" style="background-color: #ffcccc">90     format(i2.2,':',i2.2,':',i2.2)</a>
+   814) <a name="l814" style="background-color: #ffcccc"></a>
+   815) <a name="l815" style="background-color: #ffcccc">       dim1id(1) = time_dimid</a>
+   816) <a name="l816" style="background-color: #ffcccc">       str = 'days since ' // basedate // &quot; &quot; // basesec</a>
+   817) <a name="l817" style="background-color: #ffcccc">       call ncd_defvar(nfid(t), 'time', tape(t)%ncprec, 1, dim1id, varid, &amp;</a>
+   818) <a name="l818" style="background-color: #ffcccc">            long_name='time',units=str) </a>
+   819) <a name="l819" style="background-color: #ffcccc">       call ncd_putatt(nfid(t), varid, 'calendar', 'noleap')</a>
+   820) <a name="l820" style="background-color: #ffcccc">       call ncd_putatt(nfid(t), varid, 'bounds', 'time_bounds')</a>
+   821) <a name="l821" style="background-color: #ffcccc"></a>
+   822) <a name="l822" style="background-color: #ffcccc">       dim1id(1) = time_dimid</a>
+   823) <a name="l823" style="background-color: #ffcccc">       call ncd_defvar(nfid(t) , 'mcdate', ncd_int, 1, dim1id , varid, &amp;</a>
+   824) <a name="l824" style="background-color: #ffcccc">          long_name = 'current date (YYYYMMDD)')</a>
+   825) <a name="l825" style="background-color: #ffcccc">       call ncd_defvar(nfid(t) , 'mcsec' , ncd_int, 1, dim1id , varid, &amp;</a>
+   826) <a name="l826" style="background-color: #ffcccc">          long_name = 'current seconds of current date', units='s')</a>
+   827) <a name="l827" style="background-color: #ffcccc">       call ncd_defvar(nfid(t) , 'mdcur' , ncd_int, 1, dim1id , varid, &amp;</a>
+   828) <a name="l828" style="background-color: #ffcccc">          long_name = 'current day (from base day)')</a>
+   829) <a name="l829" style="background-color: #ffcccc">       call ncd_defvar(nfid(t) , 'mscur' , ncd_int, 1, dim1id , varid, &amp;</a>
+   830) <a name="l830" style="background-color: #ffcccc">          long_name = 'current seconds of current day')</a>
+   831) <a name="l831" style="background-color: #ffcccc">       call ncd_defvar(nfid(t) , 'nstep' , ncd_int, 1, dim1id , varid, &amp;</a>
+   832) <a name="l832" style="background-color: #ffcccc">          long_name = 'time step')</a>
+   833) <a name="l833" style="background-color: #ffcccc"></a>
+   834) <a name="l834" style="background-color: #ffcccc">       dim2id(1) = hist_interval_dimid;  dim2id(2) = time_dimid</a>
+   835) <a name="l835" style="background-color: #ffcccc">       call ncd_defvar(nfid(t), 'time_bounds', ncd_double, 2, dim2id, varid, &amp;</a>
+   836) <a name="l836" style="background-color: #ffcccc">          long_name = 'history time interval endpoints')</a>
+   837) <a name="l837" style="background-color: #ffcccc"></a>
+   838) <a name="l838" style="background-color: #ffcccc">       dim2id(1) = strlen_dimid;  dim2id(2) = time_dimid</a>
+   839) <a name="l839" style="background-color: #ffcccc">       call ncd_defvar(nfid(t), 'date_written', ncd_char, 2, dim2id, varid)</a>
+   840) <a name="l840" style="background-color: #ffcccc">       call ncd_defvar(nfid(t), 'time_written', ncd_char, 2, dim2id, varid)</a>
+   841) <a name="l841" style="background-color: #ffcccc"></a>
+   842) <a name="l842" style="background-color: #ffcccc">       call ncd_defvar(varname='lon', xtype=tape(t)%ncprec, dim1name='lon', &amp;</a>
+   843) <a name="l843" style="background-color: #ffcccc">            long_name='runoff coordinate longitude', units='degrees_east', ncid=nfid(t))</a>
+   844) <a name="l844" style="background-color: #ffcccc">       call ncd_defvar(varname='lat', xtype=tape(t)%ncprec, dim1name='lat', &amp;</a>
+   845) <a name="l845" style="background-color: #ffcccc">            long_name='runoff coordinate latitude', units='degrees_north', ncid=nfid(t))</a>
+   846) <a name="l846" style="background-color: #ffcccc"></a>
+   847) <a name="l847" style="background-color: #ffcccc">       if(writeTC .and. t == 1) then </a>
+   848) <a name="l848" style="background-color: #ffcccc">          call ncd_defvar(varname='fthresh', xtype=tape(t)%ncprec, dim1name='lon', &amp;</a>
+   849) <a name="l849" style="background-color: #ffcccc">               dim2name='lat', long_name='flooding threshold', &amp;</a>
+   850) <a name="l850" style="background-color: #ffcccc">               missing_value=spval, fill_value=spval, units='m3', ncid=nfid(t))</a>
+   851) <a name="l851" style="background-color: #ffcccc">       endif</a>
+   852) <a name="l852" style="background-color: #ffcccc">    else if (mode == 'write') then</a>
+   853) <a name="l853" style="background-color: #ffcccc"></a>
+   854) <a name="l854" style="background-color: #ffcccc">       call get_curr_time (mdcur, mscur)</a>
+   855) <a name="l855" style="background-color: #ffcccc">       call get_curr_date (yr, mon, day, mcsec)</a>
+   856) <a name="l856" style="background-color: #ffcccc">       mcdate = yr*10000 + mon*100 + day</a>
+   857) <a name="l857" style="background-color: #ffcccc">       nstep = get_nstep()</a>
+   858) <a name="l858" style="background-color: #ffcccc"></a>
+   859) <a name="l859" style="background-color: #ffcccc">       call ncd_io('mcdate', mcdate, 'write', nfid(t), nt=tape(t)%ntimes)</a>
+   860) <a name="l860" style="background-color: #ffcccc">       call ncd_io('mcsec' , mcsec , 'write', nfid(t), nt=tape(t)%ntimes)</a>
+   861) <a name="l861" style="background-color: #ffcccc">       call ncd_io('mdcur' , mdcur , 'write', nfid(t), nt=tape(t)%ntimes)</a>
+   862) <a name="l862" style="background-color: #ffcccc">       call ncd_io('mscur' , mscur , 'write', nfid(t), nt=tape(t)%ntimes)</a>
+   863) <a name="l863" style="background-color: #ffcccc">       call ncd_io('nstep' , nstep , 'write', nfid(t), nt=tape(t)%ntimes)</a>
+   864) <a name="l864" style="background-color: #ffcccc"></a>
+   865) <a name="l865" style="background-color: #ffcccc">       time = mdcur + mscur/secspday</a>
+   866) <a name="l866" style="background-color: #ffcccc">       call ncd_io('time'  , time  , 'write', nfid(t), nt=tape(t)%ntimes)</a>
+   867) <a name="l867" style="background-color: #ffcccc"></a>
+   868) <a name="l868" style="background-color: #ffcccc">       timedata(1) = tape(t)%begtime</a>
+   869) <a name="l869" style="background-color: #ffcccc">       timedata(2) = time</a>
+   870) <a name="l870" style="background-color: #ffcccc">       call ncd_io('time_bounds', timedata, 'write', nfid(t), nt=tape(t)%ntimes)</a>
+   871) <a name="l871" style="background-color: #ffcccc"></a>
+   872) <a name="l872" style="background-color: #ffcccc">       call getdatetime (cdate, ctime)</a>
+   873) <a name="l873" style="background-color: #ffcccc">       call ncd_io('date_written', cdate, 'write', nfid(t), nt=tape(t)%ntimes)</a>
+   874) <a name="l874" style="background-color: #ffcccc"></a>
+   875) <a name="l875" style="background-color: #ffcccc">       call ncd_io('time_written', ctime, 'write', nfid(t), nt=tape(t)%ntimes)</a>
+   876) <a name="l876" style="background-color: #ffcccc"></a>
+   877) <a name="l877" style="background-color: #ffcccc">       call ncd_io(varname='lon', data=runoff%rlon, ncid=nfid(t), flag='write')</a>
+   878) <a name="l878" style="background-color: #ffcccc">       call ncd_io(varname='lat', data=runoff%rlat, ncid=nfid(t), flag='write')</a>
+   879) <a name="l879" style="background-color: #ffcccc"></a>
+   880) <a name="l880" style="background-color: #ffcccc">       if(writeTC .and. t == 1 .and. tape(t)%ntimes == 1 ) then </a>
+   881) <a name="l881" style="background-color: #ffcccc">          call ncd_io(varname='fthresh', data=runoff%fthresh, ncid=nfid(t), flag='write' &amp;</a>
+   882) <a name="l882" style="background-color: #ffcccc">               ,dim1name='allrof')</a>
+   883) <a name="l883" style="background-color: #ffcccc">          writeTC = .false.</a>
+   884) <a name="l884" style="background-color: #ffcccc">       endif</a>
+   885) <a name="l885" style="background-color: #ffcccc">    endif</a>
+   886) <a name="l886" style="background-color: #ffcccc"></a>
+   887) <a name="l887" style="background-color: #ffcccc">  end subroutine htape_timeconst</a>
+   888) <a name="l888" style="background-color: #ffffff"></a>
+   889) <a name="l889" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+   890) <a name="l890" style="background-color: #ffffff"></a>
+   891) <a name="l891" style="background-color: #ffffff">  subroutine RtmHistHtapesWrapup( rstwr, nlend )</a>
+   892) <a name="l892" style="background-color: #ffffff"></a>
+   893) <a name="l893" style="background-color: #ffffff">    ! DESCRIPTION:</a>
+   894) <a name="l894" style="background-color: #ffffff">    ! Write history tape(s)</a>
+   895) <a name="l895" style="background-color: #ffffff">    ! Determine if next time step is beginning of history interval and if so:</a>
+   896) <a name="l896" style="background-color: #ffffff">    !   increment the current time sample counter, open a new history file</a>
+   897) <a name="l897" style="background-color: #ffffff">    !   and if needed (i.e., when ntim = 1), write history data to current</a>
+   898) <a name="l898" style="background-color: #ffffff">    !   history file, reset field accumulation counters to zero.</a>
+   899) <a name="l899" style="background-color: #ffffff">    ! If primary history file is full or at the last time step of the simulation,</a>
+   900) <a name="l900" style="background-color: #ffffff">    !   write restart dataset and close all history fiels.</a>
+   901) <a name="l901" style="background-color: #ffffff">    ! If history file is full or at the last time step of the simulation:</a>
+   902) <a name="l902" style="background-color: #ffffff">    !   close history file</a>
+   903) <a name="l903" style="background-color: #ffffff">    !   and reset time sample counter to zero if file is full.</a>
+   904) <a name="l904" style="background-color: #ffffff">    ! Daily-averaged data for the first day in September are written on</a>
+   905) <a name="l905" style="background-color: #ffffff">    !   date = 00/09/02 with mscur = 0.</a>
+   906) <a name="l906" style="background-color: #ffffff">    ! Daily-averaged data for the first day in month mm are written on</a>
+   907) <a name="l907" style="background-color: #ffffff">    !   date = yyyy/mm/02 with mscur = 0.</a>
+   908) <a name="l908" style="background-color: #ffffff">    ! Daily-averaged data for the 30th day (last day in September) are written</a>
+   909) <a name="l909" style="background-color: #ffffff">    !   on date = 0000/10/01 mscur = 0.</a>
+   910) <a name="l910" style="background-color: #ffffff">    ! Daily-averaged data for the last day in month mm are written on</a>
+   911) <a name="l911" style="background-color: #ffffff">    !   date = yyyy/mm+1/01 with mscur = 0.</a>
+   912) <a name="l912" style="background-color: #ffffff"></a>
+   913) <a name="l913" style="background-color: #ffffff"></a>
+   914) <a name="l914" style="background-color: #ffffff">    ! !ARGUMENTS:</a>
+   915) <a name="l915" style="background-color: #ffffff">    implicit none</a>
+   916) <a name="l916" style="background-color: #ffffff">    logical, intent(in) :: rstwr   ! true =&gt; write restart file this step</a>
+   917) <a name="l917" style="background-color: #ffffff">    logical, intent(in) :: nlend   ! true =&gt; end of run on this step</a>
+   918) <a name="l918" style="background-color: #ffffff"></a>
+   919) <a name="l919" style="background-color: #ffffff">    ! !LOCAL VARIABLES:</a>
+   920) <a name="l920" style="background-color: #ffffff">    integer :: begrof, endrof      ! beg and end rof indices</a>
+   921) <a name="l921" style="background-color: #ffffff">    integer :: t,f,k,nt            ! indices</a>
+   922) <a name="l922" style="background-color: #ffffff">    integer :: nstep               ! current step</a>
+   923) <a name="l923" style="background-color: #ffffff">    integer :: day                 ! current day (1 -&gt; 31)</a>
+   924) <a name="l924" style="background-color: #ffffff">    integer :: mon                 ! current month (1 -&gt; 12)</a>
+   925) <a name="l925" style="background-color: #ffffff">    integer :: yr                  ! current year (0 -&gt; ...)</a>
+   926) <a name="l926" style="background-color: #ffffff">    integer :: mdcur               ! current day</a>
+   927) <a name="l927" style="background-color: #ffffff">    integer :: mscur               ! seconds of current day</a>
+   928) <a name="l928" style="background-color: #ffffff">    integer :: mcsec               ! current time of day [seconds]</a>
+   929) <a name="l929" style="background-color: #ffffff">    integer :: daym1               ! nstep-1 day (1 -&gt; 31)</a>
+   930) <a name="l930" style="background-color: #ffffff">    integer :: monm1               ! nstep-1 month (1 -&gt; 12)</a>
+   931) <a name="l931" style="background-color: #ffffff">    integer :: yrm1                ! nstep-1 year (0 -&gt; ...)</a>
+   932) <a name="l932" style="background-color: #ffffff">    integer :: mcsecm1             ! nstep-1 time of day [seconds]</a>
+   933) <a name="l933" style="background-color: #ffffff">    real(r8):: time                ! current time</a>
+   934) <a name="l934" style="background-color: #ffffff">    character(len=256):: str       ! global attribute string</a>
+   935) <a name="l935" style="background-color: #ffffff">    character(len=1)  :: avgflag   ! averaging flag</a>
+   936) <a name="l936" style="background-color: #ffffff">    real(r8), pointer :: histo(:)  ! temporary</a>
+   937) <a name="l937" style="background-color: #ffffff">    real(r8), pointer :: hbuf(:)   ! history buffer</a>
+   938) <a name="l938" style="background-color: #ffffff">    integer , pointer :: nacs(:)   ! accumulation counter</a>
+   939) <a name="l939" style="background-color: #ffffff">    character(len=32) :: avgstr    ! time averaging type</a>
+   940) <a name="l940" style="background-color: #ffffff">    character(len=max_chars) :: long_name ! long name</a>
+   941) <a name="l941" style="background-color: #ffffff">    character(len=max_chars) :: units     ! units</a>
+   942) <a name="l942" style="background-color: #ffffff">    character(len=max_namlen):: varname   ! variable name</a>
+   943) <a name="l943" style="background-color: #ffffff">    character(len=*),parameter :: subname = 'hist_htapes_wrapup'</a>
+   944) <a name="l944" style="background-color: #ffffff">    !-----------------------------------------------------------</a>
+   945) <a name="l945" style="background-color: #ffffff"></a>
+   946) <a name="l946" style="background-color: #ffffff">    begrof = runoff%begr</a>
+   947) <a name="l947" style="background-color: #ffffff">    endrof = runoff%endr</a>
+   948) <a name="l948" style="background-color: #ffffff"></a>
+   949) <a name="l949" style="background-color: #ffffff">    ! get current step</a>
+   950) <a name="l950" style="background-color: #ffffff">    nstep = get_nstep()</a>
+   951) <a name="l951" style="background-color: #ffffff"></a>
+   952) <a name="l952" style="background-color: #ffffff">    ! Set calendar for current time step</a>
+   953) <a name="l953" style="background-color: #ffffff">    call get_curr_date (yr, mon, day, mcsec)</a>
+   954) <a name="l954" style="background-color: #ffffff">    call get_curr_time (mdcur, mscur)</a>
+   955) <a name="l955" style="background-color: #ffffff">    time = mdcur + mscur/secspday</a>
+   956) <a name="l956" style="background-color: #ffffff"></a>
+   957) <a name="l957" style="background-color: #ffffff">    ! Set calendar for current for previous time step</a>
+   958) <a name="l958" style="background-color: #ffffff">    call get_prev_date (yrm1, monm1, daym1, mcsecm1)</a>
+   959) <a name="l959" style="background-color: #ffffff"></a>
+   960) <a name="l960" style="background-color: #ffffff">    ! Loop over active history tapes, create new history files if necessary</a>
+   961) <a name="l961" style="background-color: #ffffff">    ! and write data to history files if end of history interval.</a>
+   962) <a name="l962" style="background-color: #ffffff">    do t = 1, ntapes</a>
+   963) <a name="l963" style="background-color: #ffffff"></a>
+   964) <a name="l964" style="background-color: #ffffff">       ! Skip nstep=0 if monthly average</a>
+   965) <a name="l965" style="background-color: #ffffff">       if (nstep</a><a style="background-color: #ffff99">==0 .and. tape(t)%nhtfrq==0) cycle</a>
+   966) <a name="l966" style="background-color: #ffff99"></a>
+   967) <a name="l967" style="background-color: #ffff99">       ! Determine if end of history interval</a>
+   968) <a name="l968" style="background-color: #ffffff">       tape(t)%is_endhist = .false.</a>
+   969) <a name="l969" style="background-color: #ffffff">       if (tape(t)%nhtfrq==0) then   !monthly average</a>
+   970) <a name="l970" style="background-color: #ffffff">          if (mon /= monm1) then</a>
+   971) <a name="l971" style="background-color: #ffff99">             tape(t)%is_endhist = .true.</a>
+   972) <a name="l972" style="background-color: #ffff99">          end if</a>
+   973) <a name="l973" style="background-color: #ffff99">       else</a>
+   974) <a name="l974" style="background-color: #ffff99">          if (mod(nstep,tape(t)%nhtfrq) == 0) then</a>
+   975) <a name="l975" style="background-color: #ffff99">             tape(t)%is_endhist = .true.</a>
+   976) <a name="l976" style="background-color: #ffff99">          end if</a>
+   977) <a name="l977" style="background-color: #ffff99">       end if</a>
+   978) <a name="l978" style="background-color: #ffff99"></a>
+   979) <a name="l979" style="background-color: #ffff99">       ! If end of history interval</a>
+   980) <a name="l980" style="background-color: #ffffff">       if (tape(t)%is_endhist) then</a>
+   981) <a name="l981" style="background-color: #ffffff"></a>
+   982) <a name="l982" style="background-color: #ffffff">          ! Normalize by number of accumulations for time averaged case</a>
+   983) <a name="l983" style="background-color: #ffff99">          do f = 1,tape(t)%nflds</a>
+   984) <a name="l984" style="background-color: #ffff99">             avgflag =  tape(t)%hlist(f)%avgflag</a>
+   985) <a name="l985" style="background-color: #ffff99">             nacs    =&gt; tape(t)%hlist(f)%nacs</a>
+   986) <a name="l986" style="background-color: #ffff99">             hbuf    =&gt; tape(t)%hlist(f)%hbuf</a>
+   987) <a name="l987" style="background-color: #ffff99">             do k = begrof, endrof</a>
+   988) <a name="l988" style="background-color: #ffff99">                if ((avgflag == 'A') .and. nacs(k) /= 0) then</a>
+   989) <a name="l989" style="background-color: #ffff99">                   hbuf(k) = hbuf(k) / float(nacs(k))</a>
+   990) <a name="l990" style="background-color: #ffff99">                end if</a>
+   991) <a name="l991" style="background-color: #ffff99">             end do</a>
+   992) <a name="l992" style="background-color: #ffff99">          end do</a>
+   993) <a name="l993" style="background-color: #ffff99">          </a>
+   994) <a name="l994" style="background-color: #ffff99">          ! Increment current time sample counter.</a>
+   995) <a name="l995" style="background-color: #ffff99">          tape(t)%ntimes = tape(t)%ntimes + 1</a>
+   996) <a name="l996" style="background-color: #ffff99"></a>
+   997) <a name="l997" style="background-color: #ffff99">          ! Create history file if appropriate and build time comment</a>
+   998) <a name="l998" style="background-color: #ffff99"></a>
+   999) <a name="l999" style="background-color: #ffff99">          ! If first time sample, generate unique history file name, open file,</a>
+  1000) <a name="l1000" style="background-color: #ffff99">          ! define dims, vars, etc.</a>
+  1001) <a name="l1001" style="background-color: #ffff99"></a>
+  1002) <a name="l1002" style="background-color: #ffff99">          if (tape(t)%ntimes == 1) then</a>
+  1003) <a name="l1003" style="background-color: #ffff99">             locfnh(t) = set_hist_filename (hist_freq=tape(t)%nhtfrq, &amp;</a>
+  1004) <a name="l1004" style="background-color: #ffff99">                                            rtmhist_mfilt=tape(t)%mfilt, hist_file=t)</a>
+  1005) <a name="l1005" style="background-color: #ffff99">             if (masterproc) then</a>
+  1006) <a name="l1006" style="background-color: #ffff99">                write(iulog,*) trim(subname),' : Creating history file ', trim(locfnh(t)), &amp;</a>
+  1007) <a name="l1007" style="background-color: #ffff99">                     ' at nstep = ',get_nstep()</a>
+  1008) <a name="l1008" style="background-color: #ffff99">                write(iulog,*)'calling htape_create for file t = ',t</a>
+  1009) <a name="l1009" style="background-color: #ffff99">             endif</a>
+  1010) <a name="l1010" style="background-color: #ffff99">             call htape_create (t)</a>
+  1011) <a name="l1011" style="background-color: #ffff99"></a>
+  1012) <a name="l1012" style="background-color: #ffff99">             ! Define time-constant field variables</a>
+  1013) <a name="l1013" style="background-color: #ffff99">             call htape_timeconst(t, mode='define')</a>
+  1014) <a name="l1014" style="background-color: #ffff99"></a>
+  1015) <a name="l1015" style="background-color: #ffff99">             ! Define model field variables</a>
+  1016) <a name="l1016" style="background-color: #ffff99"></a>
+  1017) <a name="l1017" style="background-color: #ffff99">             do f = 1,tape(t)%nflds</a>
+  1018) <a name="l1018" style="background-color: #ffff99">                varname    = tape(t)%hlist(f)%field%name</a>
+  1019) <a name="l1019" style="background-color: #ffff99">                long_name  = tape(t)%hlist(f)%field%long_name</a>
+  1020) <a name="l1020" style="background-color: #ffff99">                units      = tape(t)%hlist(f)%field%units</a>
+  1021) <a name="l1021" style="background-color: #ffff99">                avgflag    = tape(t)%hlist(f)%avgflag</a>
+  1022) <a name="l1022" style="background-color: #ffff99">                </a>
+  1023) <a name="l1023" style="background-color: #ffff99">                select case (avgflag)</a>
+  1024) <a name="l1024" style="background-color: #ffff99">                case ('A')</a>
+  1025) <a name="l1025" style="background-color: #ffff99">                   avgstr = 'mean'</a>
+  1026) <a name="l1026" style="background-color: #ffff99">                case ('I')</a>
+  1027) <a name="l1027" style="background-color: #ffff99">                   avgstr = 'instantaneous'</a>
+  1028) <a name="l1028" style="background-color: #ffff99">                case ('X')</a>
+  1029) <a name="l1029" style="background-color: #ffff99">                   avgstr = 'maximum'</a>
+  1030) <a name="l1030" style="background-color: #ffff99">                case ('M')</a>
+  1031) <a name="l1031" style="background-color: #ffff99">                   avgstr = 'minimum'</a>
+  1032) <a name="l1032" style="background-color: #ffff99">                case default</a>
+  1033) <a name="l1033" style="background-color: #ffff99">                   write(iulog,*) trim(subname),&amp;</a>
+  1034) <a name="l1034" style="background-color: #ffff99">                        ' ERROR: unknown time averaging flag (avgflag)=',avgflag</a>
+  1035) <a name="l1035" style="background-color: #ffff99">                   call shr_sys_abort()</a>
+  1036) <a name="l1036" style="background-color: #ffff99">                end select</a>
+  1037) <a name="l1037" style="background-color: #ffff99">                </a>
+  1038) <a name="l1038" style="background-color: #ffff99">                call ncd_defvar(ncid=nfid(t), varname=varname, xtype=tape(t)%ncprec, &amp;</a>
+  1039) <a name="l1039" style="background-color: #ffff99">                     dim1name='lon', dim2name='lat', dim3name='time', &amp;</a>
+  1040) <a name="l1040" style="background-color: #ffff99">                     long_name=long_name, units=units, cell_method=avgstr, &amp;</a>
+  1041) <a name="l1041" style="background-color: #ffff99">                     missing_value=spval, fill_value=spval)</a>
+  1042) <a name="l1042" style="background-color: #ffff99">             end do</a>
+  1043) <a name="l1043" style="background-color: #ffff99">                </a>
+  1044) <a name="l1044" style="background-color: #ffff99">             ! Exit define model</a>
+  1045) <a name="l1045" style="background-color: #ffff99">             call ncd_enddef(nfid(t))</a>
+  1046) <a name="l1046" style="background-color: #ffff99"></a>
+  1047) <a name="l1047" style="background-color: #ffff99">          endif</a>
+  1048) <a name="l1048" style="background-color: #ffff99"></a>
+  1049) <a name="l1049" style="background-color: #ffff99">          ! Write time constant history variables</a>
+  1050) <a name="l1050" style="background-color: #ffff99">          call htape_timeconst(t, mode='write')</a>
+  1051) <a name="l1051" style="background-color: #ffff99"></a>
+  1052) <a name="l1052" style="background-color: #ffff99">          if (masterproc) then</a>
+  1053) <a name="l1053" style="background-color: #ffff99">             write(iulog,*)</a>
+  1054) <a name="l1054" style="background-color: #ffff99">             write(iulog,*) trim(subname),' : Writing current time sample to local history file ', &amp;</a>
+  1055) <a name="l1055" style="background-color: #ffff99">                  trim(locfnh(t)),' at nstep = ',get_nstep(), &amp;</a>
+  1056) <a name="l1056" style="background-color: #ffff99">                  ' for history time interval beginning at ', tape(t)%begtime, &amp;</a>
+  1057) <a name="l1057" style="background-color: #ffff99">                  ' and ending at ',time</a>
+  1058) <a name="l1058" style="background-color: #ffff99">             write(iulog,*)</a>
+  1059) <a name="l1059" style="background-color: #ffff99">             call shr_sys_flush(iulog)</a>
+  1060) <a name="l1060" style="background-color: #ffff99">          endif</a>
+  1061) <a name="l1061" style="background-color: #ffff99"></a>
+  1062) <a name="l1062" style="background-color: #ffff99">          ! Update beginning time of next interval</a>
+  1063) <a name="l1063" style="background-color: #ffff99">          tape(t)%begtime = time</a>
+  1064) <a name="l1064" style="background-color: #ffff99"></a>
+  1065) <a name="l1065" style="background-color: #ffff99">          ! Write history time slice</a>
+  1066) <a name="l1066" style="background-color: #ffff99">          do f = 1,tape(t)%nflds</a>
+  1067) <a name="l1067" style="background-color: #ffff99">             varname =  tape(t)%hlist(f)%field%name</a>
+  1068) <a name="l1068" style="background-color: #ffff99">             nt      =  tape(t)%ntimes</a>
+  1069) <a name="l1069" style="background-color: #ffff99">             histo   =&gt; tape(t)%hlist(f)%hbuf</a>
+  1070) <a name="l1070" style="background-color: #ffff99">             call ncd_io(flag='write', varname=varname, dim1name='allrof', &amp;</a>
+  1071) <a name="l1071" style="background-color: #ffff99">                  data=histo, ncid=nfid(t), nt=nt)</a>
+  1072) <a name="l1072" style="background-color: #ffff99">          end do</a>
+  1073) <a name="l1073" style="background-color: #ffff99"></a>
+  1074) <a name="l1074" style="background-color: #ffff99">          ! Zero necessary history buffers</a>
+  1075) <a name="l1075" style="background-color: #ffff99">          do f = 1,tape(t)%nflds</a>
+  1076) <a name="l1076" style="background-color: #ffff99">             tape(t)%hlist(f)%hbuf(:) = 0._r8</a>
+  1077) <a name="l1077" style="background-color: #ffff99">             tape(t)%hlist(f)%nacs(:) = 0</a>
+  1078) <a name="l1078" style="background-color: #ffff99">          end do</a>
+  1079) <a name="l1079" style="background-color: #ffff99"></a>
+  1080) <a name="l1080" style="background-color: #ffff99">       end if</a>
+  1081) <a name="l1081" style="background-color: #ffff99"></a>
+  1082) <a name="l1082" style="background-color: #ffff99">    end do  ! end loop over history tapes</a>
+  1083) <a name="l1083" style="background-color: #ffff99"></a>
+  1084) <a name="l1084" style="background-color: #ffff99">    ! Close open history files</a>
+  1085) <a name="l1085" style="background-color: #ffff99">    ! Auxilary files may have been closed and saved off without being full,</a>
+  1086) <a name="l1086" style="background-color: #ffff99">    ! must reopen the files</a>
+  1087) <a name="l1087" style="background-color: #ffff99"></a>
+  1088) <a name="l1088" style="background-color: #ffffff">    do t = 1, ntapes</a>
+  1089) <a name="l1089" style="background-color: #ffffff">       if (nlend) then      </a>
+  1090) <a name="l1090" style="background-color: #ffffff">          if_close(t) = .true.</a>
+  1091) <a name="l1091" style="background-color: #ffff99">       else if (rstwr) then </a>
+  1092) <a name="l1092" style="background-color: #ffff99">          if_close(t) = .true.</a>
+  1093) <a name="l1093" style="background-color: #ffff99">       else                  </a>
+  1094) <a name="l1094" style="background-color: #ffff99">          if (tape(t)%ntimes == tape(t)%mfilt) then</a>
+  1095) <a name="l1095" style="background-color: #ffff99">             if_close(t) = .true.</a>
+  1096) <a name="l1096" style="background-color: #ffff99">          else</a>
+  1097) <a name="l1097" style="background-color: #ffff99">             if_close(t) = .false.</a>
+  1098) <a name="l1098" style="background-color: #ffff99">          end if</a>
+  1099) <a name="l1099" style="background-color: #ffff99">       endif</a>
+  1100) <a name="l1100" style="background-color: #ffffff">       if (if_close(t)) then</a>
+  1101) <a name="l1101" style="background-color: #ffffff">          if (tape(t)%ntimes /= 0) then</a>
+  1102) <a name="l1102" style="background-color: #ffff99">             if (masterproc) then</a>
+  1103) <a name="l1103" style="background-color: #ffff99">                write(iulog,*)</a>
+  1104) <a name="l1104" style="background-color: #ffff99">                write(iulog,*)  trim(subname),' : Closing local history file ',&amp;</a>
+  1105) <a name="l1105" style="background-color: #ffff99">                     trim(locfnh(t)),' at nstep = ', get_nstep()</a>
+  1106) <a name="l1106" style="background-color: #ffff99">                write(iulog,*)</a>
+  1107) <a name="l1107" style="background-color: #ffff99">             endif</a>
+  1108) <a name="l1108" style="background-color: #ffff99">             call ncd_pio_closefile(nfid(t))</a>
+  1109) <a name="l1109" style="background-color: #ffff99">             if ((.not.nlend) .and. (tape(t)%ntimes/=tape(t)%mfilt)) then</a>
+  1110) <a name="l1110" style="background-color: #ffff99">                call ncd_pio_openfile (nfid(t), trim(locfnh(t)), ncd_write)</a>
+  1111) <a name="l1111" style="background-color: #ffff99">             end if</a>
+  1112) <a name="l1112" style="background-color: #ffff99">          else</a>
+  1113) <a name="l1113" style="background-color: #ffffff">             if (masterproc) then</a>
+  1114) <a name="l1114" style="background-color: #ffffff">                write(iulog,*) trim(subname),' : history tape ',t,': no open file to close'</a>
+  1115) <a name="l1115" style="background-color: #ffffff">             end if</a>
+  1116) <a name="l1116" style="background-color: #ffffff">          endif</a>
+  1117) <a name="l1117" style="background-color: #ffffff">          if (tape(t)%ntimes==tape(t)%mfilt) then</a>
+  1118) <a name="l1118" style="background-color: #ffff99">             tape(t)%ntimes = 0</a>
+  1119) <a name="l1119" style="background-color: #ffff99">          end if</a>
+  1120) <a name="l1120" style="background-color: #ffff99">       endif</a>
+  1121) <a name="l1121" style="background-color: #ffff99">    end do</a>
+  1122) <a name="l1122" style="background-color: #ffff99"></a>
+  1123) <a name="l1123" style="background-color: #ffffff">  end subroutine RtmHistHtapesWrapup</a>
+  1124) <a name="l1124" style="background-color: #ffffff"></a>
+  1125) <a name="l1125" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1126) <a name="l1126" style="background-color: #ffffff"></a>
+  1127) <a name="l1127" style="background-color: #ffffff">  subroutine RtmHistRestart (ncid, flag, rdate)</a>
+  1128) <a name="l1128" style="background-color: #ffffff"></a>
+  1129) <a name="l1129" style="background-color: #ffffff">    ! !DESCRIPTION:</a>
+  1130) <a name="l1130" style="background-color: #ffffff">    ! Read/write history file restart data.</a>
+  1131) <a name="l1131" style="background-color: #ffffff">    ! If the current history file(s) are not full, file(s) are opened</a>
+  1132) <a name="l1132" style="background-color: #ffffff">    ! so that subsequent time samples are added until the file is full.</a>
+  1133) <a name="l1133" style="background-color: #ffffff">    ! A new history file is used on a branch run.</a>
+  1134) <a name="l1134" style="background-color: #ffffff"></a>
+  1135) <a name="l1135" style="background-color: #ffffff">    ! !ARGUMENTS:</a>
+  1136) <a name="l1136" style="background-color: #ffffff">    implicit none</a>
+  1137) <a name="l1137" style="background-color: #ffffff">    type(file_desc_t), intent(inout) :: ncid     ! netcdf file</a>
+  1138) <a name="l1138" style="background-color: #ffffff">    character(len=*) , intent(in)    :: flag     !'read' or 'write'</a>
+  1139) <a name="l1139" style="background-color: #ffffff">    character(len=*) , intent(in), optional :: rdate    ! restart file time stamp for name</a>
+  1140) <a name="l1140" style="background-color: #ffffff"></a>
+  1141) <a name="l1141" style="background-color: #ffffff">    ! !LOCAL VARIABLES:</a>
+  1142) <a name="l1142" style="background-color: #ffffff">    integer :: max_nflds                         ! max number of fields</a>
+  1143) <a name="l1143" style="background-color: #ffffff">    integer :: begrof                            ! per-proc beginning ocean runoff index</a>
+  1144) <a name="l1144" style="background-color: #ffffff">    integer :: endrof                            ! per-proc ending ocean runoff index</a>
+  1145) <a name="l1145" style="background-color: #ffffff">    character(len=max_namlen) :: name            ! variable name</a>
+  1146) <a name="l1146" style="background-color: #ffffff">    character(len=max_namlen) :: name_acc        ! accumulator variable name</a>
+  1147) <a name="l1147" style="background-color: #ffffff">    character(len=max_namlen) :: long_name       ! long name of variable</a>
+  1148) <a name="l1148" style="background-color: #ffffff">    character(len=max_chars)  :: long_name_acc   ! long name for accumulator</a>
+  1149) <a name="l1149" style="background-color: #ffffff">    character(len=max_chars)  :: units           ! units of variable</a>
+  1150) <a name="l1150" style="background-color: #ffffff">    character(len=max_chars)  :: units_acc       ! accumulator units</a>
+  1151) <a name="l1151" style="background-color: #ffffff">    character(len=max_chars)  :: fname           ! full name of history file</a>
+  1152) <a name="l1152" style="background-color: #ffffff">    character(len=max_chars)  :: locrest(max_tapes) ! local history restart file names</a>
+  1153) <a name="l1153" style="background-color: #ffffff">    character(len=1)   :: hnum                   ! history file index</a>
+  1154) <a name="l1154" style="background-color: #ffffff">    type(var_desc_t)   :: name_desc              ! variable descriptor for name</a>
+  1155) <a name="l1155" style="background-color: #ffffff">    type(var_desc_t)   :: longname_desc          ! variable descriptor for long_name</a>
+  1156) <a name="l1156" style="background-color: #ffffff">    type(var_desc_t)   :: units_desc             ! variable descriptor for units</a>
+  1157) <a name="l1157" style="background-color: #ffffff">    type(var_desc_t)   :: avgflag_desc           ! variable descriptor for avgflag</a>
+  1158) <a name="l1158" style="background-color: #ffffff">    integer :: status                            ! error status</a>
+  1159) <a name="l1159" style="background-color: #ffffff">    integer :: dimid                             ! dimension ID</a>
+  1160) <a name="l1160" style="background-color: #ffffff">    integer :: start(2)                          ! Start array index</a>
+  1161) <a name="l1161" style="background-color: #ffffff">    integer :: k                                 ! 1d index</a>
+  1162) <a name="l1162" style="background-color: #ffffff">    integer :: t                                 ! tape index</a>
+  1163) <a name="l1163" style="background-color: #ffffff">    integer :: f                                 ! field index</a>
+  1164) <a name="l1164" style="background-color: #ffffff">    integer :: varid                             ! variable id</a>
+  1165) <a name="l1165" style="background-color: #ffffff">    integer, allocatable :: itemp2d(:,:)         ! 2D temporary</a>
+  1166) <a name="l1166" style="background-color: #ffffff">    real(r8), pointer :: hbuf(:)                 ! history buffer</a>
+  1167) <a name="l1167" style="background-color: #ffffff">    integer , pointer :: nacs(:)                 ! accumulation counter</a>
+  1168) <a name="l1168" style="background-color: #ffffff">    character(len=*),parameter :: subname = 'hist_restart_ncd'</a>
+  1169) <a name="l1169" style="background-color: #ffffff">    !---------------------------------------------------------</a>
+  1170) <a name="l1170" style="background-color: #ffffff"></a>
+  1171) <a name="l1171" style="background-color: #ffffff">    ! If branch run, initialize file times and return</a>
+  1172) <a name="l1172" style="background-color: #ffffff"></a>
+  1173) <a name="l1173" style="background-color: #ffffff">    if (flag == 'read') then</a>
+  1174) <a name="l1174" style="background-color: #ffffff">       if (nsrest == nsrBranch) then</a>
+  1175) <a name="l1175" style="background-color: #ffff99">          do t = 1,ntapes</a>
+  1176) <a name="l1176" style="background-color: #ffff99">             tape(t)%ntimes = 0</a>
+  1177) <a name="l1177" style="background-color: #ffff99">          end do</a>
+  1178) <a name="l1178" style="background-color: #ffff99">          RETURN</a>
+  1179) <a name="l1179" style="background-color: #ffff99">       end if</a>
+  1180) <a name="l1180" style="background-color: #ffff99">       ! If startup run just return</a>
+  1181) <a name="l1181" style="background-color: #ffffff">       if (nsrest == nsrStartup) then</a>
+  1182) <a name="l1182" style="background-color: #ffffff">          RETURN</a>
+  1183) <a name="l1183" style="background-color: #ffffff">       end if</a>
+  1184) <a name="l1184" style="background-color: #ffffff">    endif</a>
+  1185) <a name="l1185" style="background-color: #ffffff"></a>
+  1186) <a name="l1186" style="background-color: #ffffff">    ! Read history file data only for restart run (not for branch run)</a>
+  1187) <a name="l1187" style="background-color: #ffffff"></a>
+  1188) <a name="l1188" style="background-color: #ffffff">    ! First when writing out and in define mode, create files and define all variables</a>
+  1189) <a name="l1189" style="background-color: #ffffff">    !================================================</a>
+  1190) <a name="l1190" style="background-color: #ffff99">    if (flag == 'define') then</a>
+  1191) <a name="l1191" style="background-color: #ffff99">    !================================================</a>
+  1192) <a name="l1192" style="background-color: #ffff99"></a>
+  1193) <a name="l1193" style="background-color: #ffff99">       if (.not. present(rdate)) then</a>
+  1194) <a name="l1194" style="background-color: #ffff99">          call shr_sys_abort('variable rdate must be present for writing restart files')</a>
+  1195) <a name="l1195" style="background-color: #ffff99">       end if</a>
+  1196) <a name="l1196" style="background-color: #ffff99"></a>
+  1197) <a name="l1197" style="background-color: #ffff99">       !</a>
+  1198) <a name="l1198" style="background-color: #ffff99">       ! On master restart file add ntapes/max_chars dimension</a>
+  1199) <a name="l1199" style="background-color: #ffff99">       ! and then add the history and history restart filenames</a>
+  1200) <a name="l1200" style="background-color: #ffff99">       !</a>
+  1201) <a name="l1201" style="background-color: #ffff99">       call ncd_defdim( ncid, 'ntapes'       , ntapes      , dimid)</a>
+  1202) <a name="l1202" style="background-color: #ffff99">       call ncd_defdim( ncid, 'max_chars'    , max_chars   , dimid)</a>
+  1203) <a name="l1203" style="background-color: #ffff99"></a>
+  1204) <a name="l1204" style="background-color: #ffff99">       call ncd_defvar(ncid=ncid, varname='locfnh', xtype=ncd_char, &amp;</a>
+  1205) <a name="l1205" style="background-color: #ffff99">            long_name=&quot;History filename&quot;,     &amp;</a>
+  1206) <a name="l1206" style="background-color: #ffff99">            comment=&quot;This variable NOT needed for startup or branch simulations&quot;, &amp;</a>
+  1207) <a name="l1207" style="background-color: #ffff99">            dim1name='max_chars', dim2name=&quot;ntapes&quot; )</a>
+  1208) <a name="l1208" style="background-color: #ffff99">       call ncd_defvar(ncid=ncid, varname='locfnhr', xtype=ncd_char, &amp;</a>
+  1209) <a name="l1209" style="background-color: #ffff99">            long_name=&quot;Restart history filename&quot;,     &amp;</a>
+  1210) <a name="l1210" style="background-color: #ffff99">            comment=&quot;This variable NOT needed for startup or branch simulations&quot;, &amp;</a>
+  1211) <a name="l1211" style="background-color: #ffff99">            dim1name='max_chars', dim2name=&quot;ntapes&quot; )</a>
+  1212) <a name="l1212" style="background-color: #ffff99"></a>
+  1213) <a name="l1213" style="background-color: #ffff99">       ! max_nflds is the maximum number of fields on any tape</a>
+  1214) <a name="l1214" style="background-color: #ffff99">       ! max_flds is the maximum number possible number of fields </a>
+  1215) <a name="l1215" style="background-color: #ffff99">       max_nflds = max_nFields()</a>
+  1216) <a name="l1216" style="background-color: #ffff99"></a>
+  1217) <a name="l1217" style="background-color: #ffff99">       ! Loop over tapes - write out namelist information to each restart-history tape</a>
+  1218) <a name="l1218" style="background-color: #ffff99">       ! only read/write accumulators and counters if needed</a>
+  1219) <a name="l1219" style="background-color: #ffff99"></a>
+  1220) <a name="l1220" style="background-color: #ffff99">       do t = 1,ntapes</a>
+  1221) <a name="l1221" style="background-color: #ffff99">          !</a>
+  1222) <a name="l1222" style="background-color: #ffff99">          ! Create the restart history filename and open it</a>
+  1223) <a name="l1223" style="background-color: #ffff99">          !</a>
+  1224) <a name="l1224" style="background-color: #ffff99">          write(hnum,'(i1.1)') t-1</a>
+  1225) <a name="l1225" style="background-color: #ffff99">          locfnhr(t) = &quot;./&quot; // trim(caseid) //&quot;.rtm&quot;// trim(inst_suffix) &amp;</a>
+  1226) <a name="l1226" style="background-color: #ffff99">                        // &quot;.rh&quot; // hnum //&quot;.&quot;// trim(rdate) //&quot;.nc&quot;</a>
+  1227) <a name="l1227" style="background-color: #ffff99">          call htape_create( t, histrest=.true. )</a>
+  1228) <a name="l1228" style="background-color: #ffff99">          !</a>
+  1229) <a name="l1229" style="background-color: #ffff99">          ! Add read/write accumultators and counters if needed</a>
+  1230) <a name="l1230" style="background-color: #ffff99">          !</a>
+  1231) <a name="l1231" style="background-color: #ffff99">          if (.not. tape(t)%is_endhist) then</a>
+  1232) <a name="l1232" style="background-color: #ffff99">             do f = 1,tape(t)%nflds</a>
+  1233) <a name="l1233" style="background-color: #ffff99">                name           =  tape(t)%hlist(f)%field%name</a>
+  1234) <a name="l1234" style="background-color: #ffff99">                long_name      =  tape(t)%hlist(f)%field%long_name</a>
+  1235) <a name="l1235" style="background-color: #ffff99">                units          =  tape(t)%hlist(f)%field%units</a>
+  1236) <a name="l1236" style="background-color: #ffff99">                name_acc       =  trim(name) // &quot;_acc&quot;</a>
+  1237) <a name="l1237" style="background-color: #ffff99">                units_acc      =  &quot;unitless positive integer&quot;</a>
+  1238) <a name="l1238" style="background-color: #ffff99">                long_name_acc  =  trim(long_name) // &quot; accumulator number of samples&quot;</a>
+  1239) <a name="l1239" style="background-color: #ffff99">                nacs           =&gt; tape(t)%hlist(f)%nacs</a>
+  1240) <a name="l1240" style="background-color: #ffff99">                hbuf           =&gt; tape(t)%hlist(f)%hbuf</a>
+  1241) <a name="l1241" style="background-color: #ffff99">               </a>
+  1242) <a name="l1242" style="background-color: #ffff99">                call ncd_defvar(ncid=ncid_hist(t), varname=trim(name), xtype=ncd_double, &amp;</a>
+  1243) <a name="l1243" style="background-color: #ffff99">                     dim1name='lon', dim2name='lat', &amp;</a>
+  1244) <a name="l1244" style="background-color: #ffff99">                     long_name=trim(long_name), units=trim(units))</a>
+  1245) <a name="l1245" style="background-color: #ffff99">                call ncd_defvar(ncid=ncid_hist(t), varname=trim(name_acc), xtype=ncd_int,  &amp;</a>
+  1246) <a name="l1246" style="background-color: #ffff99">                     dim1name='lon', dim2name='lat', &amp;</a>
+  1247) <a name="l1247" style="background-color: #ffff99">                     long_name=trim(long_name_acc), units=trim(units_acc))</a>
+  1248) <a name="l1248" style="background-color: #ffff99">             end do</a>
+  1249) <a name="l1249" style="background-color: #ffff99">          endif</a>
+  1250) <a name="l1250" style="background-color: #ffff99"></a>
+  1251) <a name="l1251" style="background-color: #ffff99">          !</a>
+  1252) <a name="l1252" style="background-color: #ffff99">          ! Add namelist information to each restart history tape</a>
+  1253) <a name="l1253" style="background-color: #ffff99">          !</a>
+  1254) <a name="l1254" style="background-color: #ffff99">          call ncd_defdim( ncid_hist(t), 'fname_lenp2'  , max_namlen+2, dimid)</a>
+  1255) <a name="l1255" style="background-color: #ffff99">          call ncd_defdim( ncid_hist(t), 'fname_len'    , max_namlen  , dimid)</a>
+  1256) <a name="l1256" style="background-color: #ffff99">          call ncd_defdim( ncid_hist(t), 'len1'         , 1           , dimid)</a>
+  1257) <a name="l1257" style="background-color: #ffff99">          call ncd_defdim( ncid_hist(t), 'scalar'       , 1           , dimid)</a>
+  1258) <a name="l1258" style="background-color: #ffff99">          call ncd_defdim( ncid_hist(t), 'max_chars'    , max_chars   , dimid)</a>
+  1259) <a name="l1259" style="background-color: #ffff99">          call ncd_defdim( ncid_hist(t), 'max_nflds'    , max_nflds   ,  dimid)   </a>
+  1260) <a name="l1260" style="background-color: #ffff99">          call ncd_defdim( ncid_hist(t), 'max_flds'     , max_flds    , dimid)   </a>
+  1261) <a name="l1261" style="background-color: #ffff99">       </a>
+  1262) <a name="l1262" style="background-color: #ffff99">          call ncd_defvar(ncid=ncid_hist(t), varname='nhtfrq', xtype=ncd_int, &amp;</a>
+  1263) <a name="l1263" style="background-color: #ffff99">               long_name=&quot;Frequency of history writes&quot;,               &amp;</a>
+  1264) <a name="l1264" style="background-color: #ffff99">               comment=&quot;Namelist item&quot;, &amp;</a>
+  1265) <a name="l1265" style="background-color: #ffff99">               units=&quot;absolute value of negative is in hours, 0=monthly, positive is time-steps&quot;,     &amp;</a>
+  1266) <a name="l1266" style="background-color: #ffff99">               dim1name='scalar')</a>
+  1267) <a name="l1267" style="background-color: #ffff99">          call ncd_defvar(ncid=ncid_hist(t), varname='mfilt', xtype=ncd_int, &amp;</a>
+  1268) <a name="l1268" style="background-color: #ffff99">               long_name=&quot;Number of history time samples on a file&quot;, units=&quot;unitless&quot;,     &amp;</a>
+  1269) <a name="l1269" style="background-color: #ffff99">               comment=&quot;Namelist item&quot;, &amp;</a>
+  1270) <a name="l1270" style="background-color: #ffff99">               dim1name='scalar')</a>
+  1271) <a name="l1271" style="background-color: #ffff99">          call ncd_defvar(ncid=ncid_hist(t), varname='ncprec', xtype=ncd_int, &amp;</a>
+  1272) <a name="l1272" style="background-color: #ffff99">               long_name=&quot;Flag for data precision&quot;, flag_values=(/1,2/), &amp;</a>
+  1273) <a name="l1273" style="background-color: #ffff99">               comment=&quot;Namelist item&quot;, &amp;</a>
+  1274) <a name="l1274" style="background-color: #ffff99">               nvalid_range=(/1,2/), &amp;</a>
+  1275) <a name="l1275" style="background-color: #ffff99">               flag_meanings=(/&quot;single-precision&quot;, &quot;double-precision&quot;/), &amp;</a>
+  1276) <a name="l1276" style="background-color: #ffff99">               dim1name='scalar')</a>
+  1277) <a name="l1277" style="background-color: #ffff99">          call ncd_defvar(ncid=ncid_hist(t), varname='fincl', xtype=ncd_char, &amp;</a>
+  1278) <a name="l1278" style="background-color: #ffff99">               comment=&quot;Namelist item&quot;, &amp;</a>
+  1279) <a name="l1279" style="background-color: #ffff99">               long_name=&quot;Fieldnames to include&quot;, &amp;</a>
+  1280) <a name="l1280" style="background-color: #ffff99">               dim1name='fname_lenp2', dim2name='max_flds' )</a>
+  1281) <a name="l1281" style="background-color: #ffff99">          call ncd_defvar(ncid=ncid_hist(t), varname='fexcl', xtype=ncd_char, &amp;</a>
+  1282) <a name="l1282" style="background-color: #ffff99">               comment=&quot;Namelist item&quot;, &amp;</a>
+  1283) <a name="l1283" style="background-color: #ffff99">               long_name=&quot;Fieldnames to exclude&quot;,  &amp;</a>
+  1284) <a name="l1284" style="background-color: #ffff99">               dim1name='fname_lenp2', dim2name='max_flds' )</a>
+  1285) <a name="l1285" style="background-color: #ffff99"></a>
+  1286) <a name="l1286" style="background-color: #ffff99">          call ncd_defvar(ncid=ncid_hist(t), varname='nflds', xtype=ncd_int, &amp;</a>
+  1287) <a name="l1287" style="background-color: #ffff99">               long_name=&quot;Number of fields on file&quot;, units=&quot;unitless&quot;,        &amp;</a>
+  1288) <a name="l1288" style="background-color: #ffff99">               dim1name='scalar')</a>
+  1289) <a name="l1289" style="background-color: #ffff99">          call ncd_defvar(ncid=ncid_hist(t), varname='ntimes', xtype=ncd_int, &amp;</a>
+  1290) <a name="l1290" style="background-color: #ffff99">               long_name=&quot;Number of time steps on file&quot;, units=&quot;time-step&quot;,     &amp;</a>
+  1291) <a name="l1291" style="background-color: #ffff99">               dim1name='scalar')</a>
+  1292) <a name="l1292" style="background-color: #ffff99">          call ncd_defvar(ncid=ncid_hist(t), varname='is_endhist', xtype=ncd_log, &amp;</a>
+  1293) <a name="l1293" style="background-color: #ffff99">               long_name=&quot;End of history file&quot;, dim1name='scalar')</a>
+  1294) <a name="l1294" style="background-color: #ffff99">          call ncd_defvar(ncid=ncid_hist(t), varname='begtime', xtype=ncd_double, &amp;</a>
+  1295) <a name="l1295" style="background-color: #ffff99">               long_name=&quot;Beginning time&quot;, units=&quot;time units&quot;,     &amp;</a>
+  1296) <a name="l1296" style="background-color: #ffff99">               dim1name='scalar')</a>
+  1297) <a name="l1297" style="background-color: #ffff99">   </a>
+  1298) <a name="l1298" style="background-color: #ffff99">          call ncd_defvar(ncid=ncid_hist(t), varname='hpindex', xtype=ncd_int, &amp;</a>
+  1299) <a name="l1299" style="background-color: #ffff99">               long_name=&quot;History pointer index&quot;, units=&quot;unitless&quot;,     &amp;</a>
+  1300) <a name="l1300" style="background-color: #ffff99">               dim1name='max_nflds' )</a>
+  1301) <a name="l1301" style="background-color: #ffff99"></a>
+  1302) <a name="l1302" style="background-color: #ffff99">          call ncd_defvar(ncid=ncid_hist(t), varname='avgflag', xtype=ncd_char, &amp;</a>
+  1303) <a name="l1303" style="background-color: #ffff99">               long_name=&quot;Averaging flag&quot;, &amp;</a>
+  1304) <a name="l1304" style="background-color: #ffff99">               units=&quot;A=Average, X=Maximum, M=Minimum, I=Instantaneous&quot;, &amp;</a>
+  1305) <a name="l1305" style="background-color: #ffff99">               dim1name='len1', dim2name='max_nflds' )</a>
+  1306) <a name="l1306" style="background-color: #ffff99">          call ncd_defvar(ncid=ncid_hist(t), varname='name', xtype=ncd_char, &amp;</a>
+  1307) <a name="l1307" style="background-color: #ffff99">               long_name=&quot;Fieldnames&quot;,  &amp;</a>
+  1308) <a name="l1308" style="background-color: #ffff99">               dim1name='fname_len', dim2name='max_nflds' )</a>
+  1309) <a name="l1309" style="background-color: #ffff99">          call ncd_defvar(ncid=ncid_hist(t), varname='long_name', xtype=ncd_char, &amp;</a>
+  1310) <a name="l1310" style="background-color: #ffff99">               long_name=&quot;Long descriptive names for fields&quot;, &amp;</a>
+  1311) <a name="l1311" style="background-color: #ffff99">               dim1name='max_chars', dim2name='max_nflds' )</a>
+  1312) <a name="l1312" style="background-color: #ffff99">          call ncd_defvar(ncid=ncid_hist(t), varname='units', xtype=ncd_char, &amp;</a>
+  1313) <a name="l1313" style="background-color: #ffff99">               long_name=&quot;Units for each history field output&quot;, &amp;</a>
+  1314) <a name="l1314" style="background-color: #ffff99">               dim1name='max_chars', dim2name='max_nflds' )</a>
+  1315) <a name="l1315" style="background-color: #ffff99">          call ncd_enddef(ncid_hist(t))</a>
+  1316) <a name="l1316" style="background-color: #ffff99"></a>
+  1317) <a name="l1317" style="background-color: #ffff99">       end do   ! end of ntapes loop   </a>
+  1318) <a name="l1318" style="background-color: #ffff99"></a>
+  1319) <a name="l1319" style="background-color: #ffff99">       RETURN</a>
+  1320) <a name="l1320" style="background-color: #ffff99"></a>
+  1321) <a name="l1321" style="background-color: #ffff99">    !================================================</a>
+  1322) <a name="l1322" style="background-color: #ffff99">    else if (flag == 'write') then</a>
+  1323) <a name="l1323" style="background-color: #ffff99">    !================================================</a>
+  1324) <a name="l1324" style="background-color: #ffff99"></a>
+  1325) <a name="l1325" style="background-color: #ffff99">       ! Add history filenames to master restart file</a>
+  1326) <a name="l1326" style="background-color: #ffff99">       do t = 1,ntapes</a>
+  1327) <a name="l1327" style="background-color: #ffff99">          call ncd_io('locfnh',  locfnh(t),  'write', ncid, nt=t)</a>
+  1328) <a name="l1328" style="background-color: #ffff99">          call ncd_io('locfnhr', locfnhr(t), 'write', ncid, nt=t)</a>
+  1329) <a name="l1329" style="background-color: #ffff99">       end do</a>
+  1330) <a name="l1330" style="background-color: #ffff99">       </a>
+  1331) <a name="l1331" style="background-color: #ffff99">       fincl(:,1) = rtmhist_fincl1(:)</a>
+  1332) <a name="l1332" style="background-color: #ffff99">       fincl(:,2) = rtmhist_fincl2(:)</a>
+  1333) <a name="l1333" style="background-color: #ffff99">       fincl(:,3) = rtmhist_fincl3(:)</a>
+  1334) <a name="l1334" style="background-color: #ffff99"></a>
+  1335) <a name="l1335" style="background-color: #ffff99">       fexcl(:,1) = rtmhist_fexcl1(:)</a>
+  1336) <a name="l1336" style="background-color: #ffff99">       fexcl(:,2) = rtmhist_fexcl2(:)</a>
+  1337) <a name="l1337" style="background-color: #ffff99">       fexcl(:,3) = rtmhist_fexcl3(:)</a>
+  1338) <a name="l1338" style="background-color: #ffff99"></a>
+  1339) <a name="l1339" style="background-color: #ffff99">       max_nflds = max_nFields()</a>
+  1340) <a name="l1340" style="background-color: #ffff99"></a>
+  1341) <a name="l1341" style="background-color: #ffff99">       start(1)=1</a>
+  1342) <a name="l1342" style="background-color: #ffff99"></a>
+  1343) <a name="l1343" style="background-color: #ffff99"></a>
+  1344) <a name="l1344" style="background-color: #ffff99">       ! Add history namelist data to each history restart tape</a>
+  1345) <a name="l1345" style="background-color: #ffff99">       allocate(itemp2d(max_nflds,ntapes))</a>
+  1346) <a name="l1346" style="background-color: #ffff99">       do t = 1,ntapes</a>
+  1347) <a name="l1347" style="background-color: #ffff99">          call ncd_inqvid(ncid_hist(t), 'name',           varid, name_desc)</a>
+  1348) <a name="l1348" style="background-color: #ffff99">          call ncd_inqvid(ncid_hist(t), 'long_name',      varid, longname_desc)</a>
+  1349) <a name="l1349" style="background-color: #ffff99">          call ncd_inqvid(ncid_hist(t), 'units',          varid, units_desc)</a>
+  1350) <a name="l1350" style="background-color: #ffff99">          call ncd_inqvid(ncid_hist(t), 'avgflag',        varid, avgflag_desc)</a>
+  1351) <a name="l1351" style="background-color: #ffff99"></a>
+  1352) <a name="l1352" style="background-color: #ffff99">          call ncd_io(varname='fincl'     , data=fincl(:,t)        , ncid=ncid_hist(t), flag='write')</a>
+  1353) <a name="l1353" style="background-color: #ffff99">          call ncd_io(varname='fexcl'     , data=fexcl(:,t)        , ncid=ncid_hist(t), flag='write')</a>
+  1354) <a name="l1354" style="background-color: #ffff99">          call ncd_io(varname='is_endhist', data=tape(t)%is_endhist, ncid=ncid_hist(t), flag='write')</a>
+  1355) <a name="l1355" style="background-color: #ffff99"></a>
+  1356) <a name="l1356" style="background-color: #ffff99">          itemp2d(:,:) = 0</a>
+  1357) <a name="l1357" style="background-color: #ffff99">          do f=1,tape(t)%nflds</a>
+  1358) <a name="l1358" style="background-color: #ffff99">             itemp2d(f,t) = tape(t)%hlist(f)%field%hpindex</a>
+  1359) <a name="l1359" style="background-color: #ffff99">          end do</a>
+  1360) <a name="l1360" style="background-color: #ffff99">          call ncd_io(varname='hpindex', data=itemp2d(:,t), ncid=ncid_hist(t), flag='write')</a>
+  1361) <a name="l1361" style="background-color: #ffff99"></a>
+  1362) <a name="l1362" style="background-color: #ffff99">          call ncd_io('nflds' ,  tape(t)%nflds,   'write', ncid_hist(t))</a>
+  1363) <a name="l1363" style="background-color: #ffff99">          call ncd_io('ntimes',  tape(t)%ntimes,  'write', ncid_hist(t))</a>
+  1364) <a name="l1364" style="background-color: #ffff99">          call ncd_io('nhtfrq',  tape(t)%nhtfrq,  'write', ncid_hist(t))</a>
+  1365) <a name="l1365" style="background-color: #ffff99">          call ncd_io('mfilt' ,  tape(t)%mfilt,   'write', ncid_hist(t))</a>
+  1366) <a name="l1366" style="background-color: #ffff99">          call ncd_io('ncprec',  tape(t)%ncprec,  'write', ncid_hist(t))</a>
+  1367) <a name="l1367" style="background-color: #ffff99">          call ncd_io('begtime', tape(t)%begtime, 'write', ncid_hist(t))</a>
+  1368) <a name="l1368" style="background-color: #ffff99">          do f=1,tape(t)%nflds</a>
+  1369) <a name="l1369" style="background-color: #ffff99">             start(2) = f</a>
+  1370) <a name="l1370" style="background-color: #ffff99">             call ncd_io( name_desc,           tape(t)%hlist(f)%field%name,       &amp;</a>
+  1371) <a name="l1371" style="background-color: #ffff99">                          'write', ncid_hist(t), start )</a>
+  1372) <a name="l1372" style="background-color: #ffff99">             call ncd_io( longname_desc,       tape(t)%hlist(f)%field%long_name,  &amp;</a>
+  1373) <a name="l1373" style="background-color: #ffff99">                          'write', ncid_hist(t), start )</a>
+  1374) <a name="l1374" style="background-color: #ffff99">             call ncd_io( units_desc,          tape(t)%hlist(f)%field%units,      &amp;</a>
+  1375) <a name="l1375" style="background-color: #ffff99">                          'write', ncid_hist(t), start )</a>
+  1376) <a name="l1376" style="background-color: #ffff99">             call ncd_io( avgflag_desc,        tape(t)%hlist(f)%avgflag,          &amp;</a>
+  1377) <a name="l1377" style="background-color: #ffff99">                          'write', ncid_hist(t), start )</a>
+  1378) <a name="l1378" style="background-color: #ffff99">          end do</a>
+  1379) <a name="l1379" style="background-color: #ffff99">       end do</a>
+  1380) <a name="l1380" style="background-color: #ffff99">       deallocate(itemp2d)</a>
+  1381) <a name="l1381" style="background-color: #ffff99"></a>
+  1382) <a name="l1382" style="background-color: #ffff99">    !================================================</a>
+  1383) <a name="l1383" style="background-color: #ffff99">    else if (flag == 'read') then</a>
+  1384) <a name="l1384" style="background-color: #ffff99">    !================================================</a>
+  1385) <a name="l1385" style="background-color: #ffff99"></a>
+  1386) <a name="l1386" style="background-color: #ffff99">       call ncd_inqdlen(ncid,dimid,ntapes,   name='ntapes')</a>
+  1387) <a name="l1387" style="background-color: #ffff99">       call ncd_io('locfnh',  locfnh(1:ntapes),  'read', ncid )</a>
+  1388) <a name="l1388" style="background-color: #ffff99">       call ncd_io('locfnhr', locrest(1:ntapes), 'read', ncid )</a>
+  1389) <a name="l1389" style="background-color: #ffff99">       do t = 1,ntapes</a>
+  1390) <a name="l1390" style="background-color: #ffff99">          call strip_null(locrest(t))</a>
+  1391) <a name="l1391" style="background-color: #ffff99">          call strip_null(locfnh(t))</a>
+  1392) <a name="l1392" style="background-color: #ffff99">       end do</a>
+  1393) <a name="l1393" style="background-color: #ffff99"></a>
+  1394) <a name="l1394" style="background-color: #ffff99">       ! Determine necessary indices - the following is needed if model decomposition </a>
+  1395) <a name="l1395" style="background-color: #ffff99">       ! is different on restart</a>
+  1396) <a name="l1396" style="background-color: #ffff99">       begrof = runoff%begr</a>
+  1397) <a name="l1397" style="background-color: #ffff99">       endrof = runoff%endr</a>
+  1398) <a name="l1398" style="background-color: #ffff99">       </a>
+  1399) <a name="l1399" style="background-color: #ffff99">       start(1)=1</a>
+  1400) <a name="l1400" style="background-color: #ffff99">       do t = 1,ntapes</a>
+  1401) <a name="l1401" style="background-color: #ffff99">          call getfil( locrest(t), locfnhr(t), 0 )</a>
+  1402) <a name="l1402" style="background-color: #ffff99">          call ncd_pio_openfile (ncid_hist(t), trim(locfnhr(t)), ncd_nowrite)</a>
+  1403) <a name="l1403" style="background-color: #ffff99"></a>
+  1404) <a name="l1404" style="background-color: #ffff99">          if ( t == 1 )then</a>
+  1405) <a name="l1405" style="background-color: #ffff99">             call ncd_inqdlen(ncid_hist(1),dimid,max_nflds,name='max_nflds')</a>
+  1406) <a name="l1406" style="background-color: #ffff99">             allocate(itemp2d(max_nflds,ntapes))</a>
+  1407) <a name="l1407" style="background-color: #ffff99">          end if</a>
+  1408) <a name="l1408" style="background-color: #ffff99"></a>
+  1409) <a name="l1409" style="background-color: #ffff99">          call ncd_inqvid(ncid_hist(t), 'name',           varid, name_desc)</a>
+  1410) <a name="l1410" style="background-color: #ffff99">          call ncd_inqvid(ncid_hist(t), 'long_name',      varid, longname_desc)</a>
+  1411) <a name="l1411" style="background-color: #ffff99">          call ncd_inqvid(ncid_hist(t), 'units',          varid, units_desc)</a>
+  1412) <a name="l1412" style="background-color: #ffff99">          call ncd_inqvid(ncid_hist(t), 'avgflag',        varid, avgflag_desc)</a>
+  1413) <a name="l1413" style="background-color: #ffff99"></a>
+  1414) <a name="l1414" style="background-color: #ffff99">          call ncd_io(varname='fincl', data=fincl(:,t), ncid=ncid_hist(t), flag='read')</a>
+  1415) <a name="l1415" style="background-color: #ffff99">          call ncd_io(varname='fexcl', data=fexcl(:,t), ncid=ncid_hist(t), flag='read')</a>
+  1416) <a name="l1416" style="background-color: #ffff99"></a>
+  1417) <a name="l1417" style="background-color: #ffff99">          call ncd_io('nflds',   tape(t)%nflds,  'read', ncid_hist(t) )</a>
+  1418) <a name="l1418" style="background-color: #ffff99">          call ncd_io('ntimes',  tape(t)%ntimes, 'read', ncid_hist(t) )</a>
+  1419) <a name="l1419" style="background-color: #ffff99">          call ncd_io('nhtfrq',  tape(t)%nhtfrq, 'read', ncid_hist(t) )</a>
+  1420) <a name="l1420" style="background-color: #ffff99">          call ncd_io('mfilt',   tape(t)%mfilt,  'read', ncid_hist(t) )</a>
+  1421) <a name="l1421" style="background-color: #ffff99">          call ncd_io('ncprec',  tape(t)%ncprec, 'read', ncid_hist(t) )</a>
+  1422) <a name="l1422" style="background-color: #ffff99">          call ncd_io('begtime', tape(t)%begtime,'read', ncid_hist(t) )</a>
+  1423) <a name="l1423" style="background-color: #ffff99"></a>
+  1424) <a name="l1424" style="background-color: #ffff99">          call ncd_io(varname='is_endhist', data=tape(t)%is_endhist, ncid=ncid_hist(t), flag='read')</a>
+  1425) <a name="l1425" style="background-color: #ffff99">          call ncd_io(varname='hpindex'   , data=itemp2d(:,t)      , ncid=ncid_hist(t), flag='read')</a>
+  1426) <a name="l1426" style="background-color: #ffff99">          do f=1,tape(t)%nflds</a>
+  1427) <a name="l1427" style="background-color: #ffff99">             tape(t)%hlist(f)%field%hpindex = itemp2d(f,t)</a>
+  1428) <a name="l1428" style="background-color: #ffff99">          end do</a>
+  1429) <a name="l1429" style="background-color: #ffff99"></a>
+  1430) <a name="l1430" style="background-color: #ffff99">          do f=1,tape(t)%nflds</a>
+  1431) <a name="l1431" style="background-color: #ffff99">             start(2) = f</a>
+  1432) <a name="l1432" style="background-color: #ffff99">             call ncd_io( name_desc,           tape(t)%hlist(f)%field%name,       &amp;</a>
+  1433) <a name="l1433" style="background-color: #ffff99">                          'read', ncid_hist(t), start )</a>
+  1434) <a name="l1434" style="background-color: #ffff99">             call ncd_io( longname_desc,       tape(t)%hlist(f)%field%long_name,  &amp;</a>
+  1435) <a name="l1435" style="background-color: #ffff99">                          'read', ncid_hist(t), start )</a>
+  1436) <a name="l1436" style="background-color: #ffff99">             call ncd_io( units_desc,          tape(t)%hlist(f)%field%units,      &amp;</a>
+  1437) <a name="l1437" style="background-color: #ffff99">                          'read', ncid_hist(t), start )</a>
+  1438) <a name="l1438" style="background-color: #ffff99">             call ncd_io( avgflag_desc,        tape(t)%hlist(f)%avgflag,          &amp;</a>
+  1439) <a name="l1439" style="background-color: #ffff99">                          'read', ncid_hist(t), start )</a>
+  1440) <a name="l1440" style="background-color: #ffff99">             call strip_null(tape(t)%hlist(f)%field%name)</a>
+  1441) <a name="l1441" style="background-color: #ffff99">             call strip_null(tape(t)%hlist(f)%field%long_name)</a>
+  1442) <a name="l1442" style="background-color: #ffff99">             call strip_null(tape(t)%hlist(f)%field%units)</a>
+  1443) <a name="l1443" style="background-color: #ffff99">             call strip_null(tape(t)%hlist(f)%avgflag)</a>
+  1444) <a name="l1444" style="background-color: #ffff99"></a>
+  1445) <a name="l1445" style="background-color: #ffff99">             allocate (tape(t)%hlist(f)%hbuf(begrof:endrof), &amp;</a>
+  1446) <a name="l1446" style="background-color: #ffff99">                       tape(t)%hlist(f)%nacs(begrof:endrof), stat=status)</a>
+  1447) <a name="l1447" style="background-color: #ffff99">             if (status /= 0) then</a>
+  1448) <a name="l1448" style="background-color: #ffff99">                write(iulog,*) trim(subname),' ERROR: allocation error for hbuf,nacs at t,f=',t,f</a>
+  1449) <a name="l1449" style="background-color: #ffff99">                call shr_sys_abort()</a>
+  1450) <a name="l1450" style="background-color: #ffff99">             endif</a>
+  1451) <a name="l1451" style="background-color: #ffff99">             tape(t)%hlist(f)%hbuf(:) = 0._r8</a>
+  1452) <a name="l1452" style="background-color: #ffff99">             tape(t)%hlist(f)%nacs(:) = 0</a>
+  1453) <a name="l1453" style="background-color: #ffff99">          end do   ! end of flds loop</a>
+  1454) <a name="l1454" style="background-color: #ffff99"></a>
+  1455) <a name="l1455" style="background-color: #ffff99">          ! If history file is not full, open it</a>
+  1456) <a name="l1456" style="background-color: #ffff99"></a>
+  1457) <a name="l1457" style="background-color: #ffff99">          if (tape(t)%ntimes /= 0) then</a>
+  1458) <a name="l1458" style="background-color: #ffff99">             call ncd_pio_openfile (nfid(t), trim(locfnh(t)), ncd_write)</a>
+  1459) <a name="l1459" style="background-color: #ffff99">          end if</a>
+  1460) <a name="l1460" style="background-color: #ffff99"></a>
+  1461) <a name="l1461" style="background-color: #ffff99">       end do  ! end of tapes loop</a>
+  1462) <a name="l1462" style="background-color: #ffff99"></a>
+  1463) <a name="l1463" style="background-color: #ffff99">       rtmhist_fincl1(:) = fincl(:,1)</a>
+  1464) <a name="l1464" style="background-color: #ffff99">       rtmhist_fincl2(:) = fincl(:,2)</a>
+  1465) <a name="l1465" style="background-color: #ffff99">       rtmhist_fincl3(:) = fincl(:,3)</a>
+  1466) <a name="l1466" style="background-color: #ffff99"></a>
+  1467) <a name="l1467" style="background-color: #ffff99">       rtmhist_fexcl1(:) = fexcl(:,1)</a>
+  1468) <a name="l1468" style="background-color: #ffff99">       rtmhist_fexcl2(:) = fexcl(:,2)</a>
+  1469) <a name="l1469" style="background-color: #ffff99">       rtmhist_fexcl3(:) = fexcl(:,3)</a>
+  1470) <a name="l1470" style="background-color: #ffff99">       </a>
+  1471) <a name="l1471" style="background-color: #ffff99">       if ( allocated(itemp2d) ) deallocate(itemp2d)</a>
+  1472) <a name="l1472" style="background-color: #ffff99"></a>
+  1473) <a name="l1473" style="background-color: #ffff99">    end if</a>
+  1474) <a name="l1474" style="background-color: #ffff99"></a>
+  1475) <a name="l1475" style="background-color: #ffff99">    ! Read/write history file restart data.</a>
+  1476) <a name="l1476" style="background-color: #ffff99">    ! If the current history file(s) are not full, file(s) are opened</a>
+  1477) <a name="l1477" style="background-color: #ffff99">    ! so that subsequent time samples are added until the file is full.</a>
+  1478) <a name="l1478" style="background-color: #ffff99">    ! A new history file is used on a branch run.</a>
+  1479) <a name="l1479" style="background-color: #ffff99">    </a>
+  1480) <a name="l1480" style="background-color: #ffff99">    if (flag == 'write') then     </a>
+  1481) <a name="l1481" style="background-color: #ffff99"></a>
+  1482) <a name="l1482" style="background-color: #ffff99">       do t = 1,ntapes</a>
+  1483) <a name="l1483" style="background-color: #ffff99">          if (.not. tape(t)%is_endhist) then</a>
+  1484) <a name="l1484" style="background-color: #ffff99">             do f = 1,tape(t)%nflds</a>
+  1485) <a name="l1485" style="background-color: #ffff99">                name       =  tape(t)%hlist(f)%field%name</a>
+  1486) <a name="l1486" style="background-color: #ffff99">                name_acc   =  trim(name) // &quot;_acc&quot;</a>
+  1487) <a name="l1487" style="background-color: #ffff99">                nacs       =&gt; tape(t)%hlist(f)%nacs</a>
+  1488) <a name="l1488" style="background-color: #ffff99">                hbuf       =&gt; tape(t)%hlist(f)%hbuf</a>
+  1489) <a name="l1489" style="background-color: #ffff99"></a>
+  1490) <a name="l1490" style="background-color: #ffff99">                call ncd_io(ncid=ncid_hist(t), flag='write', varname=trim(name), &amp;</a>
+  1491) <a name="l1491" style="background-color: #ffff99">                     dim1name='allrof', data=hbuf)</a>
+  1492) <a name="l1492" style="background-color: #ffff99">                call ncd_io(ncid=ncid_hist(t), flag='write', varname=trim(name_acc), &amp;</a>
+  1493) <a name="l1493" style="background-color: #ffff99">                     dim1name='allrof', data=nacs)</a>
+  1494) <a name="l1494" style="background-color: #ffff99">             end do</a>
+  1495) <a name="l1495" style="background-color: #ffff99">          end if  ! end of is_endhist block</a>
+  1496) <a name="l1496" style="background-color: #ffff99">          call ncd_pio_closefile(ncid_hist(t))</a>
+  1497) <a name="l1497" style="background-color: #ffff99">       end do  ! end of ntapes loop   </a>
+  1498) <a name="l1498" style="background-color: #ffff99"></a>
+  1499) <a name="l1499" style="background-color: #ffff99">    else if (flag == 'read') then </a>
+  1500) <a name="l1500" style="background-color: #ffff99"></a>
+  1501) <a name="l1501" style="background-color: #ffff99">       ! Read history restart information if history files are not full</a>
+  1502) <a name="l1502" style="background-color: #ffff99">       do t = 1,ntapes</a>
+  1503) <a name="l1503" style="background-color: #ffff99">          if (.not. tape(t)%is_endhist) then</a>
+  1504) <a name="l1504" style="background-color: #ffff99">             do f = 1,tape(t)%nflds</a>
+  1505) <a name="l1505" style="background-color: #ffff99">                name       =  tape(t)%hlist(f)%field%name</a>
+  1506) <a name="l1506" style="background-color: #ffff99">                name_acc   =  trim(name) // &quot;_acc&quot;</a>
+  1507) <a name="l1507" style="background-color: #ffff99">                nacs       =&gt; tape(t)%hlist(f)%nacs</a>
+  1508) <a name="l1508" style="background-color: #ffff99">                hbuf       =&gt; tape(t)%hlist(f)%hbuf</a>
+  1509) <a name="l1509" style="background-color: #ffff99">                </a>
+  1510) <a name="l1510" style="background-color: #ffff99">                call ncd_io(ncid=ncid_hist(t), flag='read', varname=trim(name), &amp;</a>
+  1511) <a name="l1511" style="background-color: #ffff99">                     dim1name='allrof', data=hbuf)</a>
+  1512) <a name="l1512" style="background-color: #ffff99">                call ncd_io(ncid=ncid_hist(t), flag='read', varname=trim(name_acc), &amp;</a>
+  1513) <a name="l1513" style="background-color: #ffff99">                     dim1name='allrof', data=nacs)</a>
+  1514) <a name="l1514" style="background-color: #ffff99">             end do</a>
+  1515) <a name="l1515" style="background-color: #ffff99">          end if</a>
+  1516) <a name="l1516" style="background-color: #ffff99">          call ncd_pio_closefile(ncid_hist(t))</a>
+  1517) <a name="l1517" style="background-color: #ffff99">       end do</a>
+  1518) <a name="l1518" style="background-color: #ffff99"></a>
+  1519) <a name="l1519" style="background-color: #ffff99">    end if</a>
+  1520) <a name="l1520" style="background-color: #ffff99">    </a>
+  1521) <a name="l1521" style="background-color: #fafad2">  end subroutine RtmHistRestart</a>
+  1522) <a name="l1522" style="background-color: #ffffff"></a>
+  1523) <a name="l1523" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1524) <a name="l1524" style="background-color: #ffffff"></a>
+  1525) <a name="l1525" style="background-color: #ffffff">  integer function </a><a style="background-color: #ffcccc">max_nFields()</a>
+  1526) <a name="l1526" style="background-color: #ffcccc"></a>
+  1527) <a name="l1527" style="background-color: #ffcccc">    ! DESCRIPTION:</a>
+  1528) <a name="l1528" style="background-color: #ffcccc">    ! Get the maximum number of fields on all tapes.</a>
+  1529) <a name="l1529" style="background-color: #ffcccc"></a>
+  1530) <a name="l1530" style="background-color: #ffcccc">    ! ARGUMENTS:</a>
+  1531) <a name="l1531" style="background-color: #ffcccc">    implicit none</a>
+  1532) <a name="l1532" style="background-color: #ffcccc"></a>
+  1533) <a name="l1533" style="background-color: #ffcccc">    ! LOCAL VARIABLES:</a>
+  1534) <a name="l1534" style="background-color: #ffcccc">    integer :: t  ! index</a>
+  1535) <a name="l1535" style="background-color: #ffcccc">    character(len=*),parameter :: subname = 'max_nFields'</a>
+  1536) <a name="l1536" style="background-color: #ffcccc"></a>
+  1537) <a name="l1537" style="background-color: #ffcccc">    max_nFields = 0</a>
+  1538) <a name="l1538" style="background-color: #ffcccc">    do t = 1,ntapes</a>
+  1539) <a name="l1539" style="background-color: #ffcccc">       max_nFields = max(max_nFields, tape(t)%nflds)</a>
+  1540) <a name="l1540" style="background-color: #ffcccc">    end do</a>
+  1541) <a name="l1541" style="background-color: #ffcccc">    </a>
+  1542) <a name="l1542" style="background-color: #ffcccc">  end function max_nFields</a>
+  1543) <a name="l1543" style="background-color: #ffffff"></a>
+  1544) <a name="l1544" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1545) <a name="l1545" style="background-color: #ffffff"></a>
+  1546) <a name="l1546" style="background-color: #ffffff">  character(len=max_namlen) function getname (inname)</a>
+  1547) <a name="l1547" style="background-color: #ffffff"></a>
+  1548) <a name="l1548" style="background-color: #ffffff">    ! DESCRIPTION:</a>
+  1549) <a name="l1549" style="background-color: #ffffff">    ! Retrieve name portion of inname. If an averaging flag separater character</a>
+  1550) <a name="l1550" style="background-color: #ffffff">    ! is present (:) in inname, lop it off.</a>
+  1551) <a name="l1551" style="background-color: #ffffff">    </a>
+  1552) <a name="l1552" style="background-color: #ffffff">    ! ARGUMENTS:</a>
+  1553) <a name="l1553" style="background-color: #ffffff">    implicit none</a>
+  1554) <a name="l1554" style="background-color: #ffffff">    character(len=*), intent(in) :: inname</a>
+  1555) <a name="l1555" style="background-color: #ffffff">    </a>
+  1556) <a name="l1556" style="background-color: #ffffff">    integer :: length</a>
+  1557) <a name="l1557" style="background-color: #ffffff">    integer :: i</a>
+  1558) <a name="l1558" style="background-color: #ffffff">    character(len=*),parameter :: subname = 'getname'</a>
+  1559) <a name="l1559" style="background-color: #ffffff">    </a>
+  1560) <a name="l1560" style="background-color: #ffffff">    length = len (inname)</a>
+  1561) <a name="l1561" style="background-color: #ffffff">    if (length &lt; max_namlen .or. length &gt; max_namlen+2) then</a>
+  1562) <a name="l1562" style="background-color: #ffff99">       write(iulog,*) trim(subname),' ERROR: bad length=',length</a>
+  1563) <a name="l1563" style="background-color: #ffff99">       call shr_sys_abort()</a>
+  1564) <a name="l1564" style="background-color: #ffff99">    end if</a>
+  1565) <a name="l1565" style="background-color: #ffff99">    </a>
+  1566) <a name="l1566" style="background-color: #ffffff">    getname = ' '</a>
+  1567) <a name="l1567" style="background-color: #ffffff">    do i = 1,max_namlen</a>
+  1568) <a name="l1568" style="background-color: #ffffff">       if (inname(i:i) == ':') exit</a>
+  1569) <a name="l1569" style="background-color: #ffffff">       getname(i:i) = inname(i:i)</a>
+  1570) <a name="l1570" style="background-color: #ffffff">    end do</a>
+  1571) <a name="l1571" style="background-color: #ffffff">    </a>
+  1572) <a name="l1572" style="background-color: #ffffff">   end function getname</a>
+  1573) <a name="l1573" style="background-color: #ffffff">   </a>
+  1574) <a name="l1574" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1575) <a name="l1575" style="background-color: #ffffff"></a>
+  1576) <a name="l1576" style="background-color: #ffffff">   character(len=1) function </a><a style="background-color: #ffcccc">getflag (inname)</a>
+  1577) <a name="l1577" style="background-color: #ffcccc"></a>
+  1578) <a name="l1578" style="background-color: #ffcccc">     ! DESCRIPTION:</a>
+  1579) <a name="l1579" style="background-color: #ffcccc">     ! Retrieve flag portion of inname. If an averaging flag separater character</a>
+  1580) <a name="l1580" style="background-color: #ffcccc">     ! is present (:) in inname, return the character after it as the flag</a>
+  1581) <a name="l1581" style="background-color: #ffcccc"></a>
+  1582) <a name="l1582" style="background-color: #ffcccc">     ! ARGUMENTS:</a>
+  1583) <a name="l1583" style="background-color: #ffcccc">     implicit none</a>
+  1584) <a name="l1584" style="background-color: #ffcccc">     character(len=*) inname   ! character string</a>
+  1585) <a name="l1585" style="background-color: #ffcccc"></a>
+  1586) <a name="l1586" style="background-color: #ffcccc">     ! LOCAL VARIABLES:</a>
+  1587) <a name="l1587" style="background-color: #ffcccc">     integer :: length         ! length of inname</a>
+  1588) <a name="l1588" style="background-color: #ffcccc">     integer :: i              ! loop index</a>
+  1589) <a name="l1589" style="background-color: #ffcccc">     character(len=*),parameter :: subname = 'getflag'</a>
+  1590) <a name="l1590" style="background-color: #ffcccc"></a>
+  1591) <a name="l1591" style="background-color: #ffcccc">     length = len (inname)</a>
+  1592) <a name="l1592" style="background-color: #ffcccc">     if (length &lt; max_namlen .or. length &gt; max_namlen+2) then</a>
+  1593) <a name="l1593" style="background-color: #ffcccc">        write(iulog,*) trim(subname),' ERROR: bad length=',length</a>
+  1594) <a name="l1594" style="background-color: #ffcccc">        call shr_sys_abort()</a>
+  1595) <a name="l1595" style="background-color: #ffcccc">     end if</a>
+  1596) <a name="l1596" style="background-color: #ffcccc"></a>
+  1597) <a name="l1597" style="background-color: #ffcccc">     getflag = ' '</a>
+  1598) <a name="l1598" style="background-color: #ffcccc">     do i = 1,length</a>
+  1599) <a name="l1599" style="background-color: #ffcccc">        if (inname(i:i) == ':') then</a>
+  1600) <a name="l1600" style="background-color: #ffcccc">           getflag = inname(i+1:i+1)</a>
+  1601) <a name="l1601" style="background-color: #ffcccc">           exit</a>
+  1602) <a name="l1602" style="background-color: #ffcccc">        end if</a>
+  1603) <a name="l1603" style="background-color: #ffcccc">     end do</a>
+  1604) <a name="l1604" style="background-color: #ffcccc"></a>
+  1605) <a name="l1605" style="background-color: #ffcccc">   end function getflag</a>
+  1606) <a name="l1606" style="background-color: #ffffff"></a>
+  1607) <a name="l1607" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1608) <a name="l1608" style="background-color: #ffffff"></a>
+  1609) <a name="l1609" style="background-color: #ffffff">   subroutine list_index (list, name, index)</a>
+  1610) <a name="l1610" style="background-color: #ffffff"></a>
+  1611) <a name="l1611" style="background-color: #ffffff">     ! ARGUMENTS:</a>
+  1612) <a name="l1612" style="background-color: #ffffff">     implicit none</a>
+  1613) <a name="l1613" style="background-color: #ffffff">     character(len=*), intent(in) :: list(max_flds)  ! input list of names, possibly &quot;:&quot; delimited</a>
+  1614) <a name="l1614" style="background-color: #ffffff">     character(len=max_namlen), intent(in) :: name   ! name to be searched for</a>
+  1615) <a name="l1615" style="background-color: #ffffff">     integer, intent(out) :: index                   ! index of &quot;name&quot; in &quot;list&quot;</a>
+  1616) <a name="l1616" style="background-color: #ffffff"></a>
+  1617) <a name="l1617" style="background-color: #ffffff">     ! !LOCAL VARIABLES:</a>
+  1618) <a name="l1618" style="background-color: #ffffff">     character(len=max_namlen) :: listname           ! input name with &quot;:&quot; stripped off.</a>
+  1619) <a name="l1619" style="background-color: #ffffff">     integer f                                       ! field index</a>
+  1620) <a name="l1620" style="background-color: #ffffff">     character(len=*),parameter :: subname = 'list_index'</a>
+  1621) <a name="l1621" style="background-color: #ffffff"></a>
+  1622) <a name="l1622" style="background-color: #ffffff">     ! Only list items</a>
+  1623) <a name="l1623" style="background-color: #ffffff">     index = 0</a>
+  1624) <a name="l1624" style="background-color: #ffff99">     do f=1,max_flds</a>
+  1625) <a name="l1625" style="background-color: #ffffff">        listname = getname (list(f))</a>
+  1626) <a name="l1626" style="background-color: #ffffff">        if (listname == ' ') exit</a>
+  1627) <a name="l1627" style="background-color: #ffff99">        if (listname == name) then</a>
+  1628) <a name="l1628" style="background-color: #ffff99">           index = f</a>
+  1629) <a name="l1629" style="background-color: #ffff99">           exit</a>
+  1630) <a name="l1630" style="background-color: #ffff99">        end if</a>
+  1631) <a name="l1631" style="background-color: #ffff99">     end do</a>
+  1632) <a name="l1632" style="background-color: #ffff99"></a>
+  1633) <a name="l1633" style="background-color: #ffffff">   end subroutine list_index</a>
+  1634) <a name="l1634" style="background-color: #ffffff"></a>
+  1635) <a name="l1635" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1636) <a name="l1636" style="background-color: #ffffff"></a>
+  1637) <a name="l1637" style="background-color: #ffffff">  character(len=256) function </a><a style="background-color: #ffcccc">set_hist_filename (hist_freq, rtmhist_mfilt, hist_file)</a>
+  1638) <a name="l1638" style="background-color: #ffcccc"></a>
+  1639) <a name="l1639" style="background-color: #ffcccc">    ! Determine history dataset filenames.</a>
+  1640) <a name="l1640" style="background-color: #ffcccc">    </a>
+  1641) <a name="l1641" style="background-color: #ffcccc">    ! !ARGUMENTS:</a>
+  1642) <a name="l1642" style="background-color: #ffcccc">    implicit none</a>
+  1643) <a name="l1643" style="background-color: #ffcccc">    integer, intent(in)  :: hist_freq   !history file frequency</a>
+  1644) <a name="l1644" style="background-color: #ffcccc">    integer, intent(in)  :: rtmhist_mfilt  !history file number of time-samples</a>
+  1645) <a name="l1645" style="background-color: #ffcccc">    integer, intent(in)  :: hist_file   !history file index</a>
+  1646) <a name="l1646" style="background-color: #ffcccc">    </a>
+  1647) <a name="l1647" style="background-color: #ffcccc">    ! !LOCAL VARIABLES:</a>
+  1648) <a name="l1648" style="background-color: #ffcccc">    character(len=256) :: cdate       !date char string</a>
+  1649) <a name="l1649" style="background-color: #ffcccc">    character(len=  1) :: hist_index  !p,1 or 2 (currently)</a>
+  1650) <a name="l1650" style="background-color: #ffcccc">    integer :: day                    !day (1 -&gt; 31)</a>
+  1651) <a name="l1651" style="background-color: #ffcccc">    integer :: mon                    !month (1 -&gt; 12)</a>
+  1652) <a name="l1652" style="background-color: #ffcccc">    integer :: yr                     !year (0 -&gt; ...)</a>
+  1653) <a name="l1653" style="background-color: #ffcccc">    integer :: sec                    !seconds into current day</a>
+  1654) <a name="l1654" style="background-color: #ffcccc">    character(len=*),parameter :: subname = 'set_hist_filename'</a>
+  1655) <a name="l1655" style="background-color: #ffcccc">    </a>
+  1656) <a name="l1656" style="background-color: #ffcccc">    if (hist_freq == 0 .and. rtmhist_mfilt == 1) then   !monthly</a>
+  1657) <a name="l1657" style="background-color: #ffcccc">       call get_prev_date (yr, mon, day, sec)</a>
+  1658) <a name="l1658" style="background-color: #ffcccc">       write(cdate,'(i4.4,&quot;-&quot;,i2.2)') yr,mon</a>
+  1659) <a name="l1659" style="background-color: #ffcccc">    else                        !other</a>
+  1660) <a name="l1660" style="background-color: #ffcccc">       call get_curr_date (yr, mon, day, sec)</a>
+  1661) <a name="l1661" style="background-color: #ffcccc">       write(cdate,'(i4.4,&quot;-&quot;,i2.2,&quot;-&quot;,i2.2,&quot;-&quot;,i5.5)') yr,mon,day,sec</a>
+  1662) <a name="l1662" style="background-color: #ffcccc">    endif</a>
+  1663) <a name="l1663" style="background-color: #ffcccc">    write(hist_index,'(i1.1)') hist_file - 1</a>
+  1664) <a name="l1664" style="background-color: #ffcccc">    set_hist_filename = &quot;./&quot;//trim(caseid)//&quot;.rtm&quot;//trim(inst_suffix)//&amp;</a>
+  1665) <a name="l1665" style="background-color: #ffcccc">                        &quot;.h&quot;//hist_index//&quot;.&quot;//trim(cdate)//&quot;.nc&quot;</a>
+  1666) <a name="l1666" style="background-color: #ffcccc"></a>
+  1667) <a name="l1667" style="background-color: #ffcccc">  end function set_hist_filename</a>
+  1668) <a name="l1668" style="background-color: #ffffff"></a>
+  1669) <a name="l1669" style="background-color: #ffffff">!------------------------------------------------------------------------</a>
+  1670) <a name="l1670" style="background-color: #ffffff"></a>
+  1671) <a name="l1671" style="background-color: #ffffff">  subroutine RtmHistAddfld (fname, units, avgflag, long_name, ptr_rof, default)</a>
+  1672) <a name="l1672" style="background-color: #ffffff"></a>
+  1673) <a name="l1673" style="background-color: #ffffff">    ! Initialize a single level history field. </a>
+  1674) <a name="l1674" style="background-color: #ffffff"></a>
+  1675) <a name="l1675" style="background-color: #ffffff">    ! !ARGUMENTS:</a>
+  1676) <a name="l1676" style="background-color: #ffffff">    implicit none</a>
+  1677) <a name="l1677" style="background-color: #ffffff">    character(len=*), intent(in)           :: fname          ! field name</a>
+  1678) <a name="l1678" style="background-color: #ffffff">    character(len=*), intent(in)           :: units          ! units of field</a>
+  1679) <a name="l1679" style="background-color: #ffffff">    character(len=1), intent(in)           :: avgflag        ! time averaging flag</a>
+  1680) <a name="l1680" style="background-color: #ffffff">    character(len=*), intent(in)           :: long_name      ! long name of field</a>
+  1681) <a name="l1681" style="background-color: #ffffff">    real(r8)        , pointer              :: ptr_rof(:)     ! pointer to channel runoff</a>
+  1682) <a name="l1682" style="background-color: #ffffff">    character(len=*), optional, intent(in) :: default        ! if set to 'inactive, </a>
+  1683) <a name="l1683" style="background-color: #ffffff">                                                             ! field will not appear on primary tape</a>
+  1684) <a name="l1684" style="background-color: #ffffff"></a>
+  1685) <a name="l1685" style="background-color: #ffffff">    ! !LOCAL VARIABLES:</a>
+  1686) <a name="l1686" style="background-color: #ffffff">    integer :: n              ! loop index</a>
+  1687) <a name="l1687" style="background-color: #ffffff">    integer :: f              ! masterlist index</a>
+  1688) <a name="l1688" style="background-color: #ffffff">    integer :: hpindex        ! history buffer pointer index</a>
+  1689) <a name="l1689" style="background-color: #ffffff">    logical :: found          ! flag indicates field found in masterlist</a>
+  1690) <a name="l1690" style="background-color: #ffffff">    integer, save :: lastindex = 1</a>
+  1691) <a name="l1691" style="background-color: #ffffff">    character(len=*),parameter :: subname = 'RtmHistAddfld'</a>
+  1692) <a name="l1692" style="background-color: #ffffff">    !------------------------------------------------------</a>
+  1693) <a name="l1693" style="background-color: #ffffff"></a>
+  1694) <a name="l1694" style="background-color: #ffffff">    ! History buffer pointer</a>
+  1695) <a name="l1695" style="background-color: #ffffff"></a>
+  1696) <a name="l1696" style="background-color: #ffffff">    hpindex = lastindex</a>
+  1697) <a name="l1697" style="background-color: #ffffff">    rtmptr(hpindex)%ptr =&gt; ptr_rof</a>
+  1698) <a name="l1698" style="background-color: #ffffff">    lastindex = lastindex + 1</a>
+  1699) <a name="l1699" style="background-color: #ffffff">    if (lastindex &gt; max_mapflds) then</a>
+  1700) <a name="l1700" style="background-color: #ffff99">       write(iulog,*) trim(subname),' ERROR: ',&amp;</a>
+  1701) <a name="l1701" style="background-color: #ffff99">            ' lastindex = ',lastindex,' greater than max_mapflds= ',max_mapflds</a>
+  1702) <a name="l1702" style="background-color: #ffff99">       call shr_sys_abort()</a>
+  1703) <a name="l1703" style="background-color: #ffff99">    endif</a>
+  1704) <a name="l1704" style="background-color: #ffff99"></a>
+  1705) <a name="l1705" style="background-color: #ffff99">    ! Add field to masterlist</a>
+  1706) <a name="l1706" style="background-color: #ffff99"></a>
+  1707) <a name="l1707" style="background-color: #ffffff">    if (fname == ' ') then</a>
+  1708) <a name="l1708" style="background-color: #ffff99">       write(iulog,*) trim(subname),' ERROR: blank field name not allowed'</a>
+  1709) <a name="l1709" style="background-color: #ffff99">       call shr_sys_abort()</a>
+  1710) <a name="l1710" style="background-color: #ffff99">    end if</a>
+  1711) <a name="l1711" style="background-color: #ffffff">    do n = 1,nfmaster</a>
+  1712) <a name="l1712" style="background-color: #ffffff">       if (masterlist(n)%field%name == fname) then</a>
+  1713) <a name="l1713" style="background-color: #ffff99">          write(iulog,*) trim(subname),' ERROR:', fname, ' already on list'</a>
+  1714) <a name="l1714" style="background-color: #ffff99">          call shr_sys_abort()</a>
+  1715) <a name="l1715" style="background-color: #ffff99">       end if</a>
+  1716) <a name="l1716" style="background-color: #ffff99">    end do</a>
+  1717) <a name="l1717" style="background-color: #ffffff">    nfmaster = nfmaster + 1</a>
+  1718) <a name="l1718" style="background-color: #ffffff">    f = nfmaster</a>
+  1719) <a name="l1719" style="background-color: #ffffff">    if (nfmaster &gt; max_flds) then</a>
+  1720) <a name="l1720" style="background-color: #ffff99">       write(iulog,*) trim(subname),' ERROR: too many fields for primary history file ', &amp;</a>
+  1721) <a name="l1721" style="background-color: #ffff99">            '-- max_flds,nfmaster=', max_flds, nfmaster</a>
+  1722) <a name="l1722" style="background-color: #ffff99">       call shr_sys_abort()</a>
+  1723) <a name="l1723" style="background-color: #ffff99">    end if</a>
+  1724) <a name="l1724" style="background-color: #ffffff">    masterlist(f)%field%name      = fname</a>
+  1725) <a name="l1725" style="background-color: #ffffff">    masterlist(f)%field%long_name = long_name</a>
+  1726) <a name="l1726" style="background-color: #ffffff">    masterlist(f)%field%units     = units</a>
+  1727) <a name="l1727" style="background-color: #ffffff">    masterlist(f)%field%hpindex   = hpindex</a>
+  1728) <a name="l1728" style="background-color: #ffffff"></a>
+  1729) <a name="l1729" style="background-color: #ffffff">    ! The next two fields are only in master field list, NOT in runtime active field list</a>
+  1730) <a name="l1730" style="background-color: #ffffff">    ! ALL FIELDS IN THE MASTER LIST ARE INITIALIZED WITH THE ACTIVE FLAG SET TO FALSE</a>
+  1731) <a name="l1731" style="background-color: #ffffff">    masterlist(f)%avgflag(:) = avgflag</a>
+  1732) <a name="l1732" style="background-color: #ffffff">    masterlist(f)%actflag(:) = .false.</a>
+  1733) <a name="l1733" style="background-color: #ffffff"></a>
+  1734) <a name="l1734" style="background-color: #ffffff">    if (present(default)) then</a>
+  1735) <a name="l1735" style="background-color: #ffffff">       if (trim(default) == 'inactive') return</a>
+  1736) <a name="l1736" style="background-color: #ffffff">    else</a>
+  1737) <a name="l1737" style="background-color: #ffffff">       ! Look through master list for input field name.</a>
+  1738) <a name="l1738" style="background-color: #ffffff">       ! When found, set active flag for that tape to true.</a>
+  1739) <a name="l1739" style="background-color: #ffffff">       found = .false.</a>
+  1740) <a name="l1740" style="background-color: #ffffff">       do f = 1,nfmaster</a>
+  1741) <a name="l1741" style="background-color: #ffffff">          if (trim(fname) == trim(masterlist(f)%field%name)) then</a>
+  1742) <a name="l1742" style="background-color: #ffffff">             masterlist(f)%actflag(1) = .true.</a>
+  1743) <a name="l1743" style="background-color: #ffffff">             found = .true.</a>
+  1744) <a name="l1744" style="background-color: #ffffff">             exit</a>
+  1745) <a name="l1745" style="background-color: #ffffff">          end if</a>
+  1746) <a name="l1746" style="background-color: #ffffff">       end do</a>
+  1747) <a name="l1747" style="background-color: #ffffff">       if (.not. found) then</a>
+  1748) <a name="l1748" style="background-color: #ffff99">          write(iulog,*) trim(subname),' ERROR: field=', fname, ' not found'</a>
+  1749) <a name="l1749" style="background-color: #ffff99">          call shr_sys_abort()</a>
+  1750) <a name="l1750" style="background-color: #ffff99">       end if</a>
+  1751) <a name="l1751" style="background-color: #ffff99">    end if</a>
+  1752) <a name="l1752" style="background-color: #ffff99"></a>
+  1753) <a name="l1753" style="background-color: #ffffff">  end subroutine RtmHistAddfld</a>
+  1754) <a name="l1754" style="background-color: #ffffff"></a>
+  1755) <a name="l1755" style="background-color: #ffffff">!-----------------------------------------------------------------------</a>
+  1756) <a name="l1756" style="background-color: #ffffff"></a>
+  1757) <a name="l1757" style="background-color: #ffffff">  subroutine </a><a style="background-color: #ffcccc">strip_null(str)</a>
+  1758) <a name="l1758" style="background-color: #ffcccc">    character(len=*), intent(inout) :: str</a>
+  1759) <a name="l1759" style="background-color: #ffcccc">    integer :: i  </a>
+  1760) <a name="l1760" style="background-color: #ffcccc">    do i=1,len(str)</a>
+  1761) <a name="l1761" style="background-color: #ffcccc">       if(ichar(str(i:i))==0) str(i:i)=' '</a>
+  1762) <a name="l1762" style="background-color: #ffcccc">    end do</a>
+  1763) <a name="l1763" style="background-color: #ffcccc">  end subroutine strip_null</a>
+  1764) <a name="l1764" style="background-color: #ffcccc"></a><a style="background-color: #ffffff">  </a>
+  1765) <a name="l1765" style="background-color: #ffffff">end module RtmHistFile</a>
+  1766) <a name="l1766" style="background-color: #ffffff"></a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>

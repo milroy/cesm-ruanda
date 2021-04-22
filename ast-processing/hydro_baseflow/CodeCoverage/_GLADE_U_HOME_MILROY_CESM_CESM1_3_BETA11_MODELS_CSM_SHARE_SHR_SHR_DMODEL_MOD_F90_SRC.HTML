@@ -1,0 +1,1593 @@
+<html>
+<head>
+<title>Listing of shr_dmodel_mod.F90</title>
+</head>
+<body bgcolor="FFFFFF">
+<h4>&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;shr_dmodel_mod.F90&#160;&#160;&#160;&#160;&#160;&#160;&#160;<font size=-1>coverage:&#160 66.67&#160;%func&#160;&#160;&#160;&#160; 47.51&#160;%block</font></h4>
+<hr size=1 noshade>
+<pre>
+     1) <a name="l1" style="background-color: #ffffff">module shr_dmodel_mod</a>
+     2) <a name="l2" style="background-color: #ffffff"></a>
+     3) <a name="l3" style="background-color: #ffffff">! !USES:</a>
+     4) <a name="l4" style="background-color: #ffffff"></a>
+     5) <a name="l5" style="background-color: #ffffff">  use shr_sys_mod</a>
+     6) <a name="l6" style="background-color: #ffffff">  use shr_kind_mod, only: IN=&gt;SHR_KIND_IN, R8=&gt;SHR_KIND_R8, &amp;</a>
+     7) <a name="l7" style="background-color: #ffffff">                          CS=&gt;SHR_KIND_CS, CL=&gt;SHR_KIND_CL, &amp;</a>
+     8) <a name="l8" style="background-color: #ffffff">                          CX=&gt;SHR_KIND_CX, CXX=&gt;SHR_KIND_CXX</a>
+     9) <a name="l9" style="background-color: #ffffff">  use shr_log_mod, only: loglev  =&gt; shr_log_Level</a>
+    10) <a name="l10" style="background-color: #ffffff">  use shr_log_mod, only: logunit =&gt; shr_log_Unit</a>
+    11) <a name="l11" style="background-color: #ffffff">  use shr_mpi_mod, only: shr_mpi_bcast</a>
+    12) <a name="l12" style="background-color: #ffffff">  use mct_mod</a>
+    13) <a name="l13" style="background-color: #ffffff">!  use esmf</a>
+    14) <a name="l14" style="background-color: #ffffff">  use perf_mod</a>
+    15) <a name="l15" style="background-color: #ffffff">  use pio</a>
+    16) <a name="l16" style="background-color: #ffffff"></a>
+    17) <a name="l17" style="background-color: #ffffff">! !PUBLIC TYPES:</a>
+    18) <a name="l18" style="background-color: #ffffff">  implicit none</a>
+    19) <a name="l19" style="background-color: #ffffff">  private ! except</a>
+    20) <a name="l20" style="background-color: #ffffff"></a>
+    21) <a name="l21" style="background-color: #ffffff">!--------------------------------------------------------------------------</a>
+    22) <a name="l22" style="background-color: #ffffff">! Public interfaces</a>
+    23) <a name="l23" style="background-color: #ffffff">!--------------------------------------------------------------------------</a>
+    24) <a name="l24" style="background-color: #ffffff"></a>
+    25) <a name="l25" style="background-color: #ffffff">  public :: shr_dmodel_gsmapCreate</a>
+    26) <a name="l26" style="background-color: #ffffff">  public :: shr_dmodel_readLBUB</a>
+    27) <a name="l27" style="background-color: #ffffff">  public :: shr_dmodel_readgrid</a>
+    28) <a name="l28" style="background-color: #ffffff">  public :: shr_dmodel_gGridCompare</a>
+    29) <a name="l29" style="background-color: #ffffff">  public :: shr_dmodel_mapSet</a>
+    30) <a name="l30" style="background-color: #ffffff">  public :: shr_dmodel_translateAV</a>
+    31) <a name="l31" style="background-color: #ffffff">  public :: shr_dmodel_translateAV_list</a>
+    32) <a name="l32" style="background-color: #ffffff">  public :: shr_dmodel_translate_list</a>
+    33) <a name="l33" style="background-color: #ffffff">  public :: shr_dmodel_rearrGGrid</a>
+    34) <a name="l34" style="background-color: #ffffff"></a>
+    35) <a name="l35" style="background-color: #ffffff">   interface shr_dmodel_mapSet; module procedure &amp;</a>
+    36) <a name="l36" style="background-color: #ffffff">      shr_dmodel_mapSet_global</a>
+    37) <a name="l37" style="background-color: #ffffff">!      shr_dmodel_mapSet_dest</a>
+    38) <a name="l38" style="background-color: #ffffff">   end interface</a>
+    39) <a name="l39" style="background-color: #ffffff"></a>
+    40) <a name="l40" style="background-color: #ffffff">  integer(IN),parameter,public :: shr_dmodel_gGridCompareXYabs      = 1 ! X,Y  relative error</a>
+    41) <a name="l41" style="background-color: #ffffff">  integer(IN),parameter,public :: shr_dmodel_gGridCompareXYrel      = 2 ! X,Y  absolute error</a>
+    42) <a name="l42" style="background-color: #ffffff">  integer(IN),parameter,public :: shr_dmodel_gGridCompareAreaAbs    = 3 ! area relative error</a>
+    43) <a name="l43" style="background-color: #ffffff">  integer(IN),parameter,public :: shr_dmodel_gGridCompareAreaRel    = 4 ! area absolute error</a>
+    44) <a name="l44" style="background-color: #ffffff">  integer(IN),parameter,public :: shr_dmodel_gGridCompareMaskIdent  = 5 ! masks are identical</a>
+    45) <a name="l45" style="background-color: #ffffff">  integer(IN),parameter,public :: shr_dmodel_gGridCompareMaskZeros  = 6 ! masks have same zeros</a>
+    46) <a name="l46" style="background-color: #ffffff">  integer(IN),parameter,public :: shr_dmodel_gGridCompareMaskSubset = 7 ! mask is subset of other</a>
+    47) <a name="l47" style="background-color: #ffffff"></a>
+    48) <a name="l48" style="background-color: #ffffff">  ! masked methods</a>
+    49) <a name="l49" style="background-color: #ffffff"></a>
+    50) <a name="l50" style="background-color: #ffffff">  integer(IN),parameter,public :: shr_dmodel_gGridCompareXYabsMask      = 101 ! X,Y  relative error</a>
+    51) <a name="l51" style="background-color: #ffffff">  integer(IN),parameter,public :: shr_dmodel_gGridCompareXYrelMask      = 102 ! X,Y  absolute error</a>
+    52) <a name="l52" style="background-color: #ffffff">  integer(IN),parameter,public :: shr_dmodel_gGridCompareAreaAbsMask    = 103 ! area relative error</a>
+    53) <a name="l53" style="background-color: #ffffff">  integer(IN),parameter,public :: shr_dmodel_gGridCompareAreaRelMask    = 104 ! area absolute error</a>
+    54) <a name="l54" style="background-color: #ffffff">  integer(IN),parameter,public :: shr_dmodel_gGridCompareMaskIdentMask  = 105 ! masks are identical</a>
+    55) <a name="l55" style="background-color: #ffffff">  integer(IN),parameter,public :: shr_dmodel_gGridCompareMaskZerosMask  = 106 ! masks have same zeros</a>
+    56) <a name="l56" style="background-color: #ffffff">  integer(IN),parameter,public :: shr_dmodel_gGridCompareMaskSubsetMask = 107 ! mask is subset of other</a>
+    57) <a name="l57" style="background-color: #ffffff"></a>
+    58) <a name="l58" style="background-color: #ffffff">  integer(IN),parameter,public :: iotype_std_netcdf = -99 ! non pio option</a>
+    59) <a name="l59" style="background-color: #ffffff"></a>
+    60) <a name="l60" style="background-color: #ffffff">!--------------------------------------------------------------------------</a>
+    61) <a name="l61" style="background-color: #ffffff">! Private data</a>
+    62) <a name="l62" style="background-color: #ffffff">!--------------------------------------------------------------------------</a>
+    63) <a name="l63" style="background-color: #ffffff"></a>
+    64) <a name="l64" style="background-color: #ffffff"> !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+    65) <a name="l65" style="background-color: #ffffff">CONTAINS</a>
+    66) <a name="l66" style="background-color: #ffffff">!~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~</a>
+    67) <a name="l67" style="background-color: #ffffff"></a>
+    68) <a name="l68" style="background-color: #ffffff">!===============================================================================</a>
+    69) <a name="l69" style="background-color: #ffffff">subroutine shr_dmodel_gsmapCreate(gsmap,gsize,compid,mpicom,decomp)</a>
+    70) <a name="l70" style="background-color: #ffffff"></a>
+    71) <a name="l71" style="background-color: #ffffff">    implicit none</a>
+    72) <a name="l72" style="background-color: #ffffff"></a>
+    73) <a name="l73" style="background-color: #ffffff">    type(mct_gsMap), intent(inout) :: gsmap</a>
+    74) <a name="l74" style="background-color: #ffffff">    integer(IN)    , intent(in)    :: gsize</a>
+    75) <a name="l75" style="background-color: #ffffff">    integer(IN)    , intent(in)    :: compid</a>
+    76) <a name="l76" style="background-color: #ffffff">    integer(IN)    , intent(in)    :: mpicom</a>
+    77) <a name="l77" style="background-color: #ffffff">    character(len=*),intent(in)    :: decomp</a>
+    78) <a name="l78" style="background-color: #ffffff"></a>
+    79) <a name="l79" style="background-color: #ffffff">    ! local</a>
+    80) <a name="l80" style="background-color: #ffffff"></a>
+    81) <a name="l81" style="background-color: #ffffff">    integer(IN) :: n,npes,ierr</a>
+    82) <a name="l82" style="background-color: #ffffff">    integer(IN), pointer :: start(:)     ! for gsmap initialization</a>
+    83) <a name="l83" style="background-color: #ffffff">    integer(IN), pointer :: length(:)    ! for gsmap initialization</a>
+    84) <a name="l84" style="background-color: #ffffff">    integer(IN), pointer :: pe_loc(:)    ! for gsmap initialization</a>
+    85) <a name="l85" style="background-color: #ffffff">    character(*), parameter :: subname = '(shr_dmodel_gsmapCreate) '</a>
+    86) <a name="l86" style="background-color: #ffffff">    character(*), parameter :: F00   = &quot;('(shr_dmodel_gsmapCreate) ',8a)&quot;</a>
+    87) <a name="l87" style="background-color: #ffffff">    character(*), parameter :: F01   = &quot;('(shr_dmodel_gsmapCreate) ',a,5i8)&quot;</a>
+    88) <a name="l88" style="background-color: #ffffff"></a>
+    89) <a name="l89" style="background-color: #ffffff">    ! ---------------------------------------------</a>
+    90) <a name="l90" style="background-color: #ffffff"></a>
+    91) <a name="l91" style="background-color: #ffffff">    if (gsize &gt; 0) then</a>
+    92) <a name="l92" style="background-color: #ffffff">       call mpi_comm_size(mpicom,npes,ierr)</a>
+    93) <a name="l93" style="background-color: #fafad2">       allocate(start(npes),length(npes),pe_loc(npes))</a>
+    94) <a name="l94" style="background-color: #fafad2"></a>
+    95) <a name="l95" style="background-color: #ffffff">       start = 0</a>
+    96) <a name="l96" style="background-color: #ffffff">       length = 0</a>
+    97) <a name="l97" style="background-color: #ffffff">       do n = 1,npes</a>
+    98) <a name="l98" style="background-color: #ffffff">          if (trim(decomp) == '1d') then</a>
+    99) <a name="l99" style="background-color: #ffffff">             length(n)  = gsize/npes</a>
+   100) <a name="l100" style="background-color: #ffffff">             if (n &lt;= mod(gsize,npes)) length(n) = length(n) + 1</a>
+   101) <a name="l101" style="background-color: #ffffff">          elseif (</a><a style="background-color: #ffff99">trim(decomp) == 'root') then</a>
+   102) <a name="l102" style="background-color: #ffff99">             length = 0</a>
+   103) <a name="l103" style="background-color: #ffff99">             length(1) = gsize</a>
+   104) <a name="l104" style="background-color: #ffff99">          else</a>
+   105) <a name="l105" style="background-color: #ffff99">             write(logunit,F00) ' ERROR: decomp not allowed, ',trim(decomp)</a>
+   106) <a name="l106" style="background-color: #ffff99">             call shr_sys_abort(subname//' ERROR decomp')</a>
+   107) <a name="l107" style="background-color: #ffff99">          endif</a>
+   108) <a name="l108" style="background-color: #ffffff">          if (n == 1) then</a>
+   109) <a name="l109" style="background-color: #ffffff">             start(n) = 1</a>
+   110) <a name="l110" style="background-color: #ffffff">          else</a>
+   111) <a name="l111" style="background-color: #ffffff">             start(n) = start(n-1) + length(n-1)</a>
+   112) <a name="l112" style="background-color: #ffffff">          endif</a>
+   113) <a name="l113" style="background-color: #ffffff">          pe_loc(n) = n-1</a>
+   114) <a name="l114" style="background-color: #ffffff">       enddo</a>
+   115) <a name="l115" style="background-color: #ffffff">       call mct_gsMap_init( gsMap, COMPID, npes, gsize, start, length, pe_loc)</a>
+   116) <a name="l116" style="background-color: #ffffff">       deallocate(start,length,pe_loc)</a>
+   117) <a name="l117" style="background-color: #ffffff">    endif</a>
+   118) <a name="l118" style="background-color: #ffffff"></a>
+   119) <a name="l119" style="background-color: #ffffff">end subroutine shr_dmodel_gsmapCreate</a>
+   120) <a name="l120" style="background-color: #ffffff">!===============================================================================</a>
+   121) <a name="l121" style="background-color: #ffffff"></a>
+   122) <a name="l122" style="background-color: #ffffff">subroutine shr_dmodel_readgrid( gGrid, gsMap, nxgo, nygo, filename, compid, mpicom, &amp;</a>
+   123) <a name="l123" style="background-color: #ffffff">  decomp, lonname, latname, maskname, areaname, fracname, readfrac, &amp;</a>
+   124) <a name="l124" style="background-color: #ffffff">  scmmode, scmlon, scmlat)</a>
+   125) <a name="l125" style="background-color: #ffffff"></a>
+   126) <a name="l126" style="background-color: #ffffff">  use seq_flds_mod, only : seq_flds_dom_coord, seq_flds_dom_other</a>
+   127) <a name="l127" style="background-color: #ffffff">  use shr_file_mod, only : shr_file_noprefix, shr_file_queryprefix, shr_file_get</a>
+   128) <a name="l128" style="background-color: #ffffff">  use shr_string_mod, only : shr_string_lastindex</a>
+   129) <a name="l129" style="background-color: #ffffff">  use shr_ncread_mod, only : shr_ncread_domain, shr_ncread_vardimsizes, &amp;</a>
+   130) <a name="l130" style="background-color: #ffffff">                             shr_ncread_varexists, shr_ncread_vardimnum</a>
+   131) <a name="l131" style="background-color: #ffffff">  implicit none</a>
+   132) <a name="l132" style="background-color: #ffffff"></a>
+   133) <a name="l133" style="background-color: #ffffff">  !----- arguments -----</a>
+   134) <a name="l134" style="background-color: #ffffff">  type(mct_gGrid), intent(inout) :: gGrid</a>
+   135) <a name="l135" style="background-color: #ffffff">  type(mct_gsMap), intent(inout) :: gsMap</a>
+   136) <a name="l136" style="background-color: #ffffff">  integer(IN)    , intent(out)   :: nxgo</a>
+   137) <a name="l137" style="background-color: #ffffff">  integer(IN)    , intent(out)   :: nygo</a>
+   138) <a name="l138" style="background-color: #ffffff">  character(len=*),intent(in)    :: filename</a>
+   139) <a name="l139" style="background-color: #ffffff">  integer(IN)    , intent(in)    :: compid</a>
+   140) <a name="l140" style="background-color: #ffffff">  integer(IN)    , intent(in)    :: mpicom</a>
+   141) <a name="l141" style="background-color: #ffffff">  character(len=*),optional,intent(in)    ::   decomp ! decomp strategy for gsmap</a>
+   142) <a name="l142" style="background-color: #ffffff">  character(len=*),optional,intent(in)    ::  lonname ! name of  lon variable in file</a>
+   143) <a name="l143" style="background-color: #ffffff">  character(len=*),optional,intent(in)    ::  latname ! name of  lat variable in file</a>
+   144) <a name="l144" style="background-color: #ffffff">  character(len=*),optional,intent(in)    :: maskname ! name of mask variable in file</a>
+   145) <a name="l145" style="background-color: #ffffff">  character(len=*),optional,intent(in)    :: areaname ! name of area variable in file</a>
+   146) <a name="l146" style="background-color: #ffffff">  character(len=*),optional,intent(in)    :: fracname ! name of frac variable in file</a>
+   147) <a name="l147" style="background-color: #ffffff">  logical         ,optional,intent(in)    :: readfrac ! T &lt;=&gt; also read frac  in file</a>
+   148) <a name="l148" style="background-color: #ffffff">  logical         ,optional,intent(in)    :: scmmode  ! single column mode</a>
+   149) <a name="l149" style="background-color: #ffffff">  real(R8)        ,optional,intent(in)    :: scmlon   ! single column lon</a>
+   150) <a name="l150" style="background-color: #ffffff">  real(R8)        ,optional,intent(in)    :: scmlat   ! single column lat</a>
+   151) <a name="l151" style="background-color: #ffffff"></a>
+   152) <a name="l152" style="background-color: #ffffff">  !----- local -----</a>
+   153) <a name="l153" style="background-color: #ffffff">  integer(IN)   :: n,k,j,i    ! indices  </a>
+   154) <a name="l154" style="background-color: #ffffff">  integer(IN)   :: lsize      ! lsize</a>
+   155) <a name="l155" style="background-color: #ffffff">  integer(IN)   :: gsize      ! gsize</a>
+   156) <a name="l156" style="background-color: #ffffff">  integer(IN)   :: my_task, master_task</a>
+   157) <a name="l157" style="background-color: #ffffff">  integer(IN)   :: ierr       ! error code</a>
+   158) <a name="l158" style="background-color: #ffffff">  logical       :: fileexists ! </a>
+   159) <a name="l159" style="background-color: #ffffff">  integer(IN)   :: rCode      ! return code</a>
+   160) <a name="l160" style="background-color: #ffffff">  character(CL) :: remoteFn   ! input file name (possibly at an archival location)</a>
+   161) <a name="l161" style="background-color: #ffffff">  character(CL) :: localFn    ! file name to be opened (possibly a local copy)</a>
+   162) <a name="l162" style="background-color: #ffffff">  character(CS) :: prefix     ! file prefix</a>
+   163) <a name="l163" style="background-color: #ffffff">  character(CS) ::   ldecomp  ! decomp strategy</a>
+   164) <a name="l164" style="background-color: #ffffff">  character(CS) ::  llatname  ! name of  lat variable</a>
+   165) <a name="l165" style="background-color: #ffffff">  character(CS) ::  llonname  ! name of  lon variable</a>
+   166) <a name="l166" style="background-color: #ffffff">  character(CS) :: lmaskname  ! name of mask variable</a>
+   167) <a name="l167" style="background-color: #ffffff">  character(CS) :: lareaname  ! name of area variable</a>
+   168) <a name="l168" style="background-color: #ffffff">  character(CS) :: lfracname  ! name of area variable</a>
+   169) <a name="l169" style="background-color: #ffffff">  logical       :: lreadfrac  ! read fraction</a>
+   170) <a name="l170" style="background-color: #ffffff">  logical       :: maskexists ! is mask on dataset</a>
+   171) <a name="l171" style="background-color: #ffffff">  integer(IN)   :: nxg,nyg    ! size of input fields</a>
+   172) <a name="l172" style="background-color: #ffffff">  integer(IN)   :: ndims      ! number of dims</a>
+   173) <a name="l173" style="background-color: #ffffff">  integer(IN)   :: nlon,nlat,narea,nmask,nfrac</a>
+   174) <a name="l174" style="background-color: #ffffff">  logical       :: lscmmode   ! local scm mode</a>
+   175) <a name="l175" style="background-color: #ffffff">  real(R8)      :: dist,mind  ! scmmode point search</a>
+   176) <a name="l176" style="background-color: #ffffff">  integer(IN)   :: ni,nj      ! scmmode point search</a>
+   177) <a name="l177" style="background-color: #ffffff">  real(R8)      :: lscmlon    ! local copy of scmlon</a>
+   178) <a name="l178" style="background-color: #ffffff"></a>
+   179) <a name="l179" style="background-color: #ffffff">  real   (R8),allocatable ::  lon(:,:) ! temp array for domain lon  info</a>
+   180) <a name="l180" style="background-color: #ffffff">  real   (R8),allocatable ::  lat(:,:) ! temp array for domain lat  info</a>
+   181) <a name="l181" style="background-color: #ffffff">  integer(IN),allocatable :: mask(:,:) ! temp array for domain mask info</a>
+   182) <a name="l182" style="background-color: #ffffff">  real   (R8),allocatable :: area(:,:) ! temp array for domain area info</a>
+   183) <a name="l183" style="background-color: #ffffff">  real   (R8),allocatable :: frac(:,:) ! temp array for domain frac info</a>
+   184) <a name="l184" style="background-color: #ffffff"></a>
+   185) <a name="l185" style="background-color: #ffffff">  integer(IN), pointer :: idata(:)   ! temporary</a>
+   186) <a name="l186" style="background-color: #ffffff">  type(mct_ggrid)      :: gGridRoot       ! global mct ggrid</a>
+   187) <a name="l187" style="background-color: #ffffff"></a>
+   188) <a name="l188" style="background-color: #ffffff">  character(*), parameter :: subname = '(shr_dmodel_readgrid) '</a>
+   189) <a name="l189" style="background-color: #ffffff">  character(*), parameter :: F00   = &quot;('(shr_dmodel_readgrid) ',8a)&quot;</a>
+   190) <a name="l190" style="background-color: #ffffff">  character(*), parameter :: F01   = &quot;('(shr_dmodel_readgrid) ',a,5i8)&quot;</a>
+   191) <a name="l191" style="background-color: #ffffff"></a>
+   192) <a name="l192" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   193) <a name="l193" style="background-color: #ffffff">! PURPOSE:  Read MCT ggrid and set gsmap</a>
+   194) <a name="l194" style="background-color: #ffffff">!----------------------------------------------------------------------------</a>
+   195) <a name="l195" style="background-color: #ffffff">! Notes:</a>
+   196) <a name="l196" style="background-color: #ffffff">! o as per shr_file_get(), the file name format is expected to be</a>
+   197) <a name="l197" style="background-color: #ffffff">!   remoteFn = [location:][directory path]localFn</a>
+   198) <a name="l198" style="background-color: #ffffff">!   eg. &quot;foobar.nc&quot;  &quot;/home/user/foobar.nc&quot;  &quot;mss:/USER/fobar.nc&quot;</a>
+   199) <a name="l199" style="background-color: #ffffff">! o assumes a very specific netCDF domain file format wrt var names, etc.</a>
+   200) <a name="l200" style="background-color: #ffffff">!</a>
+   201) <a name="l201" style="background-color: #ffffff">! TO DO: have the calling routine select/input the domain's file name</a>
+   202) <a name="l202" style="background-color: #ffffff">!----------------------------------------------------------------------------</a>
+   203) <a name="l203" style="background-color: #ffffff"></a>
+   204) <a name="l204" style="background-color: #ffffff">  call MPI_COMM_RANK(mpicom,my_task,ierr)</a>
+   205) <a name="l205" style="background-color: #ffffff">  master_task = 0</a>
+   206) <a name="l206" style="background-color: #ffffff"></a>
+   207) <a name="l207" style="background-color: #ffffff">  lscmmode = .false.</a>
+   208) <a name="l208" style="background-color: #ffffff">  if (</a><a style="background-color: #fafad2">present(scmmode)) then</a>
+   209) <a name="l209" style="background-color: #ffff99">     lscmmode = scmmode</a>
+   210) <a name="l210" style="background-color: #ffff99">     if (lscmmode) then</a>
+   211) <a name="l211" style="background-color: #ffff99">        if (.not.present(scmlon) .or. .not.present(scmlat)) then</a>
+   212) <a name="l212" style="background-color: #ffff99">           write(logunit,*) subname,' ERROR: scmmode must supply scmlon and scmlat'</a>
+   213) <a name="l213" style="background-color: #ffff99">           call shr_sys_abort(subname//' ERROR: scmmode1 lon lat')</a>
+   214) <a name="l214" style="background-color: #ffff99">        endif</a>
+   215) <a name="l215" style="background-color: #ffff99">        if (my_task &gt; 0) then</a>
+   216) <a name="l216" style="background-color: #ffff99">           write(logunit,*) subname,' ERROR: scmmode must be run on one pe'</a>
+   217) <a name="l217" style="background-color: #ffff99">           call shr_sys_abort(subname//' ERROR: scmmode2 tasks')</a>
+   218) <a name="l218" style="background-color: #ffff99">        endif</a>
+   219) <a name="l219" style="background-color: #ffff99">     endif</a>
+   220) <a name="l220" style="background-color: #ffff99">  endif</a>
+   221) <a name="l221" style="background-color: #ffff99"></a>
+   222) <a name="l222" style="background-color: #ffffff">  if (my_task == master_task) then</a>
+   223) <a name="l223" style="background-color: #ffffff">     if ( shr_file_queryPrefix(fileName,prefix=prefix) /= shr_file_noPrefix ) then</a>
+   224) <a name="l224" style="background-color: #ffff99">        n        = max(len_trim(prefix),shr_string_lastIndex(fileName,&quot;/&quot;))</a>
+   225) <a name="l225" style="background-color: #ffff99">        remoteFn = fileName</a>
+   226) <a name="l226" style="background-color: #ffff99">        localFn  = fileName(n+1: len_trim(fileName) )</a>
+   227) <a name="l227" style="background-color: #ffff99">        call shr_file_get(rCode,localFn,remoteFn)</a>
+   228) <a name="l228" style="background-color: #ffff99">     else</a>
+   229) <a name="l229" style="background-color: #ffffff">        remoteFn = &quot;undefined&quot; ! this isn't needed</a>
+   230) <a name="l230" style="background-color: #ffffff">        localFn  = fileName    ! file to open</a>
+   231) <a name="l231" style="background-color: #ffffff">     end if</a>
+   232) <a name="l232" style="background-color: #ffffff">     inquire(file=trim(localFn),exist=fileExists)</a>
+   233) <a name="l233" style="background-color: #ffffff">     if (.not. fileExists) then</a>
+   234) <a name="l234" style="background-color: #ffff99">         write(logunit,F00) &quot;ERROR: file does not exist: &quot;, trim(localFn)</a>
+   235) <a name="l235" style="background-color: #ffff99">         call shr_sys_abort(subName//&quot;ERROR: file does not exist: &quot;//trim(localFn))</a>
+   236) <a name="l236" style="background-color: #ffff99">     end if</a>
+   237) <a name="l237" style="background-color: #ffff99">  endif</a>
+   238) <a name="l238" style="background-color: #ffff99"></a>
+   239) <a name="l239" style="background-color: #ffffff">  lreadfrac = .false.</a>
+   240) <a name="l240" style="background-color: #ffffff">  ldecomp   = &quot;1d&quot;</a>
+   241) <a name="l241" style="background-color: #ffffff">  llonname  = &quot;xc&quot;  ! default values / standard data model domain file format</a>
+   242) <a name="l242" style="background-color: #ffffff">  llatname  = &quot;yc&quot;</a>
+   243) <a name="l243" style="background-color: #ffffff">  lmaskname = &quot;mask&quot;</a>
+   244) <a name="l244" style="background-color: #ffffff">  lareaname = &quot;area&quot;</a>
+   245) <a name="l245" style="background-color: #ffffff">  lfracname = &quot;frac&quot;</a>
+   246) <a name="l246" style="background-color: #ffffff">  if (</a><a style="background-color: #fafad2">present(  decomp))   </a><a style="background-color: #ffffff">ldecomp =   decomp</a>
+   247) <a name="l247" style="background-color: #ffffff">  if (present(readfrac)) lreadfrac = readfrac</a>
+   248) <a name="l248" style="background-color: #ffffff">  if (present( lonname))  llonname =  lonname</a>
+   249) <a name="l249" style="background-color: #ffffff">  if (present( latname))  llatname =  latname</a>
+   250) <a name="l250" style="background-color: #ffffff">  if (present(maskname)) lmaskname = maskname</a>
+   251) <a name="l251" style="background-color: #ffffff">  if (present(areaname)) lareaname = areaname</a>
+   252) <a name="l252" style="background-color: #ffffff">  if (</a><a style="background-color: #fafad2">present(fracname)) </a><a style="background-color: #ffff99">lfracname = fracname</a>
+   253) <a name="l253" style="background-color: #ffff99"></a>
+   254) <a name="l254" style="background-color: #ffff99">  ! Initialize mct domain type</a>
+   255) <a name="l255" style="background-color: #ffff99">  ! lat/lon in degrees,  area in radians^2, mask is 1 (ocean), 0 (non-ocean)</a>
+   256) <a name="l256" style="background-color: #ffff99"></a>
+   257) <a name="l257" style="background-color: #ffffff">  if (my_task == master_task) then</a>
+   258) <a name="l258" style="background-color: #ffffff">     if (shr_ncread_varexists(localFn,lmaskname)) then</a>
+   259) <a name="l259" style="background-color: #ffffff">        maskexists = .true.</a>
+   260) <a name="l260" style="background-color: #ffffff">        call shr_ncread_varDimSizes(localFn,lmaskname,nxg,nyg)</a>
+   261) <a name="l261" style="background-color: #ffffff">     else</a>
+   262) <a name="l262" style="background-color: #ffffff">        maskexists = .false.</a>
+   263) <a name="l263" style="background-color: #ffffff">        call shr_ncread_varDimNum(localFn,llonName,ndims)</a>
+   264) <a name="l264" style="background-color: #ffffff">        if (ndims == 1) then</a>
+   265) <a name="l265" style="background-color: #ffffff">           call shr_ncread_varDimSizes(localFn,llonName,nxg)</a>
+   266) <a name="l266" style="background-color: #ffffff">           call shr_ncread_varDimSizes(localFn,llatName,nyg)</a>
+   267) <a name="l267" style="background-color: #ffffff">        else</a>
+   268) <a name="l268" style="background-color: #ffffff">           call </a><a style="background-color: #ffff99">shr_ncread_varDimSizes(localFn,llonName,nxg,nyg)</a>
+   269) <a name="l269" style="background-color: #ffff99">        endif</a>
+   270) <a name="l270" style="background-color: #ffff99">     endif</a>
+   271) <a name="l271" style="background-color: #ffff99">  endif</a>
+   272) <a name="l272" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">shr_mpi_bcast(nxg,mpicom)</a>
+   273) <a name="l273" style="background-color: #ffffff">  call shr_mpi_bcast(nyg,mpicom)</a>
+   274) <a name="l274" style="background-color: #ffffff">  if (lscmmode) then</a>
+   275) <a name="l275" style="background-color: #ffff99">     nxgo = 1</a>
+   276) <a name="l276" style="background-color: #ffff99">     nygo = 1</a>
+   277) <a name="l277" style="background-color: #ffff99">     gsize = 1</a>
+   278) <a name="l278" style="background-color: #ffff99">  else</a>
+   279) <a name="l279" style="background-color: #ffffff">     nxgo = nxg</a>
+   280) <a name="l280" style="background-color: #ffffff">     nygo = nyg</a>
+   281) <a name="l281" style="background-color: #ffffff">     gsize = nxg*nyg</a>
+   282) <a name="l282" style="background-color: #ffffff">     if (gsize &lt; 1) return</a>
+   283) <a name="l283" style="background-color: #ffffff">  endif</a>
+   284) <a name="l284" style="background-color: #ffffff"></a>
+   285) <a name="l285" style="background-color: #ffffff">  call shr_dmodel_gsmapCreate(gsMap,gsize,compid,mpicom,trim(ldecomp))</a>
+   286) <a name="l286" style="background-color: #ffffff">  lsize = mct_gsMap_lsize(gsMap, mpicom)</a>
+   287) <a name="l287" style="background-color: #ffffff">  call mct_gGrid_init( GGrid=gGrid, CoordChars=trim(seq_flds_dom_coord), &amp;</a>
+   288) <a name="l288" style="background-color: #ffffff">     OtherChars=trim(seq_flds_dom_other), lsize=lsize )</a>
+   289) <a name="l289" style="background-color: #ffffff"></a>
+   290) <a name="l290" style="background-color: #ffffff">  ! Determine global gridpoint number attribute, GlobGridNum, automatically in ggrid</a>
+   291) <a name="l291" style="background-color: #ffffff"></a>
+   292) <a name="l292" style="background-color: #ffffff">  call mct_gsMap_orderedPoints(gsMap, my_task, idata)</a>
+   293) <a name="l293" style="background-color: #ffffff">  call mct_gGrid_importIAttr(gGrid,'GlobGridNum',idata,lsize)</a>
+   294) <a name="l294" style="background-color: #ffffff">  deallocate(idata)</a>
+   295) <a name="l295" style="background-color: #ffffff"></a>
+   296) <a name="l296" style="background-color: #ffffff">  ! Initialize attribute vector with special value</a>
+   297) <a name="l297" style="background-color: #ffffff"></a>
+   298) <a name="l298" style="background-color: #ffffff">  gGrid%data%rAttr = -9999.0_R8</a>
+   299) <a name="l299" style="background-color: #ffffff"></a>
+   300) <a name="l300" style="background-color: #ffffff">  ! Load file data into domG then scatter to ggrid</a>
+   301) <a name="l301" style="background-color: #ffffff"></a>
+   302) <a name="l302" style="background-color: #ffffff">  if (my_task == master_task) then</a>
+   303) <a name="l303" style="background-color: #ffffff"></a>
+   304) <a name="l304" style="background-color: #fafad2">     allocate(lon(nxg,nyg))</a>
+   305) <a name="l305" style="background-color: #fafad2">     allocate(lat(nxg,nyg))</a>
+   306) <a name="l306" style="background-color: #fafad2">     allocate(area(nxg,nyg))</a>
+   307) <a name="l307" style="background-color: #fafad2">     allocate(mask(nxg,nyg))</a>
+   308) <a name="l308" style="background-color: #fafad2">     allocate(frac(nxg,nyg))</a>
+   309) <a name="l309" style="background-color: #fafad2"></a>
+   310) <a name="l310" style="background-color: #ffffff">     if (.not.maskexists) then</a>
+   311) <a name="l311" style="background-color: #ffffff">        call shr_ncread_domain(localFn,llonName,lon,llatName,lat)</a>
+   312) <a name="l312" style="background-color: #ffffff">        mask = 1</a>
+   313) <a name="l313" style="background-color: #ffffff">        frac = 1.0_R8</a>
+   314) <a name="l314" style="background-color: #ffffff">        area = 1.0e36_R8</a>
+   315) <a name="l315" style="background-color: #ffffff">     else</a>
+   316) <a name="l316" style="background-color: #ffffff">        if (lreadfrac) then</a>
+   317) <a name="l317" style="background-color: #ffffff">           call </a><a style="background-color: #fafad2">shr_ncread_domain(localFn,llonName,lon,llatName,lat, &amp;</a>
+   318) <a name="l318" style="background-color: #fafad2">                lmaskName,mask,lareaName,area,lfracName,frac)</a>
+   319) <a name="l319" style="background-color: #fafad2">        else ! assume frac = 1.0</a>
+   320) <a name="l320" style="background-color: #fafad2">           call </a><a style="background-color: #ffff99">shr_ncread_domain(localFn,llonName,lon,llatName,lat, &amp;</a>
+   321) <a name="l321" style="background-color: #ffff99">                lmaskName,mask,lareaName,area)</a>
+   322) <a name="l322" style="background-color: #ffff99">           where (mask == 0)</a>
+   323) <a name="l323" style="background-color: #ffff99">              frac = 0.0_R8</a>
+   324) <a name="l324" style="background-color: #ffff99">           elsewhere</a>
+   325) <a name="l325" style="background-color: #ffff99">              frac = 1.0_R8</a>
+   326) <a name="l326" style="background-color: #ffff99">           end where</a>
+   327) <a name="l327" style="background-color: #ffff99">        endif</a>
+   328) <a name="l328" style="background-color: #ffff99">     endif</a>
+   329) <a name="l329" style="background-color: #ffff99"></a>
+   330) <a name="l330" style="background-color: #ffff99">     call </a><a style="background-color: #ffffff">mct_gGrid_init(gGridRoot,gGrid,gsize)</a>
+   331) <a name="l331" style="background-color: #ffffff"></a>
+   332) <a name="l332" style="background-color: #ffffff">! initialize gGridRoot to avoid errors when using strict compiler checks</a>
+   333) <a name="l333" style="background-color: #ffffff">     gGridRoot%data%rAttr = -9999.0_R8</a>
+   334) <a name="l334" style="background-color: #ffffff"></a>
+   335) <a name="l335" style="background-color: #ffffff">     nlon  = mct_aVect_indexRA(gGridRoot%data,'lon')</a>
+   336) <a name="l336" style="background-color: #ffffff">     nlat  = mct_aVect_indexRA(gGridRoot%data,'lat')</a>
+   337) <a name="l337" style="background-color: #ffffff">     narea = mct_aVect_indexRA(gGridRoot%data,'area')</a>
+   338) <a name="l338" style="background-color: #ffffff">     nmask = mct_aVect_indexRA(gGridRoot%data,'mask')</a>
+   339) <a name="l339" style="background-color: #ffffff">     nfrac = mct_aVect_indexRA(gGridRoot%data,'frac')</a>
+   340) <a name="l340" style="background-color: #ffffff"></a>
+   341) <a name="l341" style="background-color: #ffffff">     if (lscmmode) then</a>
+   342) <a name="l342" style="background-color: #ffffff">        !--- assumes regular 2d grid for compatability with shr_scam_getCloseLatLon ---</a>
+   343) <a name="l343" style="background-color: #ffffff">        !--- want lon values between 0 and 360, assume 1440 is enough ---</a>
+   344) <a name="l344" style="background-color: #ffff99">        lscmlon = mod(scmlon+1440.0_r8,360.0_r8)</a>
+   345) <a name="l345" style="background-color: #ffff99">        lon     = mod(lon   +1440.0_r8,360.0_r8)</a>
+   346) <a name="l346" style="background-color: #ffff99"></a>
+   347) <a name="l347" style="background-color: #ffff99">        !--- start with wraparound ---</a>
+   348) <a name="l348" style="background-color: #ffff99">        ni = 1</a>
+   349) <a name="l349" style="background-color: #ffff99">        mind = abs(lscmlon - (lon(1,1)+360.0_r8))</a>
+   350) <a name="l350" style="background-color: #ffff99">        do i=1,nxg</a>
+   351) <a name="l351" style="background-color: #ffff99">           dist = abs(lscmlon - lon(i,1))</a>
+   352) <a name="l352" style="background-color: #ffff99">           if (dist &lt; mind) then</a>
+   353) <a name="l353" style="background-color: #ffff99">              mind = dist</a>
+   354) <a name="l354" style="background-color: #ffff99">              ni = i</a>
+   355) <a name="l355" style="background-color: #ffff99">           endif</a>
+   356) <a name="l356" style="background-color: #ffff99">        enddo        </a>
+   357) <a name="l357" style="background-color: #ffff99"></a>
+   358) <a name="l358" style="background-color: #ffff99">        nj = -1</a>
+   359) <a name="l359" style="background-color: #ffff99">        mind = 1.0e20</a>
+   360) <a name="l360" style="background-color: #ffff99">        do j=1,nyg</a>
+   361) <a name="l361" style="background-color: #ffff99">           dist = abs(scmlat - lat(1,j))</a>
+   362) <a name="l362" style="background-color: #ffff99">           if (dist &lt; mind) then</a>
+   363) <a name="l363" style="background-color: #ffff99">              mind = dist</a>
+   364) <a name="l364" style="background-color: #ffff99">              nj = j</a>
+   365) <a name="l365" style="background-color: #ffff99">           endif</a>
+   366) <a name="l366" style="background-color: #ffff99">        enddo</a>
+   367) <a name="l367" style="background-color: #ffff99"></a>
+   368) <a name="l368" style="background-color: #ffff99">        n = 1</a>
+   369) <a name="l369" style="background-color: #ffff99">        i = ni</a>
+   370) <a name="l370" style="background-color: #ffff99">        j = nj</a>
+   371) <a name="l371" style="background-color: #ffff99">        gGridRoot%data%rAttr(nlat ,n) = lat(i,j)</a>
+   372) <a name="l372" style="background-color: #ffff99">        gGridRoot%data%rAttr(nlon ,n) = lon(i,j)</a>
+   373) <a name="l373" style="background-color: #ffff99">        gGridRoot%data%rAttr(narea,n) = area(i,j)</a>
+   374) <a name="l374" style="background-color: #ffff99">        gGridRoot%data%rAttr(nmask,n) = real(mask(i,j),R8)</a>
+   375) <a name="l375" style="background-color: #ffff99">        gGridRoot%data%rAttr(nfrac,n) = frac(i,j)</a>
+   376) <a name="l376" style="background-color: #ffff99">     else</a>
+   377) <a name="l377" style="background-color: #ffffff">        n=0                                                                                    </a>
+   378) <a name="l378" style="background-color: #ffffff">        do j=1,nyg</a>
+   379) <a name="l379" style="background-color: #ffffff">        do i=1,nxg</a>
+   380) <a name="l380" style="background-color: #ffffff">           n=n+1                                                                               </a>
+   381) <a name="l381" style="background-color: #ffffff">           gGridRoot%data%rAttr(nlat ,n) = lat(i,j)</a>
+   382) <a name="l382" style="background-color: #ffffff">           gGridRoot%data%rAttr(nlon ,n) = lon(i,j)</a>
+   383) <a name="l383" style="background-color: #ffffff">           gGridRoot%data%rAttr(narea,n) = area(i,j)</a>
+   384) <a name="l384" style="background-color: #ffffff">           gGridRoot%data%rAttr(nmask,n) = real(mask(i,j),R8)</a>
+   385) <a name="l385" style="background-color: #ffffff">           gGridRoot%data%rAttr(nfrac,n) = frac(i,j)</a>
+   386) <a name="l386" style="background-color: #ffffff">        enddo</a>
+   387) <a name="l387" style="background-color: #ffffff">        enddo</a>
+   388) <a name="l388" style="background-color: #ffffff">     endif</a>
+   389) <a name="l389" style="background-color: #ffffff">     deallocate(lon)</a>
+   390) <a name="l390" style="background-color: #ffffff">     deallocate(lat)</a>
+   391) <a name="l391" style="background-color: #ffffff">     deallocate(area)</a>
+   392) <a name="l392" style="background-color: #ffffff">     deallocate(mask)</a>
+   393) <a name="l393" style="background-color: #ffffff">     deallocate(frac)</a>
+   394) <a name="l394" style="background-color: #ffffff">  endif</a>
+   395) <a name="l395" style="background-color: #ffffff"></a>
+   396) <a name="l396" style="background-color: #ffffff">  call mct_gGrid_scatter(gGridRoot, gGrid, gsMap, master_task, mpicom)</a>
+   397) <a name="l397" style="background-color: #ffffff">  if (my_task == master_task) call mct_gGrid_clean(gGridRoot)</a>
+   398) <a name="l398" style="background-color: #ffffff"></a>
+   399) <a name="l399" style="background-color: #fafad2">end subroutine shr_dmodel_readgrid</a>
+   400) <a name="l400" style="background-color: #ffffff"></a>
+   401) <a name="l401" style="background-color: #ffffff">!===============================================================================</a>
+   402) <a name="l402" style="background-color: #ffffff"></a>
+   403) <a name="l403" style="background-color: #ffffff">subroutine shr_dmodel_readLBUB(stream,pio_subsystem,pio_iotype,pio_iodesc,mDate,mSec,mpicom,gsMap, &amp;</a>
+   404) <a name="l404" style="background-color: #ffffff">                             avLB,mDateLB,mSecLB,avUB,mDateUB,mSecUB,newData,rmOldFile,istr)</a>
+   405) <a name="l405" style="background-color: #ffffff"></a>
+   406) <a name="l406" style="background-color: #ffffff">  use shr_file_mod, only : shr_file_noprefix, shr_file_queryprefix, shr_file_get</a>
+   407) <a name="l407" style="background-color: #ffffff">  use shr_const_mod, only : shr_const_cDay</a>
+   408) <a name="l408" style="background-color: #ffffff">  use shr_stream_mod</a>
+   409) <a name="l409" style="background-color: #ffffff">  implicit none</a>
+   410) <a name="l410" style="background-color: #ffffff"></a>
+   411) <a name="l411" style="background-color: #ffffff">  !----- arguments -----</a>
+   412) <a name="l412" style="background-color: #ffffff">  type(shr_stream_streamType),intent(inout) :: stream</a>
+   413) <a name="l413" style="background-color: #ffffff">  type(iosystem_desc_t)      ,intent(inout), target :: pio_subsystem</a>
+   414) <a name="l414" style="background-color: #ffffff">  integer(IN)                ,intent(in)    :: pio_iotype</a>
+   415) <a name="l415" style="background-color: #ffffff">  type(io_desc_t)            ,intent(inout) :: pio_iodesc</a>
+   416) <a name="l416" style="background-color: #ffffff">  integer(IN)                ,intent(in)    :: mDate  ,mSec</a>
+   417) <a name="l417" style="background-color: #ffffff">  integer(IN)                ,intent(in)    :: mpicom</a>
+   418) <a name="l418" style="background-color: #ffffff">  type(mct_gsMap)            ,intent(in)    :: gsMap</a>
+   419) <a name="l419" style="background-color: #ffffff">  type(mct_aVect)            ,intent(inout) :: avLB</a>
+   420) <a name="l420" style="background-color: #ffffff">  integer(IN)                ,intent(inout) :: mDateLB,mSecLB</a>
+   421) <a name="l421" style="background-color: #ffffff">  type(mct_aVect)            ,intent(inout) :: avUB</a>
+   422) <a name="l422" style="background-color: #ffffff">  integer(IN)                ,intent(inout) :: mDateUB,mSecUB</a>
+   423) <a name="l423" style="background-color: #ffffff">  logical                    ,intent(out)   :: newData</a>
+   424) <a name="l424" style="background-color: #ffffff">  logical,optional           ,intent(in)    :: rmOldFile</a>
+   425) <a name="l425" style="background-color: #ffffff">  character(len=*),optional  ,intent(in)    :: istr</a>
+   426) <a name="l426" style="background-color: #ffffff"></a>
+   427) <a name="l427" style="background-color: #ffffff">  !----- local -----</a>
+   428) <a name="l428" style="background-color: #ffffff">  integer(IN)   :: n,k,j,i    ! indices  </a>
+   429) <a name="l429" style="background-color: #ffffff">  integer(IN)   :: lsize      ! lsize</a>
+   430) <a name="l430" style="background-color: #ffffff">  integer(IN)   :: gsize      ! gsize</a>
+   431) <a name="l431" style="background-color: #ffffff">  integer(IN)   :: my_task, master_task</a>
+   432) <a name="l432" style="background-color: #ffffff">  integer(IN)   :: ierr       ! error code</a>
+   433) <a name="l433" style="background-color: #ffffff">  integer(IN)   :: rCode      ! return code</a>
+   434) <a name="l434" style="background-color: #ffffff">  logical       :: localCopy,fileexists</a>
+   435) <a name="l435" style="background-color: #ffffff">  integer(IN)   :: ivals(6)   ! bcast buffer</a>
+   436) <a name="l436" style="background-color: #ffffff"></a>
+   437) <a name="l437" style="background-color: #ffffff">  integer(IN)   :: oDateLB,oSecLB,dDateLB,oDateUB,oSecUB,dDateUB</a>
+   438) <a name="l438" style="background-color: #ffffff">  real(R8)      :: rDateM,rDateLB,rDateUB  ! model,LB,UB dates with fractional days</a>
+   439) <a name="l439" style="background-color: #ffffff">  integer(IN)   ::  n_lb, n_ub</a>
+   440) <a name="l440" style="background-color: #ffffff">  character(CL) :: fn_lb,fn_ub,fn_next,fn_prev</a>
+   441) <a name="l441" style="background-color: #ffffff">  character(CL) :: path</a>
+   442) <a name="l442" style="background-color: #ffffff">  character(len=32) :: lstr</a>
+   443) <a name="l443" style="background-color: #ffffff"></a>
+   444) <a name="l444" style="background-color: #ffffff">  real(R8)      :: spd</a>
+   445) <a name="l445" style="background-color: #ffffff"></a>
+   446) <a name="l446" style="background-color: #ffffff">  character(*), parameter :: subname = '(shr_dmodel_readLBUB) '</a>
+   447) <a name="l447" style="background-color: #ffffff">  character(*), parameter :: F00   = &quot;('(shr_dmodel_readLBUB) ',8a)&quot;</a>
+   448) <a name="l448" style="background-color: #ffffff">  character(*), parameter :: F01   = &quot;('(shr_dmodel_readLBUB) ',a,5i8)&quot;</a>
+   449) <a name="l449" style="background-color: #ffffff">  character(*), parameter :: F02   = &quot;('(shr_dmodel_readLBUB) ',3a,i8)&quot;</a>
+   450) <a name="l450" style="background-color: #ffffff"></a>
+   451) <a name="l451" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   452) <a name="l452" style="background-color: #ffffff">! PURPOSE:  Read LB and UB stream data</a>
+   453) <a name="l453" style="background-color: #ffffff">!----------------------------------------------------------------------------</a>
+   454) <a name="l454" style="background-color: #ffffff"></a>
+   455) <a name="l455" style="background-color: #ffffff">  lstr = 'shr_dmodel_readLBUB'</a>
+   456) <a name="l456" style="background-color: #ffffff">  if (</a><a style="background-color: #fafad2">present(istr)) then</a>
+   457) <a name="l457" style="background-color: #ffffff">    lstr = trim(istr)</a>
+   458) <a name="l458" style="background-color: #ffffff">  endif</a>
+   459) <a name="l459" style="background-color: #ffffff"></a>
+   460) <a name="l460" style="background-color: #ffffff">  call t_startf(trim(lstr)//'_setup')</a>
+   461) <a name="l461" style="background-color: #ffffff">  call MPI_COMM_RANK(mpicom,my_task,ierr)</a>
+   462) <a name="l462" style="background-color: #ffffff">  master_task = 0</a>
+   463) <a name="l463" style="background-color: #ffffff">  spd = shr_const_cday</a>
+   464) <a name="l464" style="background-color: #ffffff"></a>
+   465) <a name="l465" style="background-color: #ffffff">  newData = .false.</a>
+   466) <a name="l466" style="background-color: #ffffff">  n_lb = -1</a>
+   467) <a name="l467" style="background-color: #ffffff">  n_ub = -1</a>
+   468) <a name="l468" style="background-color: #ffffff">  fn_lb = 'undefinedlb'</a>
+   469) <a name="l469" style="background-color: #ffffff">  fn_ub = 'undefinedub'</a>
+   470) <a name="l470" style="background-color: #ffffff"></a>
+   471) <a name="l471" style="background-color: #ffffff">  oDateLB = mDateLB</a>
+   472) <a name="l472" style="background-color: #ffffff">  oSecLB  = mSecLB</a>
+   473) <a name="l473" style="background-color: #ffffff">  oDateUB = mDateUB</a>
+   474) <a name="l474" style="background-color: #ffffff">  oSecUB  = mSecUB</a>
+   475) <a name="l475" style="background-color: #ffffff"></a>
+   476) <a name="l476" style="background-color: #ffffff">  rDateM  = real(mDate  ,R8) + real(mSec  ,R8)/spd</a>
+   477) <a name="l477" style="background-color: #ffffff">  rDateLB = real(mDateLB,R8) + real(mSecLB,R8)/spd</a>
+   478) <a name="l478" style="background-color: #ffffff">  rDateUB = real(mDateUB,R8) + real(mSecUB,R8)/spd</a>
+   479) <a name="l479" style="background-color: #ffffff">  call t_stopf(trim(lstr)//'_setup')</a>
+   480) <a name="l480" style="background-color: #ffffff"></a>
+   481) <a name="l481" style="background-color: #ffffff">  if (rDateM &lt; rDateLB .or. rDateM &gt; rDateUB) then</a>
+   482) <a name="l482" style="background-color: #ffffff">     call t_startf(trim(lstr)//'_fbound')</a>
+   483) <a name="l483" style="background-color: #ffffff">     if (my_task == master_task) then</a>
+   484) <a name="l484" style="background-color: #ffffff">!       call shr_stream_findBounds(stream,mDate,mSec,                 &amp;</a>
+   485) <a name="l485" style="background-color: #ffffff">!                                  mDateLB,dDateLB,mSecLB,n_lb,fn_lb, &amp;</a>
+   486) <a name="l486" style="background-color: #ffffff">!                                  mDateUB,dDateUB,mSecUB,n_ub,fn_ub  )</a>
+   487) <a name="l487" style="background-color: #ffffff">        call shr_stream_findBounds(stream,mDate,mSec,                 &amp;</a>
+   488) <a name="l488" style="background-color: #ffffff">                                   ivals(1),dDateLB,ivals(2),ivals(5),fn_lb, &amp;</a>
+   489) <a name="l489" style="background-color: #ffffff">                                   ivals(3),dDateUB,ivals(4),ivals(6),fn_ub  )</a>
+   490) <a name="l490" style="background-color: #ffffff">        call shr_stream_getFilePath(stream,path)</a>
+   491) <a name="l491" style="background-color: #fafad2">        localCopy = (</a><a style="background-color: #ffffff">shr_file_queryPrefix(path) /= shr_file_noPrefix )</a>
+   492) <a name="l492" style="background-color: #ffffff">     endif</a>
+   493) <a name="l493" style="background-color: #ffffff">     call t_stopf(trim(lstr)//'_fbound')</a>
+   494) <a name="l494" style="background-color: #ffffff">     call t_startf(trim(lstr)//'_bcast')</a>
+   495) <a name="l495" style="background-color: #ffffff"></a>
+   496) <a name="l496" style="background-color: #ffffff">!    --- change 4 bcasts to a single bcast and copy for performance ---</a>
+   497) <a name="l497" style="background-color: #ffffff">!     call shr_mpi_bcast(mDateLB,mpicom)</a>
+   498) <a name="l498" style="background-color: #ffffff">!     call shr_mpi_bcast(mSecLB,mpicom)</a>
+   499) <a name="l499" style="background-color: #ffffff">!     call shr_mpi_bcast(mDateUB,mpicom)</a>
+   500) <a name="l500" style="background-color: #ffffff">!     call shr_mpi_bcast(mSecUB,mpicom)</a>
+   501) <a name="l501" style="background-color: #ffffff">     call shr_mpi_bcast(stream%calendar,mpicom)</a>
+   502) <a name="l502" style="background-color: #ffffff">     call shr_mpi_bcast(ivals,mpicom)</a>
+   503) <a name="l503" style="background-color: #ffffff">     mDateLB = ivals(1)</a>
+   504) <a name="l504" style="background-color: #ffffff">     mSecLB  = ivals(2)</a>
+   505) <a name="l505" style="background-color: #ffffff">     mDateUB = ivals(3)</a>
+   506) <a name="l506" style="background-color: #ffffff">     mSecUB  = ivals(4)</a>
+   507) <a name="l507" style="background-color: #ffffff">     n_lb    = ivals(5)</a>
+   508) <a name="l508" style="background-color: #ffffff">     n_ub    = ivals(6)</a>
+   509) <a name="l509" style="background-color: #ffffff">     call t_stopf(trim(lstr)//'_bcast')</a>
+   510) <a name="l510" style="background-color: #ffffff">  endif</a>
+   511) <a name="l511" style="background-color: #ffffff"></a>
+   512) <a name="l512" style="background-color: #ffffff">  if (mDateLB /= oDateLB .or. mSecLB /= oSecLB) then</a>
+   513) <a name="l513" style="background-color: #ffffff">     newdata = .true.</a>
+   514) <a name="l514" style="background-color: #ffffff">     if (mDateLB </a><a style="background-color: #ffff99">== oDateUB .and. mSecLB == oSecUB) then</a>
+   515) <a name="l515" style="background-color: #ffff99">        call t_startf(trim(lstr)//'_LB_copy')</a>
+   516) <a name="l516" style="background-color: #ffff99">        avLB%rAttr(:,:) = avUB%rAttr(:,:)</a>
+   517) <a name="l517" style="background-color: #ffff99">        call t_stopf(trim(lstr)//'_LB_copy')</a>
+   518) <a name="l518" style="background-color: #ffff99">     else</a>
+   519) <a name="l519" style="background-color: #ffffff">        if (my_task == master_task) then</a>
+   520) <a name="l520" style="background-color: #ffffff">           write(logunit,F02) 'reading file: ',trim(path),trim(fn_lb),n_lb</a>
+   521) <a name="l521" style="background-color: #ffffff">           call shr_sys_flush(logunit)</a>
+   522) <a name="l522" style="background-color: #ffffff">        endif</a>
+   523) <a name="l523" style="background-color: #ffffff">        call shr_dmodel_readstrm(stream, pio_subsystem, pio_iotype, pio_iodesc, gsMap, avLB, mpicom, &amp;</a>
+   524) <a name="l524" style="background-color: #ffffff">             path, fn_lb, n_lb,istr=trim(lstr)//'_LB')</a>
+   525) <a name="l525" style="background-color: #ffffff">     endif</a>
+   526) <a name="l526" style="background-color: #ffffff">  endif</a>
+   527) <a name="l527" style="background-color: #ffffff"></a>
+   528) <a name="l528" style="background-color: #ffffff">  if (mDateUB /= oDateUB .or. mSecUB /= oSecUB) then</a>
+   529) <a name="l529" style="background-color: #ffffff">     newdata = .true.</a>
+   530) <a name="l530" style="background-color: #ffffff">     if (my_task == master_task) then</a>
+   531) <a name="l531" style="background-color: #ffffff">        write(logunit,F02) 'reading file: ',trim(path),trim(fn_ub),n_ub</a>
+   532) <a name="l532" style="background-color: #ffffff">        call shr_sys_flush(logunit)</a>
+   533) <a name="l533" style="background-color: #ffffff">     endif</a>
+   534) <a name="l534" style="background-color: #ffffff">     call shr_dmodel_readstrm(stream, pio_subsystem, pio_iotype, pio_iodesc, gsMap, avUB, mpicom, &amp;</a>
+   535) <a name="l535" style="background-color: #ffffff">          path, fn_ub, n_ub,istr=trim(lstr)//'_UB')</a>
+   536) <a name="l536" style="background-color: #ffffff">  endif</a>
+   537) <a name="l537" style="background-color: #ffffff"></a>
+   538) <a name="l538" style="background-color: #ffffff">  call t_startf(trim(lstr)//'_filemgt')</a>
+   539) <a name="l539" style="background-color: #ffffff">  !--- determine previous &amp; next data files in list of files ---</a>
+   540) <a name="l540" style="background-color: #ffffff">  if (my_task == master_task .and. newdata) then</a>
+   541) <a name="l541" style="background-color: #ffffff">  call shr_stream_getFilePath(stream,path)</a>
+   542) <a name="l542" style="background-color: #fafad2">  localCopy = (</a><a style="background-color: #ffffff">shr_file_queryPrefix(path) /= shr_file_noPrefix )</a>
+   543) <a name="l543" style="background-color: #ffffff">  if (localCopy) then</a>
+   544) <a name="l544" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">shr_stream_getPrevFileName(stream,fn_lb,fn_prev,path)</a>
+   545) <a name="l545" style="background-color: #ffff99">     call shr_stream_getNextFileName(stream,fn_ub,fn_next,path)</a>
+   546) <a name="l546" style="background-color: #ffff99">     inquire(file=trim(fn_next),exist=fileExists)</a>
+   547) <a name="l547" style="background-color: #ffff99">     if ( trim(fn_next) == &quot;unknown&quot; .or. fileExists) then</a>
+   548) <a name="l548" style="background-color: #ffff99">        ! do nothing</a>
+   549) <a name="l549" style="background-color: #ffff99">     else </a>
+   550) <a name="l550" style="background-color: #ffff99">        call shr_file_get(rCode,fn_next,trim(path)//fn_next,async=.true.)</a>
+   551) <a name="l551" style="background-color: #ffff99">        write(logunit,F00) &quot;get next file: &quot;,trim(fn_next)</a>
+   552) <a name="l552" style="background-color: #ffff99">        call shr_sys_flush(logunit)</a>
+   553) <a name="l553" style="background-color: #ffff99">     end if</a>
+   554) <a name="l554" style="background-color: #ffff99"></a>
+   555) <a name="l555" style="background-color: #ffff99">     !---  remove the old file? (only if acquiring local copies) ---</a>
+   556) <a name="l556" style="background-color: #ffff99">     if ( rmOldFile .and. &amp;</a>
+   557) <a name="l557" style="background-color: #ffff99">          fn_prev/=fn_lb .and. fn_prev/=fn_ub .and. fn_prev/=fn_next ) then </a>
+   558) <a name="l558" style="background-color: #ffff99">        !--- previous file is not in use and is not next in list ---</a>
+   559) <a name="l559" style="background-color: #ffff99">        inquire(file=trim(fn_prev),exist=fileExists)</a>
+   560) <a name="l560" style="background-color: #ffff99">        if ( fileExists ) then</a>
+   561) <a name="l561" style="background-color: #ffff99">           call shr_sys_system(&quot; rm &quot;//trim(fn_prev),rCode)</a>
+   562) <a name="l562" style="background-color: #ffff99">           write(logunit,F00) &quot;rm  prev file: &quot;,trim(fn_prev)</a>
+   563) <a name="l563" style="background-color: #ffff99">           call shr_sys_flush(logunit)</a>
+   564) <a name="l564" style="background-color: #ffff99">        end if</a>
+   565) <a name="l565" style="background-color: #ffff99">     end if</a>
+   566) <a name="l566" style="background-color: #ffff99">  endif</a>
+   567) <a name="l567" style="background-color: #ffff99">  endif</a>
+   568) <a name="l568" style="background-color: #ffff99">  call </a><a style="background-color: #ffffff">t_stopf(trim(lstr)//'_filemgt')</a>
+   569) <a name="l569" style="background-color: #ffffff"></a>
+   570) <a name="l570" style="background-color: #ffffff">end subroutine shr_dmodel_readLBUB</a>
+   571) <a name="l571" style="background-color: #ffffff"></a>
+   572) <a name="l572" style="background-color: #ffffff">!===============================================================================</a>
+   573) <a name="l573" style="background-color: #ffffff">subroutine shr_dmodel_readstrm(stream, pio_subsystem, pio_iotype, pio_iodesc, gsMap, av, mpicom, &amp;</a>
+   574) <a name="l574" style="background-color: #ffffff">           path, fn, nt, istr)</a>
+   575) <a name="l575" style="background-color: #ffffff"></a>
+   576) <a name="l576" style="background-color: #ffffff">  use shr_file_mod, only : shr_file_noprefix, shr_file_queryprefix, shr_file_get</a>
+   577) <a name="l577" style="background-color: #ffffff">  use shr_stream_mod</a>
+   578) <a name="l578" style="background-color: #ffffff">  use shr_ncread_mod</a>
+   579) <a name="l579" style="background-color: #ffffff">  implicit none</a>
+   580) <a name="l580" style="background-color: #ffffff"></a>
+   581) <a name="l581" style="background-color: #ffffff">  !----- arguments -----</a>
+   582) <a name="l582" style="background-color: #ffffff">  type(shr_stream_streamType),intent(inout) :: stream</a>
+   583) <a name="l583" style="background-color: #ffffff">  type(iosystem_desc_t),intent(inout), target  :: pio_subsystem</a>
+   584) <a name="l584" style="background-color: #ffffff">  integer(IN)     ,intent(in)    :: pio_iotype</a>
+   585) <a name="l585" style="background-color: #ffffff">  type(io_desc_t)      ,intent(inout)  :: pio_iodesc</a>
+   586) <a name="l586" style="background-color: #ffffff">  type(mct_gsMap) ,intent(in)    :: gsMap</a>
+   587) <a name="l587" style="background-color: #ffffff">  type(mct_aVect) ,intent(inout) :: av  </a>
+   588) <a name="l588" style="background-color: #ffffff">  integer(IN)     ,intent(in)    :: mpicom</a>
+   589) <a name="l589" style="background-color: #ffffff">  character(len=*),intent(in)    :: path</a>
+   590) <a name="l590" style="background-color: #ffffff">  character(len=*),intent(in)    :: fn</a>
+   591) <a name="l591" style="background-color: #ffffff">  integer(IN)     ,intent(in)    :: nt</a>
+   592) <a name="l592" style="background-color: #ffffff">  character(len=*),optional  ,intent(in)    :: istr</a>
+   593) <a name="l593" style="background-color: #ffffff"></a>
+   594) <a name="l594" style="background-color: #ffffff">  !----- local -----</a>
+   595) <a name="l595" style="background-color: #ffffff">  integer(IN) :: my_task</a>
+   596) <a name="l596" style="background-color: #ffffff">  integer(IN) :: master_task</a>
+   597) <a name="l597" style="background-color: #ffffff">  integer(IN) :: ierr</a>
+   598) <a name="l598" style="background-color: #ffffff">  logical     :: localCopy,fileexists</a>
+   599) <a name="l599" style="background-color: #ffffff">  type(mct_avect) :: avG</a>
+   600) <a name="l600" style="background-color: #ffffff">  integer(IN) :: gsize,nx,ny</a>
+   601) <a name="l601" style="background-color: #ffffff">  integer(IN) :: k</a>
+   602) <a name="l602" style="background-color: #ffffff">  integer(IN) :: fid</a>
+   603) <a name="l603" style="background-color: #ffffff">  integer(IN) :: rCode      ! return code</a>
+   604) <a name="l604" style="background-color: #ffffff">  real(R8),allocatable :: data(:,:)</a>
+   605) <a name="l605" style="background-color: #ffffff">  character(CL) :: fileName</a>
+   606) <a name="l606" style="background-color: #ffffff">  character(CL) :: sfldName</a>
+   607) <a name="l607" style="background-color: #ffffff">  type(mct_avect) :: avtmp</a>
+   608) <a name="l608" style="background-color: #ffffff">  character(len=32) :: lstr</a>
+   609) <a name="l609" style="background-color: #ffffff"></a>
+   610) <a name="l610" style="background-color: #ffffff">  integer(in) :: ndims</a>
+   611) <a name="l611" style="background-color: #ffffff">  integer(in),pointer :: dimid(:)</a>
+   612) <a name="l612" style="background-color: #ffffff">  type(file_desc_t) :: pioid</a>
+   613) <a name="l613" style="background-color: #ffffff">  type(var_desc_t) :: varid</a>
+   614) <a name="l614" style="background-color: #ffffff">  integer(kind=pio_offset) :: frame</a>
+   615) <a name="l615" style="background-color: #ffffff"></a>
+   616) <a name="l616" style="background-color: #ffffff">  character(*), parameter :: subname = '(shr_dmodel_readstrm) '</a>
+   617) <a name="l617" style="background-color: #ffffff">  character(*), parameter :: F00   = &quot;('(shr_dmodel_readstrm) ',8a)&quot;</a>
+   618) <a name="l618" style="background-color: #ffffff">  character(*), parameter :: F01   = &quot;('(shr_dmodel_readstrm) ',a,5i8)&quot;</a>
+   619) <a name="l619" style="background-color: #ffffff"></a>
+   620) <a name="l620" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   621) <a name="l621" style="background-color: #ffffff"></a>
+   622) <a name="l622" style="background-color: #ffffff">  lstr = 'shr_dmodel_readstrm'</a>
+   623) <a name="l623" style="background-color: #ffffff">  if (</a><a style="background-color: #fafad2">present(istr)) then</a>
+   624) <a name="l624" style="background-color: #ffffff">    lstr = trim(istr)</a>
+   625) <a name="l625" style="background-color: #ffffff">  endif</a>
+   626) <a name="l626" style="background-color: #ffffff"></a>
+   627) <a name="l627" style="background-color: #ffffff">  call t_barrierf(trim(lstr)//'_BARRIER',mpicom)</a>
+   628) <a name="l628" style="background-color: #ffffff">  call t_startf(trim(lstr)//'_setup')</a>
+   629) <a name="l629" style="background-color: #ffffff">  call MPI_COMM_RANK(mpicom,my_task,ierr)</a>
+   630) <a name="l630" style="background-color: #ffffff">  master_task = 0</a>
+   631) <a name="l631" style="background-color: #ffffff"></a>
+   632) <a name="l632" style="background-color: #ffffff">  gsize = mct_gsmap_gsize(gsMap)</a>
+   633) <a name="l633" style="background-color: #ffffff"></a>
+   634) <a name="l634" style="background-color: #ffffff">  if (my_task == master_task) then</a>
+   635) <a name="l635" style="background-color: #fafad2">     localCopy = (</a><a style="background-color: #ffffff">shr_file_queryPrefix(path) /= shr_file_noPrefix )</a>
+   636) <a name="l636" style="background-color: #ffffff">     if (localCopy) then</a>
+   637) <a name="l637" style="background-color: #ffffff">        call </a><a style="background-color: #ffff99">shr_file_get(rCode,fn,trim(path)//fn)</a>
+   638) <a name="l638" style="background-color: #ffff99">        fileName = fn</a>
+   639) <a name="l639" style="background-color: #ffff99">     else                 ! DON'T acquire a local copy of the data file</a>
+   640) <a name="l640" style="background-color: #ffffff">        fileName = trim(path)//fn</a>
+   641) <a name="l641" style="background-color: #ffffff">     end if</a>
+   642) <a name="l642" style="background-color: #ffffff">     inquire(file=trim(fileName),exist=fileExists)</a>
+   643) <a name="l643" style="background-color: #ffffff">     if (.not. fileExists) then</a>
+   644) <a name="l644" style="background-color: #ffff99">        write(logunit,F00) &quot;ERROR: file does not exist: &quot;, trim(fileName)</a>
+   645) <a name="l645" style="background-color: #ffff99">        call shr_sys_abort(subName//&quot;ERROR: file does not exist: &quot;//trim(fileName))</a>
+   646) <a name="l646" style="background-color: #ffff99">     end if</a>
+   647) <a name="l647" style="background-color: #ffff99">  endif</a>
+   648) <a name="l648" style="background-color: #ffff99"></a>
+   649) <a name="l649" style="background-color: #ffffff">  if (my_task == master_task) then</a>
+   650) <a name="l650" style="background-color: #ffffff">     call shr_stream_getFileFieldName(stream,1,sfldName)</a>
+   651) <a name="l651" style="background-color: #ffffff">  endif</a>
+   652) <a name="l652" style="background-color: #ffffff"></a>
+   653) <a name="l653" style="background-color: #ffffff">  call t_stopf(trim(lstr)//'_setup')</a>
+   654) <a name="l654" style="background-color: #ffffff"></a>
+   655) <a name="l655" style="background-color: #ffffff">  if (pio_iotype == iotype_std_netcdf) then</a>
+   656) <a name="l656" style="background-color: #ffffff"></a>
+   657) <a name="l657" style="background-color: #ffffff">     call </a><a style="background-color: #ffff99">t_startf(trim(lstr)//'_readcdf')</a>
+   658) <a name="l658" style="background-color: #ffff99">     if (my_task == master_task) then</a>
+   659) <a name="l659" style="background-color: #ffff99">        call shr_ncread_varDimSizes(trim(fileName),trim(sfldName),nx,ny)</a>
+   660) <a name="l660" style="background-color: #ffff99">        if (gsize /= nx*ny) then</a>
+   661) <a name="l661" style="background-color: #ffff99">           write(logunit,F01) &quot;ERROR in data sizes &quot;,nx,ny,gsize</a>
+   662) <a name="l662" style="background-color: #ffff99">           call shr_sys_abort(subname//&quot;ERROR in data sizes&quot;)</a>
+   663) <a name="l663" style="background-color: #ffff99">        endif</a>
+   664) <a name="l664" style="background-color: #ffff99">        call mct_aVect_init(avG,av,gsize)</a>
+   665) <a name="l665" style="background-color: #ffff99">        allocate(data(nx,ny))</a>
+   666) <a name="l666" style="background-color: #ffff99">        call shr_ncread_open(trim(fileName),fid,rCode)</a>
+   667) <a name="l667" style="background-color: #ffff99">        do k = 1,mct_aVect_nRAttr(av)</a>
+   668) <a name="l668" style="background-color: #ffff99">           call shr_stream_getFileFieldName(stream,k,sfldName)</a>
+   669) <a name="l669" style="background-color: #ffff99">           call shr_ncread_tField(fileName,nt,sfldName,data,fidi=fid,rc=rCode)</a>
+   670) <a name="l670" style="background-color: #ffff99">           avG%rAttr(k,:) = reshape(data, (/gsize/))</a>
+   671) <a name="l671" style="background-color: #ffff99">        enddo</a>
+   672) <a name="l672" style="background-color: #ffff99">        call shr_ncread_close(fid,rCode)</a>
+   673) <a name="l673" style="background-color: #ffff99">        deallocate(data)</a>
+   674) <a name="l674" style="background-color: #ffff99">     endif</a>
+   675) <a name="l675" style="background-color: #ffff99">     call t_stopf(trim(lstr)//'_readcdf')</a>
+   676) <a name="l676" style="background-color: #ffff99">     call t_barrierf(trim(lstr)//'_scatter'//'_BARRIER',mpicom)</a>
+   677) <a name="l677" style="background-color: #ffff99">     call t_startf(trim(lstr)//'_scatter')</a>
+   678) <a name="l678" style="background-color: #ffff99">     call mct_aVect_scatter(avG,avtmp,gsMap,master_task,mpicom)</a>
+   679) <a name="l679" style="background-color: #ffff99">     call mct_aVect_copy(avtmp,av)</a>
+   680) <a name="l680" style="background-color: #ffff99">     if (my_task == master_task) call mct_aVect_clean(avG)</a>
+   681) <a name="l681" style="background-color: #ffff99">     call mct_aVect_clean(avtmp)</a>
+   682) <a name="l682" style="background-color: #ffff99">     call t_stopf(trim(lstr)//'_scatter')</a>
+   683) <a name="l683" style="background-color: #ffff99"></a>
+   684) <a name="l684" style="background-color: #ffff99">  else</a>
+   685) <a name="l685" style="background-color: #ffff99"></a>
+   686) <a name="l686" style="background-color: #ffff99">     call </a><a style="background-color: #ffffff">t_startf(trim(lstr)//'_readpio')</a>
+   687) <a name="l687" style="background-color: #ffffff">     call shr_mpi_bcast(sfldName,mpicom,'sfldName')</a>
+   688) <a name="l688" style="background-color: #ffffff">     call shr_mpi_bcast(filename,mpicom,'filename')</a>
+   689) <a name="l689" style="background-color: #ffffff">     rcode = pio_openfile(pio_subsystem, pioid, pio_iotype, trim(filename), pio_nowrite)</a>
+   690) <a name="l690" style="background-color: #ffffff">     call pio_seterrorhandling(pioid,PIO_INTERNAL_ERROR)</a>
+   691) <a name="l691" style="background-color: #ffffff"></a>
+   692) <a name="l692" style="background-color: #ffffff">     rcode = pio_inq_varid(pioid,trim(sfldName),varid)</a>
+   693) <a name="l693" style="background-color: #ffffff">     rcode = pio_inq_varndims(pioid, varid, ndims)</a>
+   694) <a name="l694" style="background-color: #fafad2">     allocate(dimid(ndims))</a>
+   695) <a name="l695" style="background-color: #ffffff">     rcode = pio_inq_vardimid(pioid, varid, dimid(1:ndims))</a>
+   696) <a name="l696" style="background-color: #ffffff">     rcode = pio_inq_dimlen(pioid, dimid(1), nx)</a>
+   697) <a name="l697" style="background-color: #ffffff">     rcode = pio_inq_dimlen(pioid, dimid(2), ny)</a>
+   698) <a name="l698" style="background-color: #ffffff">     deallocate(dimid)</a>
+   699) <a name="l699" style="background-color: #ffffff">     if (gsize /= nx*ny) then</a>
+   700) <a name="l700" style="background-color: #ffff99">        write(logunit,F01) &quot;ERROR in data sizes &quot;,nx,ny,gsize</a>
+   701) <a name="l701" style="background-color: #ffff99">        call shr_sys_abort(subname//&quot;ERROR in data sizes&quot;)</a>
+   702) <a name="l702" style="background-color: #ffff99">     endif</a>
+   703) <a name="l703" style="background-color: #ffff99"></a>
+   704) <a name="l704" style="background-color: #ffffff">     do k = 1,mct_aVect_nRAttr(av)</a>
+   705) <a name="l705" style="background-color: #ffffff">        if (my_task == master_task) then</a>
+   706) <a name="l706" style="background-color: #ffffff">           call shr_stream_getFileFieldName(stream,k,sfldName)</a>
+   707) <a name="l707" style="background-color: #ffffff">        endif</a>
+   708) <a name="l708" style="background-color: #ffffff">        call shr_mpi_bcast(sfldName,mpicom,'sfldName')</a>
+   709) <a name="l709" style="background-color: #ffffff">        rcode = pio_inq_varid(pioid,trim(sfldName),varid)</a>
+   710) <a name="l710" style="background-color: #ffffff">        frame = nt</a>
+   711) <a name="l711" style="background-color: #ffffff">        call pio_setframe(varid,frame)</a>
+   712) <a name="l712" style="background-color: #ffffff">        call pio_read_darray(pioid,varid,pio_iodesc,av%rattr(k,:),rcode)</a>
+   713) <a name="l713" style="background-color: #ffffff">     enddo</a>
+   714) <a name="l714" style="background-color: #ffffff"></a>
+   715) <a name="l715" style="background-color: #ffffff">     call pio_closefile(pioid)</a>
+   716) <a name="l716" style="background-color: #ffffff">     call t_stopf(trim(lstr)//'_readpio')</a>
+   717) <a name="l717" style="background-color: #ffffff"></a>
+   718) <a name="l718" style="background-color: #ffffff">  endif</a>
+   719) <a name="l719" style="background-color: #ffffff"></a>
+   720) <a name="l720" style="background-color: #fafad2">end subroutine shr_dmodel_readstrm</a>
+   721) <a name="l721" style="background-color: #ffffff">!===============================================================================</a>
+   722) <a name="l722" style="background-color: #ffffff">!===============================================================================</a>
+   723) <a name="l723" style="background-color: #ffffff">!BOP ===========================================================================</a>
+   724) <a name="l724" style="background-color: #ffffff">!</a>
+   725) <a name="l725" style="background-color: #ffffff">! !IROUTINE: shr_dmodel_gGridCompare -- returns TRUE if two domains are the same.</a>
+   726) <a name="l726" style="background-color: #ffffff">!</a>
+   727) <a name="l727" style="background-color: #ffffff">! !DESCRIPTION:</a>
+   728) <a name="l728" style="background-color: #ffffff">!    Returns TRUE if two domains are the the same (within tolerance).</a>
+   729) <a name="l729" style="background-color: #ffffff">!</a>
+   730) <a name="l730" style="background-color: #ffffff">! !REVISION HISTORY:</a>
+   731) <a name="l731" style="background-color: #ffffff">!    2005-May-03 - B. Kauffman - added mulitiple methods</a>
+   732) <a name="l732" style="background-color: #ffffff">!    2005-May-27 - T. Craig - first version</a>
+   733) <a name="l733" style="background-color: #ffffff">!</a>
+   734) <a name="l734" style="background-color: #ffffff">! !INTERFACE: ------------------------------------------------------------------</a>
+   735) <a name="l735" style="background-color: #ffffff"></a>
+   736) <a name="l736" style="background-color: #ffffff">logical function shr_dmodel_gGridCompare(ggrid1,gsmap1,ggrid2,gsmap2,method,mpicom,eps)</a>
+   737) <a name="l737" style="background-color: #ffffff"></a>
+   738) <a name="l738" style="background-color: #ffffff">! !USES:</a>
+   739) <a name="l739" style="background-color: #ffffff"></a>
+   740) <a name="l740" style="background-color: #ffffff">   implicit none</a>
+   741) <a name="l741" style="background-color: #ffffff"></a>
+   742) <a name="l742" style="background-color: #ffffff">! !INPUT/OUTPUT PARAMETERS:</a>
+   743) <a name="l743" style="background-color: #ffffff"></a>
+   744) <a name="l744" style="background-color: #ffffff">   type(mct_gGrid)     ,intent(in)  :: ggrid1   ! 1st ggrid</a>
+   745) <a name="l745" style="background-color: #ffffff">   type(mct_gsmap)     ,intent(in)  :: gsmap1   ! 1st gsmap</a>
+   746) <a name="l746" style="background-color: #ffffff">   type(mct_gGrid)     ,intent(in)  :: ggrid2   ! 2nd ggrid</a>
+   747) <a name="l747" style="background-color: #ffffff">   type(mct_gsmap)     ,intent(in)  :: gsmap2   ! 2nd gsmap</a>
+   748) <a name="l748" style="background-color: #ffffff">   integer(IN)         ,intent(in)  :: method   ! selects what to compare</a>
+   749) <a name="l749" style="background-color: #ffffff">   integer(IN)         ,intent(in)  :: mpicom   ! mpicom</a>
+   750) <a name="l750" style="background-color: #ffffff">   real(R8)   ,optional,intent(in)  :: eps      ! epsilon compare value</a>
+   751) <a name="l751" style="background-color: #ffffff"></a>
+   752) <a name="l752" style="background-color: #ffffff">!EOP</a>
+   753) <a name="l753" style="background-color: #ffffff"></a>
+   754) <a name="l754" style="background-color: #ffffff">   !--- local ---</a>
+   755) <a name="l755" style="background-color: #ffffff">   real(R8)    :: leps         ! local epsilon</a>
+   756) <a name="l756" style="background-color: #ffffff">   integer(IN) :: n            ! counters</a>
+   757) <a name="l757" style="background-color: #ffffff">   integer(IN) :: my_task,master_task</a>
+   758) <a name="l758" style="background-color: #ffffff">   integer(IN) :: gsize</a>
+   759) <a name="l759" style="background-color: #ffffff">   integer(IN) :: ierr</a>
+   760) <a name="l760" style="background-color: #ffffff">   integer(IN) :: nlon1, nlon2, nlat1, nlat2, nmask1, nmask2  ! av field indices</a>
+   761) <a name="l761" style="background-color: #ffffff">   logical     :: compare      ! local compare logical</a>
+   762) <a name="l762" style="background-color: #ffffff">   real(R8)    :: lon1,lon2    ! longitudes to compare</a>
+   763) <a name="l763" style="background-color: #ffffff">   real(R8)    :: lat1,lat2    ! latitudes to compare</a>
+   764) <a name="l764" style="background-color: #ffffff">   real(R8)    :: msk1,msk2    ! masks to compare</a>
+   765) <a name="l765" style="background-color: #ffffff">   integer(IN) :: nx,ni1,ni2   ! i grid size, i offset for 1 vs 2 and 2 vs 1</a>
+   766) <a name="l766" style="background-color: #ffffff">   integer(IN) :: n1,n2,i,j    ! local indices</a>
+   767) <a name="l767" style="background-color: #ffffff">   type(mct_aVect) :: avG1     ! global av</a>
+   768) <a name="l768" style="background-color: #ffffff">   type(mct_aVect) :: avG2     ! global av</a>
+   769) <a name="l769" style="background-color: #ffffff">   integer(IN) :: lmethod      ! local method</a>
+   770) <a name="l770" style="background-color: #ffffff">   logical     :: maskmethod, maskpoint ! masking on method</a>
+   771) <a name="l771" style="background-color: #ffffff"> </a>
+   772) <a name="l772" style="background-color: #ffffff">   !--- formats ---</a>
+   773) <a name="l773" style="background-color: #ffffff">   character(*),parameter :: subName = '(shr_dmodel_gGridCompare) '</a>
+   774) <a name="l774" style="background-color: #ffffff">   character(*),parameter :: F01     = &quot;('(shr_dmodel_gGridCompare) ',4a)&quot; </a>
+   775) <a name="l775" style="background-color: #ffffff"></a>
+   776) <a name="l776" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   777) <a name="l777" style="background-color: #ffffff">!</a>
+   778) <a name="l778" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   779) <a name="l779" style="background-color: #ffffff"></a>
+   780) <a name="l780" style="background-color: #ffffff">   call MPI_COMM_RANK(mpicom,my_task,ierr)</a>
+   781) <a name="l781" style="background-color: #ffffff">   master_task = 0</a>
+   782) <a name="l782" style="background-color: #ffffff"></a>
+   783) <a name="l783" style="background-color: #ffffff">   leps = 1.0e-6_R8</a>
+   784) <a name="l784" style="background-color: #ffffff">   if (present(eps)) leps = eps</a>
+   785) <a name="l785" style="background-color: #ffffff"></a>
+   786) <a name="l786" style="background-color: #ffffff">   lmethod = mod(method,100)</a>
+   787) <a name="l787" style="background-color: #ffffff">   if (method &gt; 100) then</a>
+   788) <a name="l788" style="background-color: #ffffff">      maskmethod=.true.</a>
+   789) <a name="l789" style="background-color: #ffffff">   else</a>
+   790) <a name="l790" style="background-color: #ffffff">      maskmethod=.false.</a>
+   791) <a name="l791" style="background-color: #ffffff">   endif</a>
+   792) <a name="l792" style="background-color: #ffffff"></a>
+   793) <a name="l793" style="background-color: #ffffff">   call mct_aVect_gather(gGrid1%data,avG1,gsmap1,master_task,mpicom)</a>
+   794) <a name="l794" style="background-color: #ffffff">   call mct_aVect_gather(gGrid2%data,avG2,gsmap2,master_task,mpicom)</a>
+   795) <a name="l795" style="background-color: #ffffff"></a>
+   796) <a name="l796" style="background-color: #ffffff">   if (my_task == master_task) then</a>
+   797) <a name="l797" style="background-color: #ffffff"></a>
+   798) <a name="l798" style="background-color: #ffffff">      compare = .true. </a>
+   799) <a name="l799" style="background-color: #ffffff">      gsize = mct_aVect_lsize(avG1)</a>
+   800) <a name="l800" style="background-color: #ffffff">      if (gsize /= mct_aVect_lsize(avG2)) then</a>
+   801) <a name="l801" style="background-color: #ffffff">         compare = .false.</a>
+   802) <a name="l802" style="background-color: #ffffff">      endif</a>
+   803) <a name="l803" style="background-color: #ffffff"></a>
+   804) <a name="l804" style="background-color: #ffffff">      if (.not. compare ) then</a>
+   805) <a name="l805" style="background-color: #ffffff">         !--- already failed the comparison test, check no futher ---</a>
+   806) <a name="l806" style="background-color: #ffffff">      else </a>
+   807) <a name="l807" style="background-color: #ffff99">         nlon1 = mct_aVect_indexRA(avG1,'lon')</a>
+   808) <a name="l808" style="background-color: #ffff99">         nlat1 = mct_aVect_indexRA(avG1,'lat')</a>
+   809) <a name="l809" style="background-color: #ffff99">         nlon2 = mct_aVect_indexRA(avG2,'lon')</a>
+   810) <a name="l810" style="background-color: #ffff99">         nlat2 = mct_aVect_indexRA(avG2,'lat')</a>
+   811) <a name="l811" style="background-color: #ffff99">         nmask1 = mct_aVect_indexRA(avG1,'mask')</a>
+   812) <a name="l812" style="background-color: #ffff99">         nmask2 = mct_aVect_indexRA(avG2,'mask')</a>
+   813) <a name="l813" style="background-color: #ffff99"></a>
+   814) <a name="l814" style="background-color: #ffff99">         ! To compare, want to be able to treat longitude wraparound generally.</a>
+   815) <a name="l815" style="background-color: #ffff99">         ! So we need to compute i index offset and we need to compute the size of the nx dimension</a>
+   816) <a name="l816" style="background-color: #ffff99">         ! First adjust the lon so it's in the range [0,360), add 1440 to lon to take into</a>
+   817) <a name="l817" style="background-color: #ffff99">         ! accounts lons less than 1440.  if any lon is less than -1440, abort.  1440 is arbitrary</a>
+   818) <a name="l818" style="background-color: #ffff99">         ! Next, comute ni1 and ni2.  These are the offsets of grid1 relative to grid2 and</a>
+   819) <a name="l819" style="background-color: #ffff99">         ! grid2 relative to grid1.  The sum of those offsets is nx.  Use ni1 to offset grid2</a>
+   820) <a name="l820" style="background-color: #ffff99">         ! in comparison and compute new grid2 index from ni1 and nx.  If ni1 is zero, then</a>
+   821) <a name="l821" style="background-color: #ffff99">         ! there is no offset, don't need to compute ni2, and nx can be anything &gt; 0.</a>
+   822) <a name="l822" style="background-color: #ffff99"></a>
+   823) <a name="l823" style="background-color: #ffff99">         !--- compute offset of grid2 compared to pt 1 of grid 1</a>
+   824) <a name="l824" style="background-color: #ffff99">         lon1 = minval(avG1%rAttr(nlon1,:))</a>
+   825) <a name="l825" style="background-color: #ffff99">         lon2 = minval(avG2%rAttr(nlon2,:))</a>
+   826) <a name="l826" style="background-color: #ffff99">         if ((lon1 &lt; -1440.0_R8) .or. (lon2 &lt; -1440.0_R8)) then</a>
+   827) <a name="l827" style="background-color: #ffff99">            write(logunit,*) subname,' ERROR: lon1 lon2 lt -1440 ',lon1,lon2</a>
+   828) <a name="l828" style="background-color: #ffff99">            call shr_sys_abort(subname//' ERROR: lon1 lon2 lt -1440')</a>
+   829) <a name="l829" style="background-color: #ffff99">         endif</a>
+   830) <a name="l830" style="background-color: #ffff99"></a>
+   831) <a name="l831" style="background-color: #ffff99">         lon1 = mod(avG1%rAttr(nlon1,1)+1440.0_R8,360.0_R8)</a>
+   832) <a name="l832" style="background-color: #ffff99">         lat1 = avG1%rAttr(nlat1,1)</a>
+   833) <a name="l833" style="background-color: #ffff99">         ni1 = -1</a>
+   834) <a name="l834" style="background-color: #ffff99">         do n = 1,gsize</a>
+   835) <a name="l835" style="background-color: #ffff99">            lon2 = mod(avG2%rAttr(nlon2,n)+1440.0_R8,360.0_R8)</a>
+   836) <a name="l836" style="background-color: #ffff99">            lat2 = avG2%rAttr(nlat2,n)</a>
+   837) <a name="l837" style="background-color: #ffff99">            if ((ni1 &lt; 0) .and. abs(lon1-lon2) &lt;= leps .and. abs(lat1-lat2) &lt;= leps) then</a>
+   838) <a name="l838" style="background-color: #ffff99">               ni1 = n - 1  ! offset, compare to first gridcell in grid 1</a>
+   839) <a name="l839" style="background-color: #ffff99">            endif</a>
+   840) <a name="l840" style="background-color: #ffff99">         enddo</a>
+   841) <a name="l841" style="background-color: #ffff99"></a>
+   842) <a name="l842" style="background-color: #ffff99">         if (ni1 &lt; 0) then        ! no match for grid point 1, so fails without going further</a>
+   843) <a name="l843" style="background-color: #ffff99">            compare = .false.</a>
+   844) <a name="l844" style="background-color: #ffff99">         elseif (ni1 == 0) then   ! no offset, set nx to anything &gt; 0</a>
+   845) <a name="l845" style="background-color: #ffff99">            nx = 1</a>
+   846) <a name="l846" style="background-color: #ffff99">         else                     ! now compute ni2</a>
+   847) <a name="l847" style="background-color: #ffff99">            ! compute offset of grid1 compared to pt 1 of grid 2</a>
+   848) <a name="l848" style="background-color: #ffff99">            lon2 = mod(avG2%rAttr(nlon2,1)+1440.0_R8,360.0_R8)</a>
+   849) <a name="l849" style="background-color: #ffff99">            lat2 = avG2%rAttr(nlat2,1)</a>
+   850) <a name="l850" style="background-color: #ffff99">            ni2 = -1</a>
+   851) <a name="l851" style="background-color: #ffff99">            do n = 1,gsize</a>
+   852) <a name="l852" style="background-color: #ffff99">               lon1 = mod(avG1%rAttr(nlon1,n)+1440.0_R8,360.0_R8)</a>
+   853) <a name="l853" style="background-color: #ffff99">               lat1 = avG1%rAttr(nlat1,n)</a>
+   854) <a name="l854" style="background-color: #ffff99">               if ((ni2 &lt; 0) .and. abs(lon1-lon2) &lt;= leps .and. abs(lat1-lat2) &lt;= leps) then</a>
+   855) <a name="l855" style="background-color: #ffff99">                  ni2 = n - 1  ! offset, compare to first gridcell in grid 1</a>
+   856) <a name="l856" style="background-color: #ffff99">               endif</a>
+   857) <a name="l857" style="background-color: #ffff99">            enddo</a>
+   858) <a name="l858" style="background-color: #ffff99">            if (ni2 &lt; 0) then</a>
+   859) <a name="l859" style="background-color: #ffff99">               write(logunit,*) subname,' ERROR in ni2 ',ni1,ni2</a>
+   860) <a name="l860" style="background-color: #ffff99">               call shr_sys_abort(subname//' ERROR in ni2')</a>
+   861) <a name="l861" style="background-color: #ffff99">            endif</a>
+   862) <a name="l862" style="background-color: #ffff99">            nx = ni1 + ni2</a>
+   863) <a name="l863" style="background-color: #ffff99">         endif</a>
+   864) <a name="l864" style="background-color: #ffff99"></a>
+   865) <a name="l865" style="background-color: #ffff99">         if (compare) then</a>
+   866) <a name="l866" style="background-color: #ffff99">            do n = 1,gsize</a>
+   867) <a name="l867" style="background-color: #ffff99">               j = ((n-1)/nx) + 1</a>
+   868) <a name="l868" style="background-color: #ffff99">               i = mod(n-1,nx) + 1</a>
+   869) <a name="l869" style="background-color: #ffff99">               n1 = (j-1)*nx + mod(n-1,nx) + 1</a>
+   870) <a name="l870" style="background-color: #ffff99">               n2 = (j-1)*nx + mod(n-1+ni1,nx) + 1</a>
+   871) <a name="l871" style="background-color: #ffff99">               if (n1 /= n) then    ! sanity check, could be commented out</a>
+   872) <a name="l872" style="background-color: #ffff99">                  write(logunit,*) subname,' ERROR in n1 n2 ',n,i,j,n1,n2</a>
+   873) <a name="l873" style="background-color: #ffff99">                  call shr_sys_abort(subname//' ERROR in n1 n2')</a>
+   874) <a name="l874" style="background-color: #ffff99">               endif</a>
+   875) <a name="l875" style="background-color: #ffff99">               lon1 = mod(avG1%rAttr(nlon1,n1)+1440.0_R8,360.0_R8)</a>
+   876) <a name="l876" style="background-color: #ffff99">               lat1 = avG1%rAttr(nlat1,n1)</a>
+   877) <a name="l877" style="background-color: #ffff99">               lon2 = mod(avG2%rAttr(nlon2,n2)+1440.0_R8,360.0_R8)</a>
+   878) <a name="l878" style="background-color: #ffff99">               lat2 = avG2%rAttr(nlat2,n2)</a>
+   879) <a name="l879" style="background-color: #ffff99">               msk1 = avG1%rAttr(nmask1,n1)</a>
+   880) <a name="l880" style="background-color: #ffff99">               msk2 = avG2%rAttr(nmask2,n2)</a>
+   881) <a name="l881" style="background-color: #ffff99"></a>
+   882) <a name="l882" style="background-color: #ffff99">               maskpoint = .true.</a>
+   883) <a name="l883" style="background-color: #ffff99">               if (maskmethod .and. (msk1 == 0 .or. msk2 == 0)) then</a>
+   884) <a name="l884" style="background-color: #ffff99">                  maskpoint = .false.</a>
+   885) <a name="l885" style="background-color: #ffff99">               endif</a>
+   886) <a name="l886" style="background-color: #ffff99"></a>
+   887) <a name="l887" style="background-color: #ffff99">               if (maskpoint) then</a>
+   888) <a name="l888" style="background-color: #ffff99">               if (lmethod == shr_dmodel_gGridCompareXYabs      ) then</a>
+   889) <a name="l889" style="background-color: #ffff99">                  if (abs(lon1 - lon2) &gt; leps) compare = .false.</a>
+   890) <a name="l890" style="background-color: #ffff99">                  if (abs(lat1 - lat2) &gt; leps) compare = .false.</a>
+   891) <a name="l891" style="background-color: #ffff99">               else if (lmethod == shr_dmodel_gGridCompareXYrel      ) then</a>
+   892) <a name="l892" style="background-color: #ffff99">                  if (rdiff(lon1,lon2) &gt; leps) compare = .false.</a>
+   893) <a name="l893" style="background-color: #ffff99">                  if (rdiff(lat1,lat2) &gt; leps) compare = .false.</a>
+   894) <a name="l894" style="background-color: #ffff99">               else if (lmethod == shr_dmodel_gGridCompareMaskIdent  ) then</a>
+   895) <a name="l895" style="background-color: #ffff99">                  if (msk1 /= msk2)compare = .false.</a>
+   896) <a name="l896" style="background-color: #ffff99">               else if (lmethod == shr_dmodel_gGridCompareMaskZeros  ) then</a>
+   897) <a name="l897" style="background-color: #ffff99">                  if (msk1 == 0 .and. msk2 /= 0) compare = .false.</a>
+   898) <a name="l898" style="background-color: #ffff99">                  if (msk1 /= 0 .and. msk2 == 0) compare = .false.</a>
+   899) <a name="l899" style="background-color: #ffff99">               else if (lmethod == shr_dmodel_gGridCompareMaskSubset ) then</a>
+   900) <a name="l900" style="background-color: #ffff99">                  if (msk1 /= 0 .and. msk2 == 0) compare = .false.</a>
+   901) <a name="l901" style="background-color: #ffff99">               else</a>
+   902) <a name="l902" style="background-color: #ffff99">                  write(logunit,F01) &quot;ERROR: compare method not recognized, method = &quot;,method</a>
+   903) <a name="l903" style="background-color: #ffff99">                  call shr_sys_abort(subName//&quot;ERROR: compare method not recognized&quot;)</a>
+   904) <a name="l904" style="background-color: #ffff99">               endif  ! lmethod</a>
+   905) <a name="l905" style="background-color: #ffff99">               endif  ! maskpoint</a>
+   906) <a name="l906" style="background-color: #ffff99">            enddo ! gsize</a>
+   907) <a name="l907" style="background-color: #ffff99">         endif  ! compare</a>
+   908) <a name="l908" style="background-color: #ffff99">      endif   ! compare</a>
+   909) <a name="l909" style="background-color: #ffff99">   endif   ! master_task</a>
+   910) <a name="l910" style="background-color: #ffff99"></a>
+   911) <a name="l911" style="background-color: #ffffff">   if (my_task == master_task) call mct_avect_clean(avG1)</a>
+   912) <a name="l912" style="background-color: #ffffff">   if (my_task == master_task) call mct_avect_clean(avG2)</a>
+   913) <a name="l913" style="background-color: #ffffff"></a>
+   914) <a name="l914" style="background-color: #ffffff">   call shr_mpi_bcast(compare,mpicom)</a>
+   915) <a name="l915" style="background-color: #ffffff">   shr_dmodel_gGridCompare = compare</a>
+   916) <a name="l916" style="background-color: #ffffff"></a>
+   917) <a name="l917" style="background-color: #ffffff">   return</a>
+   918) <a name="l918" style="background-color: #ffffff"></a>
+   919) <a name="l919" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   920) <a name="l920" style="background-color: #ffffff">contains   ! internal subprogram</a>
+   921) <a name="l921" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+   922) <a name="l922" style="background-color: #ffffff"></a>
+   923) <a name="l923" style="background-color: #ffffff">   real(R8) function </a><a style="background-color: #ffcccc">rdiff(v1,v2) ! internal function</a>
+   924) <a name="l924" style="background-color: #ffcccc">      !------------------------------------------</a>
+   925) <a name="l925" style="background-color: #ffcccc">      real(R8),intent(in) :: v1,v2                 ! two values to compare</a>
+   926) <a name="l926" style="background-color: #ffcccc">      real(R8),parameter  :: c0           = 0.0_R8 ! zero</a>
+   927) <a name="l927" style="background-color: #ffcccc">      real(R8),parameter  :: large_number = 1.0e20_R8 ! infinity</a>
+   928) <a name="l928" style="background-color: #ffcccc">      !------------------------------------------</a>
+   929) <a name="l929" style="background-color: #ffcccc">      if (v1 == v2) then</a>
+   930) <a name="l930" style="background-color: #ffcccc">         rdiff = c0</a>
+   931) <a name="l931" style="background-color: #ffcccc">      elseif (v1 == c0 .and. v2 /= c0) then</a>
+   932) <a name="l932" style="background-color: #ffcccc">         rdiff = large_number</a>
+   933) <a name="l933" style="background-color: #ffcccc">      elseif (v2 == c0 .and. v1 /= c0) then</a>
+   934) <a name="l934" style="background-color: #ffcccc">         rdiff = large_number</a>
+   935) <a name="l935" style="background-color: #ffcccc">      else</a>
+   936) <a name="l936" style="background-color: #ffcccc">!        rdiff = abs((v2-v1)/v1)   ! old version, but rdiff(v1,v2) /= vdiff(v2,v1)</a>
+   937) <a name="l937" style="background-color: #ffcccc">         rdiff = abs(2.0_R8*(v2-v1)/(v1+v2))</a>
+   938) <a name="l938" style="background-color: #ffcccc">      endif</a>
+   939) <a name="l939" style="background-color: #ffcccc">      !------------------------------------------</a>
+   940) <a name="l940" style="background-color: #ffcccc">   end function rdiff</a>
+   941) <a name="l941" style="background-color: #ffffff"></a>
+   942) <a name="l942" style="background-color: #ffffff">end function shr_dmodel_gGridCompare</a>
+   943) <a name="l943" style="background-color: #ffffff"></a>
+   944) <a name="l944" style="background-color: #ffffff">!===============================================================================</a>
+   945) <a name="l945" style="background-color: #ffffff"></a>
+   946) <a name="l946" style="background-color: #ffffff">subroutine shr_dmodel_mapSet_global(smatp,ggridS,gsmapS,nxgS,nygS,ggridD,gsmapD,nxgD,nygD, &amp;</a>
+   947) <a name="l947" style="background-color: #ffffff">           name,type,algo,mask,vect,compid,mpicom,strategy)</a>
+   948) <a name="l948" style="background-color: #ffffff"></a>
+   949) <a name="l949" style="background-color: #ffffff">    use shr_map_mod</a>
+   950) <a name="l950" style="background-color: #ffffff">    implicit none</a>
+   951) <a name="l951" style="background-color: #ffffff"></a>
+   952) <a name="l952" style="background-color: #ffffff">    !----- arguments -----</a>
+   953) <a name="l953" style="background-color: #ffffff">    type(mct_sMatP), intent(inout) :: smatp</a>
+   954) <a name="l954" style="background-color: #ffffff">    type(mct_gGrid), intent(in)    :: ggridS</a>
+   955) <a name="l955" style="background-color: #ffffff">    type(mct_gsmap), intent(in)    :: gsmapS</a>
+   956) <a name="l956" style="background-color: #ffffff">    integer(IN)    , intent(in)    :: nxgS</a>
+   957) <a name="l957" style="background-color: #ffffff">    integer(IN)    , intent(in)    :: nygS</a>
+   958) <a name="l958" style="background-color: #ffffff">    type(mct_gGrid), intent(in)    :: ggridD</a>
+   959) <a name="l959" style="background-color: #ffffff">    type(mct_gsmap), intent(in)    :: gsmapD</a>
+   960) <a name="l960" style="background-color: #ffffff">    integer(IN)    , intent(in)    :: nxgD</a>
+   961) <a name="l961" style="background-color: #ffffff">    integer(IN)    , intent(in)    :: nygD</a>
+   962) <a name="l962" style="background-color: #ffffff">    character(len=*),intent(in)    :: name</a>
+   963) <a name="l963" style="background-color: #ffffff">    character(len=*),intent(in)    :: type</a>
+   964) <a name="l964" style="background-color: #ffffff">    character(len=*),intent(in)    :: algo</a>
+   965) <a name="l965" style="background-color: #ffffff">    character(len=*),intent(in)    :: mask</a>
+   966) <a name="l966" style="background-color: #ffffff">    character(len=*),intent(in)    :: vect</a>
+   967) <a name="l967" style="background-color: #ffffff">    integer(IN)    , intent(in)    :: compid</a>
+   968) <a name="l968" style="background-color: #ffffff">    integer(IN)    , intent(in)    :: mpicom</a>
+   969) <a name="l969" style="background-color: #ffffff">    character(len=*),intent(in),optional :: strategy</a>
+   970) <a name="l970" style="background-color: #ffffff"></a>
+   971) <a name="l971" style="background-color: #ffffff">    !----- local -----</a>
+   972) <a name="l972" style="background-color: #ffffff"></a>
+   973) <a name="l973" style="background-color: #ffffff">    integer(IN) :: n,i,j</a>
+   974) <a name="l974" style="background-color: #ffffff">    integer(IN) :: lsizeS,gsizeS,lsizeD,gsizeD</a>
+   975) <a name="l975" style="background-color: #ffffff">    integer(IN) :: nlon,nlat,nmsk</a>
+   976) <a name="l976" style="background-color: #ffffff">    integer(IN) :: my_task,master_task,ierr</a>
+   977) <a name="l977" style="background-color: #ffffff"></a>
+   978) <a name="l978" style="background-color: #ffffff">    real(R8)   , pointer :: Xsrc(:,:)</a>
+   979) <a name="l979" style="background-color: #ffffff">    real(R8)   , pointer :: Ysrc(:,:)</a>
+   980) <a name="l980" style="background-color: #ffffff">    integer(IN), pointer :: Msrc(:,:)</a>
+   981) <a name="l981" style="background-color: #ffffff">    real(R8)   , pointer :: Xdst(:,:)</a>
+   982) <a name="l982" style="background-color: #ffffff">    real(R8)   , pointer :: Ydst(:,:)</a>
+   983) <a name="l983" style="background-color: #ffffff">    integer(IN), pointer :: Mdst(:,:)</a>
+   984) <a name="l984" style="background-color: #ffffff">    type(shr_map_mapType) :: shrmap</a>
+   985) <a name="l985" style="background-color: #ffffff">    type(mct_aVect) :: AVl</a>
+   986) <a name="l986" style="background-color: #ffffff">    type(mct_aVect) :: AVg</a>
+   987) <a name="l987" style="background-color: #ffffff"></a>
+   988) <a name="l988" style="background-color: #ffffff">    character(len=32) :: lstrategy</a>
+   989) <a name="l989" style="background-color: #ffffff">    integer(IN) :: nsrc,ndst,nwts</a>
+   990) <a name="l990" style="background-color: #ffffff">    integer(IN), pointer :: isrc(:)</a>
+   991) <a name="l991" style="background-color: #ffffff">    integer(IN), pointer :: idst(:)</a>
+   992) <a name="l992" style="background-color: #ffffff">    real(R8)   , pointer :: wgts(:)</a>
+   993) <a name="l993" style="background-color: #ffffff">    type(mct_sMat) :: sMat0</a>
+   994) <a name="l994" style="background-color: #ffffff"></a>
+   995) <a name="l995" style="background-color: #ffffff">    character(*), parameter :: subname = '(shr_dmodel_mapSet_global) '</a>
+   996) <a name="l996" style="background-color: #ffffff">    character(*), parameter :: F00   = &quot;('(shr_dmodel_mapSet_global) ',8a)&quot;</a>
+   997) <a name="l997" style="background-color: #ffffff">    character(*), parameter :: F01   = &quot;('(shr_dmodel_mapSet_global) ',a,5i8)&quot;</a>
+   998) <a name="l998" style="background-color: #ffffff"></a>
+   999) <a name="l999" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+  1000) <a name="l1000" style="background-color: #ffffff">! PURPOSE:  Initialize sMatP from mct gGrid</a>
+  1001) <a name="l1001" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+  1002) <a name="l1002" style="background-color: #ffffff"></a>
+  1003) <a name="l1003" style="background-color: #ffffff">    call MPI_COMM_RANK(mpicom,my_task,ierr)</a>
+  1004) <a name="l1004" style="background-color: #ffffff">    master_task = 0</a>
+  1005) <a name="l1005" style="background-color: #ffffff"></a>
+  1006) <a name="l1006" style="background-color: #ffffff">    !--- get sizes and allocate for SRC ---</a>
+  1007) <a name="l1007" style="background-color: #ffffff"></a>
+  1008) <a name="l1008" style="background-color: #ffffff">    lsizeS = mct_aVect_lsize(ggridS%data)</a>
+  1009) <a name="l1009" style="background-color: #ffffff">    call mct_avect_init(AVl,rList='lon:lat:mask',lsize=lsizeS)</a>
+  1010) <a name="l1010" style="background-color: #ffffff">    call mct_avect_copy(ggridS%data,AVl,rList='lon:lat:mask')</a>
+  1011) <a name="l1011" style="background-color: #ffffff">    call mct_avect_gather(AVl,AVg,gsmapS,master_task,mpicom)</a>
+  1012) <a name="l1012" style="background-color: #ffffff"></a>
+  1013) <a name="l1013" style="background-color: #ffffff">    if (my_task == master_task) then</a>
+  1014) <a name="l1014" style="background-color: #ffffff">       gsizeS = mct_aVect_lsize(AVg)</a>
+  1015) <a name="l1015" style="background-color: #ffffff">       if (gsizeS /= nxgS*nygS) then</a>
+  1016) <a name="l1016" style="background-color: #ffff99">          write(logunit,F01) ' ERROR: gsizeS ',gsizeS,nxgS,nygS</a>
+  1017) <a name="l1017" style="background-color: #ffff99">          call shr_sys_abort(subname//' ERROR gsizeS')</a>
+  1018) <a name="l1018" style="background-color: #ffff99">       endif</a>
+  1019) <a name="l1019" style="background-color: #fafad2">       allocate(Xsrc(nxgS,nygS),Ysrc(nxgS,nygS),Msrc(nxgS,nygS))</a>
+  1020) <a name="l1020" style="background-color: #fafad2"></a>
+  1021) <a name="l1021" style="background-color: #ffffff">       nlon = mct_avect_indexRA(AVg,'lon')</a>
+  1022) <a name="l1022" style="background-color: #ffffff">       nlat = mct_avect_indexRA(AVg,'lat')</a>
+  1023) <a name="l1023" style="background-color: #ffffff">       nmsk = mct_avect_indexRA(AVg,'mask')</a>
+  1024) <a name="l1024" style="background-color: #ffffff"></a>
+  1025) <a name="l1025" style="background-color: #ffffff">       n = 0</a>
+  1026) <a name="l1026" style="background-color: #ffffff">       Msrc = 1</a>
+  1027) <a name="l1027" style="background-color: #ffffff">       do j = 1,nygS</a>
+  1028) <a name="l1028" style="background-color: #ffffff">       do i = 1,nxgS</a>
+  1029) <a name="l1029" style="background-color: #ffffff">          n = n + 1</a>
+  1030) <a name="l1030" style="background-color: #ffffff">          Xsrc(i,j) = AVg%rAttr(nlon,n)</a>
+  1031) <a name="l1031" style="background-color: #ffffff">          Ysrc(i,j) = AVg%rAttr(nlat,n)</a>
+  1032) <a name="l1032" style="background-color: #ffffff">          if (abs(AVg%rAttr(nmsk,n)) &lt; 0.5_R8) </a><a style="background-color: #ffff99">Msrc(i,j) = 0</a>
+  1033) <a name="l1033" style="background-color: #ffff99">       enddo</a>
+  1034) <a name="l1034" style="background-color: #ffff99">       enddo</a>
+  1035) <a name="l1035" style="background-color: #ffff99">    endif</a>
+  1036) <a name="l1036" style="background-color: #ffff99"></a>
+  1037) <a name="l1037" style="background-color: #ffffff">    if (my_task == master_task) call mct_aVect_clean(AVg)</a>
+  1038) <a name="l1038" style="background-color: #ffffff">    call mct_aVect_clean(AVl)</a>
+  1039) <a name="l1039" style="background-color: #ffffff"></a>
+  1040) <a name="l1040" style="background-color: #ffffff">    !--- get sizes and allocate for DST ---</a>
+  1041) <a name="l1041" style="background-color: #ffffff"></a>
+  1042) <a name="l1042" style="background-color: #ffffff">    lsizeD = mct_aVect_lsize(ggridD%data)</a>
+  1043) <a name="l1043" style="background-color: #ffffff">    call mct_avect_init(AVl,rList='lon:lat:mask',lsize=lsizeD)</a>
+  1044) <a name="l1044" style="background-color: #ffffff">    call mct_avect_copy(ggridD%data,AVl,rList='lon:lat:mask')</a>
+  1045) <a name="l1045" style="background-color: #ffffff">    call mct_avect_gather(AVl,AVg,gsmapD,master_task,mpicom)</a>
+  1046) <a name="l1046" style="background-color: #ffffff"></a>
+  1047) <a name="l1047" style="background-color: #ffffff">    if (my_task == master_task) then</a>
+  1048) <a name="l1048" style="background-color: #ffffff">       gsizeD = mct_aVect_lsize(AVg)</a>
+  1049) <a name="l1049" style="background-color: #ffffff">       if (gsizeD /= nxgD*nygD) then</a>
+  1050) <a name="l1050" style="background-color: #ffff99">          write(logunit,F01) ' ERROR: gsizeD ',gsizeD,nxgD,nygD</a>
+  1051) <a name="l1051" style="background-color: #ffff99">          call shr_sys_abort(subname//' ERROR gsizeD')</a>
+  1052) <a name="l1052" style="background-color: #ffff99">       endif</a>
+  1053) <a name="l1053" style="background-color: #fafad2">       allocate(Xdst(nxgD,nygD),Ydst(nxgD,nygD),Mdst(nxgD,nygD))</a>
+  1054) <a name="l1054" style="background-color: #fafad2"></a>
+  1055) <a name="l1055" style="background-color: #ffffff">       nlon = mct_avect_indexRA(AVg,'lon')</a>
+  1056) <a name="l1056" style="background-color: #ffffff">       nlat = mct_avect_indexRA(AVg,'lat')</a>
+  1057) <a name="l1057" style="background-color: #ffffff">       nmsk = mct_avect_indexRA(AVg,'mask')</a>
+  1058) <a name="l1058" style="background-color: #ffffff"></a>
+  1059) <a name="l1059" style="background-color: #ffffff">       n = 0</a>
+  1060) <a name="l1060" style="background-color: #ffffff">       Mdst = 1</a>
+  1061) <a name="l1061" style="background-color: #ffffff">       do j = 1,nygD</a>
+  1062) <a name="l1062" style="background-color: #ffffff">       do i = 1,nxgD</a>
+  1063) <a name="l1063" style="background-color: #ffffff">          n = n + 1</a>
+  1064) <a name="l1064" style="background-color: #ffffff">          Xdst(i,j) = AVg%rAttr(nlon,n)</a>
+  1065) <a name="l1065" style="background-color: #ffffff">          Ydst(i,j) = AVg%rAttr(nlat,n)</a>
+  1066) <a name="l1066" style="background-color: #ffffff">          if (abs(AVg%rAttr(nmsk,n)) &lt; 0.5_R8) Mdst(i,j) = 0</a>
+  1067) <a name="l1067" style="background-color: #ffffff">       enddo</a>
+  1068) <a name="l1068" style="background-color: #ffffff">       enddo</a>
+  1069) <a name="l1069" style="background-color: #ffffff">    endif</a>
+  1070) <a name="l1070" style="background-color: #ffffff"></a>
+  1071) <a name="l1071" style="background-color: #ffffff">    if (my_task == master_task) call mct_aVect_clean(AVg)</a>
+  1072) <a name="l1072" style="background-color: #ffffff">    call mct_aVect_clean(AVl)</a>
+  1073) <a name="l1073" style="background-color: #ffffff"></a>
+  1074) <a name="l1074" style="background-color: #ffffff">    !--- set map ---</a>
+  1075) <a name="l1075" style="background-color: #ffffff"></a>
+  1076) <a name="l1076" style="background-color: #ffffff">    if (my_task == master_task) then</a>
+  1077) <a name="l1077" style="background-color: #ffffff">       call shr_map_mapSet(shrmap,Xsrc,Ysrc,Msrc,Xdst,Ydst,Mdst, &amp;</a>
+  1078) <a name="l1078" style="background-color: #ffffff">          trim(name),trim(type),trim(algo),trim(mask),trim(vect))</a>
+  1079) <a name="l1079" style="background-color: #ffffff">       deallocate(Xsrc,Ysrc,Msrc)</a>
+  1080) <a name="l1080" style="background-color: #ffffff">       deallocate(Xdst,Ydst,Mdst)</a>
+  1081) <a name="l1081" style="background-color: #ffffff">    endif</a>
+  1082) <a name="l1082" style="background-color: #ffffff"></a>
+  1083) <a name="l1083" style="background-color: #ffffff">    !--- convert map to sMatP ---</a>
+  1084) <a name="l1084" style="background-color: #ffffff"></a>
+  1085) <a name="l1085" style="background-color: #ffffff">    lstrategy = 'Xonly'</a>
+  1086) <a name="l1086" style="background-color: #ffffff">    if (</a><a style="background-color: #fafad2">present(strategy)) then</a>
+  1087) <a name="l1087" style="background-color: #ffff99">       lstrategy = trim(strategy)</a>
+  1088) <a name="l1088" style="background-color: #ffff99">    endif</a>
+  1089) <a name="l1089" style="background-color: #ffff99"></a>
+  1090) <a name="l1090" style="background-color: #ffffff">    if (my_task == master_task) then</a>
+  1091) <a name="l1091" style="background-color: #ffffff">       call shr_map_get(shrmap,shr_map_fs_nsrc,nsrc)</a>
+  1092) <a name="l1092" style="background-color: #ffffff">       call shr_map_get(shrmap,shr_map_fs_ndst,ndst)</a>
+  1093) <a name="l1093" style="background-color: #ffffff">       call shr_map_get(shrmap,shr_map_fs_nwts,nwts)</a>
+  1094) <a name="l1094" style="background-color: #fafad2">       allocate(isrc(nwts),idst(nwts),wgts(nwts))</a>
+  1095) <a name="l1095" style="background-color: #fafad2">       call </a><a style="background-color: #ffffff">shr_map_get(shrmap,isrc,idst,wgts)</a>
+  1096) <a name="l1096" style="background-color: #ffffff">       call shr_map_clean(shrmap)</a>
+  1097) <a name="l1097" style="background-color: #ffffff"></a>
+  1098) <a name="l1098" style="background-color: #ffffff">       call mct_sMat_init(sMat0,ndst,nsrc,nwts)</a>
+  1099) <a name="l1099" style="background-color: #ffffff"></a>
+  1100) <a name="l1100" style="background-color: #ffffff">       call mct_sMat_ImpGColI (sMat0,isrc,nwts)</a>
+  1101) <a name="l1101" style="background-color: #ffffff">       call mct_sMat_ImpGRowI (sMat0,idst,nwts)</a>
+  1102) <a name="l1102" style="background-color: #ffffff">       call mct_sMat_ImpMatrix(sMat0,wgts,nwts)</a>
+  1103) <a name="l1103" style="background-color: #ffffff">       deallocate(isrc,idst,wgts)</a>
+  1104) <a name="l1104" style="background-color: #ffffff">    endif</a>
+  1105) <a name="l1105" style="background-color: #ffffff"></a>
+  1106) <a name="l1106" style="background-color: #ffffff">    call mct_sMatP_Init(sMatP,sMat0,gsmapS,gsmapD,lstrategy,master_task,mpicom,compid)</a>
+  1107) <a name="l1107" style="background-color: #ffffff"></a>
+  1108) <a name="l1108" style="background-color: #ffffff">    if (my_task == master_task) then</a>
+  1109) <a name="l1109" style="background-color: #ffffff">       call mct_sMat_clean(sMat0)</a>
+  1110) <a name="l1110" style="background-color: #ffffff">    endif</a>
+  1111) <a name="l1111" style="background-color: #ffffff"></a>
+  1112) <a name="l1112" style="background-color: #ffffff">end subroutine shr_dmodel_mapSet_global</a>
+  1113) <a name="l1113" style="background-color: #ffffff"></a>
+  1114) <a name="l1114" style="background-color: #ffffff">!===============================================================================</a>
+  1115) <a name="l1115" style="background-color: #ffffff"></a>
+  1116) <a name="l1116" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">shr_dmodel_mapSet_dest(smatp,ggridS,gsmapS,nxgS,nygS,ggridD,gsmapD,nxgD,nygD, &amp;</a>
+  1117) <a name="l1117" style="background-color: #ffcccc">           name,type,algo,mask,vect,compid,mpicom,strategy)</a>
+  1118) <a name="l1118" style="background-color: #ffcccc"></a>
+  1119) <a name="l1119" style="background-color: #ffcccc">    use shr_map_mod</a>
+  1120) <a name="l1120" style="background-color: #ffcccc">    implicit none</a>
+  1121) <a name="l1121" style="background-color: #ffcccc"></a>
+  1122) <a name="l1122" style="background-color: #ffcccc">    !----- arguments -----</a>
+  1123) <a name="l1123" style="background-color: #ffcccc">    type(mct_sMatP), intent(inout) :: smatp</a>
+  1124) <a name="l1124" style="background-color: #ffcccc">    type(mct_gGrid), intent(in)    :: ggridS</a>
+  1125) <a name="l1125" style="background-color: #ffcccc">    type(mct_gsmap), intent(in)    :: gsmapS</a>
+  1126) <a name="l1126" style="background-color: #ffcccc">    integer(IN)    , intent(in)    :: nxgS</a>
+  1127) <a name="l1127" style="background-color: #ffcccc">    integer(IN)    , intent(in)    :: nygS</a>
+  1128) <a name="l1128" style="background-color: #ffcccc">    type(mct_gGrid), intent(in)    :: ggridD</a>
+  1129) <a name="l1129" style="background-color: #ffcccc">    type(mct_gsmap), intent(in)    :: gsmapD</a>
+  1130) <a name="l1130" style="background-color: #ffcccc">    integer(IN)    , intent(in)    :: nxgD</a>
+  1131) <a name="l1131" style="background-color: #ffcccc">    integer(IN)    , intent(in)    :: nygD</a>
+  1132) <a name="l1132" style="background-color: #ffcccc">    character(len=*),intent(in)    :: name</a>
+  1133) <a name="l1133" style="background-color: #ffcccc">    character(len=*),intent(in)    :: type</a>
+  1134) <a name="l1134" style="background-color: #ffcccc">    character(len=*),intent(in)    :: algo</a>
+  1135) <a name="l1135" style="background-color: #ffcccc">    character(len=*),intent(in)    :: mask</a>
+  1136) <a name="l1136" style="background-color: #ffcccc">    character(len=*),intent(in)    :: vect</a>
+  1137) <a name="l1137" style="background-color: #ffcccc">    integer(IN)    , intent(in)    :: compid</a>
+  1138) <a name="l1138" style="background-color: #ffcccc">    integer(IN)    , intent(in)    :: mpicom</a>
+  1139) <a name="l1139" style="background-color: #ffcccc">    character(len=*),intent(in),optional :: strategy</a>
+  1140) <a name="l1140" style="background-color: #ffcccc"></a>
+  1141) <a name="l1141" style="background-color: #ffcccc">    !----- local -----</a>
+  1142) <a name="l1142" style="background-color: #ffcccc"></a>
+  1143) <a name="l1143" style="background-color: #ffcccc">    integer(IN) :: n,i,j</a>
+  1144) <a name="l1144" style="background-color: #ffcccc">    integer(IN) :: lsizeS,gsizeS,lsizeD,gsizeD</a>
+  1145) <a name="l1145" style="background-color: #ffcccc">    integer(IN) :: nlon,nlat,nmsk</a>
+  1146) <a name="l1146" style="background-color: #ffcccc">    integer(IN) :: my_task,master_task,ierr</a>
+  1147) <a name="l1147" style="background-color: #ffcccc"></a>
+  1148) <a name="l1148" style="background-color: #ffcccc">    real(R8)   , pointer :: Xsrc(:,:)</a>
+  1149) <a name="l1149" style="background-color: #ffcccc">    real(R8)   , pointer :: Ysrc(:,:)</a>
+  1150) <a name="l1150" style="background-color: #ffcccc">    integer(IN), pointer :: Msrc(:,:)</a>
+  1151) <a name="l1151" style="background-color: #ffcccc">    real(R8)   , pointer :: Xdst(:)</a>
+  1152) <a name="l1152" style="background-color: #ffcccc">    real(R8)   , pointer :: Ydst(:)</a>
+  1153) <a name="l1153" style="background-color: #ffcccc">    integer(IN), pointer :: Mdst(:)</a>
+  1154) <a name="l1154" style="background-color: #ffcccc">    type(shr_map_mapType) :: shrmap</a>
+  1155) <a name="l1155" style="background-color: #ffcccc">    type(mct_aVect) :: AVl</a>
+  1156) <a name="l1156" style="background-color: #ffcccc">    type(mct_aVect) :: AVg</a>
+  1157) <a name="l1157" style="background-color: #ffcccc"></a>
+  1158) <a name="l1158" style="background-color: #ffcccc">    character(len=32) :: lstrategy</a>
+  1159) <a name="l1159" style="background-color: #ffcccc">    integer(IN) :: nsrc,ndst,nwts</a>
+  1160) <a name="l1160" style="background-color: #ffcccc">    integer(IN), pointer :: points(:)</a>
+  1161) <a name="l1161" style="background-color: #ffcccc">    integer(IN), pointer :: isrc(:)</a>
+  1162) <a name="l1162" style="background-color: #ffcccc">    integer(IN), pointer :: idst(:)</a>
+  1163) <a name="l1163" style="background-color: #ffcccc">    real(R8)   , pointer :: wgts(:)</a>
+  1164) <a name="l1164" style="background-color: #ffcccc">    type(mct_sMat) :: sMat0</a>
+  1165) <a name="l1165" style="background-color: #ffcccc"></a>
+  1166) <a name="l1166" style="background-color: #ffcccc">    character(*), parameter :: subname = '(shr_dmodel_mapSet_dest) '</a>
+  1167) <a name="l1167" style="background-color: #ffcccc">    character(*), parameter :: F00   = &quot;('(shr_dmodel_mapSet_dest) ',8a)&quot;</a>
+  1168) <a name="l1168" style="background-color: #ffcccc">    character(*), parameter :: F01   = &quot;('(shr_dmodel_mapSet_dest) ',a,5i8)&quot;</a>
+  1169) <a name="l1169" style="background-color: #ffcccc"></a>
+  1170) <a name="l1170" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+  1171) <a name="l1171" style="background-color: #ffcccc">! PURPOSE:  Initialize sMatP from mct gGrid</a>
+  1172) <a name="l1172" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+  1173) <a name="l1173" style="background-color: #ffcccc"></a>
+  1174) <a name="l1174" style="background-color: #ffcccc">    call MPI_COMM_RANK(mpicom,my_task,ierr)</a>
+  1175) <a name="l1175" style="background-color: #ffcccc">    master_task = 0</a>
+  1176) <a name="l1176" style="background-color: #ffcccc"></a>
+  1177) <a name="l1177" style="background-color: #ffcccc">    !--- get sizes and allocate for SRC ---</a>
+  1178) <a name="l1178" style="background-color: #ffcccc"></a>
+  1179) <a name="l1179" style="background-color: #ffcccc">    lsizeS = mct_aVect_lsize(ggridS%data)</a>
+  1180) <a name="l1180" style="background-color: #ffcccc">    call mct_avect_init(AVl,rList='lon:lat:mask',lsize=lsizeS)</a>
+  1181) <a name="l1181" style="background-color: #ffcccc">    call mct_avect_copy(ggridS%data,AVl,rList='lon:lat:mask')</a>
+  1182) <a name="l1182" style="background-color: #ffcccc"></a>
+  1183) <a name="l1183" style="background-color: #ffcccc">    call mct_avect_gather(AVl,AVg,gsmapS,master_task,mpicom)</a>
+  1184) <a name="l1184" style="background-color: #ffcccc"></a>
+  1185) <a name="l1185" style="background-color: #ffcccc">    allocate(Xsrc(nxgS,nygS),Ysrc(nxgS,nygS),Msrc(nxgS,nygS))</a>
+  1186) <a name="l1186" style="background-color: #ffcccc">    if (my_task == master_task) then</a>
+  1187) <a name="l1187" style="background-color: #ffcccc">       gsizeS = mct_aVect_lsize(AVg)</a>
+  1188) <a name="l1188" style="background-color: #ffcccc">       if (gsizeS /= nxgS*nygS) then</a>
+  1189) <a name="l1189" style="background-color: #ffcccc">          write(logunit,F01) ' ERROR: gsizeS ',gsizeS,nxgS,nygS</a>
+  1190) <a name="l1190" style="background-color: #ffcccc">          call shr_sys_abort(subname//' ERROR gsizeS')</a>
+  1191) <a name="l1191" style="background-color: #ffcccc">       endif</a>
+  1192) <a name="l1192" style="background-color: #ffcccc"></a>
+  1193) <a name="l1193" style="background-color: #ffcccc">       nlon = mct_avect_indexRA(AVg,'lon')</a>
+  1194) <a name="l1194" style="background-color: #ffcccc">       nlat = mct_avect_indexRA(AVg,'lat')</a>
+  1195) <a name="l1195" style="background-color: #ffcccc">       nmsk = mct_avect_indexRA(AVg,'mask')</a>
+  1196) <a name="l1196" style="background-color: #ffcccc"></a>
+  1197) <a name="l1197" style="background-color: #ffcccc">       n = 0</a>
+  1198) <a name="l1198" style="background-color: #ffcccc">       Msrc = 1</a>
+  1199) <a name="l1199" style="background-color: #ffcccc">       do j = 1,nygS</a>
+  1200) <a name="l1200" style="background-color: #ffcccc">       do i = 1,nxgS</a>
+  1201) <a name="l1201" style="background-color: #ffcccc">          n = n + 1</a>
+  1202) <a name="l1202" style="background-color: #ffcccc">          Xsrc(i,j) = AVg%rAttr(nlon,n)</a>
+  1203) <a name="l1203" style="background-color: #ffcccc">          Ysrc(i,j) = AVg%rAttr(nlat,n)</a>
+  1204) <a name="l1204" style="background-color: #ffcccc">          if (abs(AVg%rAttr(nmsk,n)) &lt; 0.5_R8) Msrc(i,j) = 0</a>
+  1205) <a name="l1205" style="background-color: #ffcccc">       enddo</a>
+  1206) <a name="l1206" style="background-color: #ffcccc">       enddo</a>
+  1207) <a name="l1207" style="background-color: #ffcccc">    endif</a>
+  1208) <a name="l1208" style="background-color: #ffcccc">    call shr_mpi_bcast(Xsrc,mpicom)</a>
+  1209) <a name="l1209" style="background-color: #ffcccc">    call shr_mpi_bcast(Ysrc,mpicom)</a>
+  1210) <a name="l1210" style="background-color: #ffcccc">    call shr_mpi_bcast(Msrc,mpicom)</a>
+  1211) <a name="l1211" style="background-color: #ffcccc"></a>
+  1212) <a name="l1212" style="background-color: #ffcccc">    if (my_task == master_task) call mct_aVect_clean(AVg)</a>
+  1213) <a name="l1213" style="background-color: #ffcccc">    call mct_aVect_clean(AVl)</a>
+  1214) <a name="l1214" style="background-color: #ffcccc"></a>
+  1215) <a name="l1215" style="background-color: #ffcccc">    !--- get sizes and allocate for DST ---</a>
+  1216) <a name="l1216" style="background-color: #ffcccc"></a>
+  1217) <a name="l1217" style="background-color: #ffcccc">    lsizeD = mct_aVect_lsize(ggridD%data)</a>
+  1218) <a name="l1218" style="background-color: #ffcccc">    call mct_avect_init(AVl,rList='lon:lat:mask',lsize=lsizeD)</a>
+  1219) <a name="l1219" style="background-color: #ffcccc">    call mct_avect_copy(ggridD%data,AVl,rList='lon:lat:mask')</a>
+  1220) <a name="l1220" style="background-color: #ffcccc"></a>
+  1221) <a name="l1221" style="background-color: #ffcccc">#if (1 == 0)</a>
+  1222) <a name="l1222" style="background-color: #ffcccc">    call mct_avect_gather(AVl,AVg,gsmapD,master_task,mpicom)</a>
+  1223) <a name="l1223" style="background-color: #ffcccc"></a>
+  1224) <a name="l1224" style="background-color: #ffcccc">    if (my_task == master_task) then</a>
+  1225) <a name="l1225" style="background-color: #ffcccc">       gsizeD = mct_aVect_lsize(AVg)</a>
+  1226) <a name="l1226" style="background-color: #ffcccc">       if (gsizeD /= nxgD*nygD) then</a>
+  1227) <a name="l1227" style="background-color: #ffcccc">          write(logunit,F01) ' ERROR: gsizeD ',gsizeD,nxgD,nygD</a>
+  1228) <a name="l1228" style="background-color: #ffcccc">          call shr_sys_abort(subname//' ERROR gsizeD')</a>
+  1229) <a name="l1229" style="background-color: #ffcccc">       endif</a>
+  1230) <a name="l1230" style="background-color: #ffcccc">       allocate(Xdst(nxgD,nygD),Ydst(nxgD,nygD),Mdst(nxgD,nygD))</a>
+  1231) <a name="l1231" style="background-color: #ffcccc"></a>
+  1232) <a name="l1232" style="background-color: #ffcccc">       nlon = mct_avect_indexRA(AVg,'lon')</a>
+  1233) <a name="l1233" style="background-color: #ffcccc">       nlat = mct_avect_indexRA(AVg,'lat')</a>
+  1234) <a name="l1234" style="background-color: #ffcccc">       nmsk = mct_avect_indexRA(AVg,'mask')</a>
+  1235) <a name="l1235" style="background-color: #ffcccc"></a>
+  1236) <a name="l1236" style="background-color: #ffcccc">       n = 0</a>
+  1237) <a name="l1237" style="background-color: #ffcccc">       Mdst = 1</a>
+  1238) <a name="l1238" style="background-color: #ffcccc">       do j = 1,nygD</a>
+  1239) <a name="l1239" style="background-color: #ffcccc">       do i = 1,nxgD</a>
+  1240) <a name="l1240" style="background-color: #ffcccc">          n = n + 1</a>
+  1241) <a name="l1241" style="background-color: #ffcccc">          Xdst(i,j) = AVg%rAttr(nlon,n)</a>
+  1242) <a name="l1242" style="background-color: #ffcccc">          Ydst(i,j) = AVg%rAttr(nlat,n)</a>
+  1243) <a name="l1243" style="background-color: #ffcccc">          if (abs(AVg%rAttr(nmsk,n)) &lt; 0.5_R8) Mdst(i,j) = 0</a>
+  1244) <a name="l1244" style="background-color: #ffcccc">       enddo</a>
+  1245) <a name="l1245" style="background-color: #ffcccc">       enddo</a>
+  1246) <a name="l1246" style="background-color: #ffcccc">    endif</a>
+  1247) <a name="l1247" style="background-color: #ffcccc"></a>
+  1248) <a name="l1248" style="background-color: #ffcccc">    if (my_task == master_task) call mct_aVect_clean(AVg)</a>
+  1249) <a name="l1249" style="background-color: #ffcccc">#endif</a>
+  1250) <a name="l1250" style="background-color: #ffcccc"></a>
+  1251) <a name="l1251" style="background-color: #ffcccc">    allocate(Xdst(lsizeD),Ydst(lsizeD),Mdst(lsizeD))</a>
+  1252) <a name="l1252" style="background-color: #ffcccc"></a>
+  1253) <a name="l1253" style="background-color: #ffcccc">    nlon = mct_avect_indexRA(AVl,'lon')</a>
+  1254) <a name="l1254" style="background-color: #ffcccc">    nlat = mct_avect_indexRA(AVl,'lat')</a>
+  1255) <a name="l1255" style="background-color: #ffcccc">    nmsk = mct_avect_indexRA(AVl,'mask')</a>
+  1256) <a name="l1256" style="background-color: #ffcccc"></a>
+  1257) <a name="l1257" style="background-color: #ffcccc">    Mdst = 1</a>
+  1258) <a name="l1258" style="background-color: #ffcccc">    do n = 1,lsizeD</a>
+  1259) <a name="l1259" style="background-color: #ffcccc">       Xdst(n) = AVl%rAttr(nlon,n)</a>
+  1260) <a name="l1260" style="background-color: #ffcccc">       Ydst(n) = AVl%rAttr(nlat,n)</a>
+  1261) <a name="l1261" style="background-color: #ffcccc">       if (abs(AVl%rAttr(nmsk,n)) &lt; 0.5_R8) Mdst(n) = 0</a>
+  1262) <a name="l1262" style="background-color: #ffcccc">    enddo</a>
+  1263) <a name="l1263" style="background-color: #ffcccc"></a>
+  1264) <a name="l1264" style="background-color: #ffcccc">    call mct_aVect_clean(AVl)</a>
+  1265) <a name="l1265" style="background-color: #ffcccc"></a>
+  1266) <a name="l1266" style="background-color: #ffcccc">    !--- set map ---</a>
+  1267) <a name="l1267" style="background-color: #ffcccc"></a>
+  1268) <a name="l1268" style="background-color: #ffcccc">    nsrc = nxgS*nygS</a>
+  1269) <a name="l1269" style="background-color: #ffcccc">    ndst = nxgD*nygD</a>
+  1270) <a name="l1270" style="background-color: #ffcccc">    call mct_gsmap_orderedPoints(gsmapD,my_task,points)</a>
+  1271) <a name="l1271" style="background-color: #ffcccc">    if (size(points) /= size(Xdst)) then</a>
+  1272) <a name="l1272" style="background-color: #ffcccc">       write(logunit,F01) ' ERROR: gsizeD ',size(points),size(Xdst)</a>
+  1273) <a name="l1273" style="background-color: #ffcccc">       call shr_sys_abort(subname//' ERROR points size')</a>
+  1274) <a name="l1274" style="background-color: #ffcccc">    endif</a>
+  1275) <a name="l1275" style="background-color: #ffcccc">    call shr_map_mapSet(shrmap,Xsrc,Ysrc,Msrc,Xdst,Ydst,Mdst,ndst,points, &amp;</a>
+  1276) <a name="l1276" style="background-color: #ffcccc">       trim(name),trim(type),trim(algo),trim(mask),trim(vect))</a>
+  1277) <a name="l1277" style="background-color: #ffcccc">    deallocate(points)</a>
+  1278) <a name="l1278" style="background-color: #ffcccc">    deallocate(Xsrc,Ysrc,Msrc)</a>
+  1279) <a name="l1279" style="background-color: #ffcccc">    deallocate(Xdst,Ydst,Mdst)</a>
+  1280) <a name="l1280" style="background-color: #ffcccc"></a>
+  1281) <a name="l1281" style="background-color: #ffcccc">    !--- convert map to sMatP ---</a>
+  1282) <a name="l1282" style="background-color: #ffcccc"></a>
+  1283) <a name="l1283" style="background-color: #ffcccc">    lstrategy = 'Xonly'</a>
+  1284) <a name="l1284" style="background-color: #ffcccc">    if (present(strategy)) then</a>
+  1285) <a name="l1285" style="background-color: #ffcccc">       lstrategy = trim(strategy)</a>
+  1286) <a name="l1286" style="background-color: #ffcccc">    endif</a>
+  1287) <a name="l1287" style="background-color: #ffcccc"></a>
+  1288) <a name="l1288" style="background-color: #ffcccc">    call shr_map_get(shrmap,shr_map_fs_nwts,nwts)</a>
+  1289) <a name="l1289" style="background-color: #ffcccc">    allocate(isrc(nwts),idst(nwts),wgts(nwts))</a>
+  1290) <a name="l1290" style="background-color: #ffcccc">    call shr_map_get(shrmap,isrc,idst,wgts)</a>
+  1291) <a name="l1291" style="background-color: #ffcccc">    call shr_map_clean(shrmap)</a>
+  1292) <a name="l1292" style="background-color: #ffcccc"></a>
+  1293) <a name="l1293" style="background-color: #ffcccc">    call mct_sMat_init(sMat0,ndst,nsrc,nwts)</a>
+  1294) <a name="l1294" style="background-color: #ffcccc"></a>
+  1295) <a name="l1295" style="background-color: #ffcccc">    call mct_sMat_ImpLColI (sMat0,isrc,nwts)</a>
+  1296) <a name="l1296" style="background-color: #ffcccc">    call mct_sMat_ImpLRowI (sMat0,idst,nwts)</a>
+  1297) <a name="l1297" style="background-color: #ffcccc">    call mct_sMat_ImpMatrix(sMat0,wgts,nwts)</a>
+  1298) <a name="l1298" style="background-color: #ffcccc">    deallocate(isrc,idst,wgts)</a>
+  1299) <a name="l1299" style="background-color: #ffcccc"></a>
+  1300) <a name="l1300" style="background-color: #ffcccc">    call mct_sMatP_Init(sMatP,sMat0,gsmapS,gsmapD,master_task,mpicom,compid)</a>
+  1301) <a name="l1301" style="background-color: #ffcccc"></a>
+  1302) <a name="l1302" style="background-color: #ffcccc">    call mct_sMat_clean(sMat0)</a>
+  1303) <a name="l1303" style="background-color: #ffcccc"></a>
+  1304) <a name="l1304" style="background-color: #ffcccc">end subroutine shr_dmodel_mapSet_dest</a>
+  1305) <a name="l1305" style="background-color: #ffffff"></a>
+  1306) <a name="l1306" style="background-color: #ffffff">!===============================================================================</a>
+  1307) <a name="l1307" style="background-color: #ffffff"></a>
+  1308) <a name="l1308" style="background-color: #ffffff">subroutine shr_dmodel_rearrGGrid( ggridi, ggrido, gsmap, rearr, mpicom )</a>
+  1309) <a name="l1309" style="background-color: #ffffff"></a>
+  1310) <a name="l1310" style="background-color: #ffffff">  implicit none</a>
+  1311) <a name="l1311" style="background-color: #ffffff"></a>
+  1312) <a name="l1312" style="background-color: #ffffff">  !----- arguments -----</a>
+  1313) <a name="l1313" style="background-color: #ffffff">  type(mct_ggrid), intent(in)    :: ggridi</a>
+  1314) <a name="l1314" style="background-color: #ffffff">  type(mct_ggrid), intent(inout) :: ggrido  </a>
+  1315) <a name="l1315" style="background-color: #ffffff">  type(mct_gsmap), intent(in)    :: gsmap</a>
+  1316) <a name="l1316" style="background-color: #ffffff">  type(mct_rearr), intent(in)    :: rearr</a>
+  1317) <a name="l1317" style="background-color: #ffffff">  integer(IN)    , intent(in)    :: mpicom</a>
+  1318) <a name="l1318" style="background-color: #ffffff"></a>
+  1319) <a name="l1319" style="background-color: #ffffff">  !----- local -----</a>
+  1320) <a name="l1320" style="background-color: #ffffff">  integer(IN)          :: lsize      ! lsize</a>
+  1321) <a name="l1321" style="background-color: #ffffff">  real(R8)   , pointer :: data(:)    ! temporary</a>
+  1322) <a name="l1322" style="background-color: #ffffff">  integer(IN), pointer :: idata(:)   ! temporary</a>
+  1323) <a name="l1323" style="background-color: #ffffff">  integer(IN)          :: my_task    ! local pe number</a>
+  1324) <a name="l1324" style="background-color: #ffffff">  integer(IN)          :: ier        ! error code</a>
+  1325) <a name="l1325" style="background-color: #ffffff">  character(*), parameter :: subname = '(shr_dmodel_rearrGGrid) '</a>
+  1326) <a name="l1326" style="background-color: #ffffff"></a>
+  1327) <a name="l1327" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+  1328) <a name="l1328" style="background-color: #ffffff">! PURPOSE:  Determine MCT ggrid</a>
+  1329) <a name="l1329" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+  1330) <a name="l1330" style="background-color: #ffffff"></a>
+  1331) <a name="l1331" style="background-color: #ffffff">  ! Initialize mct ggrid type</a>
+  1332) <a name="l1332" style="background-color: #ffffff">  ! lat/lon in degrees,  area in radians^2, mask is 1 (ocean), 0 (non-ocean)</a>
+  1333) <a name="l1333" style="background-color: #ffffff"></a>
+  1334) <a name="l1334" style="background-color: #ffffff">  call mpi_comm_rank(mpicom,my_task,ier)</a>
+  1335) <a name="l1335" style="background-color: #ffffff"></a>
+  1336) <a name="l1336" style="background-color: #ffffff">  lsize = mct_gsMap_lsize(gsMap, mpicom)</a>
+  1337) <a name="l1337" style="background-color: #ffffff">  call mct_gGrid_init( ggrido, ggridi, lsize=lsize )</a>
+  1338) <a name="l1338" style="background-color: #ffffff"></a>
+  1339) <a name="l1339" style="background-color: #ffffff">  ! Determine global gridpoint number attribute, GlobGridNum, automatically in ggrid</a>
+  1340) <a name="l1340" style="background-color: #ffffff"></a>
+  1341) <a name="l1341" style="background-color: #ffffff">  call mct_gsMap_orderedPoints(gsMap, my_task, idata)</a>
+  1342) <a name="l1342" style="background-color: #ffffff">  call mct_gGrid_importIAttr(ggrido,'GlobGridNum',idata,lsize)</a>
+  1343) <a name="l1343" style="background-color: #ffffff">  deallocate(idata)</a>
+  1344) <a name="l1344" style="background-color: #ffffff"></a>
+  1345) <a name="l1345" style="background-color: #ffffff">  ! Initialize attribute vector with special value</a>
+  1346) <a name="l1346" style="background-color: #ffffff"></a>
+  1347) <a name="l1347" style="background-color: #fafad2">  allocate(data(lsize))</a>
+  1348) <a name="l1348" style="background-color: #fafad2"></a>
+  1349) <a name="l1349" style="background-color: #ffffff">  data(:) = -9999.0_R8 </a>
+  1350) <a name="l1350" style="background-color: #ffffff">  call mct_gGrid_importRAttr(ggrido,&quot;lat&quot;  ,data,lsize) </a>
+  1351) <a name="l1351" style="background-color: #ffffff">  call mct_gGrid_importRAttr(ggrido,&quot;lon&quot;  ,data,lsize) </a>
+  1352) <a name="l1352" style="background-color: #ffffff">  call mct_gGrid_importRAttr(ggrido,&quot;area&quot; ,data,lsize) </a>
+  1353) <a name="l1353" style="background-color: #ffffff">  call mct_gGrid_importRAttr(ggrido,&quot;aream&quot;,data,lsize) </a>
+  1354) <a name="l1354" style="background-color: #ffffff">  data(:) = 0.0_R8     </a>
+  1355) <a name="l1355" style="background-color: #ffffff">  call mct_gGrid_importRAttr(ggrido,&quot;mask&quot;,data,lsize) </a>
+  1356) <a name="l1356" style="background-color: #ffffff">  call mct_gGrid_importRAttr(ggrido,&quot;frac&quot;,data,lsize) </a>
+  1357) <a name="l1357" style="background-color: #ffffff"></a>
+  1358) <a name="l1358" style="background-color: #ffffff">  deallocate(data)</a>
+  1359) <a name="l1359" style="background-color: #ffffff"></a>
+  1360) <a name="l1360" style="background-color: #ffffff">  call mct_rearr_rearrange(ggridi%data, ggrido%data, rearr)</a>
+  1361) <a name="l1361" style="background-color: #ffffff"></a>
+  1362) <a name="l1362" style="background-color: #ffffff">end subroutine shr_dmodel_rearrGGrid</a>
+  1363) <a name="l1363" style="background-color: #ffffff"></a>
+  1364) <a name="l1364" style="background-color: #ffffff">!===============================================================================</a>
+  1365) <a name="l1365" style="background-color: #ffffff"></a>
+  1366) <a name="l1366" style="background-color: #ffffff">subroutine shr_dmodel_translateAV( avi, avo, avifld, avofld, rearr )</a>
+  1367) <a name="l1367" style="background-color: #ffffff"></a>
+  1368) <a name="l1368" style="background-color: #ffffff">  implicit none</a>
+  1369) <a name="l1369" style="background-color: #ffffff"></a>
+  1370) <a name="l1370" style="background-color: #ffffff">  !----- arguments -----</a>
+  1371) <a name="l1371" style="background-color: #ffffff">  type(mct_aVect), intent(in)    :: avi       ! input av</a>
+  1372) <a name="l1372" style="background-color: #ffffff">  type(mct_aVect), intent(inout) :: avo       ! output av</a>
+  1373) <a name="l1373" style="background-color: #ffffff">  character(len=*),intent(in)    :: avifld(:) ! input field names for translation</a>
+  1374) <a name="l1374" style="background-color: #ffffff">  character(len=*),intent(in)    :: avofld(:) ! output field names for translation</a>
+  1375) <a name="l1375" style="background-color: #ffffff">  type(mct_rearr), intent(in),optional :: rearr     ! rearranger for diff decomp</a>
+  1376) <a name="l1376" style="background-color: #ffffff"></a>
+  1377) <a name="l1377" style="background-color: #ffffff">  !----- local -----</a>
+  1378) <a name="l1378" style="background-color: #ffffff">  integer(IN)      :: n,k,ka,kb,kc,cnt  ! indices  </a>
+  1379) <a name="l1379" style="background-color: #ffffff">  integer(IN)      :: lsize      ! lsize</a>
+  1380) <a name="l1380" style="background-color: #ffffff">  integer(IN)      :: gsize      ! gsize</a>
+  1381) <a name="l1381" style="background-color: #ffffff">  integer(IN)      :: nflds      ! number of fields in avi</a>
+  1382) <a name="l1382" style="background-color: #ffffff"></a>
+  1383) <a name="l1383" style="background-color: #ffffff">  type(mct_aVect)  :: avtri,avtro ! translated av on input/output grid</a>
+  1384) <a name="l1384" style="background-color: #ffffff">  character(CXX)   :: ilist      ! input list for translation</a>
+  1385) <a name="l1385" style="background-color: #ffffff">  character(CXX)   :: olist      ! output list for translation</a>
+  1386) <a name="l1386" style="background-color: #ffffff">  character(CX)    :: cfld       ! character field name</a>
+  1387) <a name="l1387" style="background-color: #ffffff">  type(mct_string) :: sfld       ! string field</a>
+  1388) <a name="l1388" style="background-color: #ffffff">  integer(IN)      :: ktrans</a>
+  1389) <a name="l1389" style="background-color: #ffffff">  character(*), parameter :: subname = '(shr_dmodel_translateAV) '</a>
+  1390) <a name="l1390" style="background-color: #ffffff"></a>
+  1391) <a name="l1391" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+  1392) <a name="l1392" style="background-color: #ffffff">! PURPOSE:  Fill avo from avi</a>
+  1393) <a name="l1393" style="background-color: #ffffff">!-------------------------------------------------------------------------------</a>
+  1394) <a name="l1394" style="background-color: #ffffff"></a>
+  1395) <a name="l1395" style="background-color: #ffffff">  if (size(avifld) /= size(avofld)) then</a>
+  1396) <a name="l1396" style="background-color: #ffff99">     write(logunit,*) subname,' ERROR&quot;: avi and avo fld list ',size(avifld),size(avofld)</a>
+  1397) <a name="l1397" style="background-color: #ffff99">     call shr_sys_flush(logunit)</a>
+  1398) <a name="l1398" style="background-color: #ffff99">  endif</a>
+  1399) <a name="l1399" style="background-color: #ffffff">  ktrans = size(avifld)</a>
+  1400) <a name="l1400" style="background-color: #ffffff"></a>
+  1401) <a name="l1401" style="background-color: #ffffff">  ! generate fld lists</a>
+  1402) <a name="l1402" style="background-color: #ffffff">  nflds = mct_aVect_nRattr(avi)</a>
+  1403) <a name="l1403" style="background-color: #ffffff">  cnt = 0</a>
+  1404) <a name="l1404" style="background-color: #ffffff">  do ka = 1,nflds</a>
+  1405) <a name="l1405" style="background-color: #ffffff">     call mct_aVect_getRList(sfld,ka,avi)</a>
+  1406) <a name="l1406" style="background-color: #ffffff">     cfld = mct_string_toChar(sfld)</a>
+  1407) <a name="l1407" style="background-color: #ffffff">     call mct_string_clean(sfld)</a>
+  1408) <a name="l1408" style="background-color: #ffffff"></a>
+  1409) <a name="l1409" style="background-color: #ffffff">     k = 0</a>
+  1410) <a name="l1410" style="background-color: #ffffff">     kb = 0</a>
+  1411) <a name="l1411" style="background-color: #ffffff">     kc = 0</a>
+  1412) <a name="l1412" style="background-color: #ffffff">     do while (kb == 0 .and. k &lt; ktrans)</a>
+  1413) <a name="l1413" style="background-color: #ffffff">        k = k + 1</a>
+  1414) <a name="l1414" style="background-color: #ffffff">        if (trim(avifld(k)) == trim(cfld)) then</a>
+  1415) <a name="l1415" style="background-color: #ffffff">           kb = k</a>
+  1416) <a name="l1416" style="background-color: #ffffff">           kc = mct_aVect_indexRA(avo,trim(avofld(kb)),perrWith='quiet')</a>
+  1417) <a name="l1417" style="background-color: #ffffff">           if (ka &gt; 0 .and. kc &gt; 0) then</a>
+  1418) <a name="l1418" style="background-color: #ffffff">              cnt = cnt + 1</a>
+  1419) <a name="l1419" style="background-color: #ffffff">              if (cnt == 1) then</a>
+  1420) <a name="l1420" style="background-color: #ffffff">                 ilist = trim(avifld(kb))</a>
+  1421) <a name="l1421" style="background-color: #ffffff">                 olist = trim(avofld(kb))</a>
+  1422) <a name="l1422" style="background-color: #ffffff">              else</a>
+  1423) <a name="l1423" style="background-color: #ffff99">                 ilist = trim(ilist)//':'//trim(avifld(kb))</a>
+  1424) <a name="l1424" style="background-color: #ffff99">                 olist = trim(olist)//':'//trim(avofld(kb))</a>
+  1425) <a name="l1425" style="background-color: #ffff99">              endif</a>
+  1426) <a name="l1426" style="background-color: #ffff99">           endif</a>
+  1427) <a name="l1427" style="background-color: #ffff99">        endif</a>
+  1428) <a name="l1428" style="background-color: #ffff99">     enddo</a>
+  1429) <a name="l1429" style="background-color: #ffff99">  enddo</a>
+  1430) <a name="l1430" style="background-color: #ffff99"></a>
+  1431) <a name="l1431" style="background-color: #ffffff">  if (cnt &gt; 0) then</a>
+  1432) <a name="l1432" style="background-color: #ffffff">     lsize = mct_avect_lsize(avi)</a>
+  1433) <a name="l1433" style="background-color: #ffffff">     call mct_avect_init(avtri,rlist=olist,lsize=lsize)</a>
+  1434) <a name="l1434" style="background-color: #ffffff">     call mct_avect_Copy(avi,avtri,rList=ilist,TrList=olist)</a>
+  1435) <a name="l1435" style="background-color: #ffffff"></a>
+  1436) <a name="l1436" style="background-color: #ffffff">     if (</a><a style="background-color: #fafad2">present(rearr)) then</a>
+  1437) <a name="l1437" style="background-color: #ffffff">        lsize = mct_avect_lsize(avo)</a>
+  1438) <a name="l1438" style="background-color: #ffffff">        call mct_avect_init(avtro,rlist=olist,lsize=lsize)</a>
+  1439) <a name="l1439" style="background-color: #ffffff">        call mct_avect_zero(avtro)</a>
+  1440) <a name="l1440" style="background-color: #ffffff">        call mct_rearr_rearrange(avtri, avtro, rearr)</a>
+  1441) <a name="l1441" style="background-color: #ffffff">        call mct_avect_Copy(avtro,avo)</a>
+  1442) <a name="l1442" style="background-color: #ffffff">        call mct_aVect_clean(avtro)</a>
+  1443) <a name="l1443" style="background-color: #ffffff">     else</a>
+  1444) <a name="l1444" style="background-color: #ffffff">        call </a><a style="background-color: #ffff99">mct_avect_Copy(avtri,avo)</a>
+  1445) <a name="l1445" style="background-color: #ffff99">     endif</a>
+  1446) <a name="l1446" style="background-color: #ffff99"></a>
+  1447) <a name="l1447" style="background-color: #ffff99">     call </a><a style="background-color: #ffffff">mct_aVect_clean(avtri)</a>
+  1448) <a name="l1448" style="background-color: #ffffff">  endif</a>
+  1449) <a name="l1449" style="background-color: #ffffff"></a>
+  1450) <a name="l1450" style="background-color: #ffffff">end subroutine shr_dmodel_translateAV</a>
+  1451) <a name="l1451" style="background-color: #ffffff"></a>
+  1452) <a name="l1452" style="background-color: #ffffff">!===============================================================================</a>
+  1453) <a name="l1453" style="background-color: #ffffff"></a>
+  1454) <a name="l1454" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">shr_dmodel_translate_list( avi, avo, avifld, avofld, ilist, olist, cnt) </a>
+  1455) <a name="l1455" style="background-color: #ffcccc"></a>
+  1456) <a name="l1456" style="background-color: #ffcccc">  implicit none</a>
+  1457) <a name="l1457" style="background-color: #ffcccc"></a>
+  1458) <a name="l1458" style="background-color: #ffcccc">  !----- arguments -----</a>
+  1459) <a name="l1459" style="background-color: #ffcccc">  type(mct_aVect), intent(in)    :: avi       ! input av</a>
+  1460) <a name="l1460" style="background-color: #ffcccc">  type(mct_aVect), intent(inout) :: avo       ! output av</a>
+  1461) <a name="l1461" style="background-color: #ffcccc">  character(len=*),intent(in)    :: avifld(:) ! input field names for translation</a>
+  1462) <a name="l1462" style="background-color: #ffcccc">  character(len=*),intent(in)    :: avofld(:) ! output field names for translation</a>
+  1463) <a name="l1463" style="background-color: #ffcccc">  character(CL)   ,intent(out)   :: ilist     ! input list for translation</a>
+  1464) <a name="l1464" style="background-color: #ffcccc">  character(CL)   ,intent(out)   :: olist     ! output list for translation</a>
+  1465) <a name="l1465" style="background-color: #ffcccc">  integer(IN)     ,intent(out)   :: cnt       ! indices  </a>
+  1466) <a name="l1466" style="background-color: #ffcccc"></a>
+  1467) <a name="l1467" style="background-color: #ffcccc"></a>
+  1468) <a name="l1468" style="background-color: #ffcccc">  !----- local -----</a>
+  1469) <a name="l1469" style="background-color: #ffcccc">  integer(IN)      :: n,k,ka,kb,kc ! indices  </a>
+  1470) <a name="l1470" style="background-color: #ffcccc">  integer(IN)      :: lsize        ! lsize</a>
+  1471) <a name="l1471" style="background-color: #ffcccc">  integer(IN)      :: nflds        ! number of fields in avi</a>
+  1472) <a name="l1472" style="background-color: #ffcccc">  character(CL)    :: cfld         ! character field name</a>
+  1473) <a name="l1473" style="background-color: #ffcccc">  type(mct_string) :: sfld         ! string field</a>
+  1474) <a name="l1474" style="background-color: #ffcccc">  integer(IN)      :: ktrans</a>
+  1475) <a name="l1475" style="background-color: #ffcccc">  character(*), parameter :: subname = '(shr_dmodel_translateAV) '</a>
+  1476) <a name="l1476" style="background-color: #ffcccc"></a>
+  1477) <a name="l1477" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+  1478) <a name="l1478" style="background-color: #ffcccc">! PURPOSE:  Fill avo from avi</a>
+  1479) <a name="l1479" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+  1480) <a name="l1480" style="background-color: #ffcccc"></a>
+  1481) <a name="l1481" style="background-color: #ffcccc">  if (size(avifld) /= size(avofld)) then</a>
+  1482) <a name="l1482" style="background-color: #ffcccc">     write(logunit,*) subname,' ERROR&quot;: avi and avo fld list ',size(avifld),size(avofld)</a>
+  1483) <a name="l1483" style="background-color: #ffcccc">     call shr_sys_flush(logunit)</a>
+  1484) <a name="l1484" style="background-color: #ffcccc">  endif</a>
+  1485) <a name="l1485" style="background-color: #ffcccc">  ktrans = size(avifld)</a>
+  1486) <a name="l1486" style="background-color: #ffcccc"></a>
+  1487) <a name="l1487" style="background-color: #ffcccc">  ! generate fld lists</a>
+  1488) <a name="l1488" style="background-color: #ffcccc">  nflds = mct_aVect_nRattr(avi)</a>
+  1489) <a name="l1489" style="background-color: #ffcccc">  cnt = 0</a>
+  1490) <a name="l1490" style="background-color: #ffcccc">  do ka = 1,nflds</a>
+  1491) <a name="l1491" style="background-color: #ffcccc">     call mct_aVect_getRList(sfld,ka,avi)</a>
+  1492) <a name="l1492" style="background-color: #ffcccc">     cfld = mct_string_toChar(sfld)</a>
+  1493) <a name="l1493" style="background-color: #ffcccc">     call mct_string_clean(sfld)</a>
+  1494) <a name="l1494" style="background-color: #ffcccc"></a>
+  1495) <a name="l1495" style="background-color: #ffcccc">     k = 0</a>
+  1496) <a name="l1496" style="background-color: #ffcccc">     kb = 0</a>
+  1497) <a name="l1497" style="background-color: #ffcccc">     kc = 0</a>
+  1498) <a name="l1498" style="background-color: #ffcccc">     do while (kb == 0 .and. k &lt; ktrans)</a>
+  1499) <a name="l1499" style="background-color: #ffcccc">        k = k + 1</a>
+  1500) <a name="l1500" style="background-color: #ffcccc">        if (trim(avifld(k)) == trim(cfld)) then</a>
+  1501) <a name="l1501" style="background-color: #ffcccc">           kb = k</a>
+  1502) <a name="l1502" style="background-color: #ffcccc">           kc = mct_aVect_indexRA(avo,trim(avofld(kb)),perrWith='quiet')</a>
+  1503) <a name="l1503" style="background-color: #ffcccc">           if (ka &gt; 0 .and. kc &gt; 0) then</a>
+  1504) <a name="l1504" style="background-color: #ffcccc">              cnt = cnt + 1</a>
+  1505) <a name="l1505" style="background-color: #ffcccc">              if (cnt == 1) then</a>
+  1506) <a name="l1506" style="background-color: #ffcccc">                 ilist = trim(avifld(kb))</a>
+  1507) <a name="l1507" style="background-color: #ffcccc">                 olist = trim(avofld(kb))</a>
+  1508) <a name="l1508" style="background-color: #ffcccc">              else</a>
+  1509) <a name="l1509" style="background-color: #ffcccc">                 ilist = trim(ilist)//':'//trim(avifld(kb))</a>
+  1510) <a name="l1510" style="background-color: #ffcccc">                 olist = trim(olist)//':'//trim(avofld(kb))</a>
+  1511) <a name="l1511" style="background-color: #ffcccc">              endif</a>
+  1512) <a name="l1512" style="background-color: #ffcccc">           endif</a>
+  1513) <a name="l1513" style="background-color: #ffcccc">        endif</a>
+  1514) <a name="l1514" style="background-color: #ffcccc">     enddo</a>
+  1515) <a name="l1515" style="background-color: #ffcccc">  enddo</a>
+  1516) <a name="l1516" style="background-color: #ffcccc"></a>
+  1517) <a name="l1517" style="background-color: #ffcccc">end subroutine shr_dmodel_translate_list</a>
+  1518) <a name="l1518" style="background-color: #ffffff"></a>
+  1519) <a name="l1519" style="background-color: #ffffff">!===============================================================================</a>
+  1520) <a name="l1520" style="background-color: #ffffff"></a>
+  1521) <a name="l1521" style="background-color: #ffffff">subroutine </a><a style="background-color: #ffcccc">shr_dmodel_translateAV_list( avi, avo, ilist, olist, rearr )</a>
+  1522) <a name="l1522" style="background-color: #ffcccc"></a>
+  1523) <a name="l1523" style="background-color: #ffcccc">  implicit none</a>
+  1524) <a name="l1524" style="background-color: #ffcccc"></a>
+  1525) <a name="l1525" style="background-color: #ffcccc">  !----- arguments -----</a>
+  1526) <a name="l1526" style="background-color: #ffcccc">  type(mct_aVect), intent(in)    :: avi       ! input av</a>
+  1527) <a name="l1527" style="background-color: #ffcccc">  type(mct_aVect), intent(inout) :: avo       ! output av</a>
+  1528) <a name="l1528" style="background-color: #ffcccc">  character(CL)   ,intent(in)    :: ilist     ! input list for translation</a>
+  1529) <a name="l1529" style="background-color: #ffcccc">  character(CL)   ,intent(in)    :: olist     ! output list for translation</a>
+  1530) <a name="l1530" style="background-color: #ffcccc">  type(mct_rearr), intent(in),optional :: rearr  ! rearranger for diff decomp</a>
+  1531) <a name="l1531" style="background-color: #ffcccc"></a>
+  1532) <a name="l1532" style="background-color: #ffcccc">  !----- local -----</a>
+  1533) <a name="l1533" style="background-color: #ffcccc">  integer(IN)      :: lsize       ! lsize</a>
+  1534) <a name="l1534" style="background-color: #ffcccc">  type(mct_aVect)  :: avtri,avtro ! translated av on input/output grid</a>
+  1535) <a name="l1535" style="background-color: #ffcccc">  character(*), parameter :: subname = '(shr_dmodel_translateAV) '</a>
+  1536) <a name="l1536" style="background-color: #ffcccc"></a>
+  1537) <a name="l1537" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+  1538) <a name="l1538" style="background-color: #ffcccc">! PURPOSE:  Fill avo from avi</a>
+  1539) <a name="l1539" style="background-color: #ffcccc">!-------------------------------------------------------------------------------</a>
+  1540) <a name="l1540" style="background-color: #ffcccc"></a>
+  1541) <a name="l1541" style="background-color: #ffcccc">  lsize = mct_avect_lsize(avi)</a>
+  1542) <a name="l1542" style="background-color: #ffcccc">  call mct_avect_init(avtri,rlist=olist,lsize=lsize)</a>
+  1543) <a name="l1543" style="background-color: #ffcccc">  call mct_avect_Copy(avi,avtri,rList=ilist,TrList=olist)</a>
+  1544) <a name="l1544" style="background-color: #ffcccc">  </a>
+  1545) <a name="l1545" style="background-color: #ffcccc">  if (present(rearr)) then</a>
+  1546) <a name="l1546" style="background-color: #ffcccc">     lsize = mct_avect_lsize(avo)</a>
+  1547) <a name="l1547" style="background-color: #ffcccc">     call mct_avect_init(avtro,rlist=olist,lsize=lsize)</a>
+  1548) <a name="l1548" style="background-color: #ffcccc">     call mct_avect_zero(avtro)</a>
+  1549) <a name="l1549" style="background-color: #ffcccc">     call mct_rearr_rearrange(avtri, avtro, rearr)</a>
+  1550) <a name="l1550" style="background-color: #ffcccc">     call mct_avect_Copy(avtro,avo)</a>
+  1551) <a name="l1551" style="background-color: #ffcccc">     call mct_aVect_clean(avtro)</a>
+  1552) <a name="l1552" style="background-color: #ffcccc">  else</a>
+  1553) <a name="l1553" style="background-color: #ffcccc">     call mct_avect_Copy(avtri,avo)</a>
+  1554) <a name="l1554" style="background-color: #ffcccc">  endif</a>
+  1555) <a name="l1555" style="background-color: #ffcccc">  </a>
+  1556) <a name="l1556" style="background-color: #ffcccc">  call mct_aVect_clean(avtri)</a>
+  1557) <a name="l1557" style="background-color: #ffcccc">  </a>
+  1558) <a name="l1558" style="background-color: #ffcccc">end subroutine shr_dmodel_translateAV_list</a>
+  1559) <a name="l1559" style="background-color: #ffffff"></a>
+  1560) <a name="l1560" style="background-color: #ffffff">!===============================================================================</a>
+  1561) <a name="l1561" style="background-color: #ffffff"></a>
+  1562) <a name="l1562" style="background-color: #ffffff">end module shr_dmodel_mod</a>
+</pre>
+<hr size=1 noshade>
+<table border=0 cellpadding=3 cellspacing=0 width="100%" style="color:black;font-weight:normal;font-family:Verdana,Arial;font-size:xx-small">
+<td width="50%">
+<table border=0 cellpadding=3 cellspacing=0>
+<tr>
+<td>
+<a target="_new" href="http://www.intel.com"><img src="__IntelR.gif" border="0"></a>
+</td>
+<td style="font-size:xx-small">
+<i>generated by </i><BR><a target="_new" href="http://www.intel.com/software/products/compilers">Intel(R) C++/Fortran Compiler code-coverage tool</a>
+</td>
+</tr>
+</table>
+</td>
+<td>
+<table border=0 cellpadding=3 cellspacing=0 width="50%">
+<tr><a>Web-Page Owner: <a href="mailto:nobody">Nobody</a></tr>
+</table>
+</td>
+</table>
+</body>
+</html>
