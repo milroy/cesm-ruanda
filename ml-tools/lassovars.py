@@ -4,7 +4,7 @@ import numpy as np
 import glob
 from collections import OrderedDict
 from collections import defaultdict
-import cPickle as pickle
+import pickle
 import itertools
 import Nio as nio
 from sklearn.preprocessing import StandardScaler, Normalizer
@@ -40,15 +40,15 @@ regCoef = args.regCoef
 
 baseUF = nio.open_file(ensemblefileUF, 'r')
 
-print testfile, ts, num, isUF, isYR
+print(testfile, ts, num, isUF, isYR)
 
 varssUF = []
-for i in xrange(baseUF.variables['vars'].shape[0]):
+for i in range(baseUF.variables['vars'].shape[0]):
     varssUF.append(baseUF.variables['vars'][i,:].tostring().strip())
     
 baseYr = nio.open_file(ensemblefileYR, 'r')
 varssYr = []
-for i in xrange(baseYr.variables['vars'].shape[0]):
+for i in range(baseYr.variables['vars'].shape[0]):
     varssYr.append(baseYr.variables['vars'][i,:].tostring().strip())
 
 def build_examples(testSet, enssSet, ts, num, standard=False, normal=False):
@@ -75,7 +75,9 @@ def build_examples(testSet, enssSet, ts, num, standard=False, normal=False):
 
 
 with open(ensemblefile, 'rb') as f:
-    ensDict = pickle.load(f)
+    u = pickle._Unpickler(f)
+    u.encoding = 'latin1'
+    ensDict = u.load()
 
 if not isinstance(ensDict, dict):
     ensDict = dict(ensDict)
@@ -88,14 +90,16 @@ ensembleUF = []
 for i in sorted(ensDict.keys()):
     ensemble.append(ensDict[i])
     tmp = []
-    for j in xrange(ensDict[i].shape[0]):
+    for j in range(ensDict[i].shape[0]):
         if varssYr[j] in varssUF:
             if not varssYr[j] in const:
                 tmp.append(ensDict[i][j])
     ensembleUF.append(np.asarray(tmp))
     
 with open(testfile, 'rb') as f:
-    testDict = pickle.load(f)
+    u = pickle._Unpickler(f)
+    u.encoding = 'latin1'
+    testDict = u.load()
 
 if not isinstance(testDict, dict):
 	testDict = dict(testDict)    
@@ -105,7 +109,7 @@ testUF = []
 for i in sorted(testDict.keys()):
     test.append(testDict[i])
     tmp = []
-    for j in xrange(testDict[i].shape[0]):
+    for j in range(testDict[i].shape[0]):
         if varssYr[j] in varssUF:
             if not varssYr[j] in const:
                 tmp.append(testDict[i][j])
@@ -123,9 +127,9 @@ elif isYR:
 
 examples, labels = build_examples(testset, ensembleset, ts, num, standard=standard, normal=normal)
 
-print "input shape: ", examples.shape
-print "input rank: ", np.linalg.matrix_rank(examples)
-print "condition: ", np.linalg.cond(examples)
+print("input shape: ", examples.shape)
+print("input rank: ", np.linalg.matrix_rank(examples))
+print("condition number: ", np.linalg.cond(examples))
 
 lr1 = linear_model.LogisticRegression(C=regCoef, n_jobs=4, penalty='l1', solver='saga', max_iter=10000)
 lr1.fit(examples, labels)
@@ -141,5 +145,5 @@ prawcoefs = np.array([betaslr1[i] for i in sortlr1 if betaslr1[i] > 0.])
 ensbs = zip(svlr1p, prawcoefs)
 expbs = zip(svlr1n, nrawcoefs)
 
-print "Ensemble betas: ", ensbs
-print "Experiment betas: ", expbs
+print("Ensemble betas: ", list(ensbs))
+print("Experiment betas: ", list(expbs))

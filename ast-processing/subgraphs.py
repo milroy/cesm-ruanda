@@ -1108,7 +1108,16 @@ class metagraph(object):
 
     def girvan_newman(self, inducedSgraph, nComms=1, hashi=False, outCentrality=False, inout=False):
         
-        gn = g.algorithms.community.centrality.girvan_newman(inducedSgraph)
+        # Exclude nodes with only one neighbor
+        ex = set()
+        for n in inducedSgraph:
+            if len(g.shortest_path_length(inducedSgraph, source=n)) < 4 and len(g.shortest_path_length(inducedSgraph, target=n)) < 4:
+                ex.add(n)
+
+        newnodes = set(inducedSgraph) - ex
+        newISubgraph = g.subgraph(self.graph, newnodes)
+
+        gn = g.algorithms.community.centrality.girvan_newman(newISubgraph)
         communities = None
         for comms in islice(gn, nComms):
             communities = tuple(sorted(c) for c in comms)
@@ -1117,7 +1126,7 @@ class metagraph(object):
             comGraphs = []
             for c in communities:
 
-                if len(c) > 1:
+                if len(c) > 3:
 
                     try:
                         csg = g.subgraph(self.graph, c)
