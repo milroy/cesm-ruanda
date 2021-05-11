@@ -6,8 +6,8 @@ import re
 import copy
 import fparser
 from fparser import api
-from fparser.two import Fortran2003
-from fparser.common.readfortran import FortranStringReader
+from fparser import Fortran2003
+from fparser.readfortran import FortranStringReader
 sys.path.insert(0, '/root/KGen/base/')
 from kgen_extra import Intrinsic_Procedures
 import networkx as nx

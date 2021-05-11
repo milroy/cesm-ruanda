@@ -5,8 +5,8 @@ import copy
 import unicodedata
 import fparser
 from fparser import api
-from fparser.two import Fortran2003
-from fparser.common.readfortran import FortranStringReader
+from fparser import Fortran2003
+from fparser.readfortran import FortranStringReader
 import pdb
 import sys
 import re
