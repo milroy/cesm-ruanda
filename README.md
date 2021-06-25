@@ -3,7 +3,7 @@
 ### CESM Root caUse Analysis of Numerical DiscrepAncy (CESM-RUANDA)
 Welcome to the repository for code developed to locate 
 the root causes of numerical discrepancy in the Community 
-Earth System Model ([CESM<sup>U+00AE</sup>](https://www.cesm.ucar.edu/)). 
+Earth System Model ([CESM&reg;](https://www.cesm.ucar.edu/)). 
 The methods are described in detail in 
 [Making Root Cause Analysis Feasible for Large Code Bases: A Solution Approach for a Climate Model](https://doi.org/10.1145/3307681.3325399),
 and appear in [Keeping science on keel when software moves](https://doi.org/10.1145/3382037).
