@@ -124,51 +124,51 @@ class metagraph(object):
         'cam_in%ts__diag_surf', 'flds':
         'cam_out%flwds__radiation_tend'}
 
-        with open('module-file-lists/atmfiles.csv', 'r') as f:
+        with open('/root/cesm-ruanda/ast-processing/module-file-lists/atmfiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.atmFiles = set(list(reader)[0])
 
-        with open('module-file-lists/csm_sharefiles.csv', 'r') as f:
+        with open('/root/cesm-ruanda/ast-processing/module-file-lists/csm_sharefiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.csm_shareFiles = set(list(reader)[0])
 
-        with open('module-file-lists/dead_sharefiles.csv', 'r') as f:
+        with open('/root/cesm-ruanda/ast-processing/module-file-lists/dead_sharefiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.dead_shareFiles = set(list(reader)[0])
 
-        with open('module-file-lists/drvfiles.csv', 'r') as f:
+        with open('/root/cesm-ruanda/ast-processing/module-file-lists/drvfiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.drvFiles = set(list(reader)[0])
 
-        with open('module-file-lists/glcfiles.csv', 'r') as f:
+        with open('/root/cesm-ruanda/ast-processing/module-file-lists/glcfiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.glcFiles = set(list(reader)[0])
 
-        with open('module-file-lists/icefiles.csv', 'r') as f:
+        with open('/root/cesm-ruanda/ast-processing/module-file-lists/icefiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.iceFiles = set(list(reader)[0])
 
-        with open('module-file-lists/lndfiles.csv', 'r') as f:
+        with open('/root/cesm-ruanda/ast-processing/module-file-lists/lndfiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.lndFiles = set(list(reader)[0])
 
-        with open('module-file-lists/ocnfiles.csv', 'r') as f:
+        with open('/root/cesm-ruanda/ast-processing/module-file-lists/ocnfiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.ocnFiles = set(list(reader)[0])
 
-        with open('module-file-lists/roffiles.csv', 'r') as f:
+        with open('/root/cesm-ruanda/ast-processing/module-file-lists/roffiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.rofFiles = set(list(reader)[0])
 
-        with open('module-file-lists/utilsfiles.csv', 'r') as f:
+        with open('/root/cesm-ruanda/ast-processing/module-file-lists/utilsfiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.utilsFiles = set(list(reader)[0])
 
-        with open('module-file-lists/wavfiles.csv', 'r') as f:
+        with open('/root/cesm-ruanda/ast-processing/module-file-lists/wavfiles.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.wavFiles = set(list(reader)[0])
 
-        with open('module-file-lists/onlycam.csv', 'r') as f:
+        with open('/root/cesm-ruanda/ast-processing/module-file-lists/onlycam.csv', 'r') as f:
             reader = csv.reader(f, delimiter=',')
             self.camFiles = set(list(reader)[0])
 
