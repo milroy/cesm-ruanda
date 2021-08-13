@@ -143,3 +143,12 @@ lr1 = linear_model.LogisticRegression(n_jobs=1, penalty='l1', solver='saga', max
 
 clf = GridSearchCV(lr1, parameters, cv=5, n_jobs=3)
 clf.fit(examples, labels)
+
+print("Cross validation results:")
+print(clf.cv_results_)
+
+print("Cross validation best parameters:")
+print(clf.best_params_)
+
+print("Cross validation best estimator:")
+print(clf.best_estimator_)
