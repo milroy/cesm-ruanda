@@ -5,7 +5,7 @@ import glob
 import os
 import cPickle as pickle
 import itertools
-import Nio as nio
+import netCDF4 as nc
 from pyspark.sql import SparkSession
 spark = SparkSession.builder.getOrCreate()
 sc = spark.sparkContext
@@ -25,8 +25,8 @@ testDirUF = "/glade/p/tdd/asap/verification/UF_CECT/cesm1_3_beta11/"
 testsYr = [""] 
 testsUF = [""] 
 testsUF = os.listdir(testDirUF)
-baseYr = nio.open_file('/glade/p/tdd/asap/verification/pca_ens_summary/cesm1_3_beta11/sz453.compilers-rand2_V6.nc', 'r')
-baseUF = nio.open_file('/glade/p/work/milroy/sz750-ufect_T.nc', 'r')
+baseYr = nc.open_file('/glade/p/tdd/asap/verification/pca_ens_summary/cesm1_3_beta11/sz453.compilers-rand2_V6.nc', 'r')
+baseUF = nc.open_file('/glade/p/work/milroy/sz750-ufect_T.nc', 'r')
 
 varssUF = []
 for i in xrange(baseUF.variables['vars'].shape[0]):
@@ -43,7 +43,7 @@ varYr = sc.broadcast(varssYr)
 gmsYr = baseYr.variables['global_mean'][:, :30].T.astype(np.float64)
 
 def gmsNetCDF(part):
-    f = nio.open_file(part, 'r')
+    f = nc.open_file(part, 'r')
     area = f.variables["area"]
     area_wgt = area[:].astype(np.float64)
     total = np.sum(area_wgt)

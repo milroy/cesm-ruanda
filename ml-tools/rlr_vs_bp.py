@@ -3,21 +3,19 @@ from collections import OrderedDict, defaultdict
 import cPickle as pickle
 import itertools
 import seaborn as sns
-import Nio as nio
+import netCDF4 as nc
 from matplotlib.colors import ListedColormap
 
 def main(rlruf, bpuf, rlryr, bpyr, fname):
-    baseuf = nio.open_file('/glade/p/work/milroy/sz750-ufect_T.nc', 'r')
+    baseuf = nc.open_file('/glade/p/work/milroy/sz750-ufect_T.nc', 'r')
     varsuf = []
 
-    baseyr= nio.open_file('/glade/p/tdd/asap/verification/pca_ens_summary/cesm1_3_beta11/sz453.compilers-rand2_V6.nc', 'r')
+    baseyr= nc.open_file('/glade/p/tdd/asap/verification/pca_ens_summary/cesm1_3_beta11/sz453.compilers-rand2_V6.nc', 'r')
     varsyr = []
-
     for i in xrange(baseuf.variables['vars'].shape[0]):
       varsuf.append(baseuf.variables['vars'][i,:].tostring().strip())
 
     varsuf = sorted(varsuf)
-
     for i in xrange(baseyr.variables['vars'].shape[0]):
       varsyr.append(baseyr.variables['vars'][i,:].tostring().strip())
 

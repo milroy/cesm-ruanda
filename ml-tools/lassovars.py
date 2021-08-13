@@ -6,7 +6,7 @@ from collections import OrderedDict
 from collections import defaultdict
 import pickle
 import itertools
-import Nio as nio
+import netCDF4 as nc
 from sklearn.preprocessing import StandardScaler, Normalizer
 from sklearn import linear_model
 from argparse import ArgumentParser
@@ -38,7 +38,7 @@ standard = args.standard
 normal = args.normal
 regCoef = args.regCoef
 
-baseUF = nio.open_file(ensemblefileUF, 'r')
+baseUF = nc.open_file(ensemblefileUF, 'r')
 
 print(testfile, ts, num, isUF, isYR)
 
@@ -46,16 +46,14 @@ varssUF = []
 for i in range(baseUF.variables['vars'].shape[0]):
     varssUF.append(baseUF.variables['vars'][i,:].tostring().strip())
     
-baseYr = nio.open_file(ensemblefileYR, 'r')
+baseYr = nc.open_file(ensemblefileYR, 'r')
 varssYr = []
 for i in range(baseYr.variables['vars'].shape[0]):
     varssYr.append(baseYr.variables['vars'][i,:].tostring().strip())
 
 def build_examples(testSet, enssSet, ts, num, standard=False, normal=False):
     testArr = np.array(testSet, dtype=np.float64)[:num, :, ts]
-    #testArr = testArr[np.random.choice(testArr.shape[0], num, replace=False), :]
     exSized = np.array(enssSet, dtype=np.float64)[:num, :, ts]
-    #exSized = exSized[np.random.choice(exSized.shape[0], num, replace=False), :]
     if standard:
         ss = StandardScaler()
         exs = ss.fit_transform(np.vstack((testArr, exSized)))
@@ -135,7 +133,6 @@ lr1 = linear_model.LogisticRegression(C=regCoef, n_jobs=4, penalty='l1', solver=
 lr1.fit(examples, labels)
 betaslr1 = lr1.coef_[0]
 sortlr1 = np.argsort(-np.abs(betaslr1))
-#print betaslr1
 svlr1p = [Vs[i].lower() for i in sortlr1 if betaslr1[i] > 0.]
 svlr1n = [Vs[i].lower() for i in sortlr1 if betaslr1[i] < 0.]
 

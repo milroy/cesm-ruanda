@@ -4,9 +4,9 @@ import numpy as np
 import glob
 from collections import OrderedDict
 from collections import defaultdict
-import cPickle as pickle
+import pickle
 import itertools
-import Nio as nio
+import netCDF4 as nc
 from sklearn.preprocessing import StandardScaler, Normalizer
 from sklearn import linear_model
 from sklearn.model_selection import GridSearchCV
@@ -45,18 +45,18 @@ stepSize = args.stepSize
 
 regCoefs = np.arange(minRegCoef, maxRegCoef, stepSize)
 
-print 'Regularization coefficient values to test:'
-print regCoefs
+print('Regularization coefficient values to test:')
+print(regCoefs)
 
-baseUF = nio.open_file(ensemblefileUF, 'r')
+baseUF = nc.open_file(ensemblefileUF, 'r')
 
-print testfile, ts, num, isUF, isYR
+print(testfile, ts, num, isUF, isYR)
 
 varssUF = []
 for i in xrange(baseUF.variables['vars'].shape[0]):
     varssUF.append(baseUF.variables['vars'][i,:].tostring().strip())
     
-baseYr = nio.open_file(ensemblefileYR, 'r')
+baseYr = nc.open_file(ensemblefileYR, 'r')
 varssYr = []
 for i in xrange(baseYr.variables['vars'].shape[0]):
     varssYr.append(baseYr.variables['vars'][i,:].tostring().strip())
@@ -108,7 +108,7 @@ with open(testfile, 'rb') as f:
     testDict = pickle.load(f)
 
 if not isinstance(testDict, dict):
-	testDict = dict(testDict)    
+    testDict = dict(testDict)    
 
 test = []
 testUF = []
@@ -122,20 +122,20 @@ for i in sorted(testDict.keys()):
     testUF.append(np.asarray(tmp))
 
 if isUF:
-	testset = testUF
-	ensembleset = ensembleUF
-	Vs = varssUF
+    testset = testUF
+    ensembleset = ensembleUF
+    Vs = varssUF
 
 elif isYR:
-	testset = test
-	ensembleset = ensemble
-	Vs = varssYr
+    testset = test
+    ensembleset = ensemble
+    Vs = varssYr
 
 examples, labels = build_examples(testset, ensembleset, ts, num, standard=standard, normal=normal)
 
-print "input shape: ", examples.shape
-print "input rank: ", np.linalg.matrix_rank(examples)
-print "condition: ", np.linalg.cond(examples)
+print("input shape: ", examples.shape)
+print("input rank: ", np.linalg.matrix_rank(examples))
+print("condition: ", np.linalg.cond(examples))
 
 parameters = {'C': regCoefs}
 
@@ -143,22 +143,3 @@ lr1 = linear_model.LogisticRegression(n_jobs=1, penalty='l1', solver='saga', max
 
 clf = GridSearchCV(lr1, parameters, cv=5, n_jobs=3)
 clf.fit(examples, labels)
-
-
-
-# betaslr1 = lr1.coef_[0]
-# sortlr1 = np.argsort(-np.abs(betaslr1))
-# #print betaslr1
-# svlr1p = [Vs[i].lower() for i in sortlr1 if betaslr1[i] > 0.]
-# svlr1n = [Vs[i].lower() for i in sortlr1 if betaslr1[i] < 0.]
-
-# rawcoefs = np.array([betaslr1[i] for i in sortlr1 if betaslr1[i] < 0.])
-# #rescaled = np.abs(rawcoefs/(np.max(rawcoefs) - np.min(rawcoefs)))
-# coefs = list(np.abs(rawcoefs/np.min(np.abs(rawcoefs))))
-# weightDict = {v.lower(): c for v, c in zip(svlr1n, coefs)}
-# weightDict1 = {v.lower(): 1 for v in svlr1n}
-
-# print "Ensemble betas: ", svlr1p
-# print "Experiment betas: ", svlr1n
-# #print "Weight dict: ", weightDict
-# #print "Weight dict 1: ", weightDict1
