@@ -85,7 +85,7 @@ def build_examples(testSet, enssSet, ts, num, standard=False, normal=False):
 
 
 with open(ensemblefile, 'rb') as f:
-    ensDict = pickle.load(f)
+    ensDict = pickle.load(f, encoding='latin1')
 
 if not isinstance(ensDict, dict):
     ensDict = dict(ensDict)
@@ -105,7 +105,7 @@ for i in sorted(ensDict.keys()):
     ensembleUF.append(np.asarray(tmp))
     
 with open(testfile, 'rb') as f:
-    testDict = pickle.load(f)
+    testDict = pickle.load(f, encoding='latin1')
 
 if not isinstance(testDict, dict):
     testDict = dict(testDict)    
