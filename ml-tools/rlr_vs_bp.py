@@ -7,10 +7,10 @@ import netCDF4 as nc
 from matplotlib.colors import ListedColormap
 
 def main(rlruf, bpuf, rlryr, bpyr, fname):
-    baseuf = nc.open_file('/glade/p/work/milroy/sz750-ufect_T.nc', 'r')
+    baseuf = nc.Dataset('/glade/p/work/milroy/sz750-ufect_T.nc', 'r')
     varsuf = []
 
-    baseyr= nc.open_file('/glade/p/tdd/asap/verification/pca_ens_summary/cesm1_3_beta11/sz453.compilers-rand2_V6.nc', 'r')
+    baseyr= nc.Dataset('/glade/p/tdd/asap/verification/pca_ens_summary/cesm1_3_beta11/sz453.compilers-rand2_V6.nc', 'r')
     varsyr = []
     for i in xrange(baseuf.variables['vars'].shape[0]):
       varsuf.append(baseuf.variables['vars'][i,:].tostring().strip())

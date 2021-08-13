@@ -119,7 +119,7 @@ def main(sumFile, ensFile, testFile, tstep):
     testFile = str(testFile)
     ensFile = str(ensFile)
 
-    base = nc.open_file(sumFile, 'r')
+    base = nc.Dataset(sumFile, 'r')
     vs = []
     for i in xrange(base.variables['vars'].shape[0]):
         vs.append(base.variables['vars'][i,:].tostring().strip())

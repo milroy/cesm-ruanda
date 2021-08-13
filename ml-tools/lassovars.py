@@ -38,7 +38,7 @@ standard = args.standard
 normal = args.normal
 regCoef = args.regCoef
 
-baseUF = nc.open_file(ensemblefileUF, 'r')
+baseUF = nc.Dataset(ensemblefileUF, 'r')
 
 print(testfile, ts, num, isUF, isYR)
 
@@ -46,7 +46,7 @@ varssUF = []
 for i in range(baseUF.variables['vars'].shape[0]):
     varssUF.append(baseUF.variables['vars'][i,:].tostring().strip())
     
-baseYr = nc.open_file(ensemblefileYR, 'r')
+baseYr = nc.Dataset(ensemblefileYR, 'r')
 varssYr = []
 for i in range(baseYr.variables['vars'].shape[0]):
     varssYr.append(baseYr.variables['vars'][i,:].tostring().strip())
