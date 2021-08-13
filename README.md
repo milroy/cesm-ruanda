@@ -26,10 +26,10 @@ on the CESM metagraph.
 
 To build the ML analysis container, run:
 ```
-git/cesm-ruanda$ docker build -t <image_name> -f ml-tools.docker 
+git/cesm-ruanda$ docker build -t <image_name> -f ml-tools.docker . 
 ```
 
 To run the ML analysis, e.g., the L1-penalized logistic regression for the RANDMT experiment, execute:
 ```
-docker run -it <image_name> python3 -i /root/cesm-ruanda/ml-tools/lassovars.py --ensSumUF /root/cesm-ruanda/data/sz750-ufect_T.nc --ensSumYR /root/cesm-ruanda/data/sz300.intel-gnu-pgi-rand1_V6.nc --ensemble /root/cesm-ruanda/data/cheyenne_noavx_dict_10ts_119.pickle --test /root/cesm-ruanda/data/uf_chey_randmt_10ts_119.pickle --timestep 0 --nRuns 119 --uf --regCoef 0.02 --standardize
+docker run -it <image_name> python3 /root/cesm-ruanda/ml-tools/lassovars.py --ensSumUF /root/cesm-ruanda/data/sz750-ufect_T.nc --ensSumYR /root/cesm-ruanda/data/sz300.intel-gnu-pgi-rand1_V6.nc --ensemble /root/cesm-ruanda/data/cheyenne_noavx_dict_10ts_119.pickle --test /root/cesm-ruanda/data/uf_chey_randmt_10ts_119.pickle --timestep 0 --nRuns 119 --uf --regCoef 0.02 --standardize
 ```
