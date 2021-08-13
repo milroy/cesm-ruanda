@@ -13,7 +13,7 @@ We are updating the code to make it more robust and
 reproducible with Docker. To build the RUANDA image, run: 
 
 ```
-git/cesm-ruanda$ docker build -t <image_name> -f ruanda.yaml .
+git/cesm-ruanda$ docker build -t <image_name> -f ruanda.docker .
 ```
 After successfully building the Docker image, execute the following 
 to run the AST analysis (relative to the git/cesm-ruanda directory), e.g., for the RANDMT experiment:
