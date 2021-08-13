@@ -53,12 +53,12 @@ baseUF = nc.Dataset(ensemblefileUF, 'r')
 print(testfile, ts, num, isUF, isYR)
 
 varssUF = []
-for i in xrange(baseUF.variables['vars'].shape[0]):
+for i in range(baseUF.variables['vars'].shape[0]):
     varssUF.append(baseUF.variables['vars'][i,:].tostring().strip())
     
 baseYr = nc.Dataset(ensemblefileYR, 'r')
 varssYr = []
-for i in xrange(baseYr.variables['vars'].shape[0]):
+for i in range(baseYr.variables['vars'].shape[0]):
     varssYr.append(baseYr.variables['vars'][i,:].tostring().strip())
 
 def build_examples(testSet, enssSet, ts, num, standard=False, normal=False):
@@ -98,7 +98,7 @@ ensembleUF = []
 for i in sorted(ensDict.keys()):
     ensemble.append(ensDict[i])
     tmp = []
-    for j in xrange(ensDict[i].shape[0]):
+    for j in range(ensDict[i].shape[0]):
         if varssYr[j] in varssUF:
             if not varssYr[j] in const:
                 tmp.append(ensDict[i][j])
@@ -115,7 +115,7 @@ testUF = []
 for i in sorted(testDict.keys()):
     test.append(testDict[i])
     tmp = []
-    for j in xrange(testDict[i].shape[0]):
+    for j in range(testDict[i].shape[0]):
         if varssYr[j] in varssUF:
             if not varssYr[j] in const:
                 tmp.append(testDict[i][j])

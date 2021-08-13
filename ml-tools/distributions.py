@@ -15,7 +15,7 @@ from sklearn.preprocessing import StandardScaler
 
 def get_gms(base, test, path):
     vars_s = []
-    for i in xrange(base.variables['vars'].shape[0]):
+    for i in range(base.variables['vars'].shape[0]):
         vars_s.append(base.variables['vars'][i,:].tostring().strip())
 
     ensGms = base.variables['global_mean'][:].T.astype(np.float64)
@@ -121,7 +121,7 @@ def main(sumFile, ensFile, testFile, tstep):
 
     base = nc.Dataset(sumFile, 'r')
     vs = []
-    for i in xrange(base.variables['vars'].shape[0]):
+    for i in range(base.variables['vars'].shape[0]):
         vs.append(base.variables['vars'][i,:].tostring().strip())
 
     with open(ensFile, 'rb') as f:
