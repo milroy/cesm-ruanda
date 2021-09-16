@@ -1507,21 +1507,21 @@ class metagraph(object):
             else:
                 break
 
-        unsrt = set()
-        for m in importantLocs:
-            unsrt.add(m[0])
+        # unsrt = set()
+        # for m in importantLocs:
+        #     unsrt.add(m[0])
 
         if girvan:
             comGraphs = self.girvan_newman(inducedSgraph, hashi=hashi, nComms=nComms, outCentrality=outCentrality, inout=inout)
 
             if comGraphs:
-                return top, top2, unsrt, importantLocs, allNodes, firstEigen, comGraphs
+                return top, top2, importantLocs, allNodes, firstEigen, comGraphs
 
             else:
-                return top, top2, unsrt, importantLocs, allNodes, firstEigen
+                return top, top2, importantLocs, allNodes, firstEigen
 
         else:
-            return top, top2, unsrt, importantLocs, allNodes, firstEigen
+            return top, top2, importantLocs, allNodes, firstEigen
 
 
     def backwardSlice(self, node):
