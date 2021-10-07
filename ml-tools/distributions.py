@@ -100,10 +100,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Script to identify non-overlapping distributions"
     )
-    parser.add_argument("--sumFile", type=str, default="")
-    parser.add_argument("--testFile", type=str, default="")
+    parser.add_argument("--sumFile", type=str, required=True)
+    parser.add_argument("--testFile", type=str, required=True)
     parser.add_argument("--tstep", type=int, default=0)
-    parser.add_argument("--ensFile", type=str, default="")
+    parser.add_argument("--ensFile", type=str, required=True)
 
     args = parser.parse_args()
 
