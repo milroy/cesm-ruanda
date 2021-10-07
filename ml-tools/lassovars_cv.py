@@ -23,10 +23,12 @@ parser.add_argument("--nRuns", dest="num", required=True, type=int)
 parser.add_argument("--maxRegCoef", dest="maxRegCoef", type=float)
 parser.add_argument("--minRegCoef", dest="minRegCoef", type=float)
 parser.add_argument("--stepSize", dest="stepSize", type=float)
-parser.add_argument("--uf", dest="isUF", action='store_true')
-parser.add_argument("--yr", dest="isYR", action='store_true')
-parser.add_argument("--standardize", dest="standard", action='store_true', default=False)
-parser.add_argument("--normalize", dest="normal", action='store_true', default=False)
+parser.add_argument("--uf", dest="isUF", action="store_true")
+parser.add_argument("--yr", dest="isYR", action="store_true")
+parser.add_argument(
+    "--standardize", dest="standard", action="store_true", default=False
+)
+parser.add_argument("--normalize", dest="normal", action="store_true", default=False)
 
 args = parser.parse_args()
 testfile = args.testfile
@@ -45,27 +47,28 @@ stepSize = args.stepSize
 
 regCoefs = np.arange(minRegCoef, maxRegCoef, stepSize)
 
-print('Regularization coefficient values to test:')
+print("Regularization coefficient values to test:")
 print(regCoefs)
 
-baseUF = nc.Dataset(ensemblefileUF, 'r')
+baseUF = nc.Dataset(ensemblefileUF, "r")
 
 print(testfile, ts, num, isUF, isYR)
 
 varssUF = []
-for i in range(baseUF.variables['vars'].shape[0]):
-    varssUF.append(baseUF.variables['vars'][i,:].tostring().strip())
-    
-baseYr = nc.Dataset(ensemblefileYR, 'r')
+for i in range(baseUF.variables["vars"].shape[0]):
+    varssUF.append(baseUF.variables["vars"][i, :].tostring().strip())
+
+baseYr = nc.Dataset(ensemblefileYR, "r")
 varssYr = []
-for i in range(baseYr.variables['vars'].shape[0]):
-    varssYr.append(baseYr.variables['vars'][i,:].tostring().strip())
+for i in range(baseYr.variables["vars"].shape[0]):
+    varssYr.append(baseYr.variables["vars"][i, :].tostring().strip())
+
 
 def build_examples(testSet, enssSet, ts, num, standard=False, normal=False):
     testArr = np.array(testSet, dtype=np.float64)[:num, :, ts]
-    #testArr = testArr[np.random.choice(testArr.shape[0], num, replace=False), :]
+    # testArr = testArr[np.random.choice(testArr.shape[0], num, replace=False), :]
     exSized = np.array(enssSet, dtype=np.float64)[:num, :, ts]
-    #exSized = exSized[np.random.choice(exSized.shape[0], num, replace=False), :]
+    # exSized = exSized[np.random.choice(exSized.shape[0], num, replace=False), :]
     if standard:
         ss = StandardScaler()
         exs = ss.fit_transform(np.vstack((testArr, exSized)))
@@ -76,7 +79,7 @@ def build_examples(testSet, enssSet, ts, num, standard=False, normal=False):
         exs = nz.fit_transform(exs.T).T
     else:
         exs = np.vstack((testArr, exSized))
-    labels = np.array(len(testArr)*[0.] + exSized.shape[0]*[1.])
+    labels = np.array(len(testArr) * [0.0] + exSized.shape[0] * [1.0])
     rng_state = np.random.get_state()
     np.random.shuffle(exs)
     np.random.set_state(rng_state)
@@ -84,15 +87,24 @@ def build_examples(testSet, enssSet, ts, num, standard=False, normal=False):
     return exs, labels
 
 
-with open(ensemblefile, 'rb') as f:
-    ensDict = pickle.load(f, encoding='latin1')
+with open(ensemblefile, "rb") as f:
+    ensDict = pickle.load(f, encoding="latin1")
 
 if not isinstance(ensDict, dict):
     ensDict = dict(ensDict)
 
-const = ['BURDENSEASALT', 'BURDENDUST', 'BURDENSOA', 'BURDENSO4', 'BURDENPOM', 
-         'BURDENBC', 'AODDUST3', 'AODDUST1', 'AODVIS']
-    
+const = [
+    "BURDENSEASALT",
+    "BURDENDUST",
+    "BURDENSOA",
+    "BURDENSO4",
+    "BURDENPOM",
+    "BURDENBC",
+    "AODDUST3",
+    "AODDUST1",
+    "AODVIS",
+]
+
 ensemble = []
 ensembleUF = []
 for i in sorted(ensDict.keys()):
@@ -103,12 +115,12 @@ for i in sorted(ensDict.keys()):
             if not varssYr[j] in const:
                 tmp.append(ensDict[i][j])
     ensembleUF.append(np.asarray(tmp))
-    
-with open(testfile, 'rb') as f:
-    testDict = pickle.load(f, encoding='latin1')
+
+with open(testfile, "rb") as f:
+    testDict = pickle.load(f, encoding="latin1")
 
 if not isinstance(testDict, dict):
-    testDict = dict(testDict)    
+    testDict = dict(testDict)
 
 test = []
 testUF = []
@@ -131,15 +143,19 @@ elif isYR:
     ensembleset = ensemble
     Vs = varssYr
 
-examples, labels = build_examples(testset, ensembleset, ts, num, standard=standard, normal=normal)
+examples, labels = build_examples(
+    testset, ensembleset, ts, num, standard=standard, normal=normal
+)
 
 print("input shape: ", examples.shape)
 print("input rank: ", np.linalg.matrix_rank(examples))
 print("condition: ", np.linalg.cond(examples))
 
-parameters = {'C': regCoefs}
+parameters = {"C": regCoefs}
 
-lr1 = linear_model.LogisticRegression(n_jobs=1, penalty='l1', solver='saga', max_iter=10000)
+lr1 = linear_model.LogisticRegression(
+    n_jobs=1, penalty="l1", solver="saga", max_iter=10000
+)
 
 clf = GridSearchCV(lr1, parameters, cv=5, n_jobs=3)
 clf.fit(examples, labels)
