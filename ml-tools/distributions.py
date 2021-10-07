@@ -97,11 +97,13 @@ def main(sumFile, ensFile, testFile, tstep):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Dist script")
-    parser.add_argument("sumFile", type=str, default="")
-    parser.add_argument("testFile", type=str, default="")
-    parser.add_argument("tstep", type=int, default=0)
-    parser.add_argument("ensFile", type=str, default="")
+    parser = argparse.ArgumentParser(
+        description="Script to identify non-overlapping distributions"
+    )
+    parser.add_argument("--sumFile", type=str, default="")
+    parser.add_argument("--testFile", type=str, default="")
+    parser.add_argument("--tstep", type=int, default=0)
+    parser.add_argument("--ensFile", type=str, default="")
 
     args = parser.parse_args()
 
