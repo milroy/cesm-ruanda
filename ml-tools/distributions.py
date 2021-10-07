@@ -61,7 +61,7 @@ def main(sumFile, ensFile, testFile, tstep):
     base = nc.Dataset(sumFile, "r")
     vs = []
     for i in range(base.variables["vars"].shape[0]):
-        vs.append(base.variables["vars"][i, :].tostring().strip())
+        vs.append(base.variables["vars"][i, :].tobytes().strip())
 
     with open(ensFile, "rb") as f:
         u = pickle._Unpickler(f)

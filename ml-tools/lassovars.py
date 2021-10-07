@@ -46,12 +46,12 @@ print(testfile, ts, num, isUF, isYR)
 
 varssUF = []
 for i in range(baseUF.variables["vars"].shape[0]):
-    varssUF.append(baseUF.variables["vars"][i, :].tostring().strip())
+    varssUF.append(baseUF.variables["vars"][i, :].tobytes().strip())
 
 baseYr = nc.Dataset(ensemblefileYR, "r")
 varssYr = []
 for i in range(baseYr.variables["vars"].shape[0]):
-    varssYr.append(baseYr.variables["vars"][i, :].tostring().strip())
+    varssYr.append(baseYr.variables["vars"][i, :].tobytes().strip())
 
 
 def build_examples(testSet, enssSet, ts, num, standard=False, normal=False):
